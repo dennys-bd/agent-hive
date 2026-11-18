@@ -1,6 +1,5 @@
 import type { Machine, MachineFor } from './machine.js';
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { heldSession, taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
@@ -9,7 +8,8 @@ import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { activityDir, sourceSide } from './copy-sides.js';
-import { workspaceProtocolPaths, writeMcpConfig } from './hooks-settings.js';
+import { workspaceProtocolPaths } from './hooks-settings.js';
+import { readProtocolText, writeMcpConfig } from './home-hooks.js';
 import { isUuid } from './orchestrator.js';
 import type { PluginRender } from './plugin-render.js';
 import type { Runtime } from './server.js';
@@ -128,7 +128,7 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   return {
     ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: true, external, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
     lspPluginDir: deps.lspDir(workspace),
-    protocolPath, protocolText: await readFile(protocolPath, 'utf8'),
+    protocolPath, protocolText: await readProtocolText(protocolPath),
     extraArgs: runtime.config.agentArgs[agent],
     ...(o.sessionId === undefined ? {} : { session: { id: o.sessionId, resume: false } }),
   };

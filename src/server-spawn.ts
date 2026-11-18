@@ -1,5 +1,4 @@
 import type { Machine, MachineFor } from './machine.js';
-import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
 import { AGENTS, agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
@@ -14,7 +13,8 @@ import { branchFor, inFlow, LOCAL_SLUG, slugFor } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } from './config.js';
 import { commandChannel, type ConsoleStore } from './console.js';
 import { feedConsole } from './console-feed.js';
-import { workspaceProtocolPaths, writeMcpConfig, type ProtocolPaths } from './hooks-settings.js';
+import { workspaceProtocolPaths, type ProtocolPaths } from './hooks-settings.js';
+import { readProtocolText, writeMcpConfig } from './home-hooks.js';
 import { hasSkill, launchRun, specializedAgents } from './launch-options.js';
 import type { Logger } from './log.js';
 import type { PluginRender } from './plugin-render.js';
@@ -243,7 +243,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       external = await externalMcp(config, resolved.name); // #333
       env = await runEnv(machineFor(activity), resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
-      protocolText = await readFile(protocolPath, 'utf8'); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
+      protocolText = await readProtocolText(protocolPath); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
       await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) });
       return;
@@ -304,7 +304,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const files = await Promise.all([
       writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)),
       first === undefined ? undefined : writePrompt(promptsDir, ptyId, first),
-      readFile(protocolPath, 'utf8'), // #927: its text, for an agent that takes it so
+      readProtocolText(protocolPath), // #927: its text, for an agent that takes it so
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;
     const [mcpPath, promptPath, protocolText] = files;

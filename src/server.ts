@@ -35,7 +35,8 @@ import { createPassageStore, protocolRenderer } from './passage-store.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { registerProtocolRoutes } from './server-protocol.js';
 import { pluginVersion } from './item-sources.js';
-import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
+import { excludeFromGit, pluginSource, type ProtocolPaths } from './hooks-settings.js';
+import { prepareHome } from './home-hooks.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
@@ -918,7 +919,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
-    for (const { path } of config.comb.workspaces) await excludeFromGit(path); // each workspace keeps its worktrees in <path>/.hive/ (#179)
+    for (const { path } of config.comb.workspaces) await excludeFromGit(machineFor({}), path); // each workspace keeps its worktrees in <path>/.hive/ (#179); the local machine until node 9 gives a workspace its machines
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
     wiring.facts.setLevel(config.logLevel); // one switch for both files (#742)
     log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(flatten(config.comb.flows).stages)}`);
