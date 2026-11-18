@@ -3,7 +3,6 @@
 // "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run, on the activity's machine (#160).
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
 import { type ExecLookup, resolveExec } from './exec-path.js';
 import { detectFormatters } from './formatter-detect.js';
@@ -42,18 +41,6 @@ export function launchOf(command: string, args: readonly string[], env: NodeJS.P
     const name = (platform === 'win32' ? path.win32 : path.posix).basename(command);
     return { failure: (err as Error).message.replaceAll(command, name) };
   }
-}
-
-// Every chunk of a stream, until `cap` bytes: past it, onOver on each chunk (the caller acts once)
-export function collect(stream: Readable | null, cap: number, onOver: () => void): () => Buffer {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  stream?.on('data', (chunk: Buffer) => {
-    size += chunk.length;
-    if (size > cap) onOver();
-    else chunks.push(chunk);
-  });
-  return () => Buffer.concat(chunks);
 }
 
 /** A Process on `run` (#160: a machine's, or runDetached for the host's own headless run) with `input` on stdin and each stream capped at

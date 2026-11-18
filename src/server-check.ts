@@ -9,6 +9,7 @@ import { findCandidate } from './formatter-detect.js';
 import { otherExtensions } from './formatters.js';
 import { languageOf } from './languages.js';
 import type { Machine } from './machine.js';
+import { withMachinePath } from './machine-fs.js';
 import { locate } from './server-editor.js';
 import { samePath } from './same-path.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -62,8 +63,8 @@ async function check(req: Request, res: Response, current: Live, deps: { runs: C
     if (release === undefined) return void res.json({ state: 'superseded' } satisfies CheckAnswer);
     try {
       const args = editor.languages[language]?.checkers?.[id]?.args ?? [];
-      const env = { ...withoutHiveEnv(process.env), ...located.workspace.env };
-      res.json(await runCheck(def, { folder: located.folder, file: located.file, args, env, workspace: located.workspace.name, label: `${located.label} · ${target}`, consoleStore: deps.consoleStore, signal }));
+      const env = { ...withMachinePath(withoutHiveEnv(process.env), located.machine.info()), ...located.workspace.env };
+      res.json(await runCheck(def, { machine: located.machine, folder: located.folder, file: located.file, args, env, workspace: located.workspace.name, label: `${located.label} · ${target}`, consoleStore: deps.consoleStore, signal }));
     } finally {
       release();
     }
