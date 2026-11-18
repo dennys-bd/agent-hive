@@ -1,0 +1,44 @@
+// The local machine's disk (#158, split out by #161): node:fs/promises as MachineFs, with readFile's cap, writeAtomic and readLines. A file
+// of its own so a host-only reader (codex-limits.ts: the account's plan limits) takes the host's disk without importing machine-local.ts,
+// whose pty half reaches agents/registry.ts and back: that cycle would read localFs before it is defined.
+import { randomBytes } from 'node:crypto';
+import { access, appendFile, chmod, copyFile, cp, link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+import { MachineError, type MachineFs } from './machine.js';
+import { replaceFile } from './replace-file.js';
+
+const MODE_BITS = 0o7777;
+
+// The cap is checked on the stat, so an oversized file is never read (only a regular file's size means anything); and again on the bytes, for a file that grew in between
+function readCapped(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
+function readCapped(path: string, options: { maxBytes: number }): Promise<Buffer>;
+async function readCapped(path: string, { maxBytes, encoding }: { maxBytes: number; encoding?: BufferEncoding }): Promise<string | Buffer> {
+  const tooLarge = (): MachineError => new MachineError(`file over ${maxBytes} bytes`, { code: MachineError.TOO_LARGE });
+  const info = await stat(path);
+  if (!info.isFile()) throw new MachineError(`not a regular file: ${path}`, { code: MachineError.NOT_FILE });
+  if (info.size > maxBytes) throw tooLarge();
+  const bytes = await readFile(path);
+  if (bytes.length > maxBytes) throw tooLarge();
+  return encoding === undefined ? bytes : bytes.toString(encoding);
+}
+
+// Lifted from server-editor.ts' writeAtomic, which 7.3 deletes when it switches to this one: the text in a temp file beside the original,
+// with the original's mode, renamed over it, so a reader never sees half a file; a failure leaves no temp file
+async function writeAtomic(file: string, contents: string): Promise<Buffer> {
+  const bytes = Buffer.from(contents, 'utf8');
+  const mode = (await stat(file)).mode & MODE_BITS;
+  const temp = join(dirname(file), `.${basename(file)}.hive-${randomBytes(6).toString('hex')}.tmp`);
+  try {
+    await writeFile(temp, bytes, { flag: 'wx', mode: 0o600 }); // private until the chmod gives it the original's mode
+    await chmod(temp, mode); // writeFile's mode goes through the umask; chmod sets the original's exactly
+    await replaceFile(temp, file);
+    return bytes;
+  } catch (err) {
+    await rm(temp, { force: true });
+    throw err;
+  }
+}
+
+export const localFs: MachineFs = {
+  stat, lstat, realpath, access, readdir, readFile: readCapped, writeFile, writeAtomic, mkdir, mkdtemp, rename, rm, cp, copyFile, link, chmod, unlink, appendFile,
+};
