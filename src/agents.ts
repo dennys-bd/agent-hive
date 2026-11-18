@@ -38,8 +38,8 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
     shimFlags: ['-h', '--help', '-V', '--version'], // #932: no -c, which is a config override in Codex
   },
   copilot: {
-    // #873: chooses its id (--session-id, spike §3); its sessions are not kept per cwd (spike §6); planLimits is false until node 7 of #608 (#879) reads them and turns it on
-    label: 'Copilot', command: 'copilot', planLimits: false, canChooseSessionId: true, forkKeepsHiveId: false, resumesAnyFolder: true,
+    // #873: chooses its id (--session-id, spike §3); its sessions are not kept per cwd (spike §6); planLimits: #879, gh api /copilot_internal/user
+    label: 'Copilot', command: 'copilot', planLimits: true, canChooseSessionId: true, forkKeepsHiveId: false, resumesAnyFolder: true,
     // as `copilot --help` lists them (spike §8): none opens a conversation, which only flags do
     subcommands: ['app', 'login', 'help', 'init', 'config', 'update', 'version', 'workflow', 'sessions', 'memories', 'plugin', 'mcp', 'skill', 'instruction', 'lsp', 'sandbox', 'completion'],
     shimFlags: ['-p', '--prompt', '--acp', '--connect', '--connect=*', '-h', '--help', '-v', '--version'], // a prompt-mode run, an ACP server, a remote session (#876), help and version: no conversation to capture
