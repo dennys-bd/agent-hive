@@ -1,11 +1,18 @@
 // Codex's plan limits (#929): the rate_limits each token_count of a rollout carries (finding §9). The newest rollout that has one speaks for
 // the account: it also sees the user's own Codex use outside the Hive.
 import { lstat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { localFs } from '../machine-local-fs.js';
+import type { Machine } from '../machine.js';
 import { collectWindows, isPercent, isRecord, PERCENT_MAX } from '../rate-limits.js';
 import type { RateLimits, RateLimitWindow } from '../types.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
 import { dateFolders, parseRolloutLine, rolloutsIn, sessionsRoot } from './codex-transcript.js';
 import { eachLine } from './jsonl.js';
+
+// The host's own disk and Codex home (#161): plan limits are the account's, read where the Hive runs, never on a task's machine
+const HOST: Pick<Machine, 'fs'> = { fs: localFs };
+const hostRoot = (env: NodeJS.ProcessEnv | undefined): string => sessionsRoot({ homedir: homedir(), ...(env?.CODEX_HOME === undefined ? {} : { codexHome: env.CODEX_HOME }) });
 
 const MS_PER_SECOND = 1000;
 // ponytail: only the durations seen or assumed: the free plan's 30 days (finding §9), a paid plan's 5 h and week (unverified). Any other is
@@ -39,7 +46,7 @@ export function parseCodexRateLimits(raw: unknown, now: Date): RateLimits | unde
 // A rollout's last token_count that carries rate_limits; only a line naming the key is parsed
 async function lastRateLimits(path: string): Promise<unknown> {
   let last: unknown;
-  await eachLine(path, (text) => {
+  await eachLine(HOST, path, (text) => {
     if (!text.includes('"rate_limits"')) return;
     const line = parseRolloutLine(text);
     if (line?.type === 'event_msg' && line.payload.type === 'token_count' && isRecord(line.payload.rate_limits)) last = line.payload.rate_limits;
@@ -56,9 +63,9 @@ async function newestFirst(files: string[]): Promise<string[]> {
 // Up to `max` rollouts: the newest date folder first and, inside one, the newest file first
 async function newestRollouts(root: string, max: number): Promise<string[]> {
   let picked: string[] = [];
-  for (const folder of [...(await dateFolders(root))].reverse()) {
+  for (const folder of [...(await dateFolders(HOST, root))].reverse()) {
     if (picked.length >= max) break;
-    picked = [...picked, ...(await newestFirst(await rolloutsIn(folder)))];
+    picked = [...picked, ...(await newestFirst(await rolloutsIn(HOST, folder)))];
   }
   return picked.slice(0, max);
 }
@@ -68,7 +75,7 @@ async function newestRollouts(root: string, max: number): Promise<string[]> {
  * rollout, none among the newest PLAN_FILES_MAX with rate_limits, or one whose windows are all of unknown length. No reason names a path. */
 export async function readCodexPlanLimits(deps: Pick<PlanLimitsDeps, 'env' | 'now'> = {}): Promise<RateLimits> {
   const now = deps.now?.() ?? new Date();
-  const files = await newestRollouts(sessionsRoot(deps.env), PLAN_FILES_MAX);
+  const files = await newestRollouts(hostRoot(deps.env ?? process.env), PLAN_FILES_MAX);
   if (files.length === 0) throw new Error('no Codex rollout found');
   for (const file of files) {
     const raw = await lastRateLimits(file).catch(() => undefined);

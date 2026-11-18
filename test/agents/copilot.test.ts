@@ -16,6 +16,7 @@ import { ptyCommand } from '../../src/spawn.js';
 import type { LaunchArg } from '../../src/types.js';
 import { SECRET } from '../secret-client.js';
 import { tempDir } from '../temp-dir.js';
+import { fakeMachine } from '../fake-machine.js';
 
 // Copilot's argv, word for word (#873, spike §1, §3, §5): the Hive's flags first (both plugins, the MCP file, its tools allowed), the session
 // words, the agent's own args, the specialized agent and the model last; the prompt is ptyCommand's, behind -i.
@@ -109,16 +110,18 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
   assert.equal(line.includes(SECRET), false);
 });
 
+const LOCAL = fakeMachine({ env: {} });
+
 test('copy, clear, headless, transcripts and limits answer their placeholders until nodes 3 to 7; hooks pass a Stop on (#873, #874)', async () => {
   assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({}), copilotRunner.headlessMcp], [undefined, undefined, ['COPILOT_ALLOW_ALL'], [], false]);
   assert.throws(() => copilotRunner.headless({ dir: '/t', schema: '{}', schemaPath: '/t/s', answerPath: '/t/a' }), { message: 'copilot: headless runs are not supported yet' });
   assert.equal(copilotRunner.headlessAnswer('{}', undefined), undefined);
   const stop = { hook_event_name: 'Stop', session_id: ID };
   assert.equal(copilotRunner.hookPayload(stop), stop);
-  assert.deepEqual([copilotRunner.transcriptDir('/repo'), copilotRunner.ownsTranscript('/x', '/repo', ID)], [undefined, false]);
-  assert.deepEqual(await copilotRunner.sessionFiles('/repo', ID), []);
-  assert.deepEqual(await copilotRunner.readTurn('/x.jsonl'), { tokens: 0 });
-  assert.deepEqual([await copilotRunner.countMessages('/x.jsonl'), await copilotRunner.planLimits(), copilotRunner.statusLimits({}, 0)], [0, undefined, undefined]);
+  assert.deepEqual([copilotRunner.transcriptDir(LOCAL, '/repo'), copilotRunner.ownsTranscript(LOCAL, '/x', '/repo', ID)], [undefined, false]);
+  assert.deepEqual(await copilotRunner.sessionFiles(LOCAL, '/repo', ID), []);
+  assert.deepEqual(await copilotRunner.readTurn(LOCAL, '/x.jsonl'), { tokens: 0 });
+  assert.deepEqual([await copilotRunner.countMessages(LOCAL, '/x.jsonl'), await copilotRunner.planLimits(), copilotRunner.statusLimits({}, 0)], [0, undefined, undefined]);
 });
 
 test('prepareHome writes the hooks plugin under the Hive\'s home for the boot\'s port, beside its shim (#873, #874)', async (t) => {

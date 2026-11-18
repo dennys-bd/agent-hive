@@ -13,6 +13,7 @@ import { LOCAL_BASES, LOCAL_MESSAGE, localOf, openPlace, startLocal } from '../s
 import type { Activity, Task, DeleteActivityScope, Exec, SettingsBody, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine } from './fake-machine.js';
 import { bodyFlows, AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -204,10 +205,10 @@ test('deleteActivityOnDisk on a local task runs no git whatever the scope and de
     item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true,
   };
   const activity: Activity = { id: 'a-I1', kind: 'task', workspace: 'hive', slug: 'hive-1-t', local: true, worktree: repo, branch: BRANCH, stageStart: { stage: 'fila', commit: SHA } }; // #629: the activity's
-  const dir = transcriptDir(repo);
+  const dir = transcriptDir(fakeMachine(), repo);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
+  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], prs: [], branch: BRANCH, scope: ALL }, deps);
   assert.deepEqual(calls, [], 'no worktree, no branch -d, no left-behind branches, no stage-start ref');
   assert.deepEqual(await readdir(dir), []);
@@ -225,7 +226,7 @@ test('clearing a checkout task\'s session deletes its transcript from the worksp
   const { base, repo, server, workers } = await start(t, { ...DELETE_ACTIVITY_DEFAULTS, session: true, transcripts: true }); // transcripts needs session
   await postJson(`${base}/tasks/board:I1/start`, { base: null, local: true });
   const session = work0(server)!.sessionId!;
-  const dir = transcriptDir(repo);
+  const dir = transcriptDir(fakeMachine(), repo);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${session}.jsonl`), '{}\n'); // before the exit, as the run wrote it: an exit with none forgets the session (#586)
   workers[0].handlers.onExit();

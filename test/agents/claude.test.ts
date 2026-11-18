@@ -9,6 +9,7 @@ import { ptyCommand } from '../../src/spawn.js';
 import { shellQuote } from '../../src/shell-init.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
 import { mcpConfigPattern } from '../../src/hooks-settings.js';
+import { machineWith } from '../fake-machine.js';
 
 // Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed (Task 1 checked them
 // against that code); the runner must keep them. The Hive's own flags are [flag, value] pairs, which the command line renders bare with the
@@ -111,13 +112,13 @@ test('Claude\'s hooks reach the reducer as Claude Code sends them: the same payl
 });
 
 test('Claude owns a .jsonl directly in its transcript dir and, with a session id, only that session\'s; deleting a session lists <id>.jsonl and <id>/ (#929)', async () => {
-  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  const own = join(transcriptDir('/repo', env), `${ID}.jsonl`);
-  assert.equal(runners.claude.ownsTranscript(own, '/repo', undefined, env), true, 'no session id: the folder check alone, as before');
-  assert.equal(runners.claude.ownsTranscript(own, '/repo', ID, env), true);
-  assert.equal(runners.claude.ownsTranscript(join(transcriptDir('/repo', env), `${FROM}.jsonl`), '/repo', ID, env), false, 'another session in the same folder');
-  assert.equal(runners.claude.ownsTranscript(join(transcriptDir('/repo-x', env), `${ID}.jsonl`), '/repo', ID, env), false);
-  assert.deepEqual(await runners.claude.sessionFiles('/repo', ID, env), [own, join(transcriptDir('/repo', env), ID)]);
+  const machine = machineWith({ claudeConfigDir: '/cfg' });
+  const own = join(transcriptDir(machine, '/repo'), `${ID}.jsonl`);
+  assert.equal(runners.claude.ownsTranscript(machine, own, '/repo', undefined), true, 'no session id: the folder check alone, as before');
+  assert.equal(runners.claude.ownsTranscript(machine, own, '/repo', ID), true);
+  assert.equal(runners.claude.ownsTranscript(machine, join(transcriptDir(machine, '/repo'), `${FROM}.jsonl`), '/repo', ID), false, 'another session in the same folder');
+  assert.equal(runners.claude.ownsTranscript(machine, join(transcriptDir(machine, '/repo-x'), `${ID}.jsonl`), '/repo', ID), false);
+  assert.deepEqual(await runners.claude.sessionFiles(machine, '/repo', ID), [own, join(transcriptDir(machine, '/repo'), ID)]);
 });
 
 test('a specialized agent with no tools line goes behind --agent alone, after the agent\'s args and before --model; none adds nothing (#257, #758)', () => {
@@ -198,4 +199,10 @@ test('a headless run with an MCP config names it right after --strict-mcp-config
   assert.deepEqual(args.slice(at, at + 5), ['--strict-mcp-config', '--mcp-config', '/r/mcp.json', '--allowedTools', tools.join(' ')]);
   assert.equal(runners.claude.headless(HEADLESS).includes('--mcp-config'), false);
   assert.equal(runners.claude.headless(HEADLESS).includes('--allowedTools'), false);
+});
+
+test('transcriptDir resolves on the machine: <its home>/.claude, an absolute claudeConfigDir instead, a relative one falls back to the home (#161)', () => {
+  assert.equal(transcriptDir(machineWith({ homedir: '/actor/home' }), '/repo'), join('/actor/home', '.claude', 'projects', '-repo'));
+  assert.equal(transcriptDir(machineWith({ homedir: '/actor/home', claudeConfigDir: '/cfg' }), '/repo'), join('/cfg', 'projects', '-repo'));
+  assert.equal(transcriptDir(machineWith({ homedir: '/actor/home', claudeConfigDir: 'cfg' }), '/repo'), join('/actor/home', '.claude', 'projects', '-repo'), 'relative: never against the daemon\'s cwd (#236)');
 });

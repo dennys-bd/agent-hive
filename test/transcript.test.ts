@@ -1,18 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { adoptTranscript, copyTranscript, dropCopiedTranscript, findTranscript, removeTranscripts } from '../src/transcript.js';
+import { adoptTranscript, COPYFILE_EXCL, copyTranscript, dropCopiedTranscript, findTranscript, removeTranscripts } from '../src/transcript.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine, machineWith } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { CHILD, CWD, DAY, OTHER, SESSION, subagent, TWO_TURNS, writeRollout } from './codex-rollouts.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 
 test('removeTranscripts deletes each listed session\'s <id>.jsonl and <id>/ in the transcript dir of the worktree and nothing else there; a file already gone is a debug line; an id that is not a session id is skipped (#236)', async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const machine = machineWith({ claudeConfigDir: await tempDir(t, 'claude-') });
   const worktree = '/repo/.hive/worktrees/hive-1-t';
-  const dir = transcriptDir(worktree, env);
+  const dir = transcriptDir(machine, worktree);
   const [used, other, missing] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002', 'c1b2c3d4-0000-4000-8000-000000000003'];
   await mkdir(join(dir, used, 'subagents'), { recursive: true });
   await mkdir(join(dir, 'memory'));
@@ -20,89 +21,91 @@ test('removeTranscripts deletes each listed session\'s <id>.jsonl and <id>/ in t
     await writeFile(join(dir, file), '{}\n');
   }
   const lines: string[] = [];
-  await removeTranscripts(worktree, '/repo', [used, missing, 'bad id'].map((id) => ({ id })), { debug: (line) => lines.push(line) }, env);
+  await removeTranscripts(machine, worktree, '/repo', [used, missing, 'bad id'].map((id) => ({ id })), { debug: (line) => lines.push(line) });
   assert.deepEqual((await readdir(dir)).sort(), [`${other}.jsonl`, 'bad id.jsonl', 'memory'].sort(), 'another session, a file no id named and memory/ stay');
   assert.deepEqual(lines, [`transcript ${missing}.jsonl: already gone`, `transcript ${missing}: already gone`]);
 });
 
 test('adoptTranscript moves a session\'s <id>.jsonl and <id>/ from the worktree\'s transcript dir to the main repo\'s, once; true when it is already there, false in neither or for an id that is not a session id (#208)', async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const machine = machineWith({ claudeConfigDir: await tempDir(t, 'claude-') });
   const [worktree, repo] = ['/repo/.hive/worktrees/hive-1-t', '/repo'];
-  const [from, to] = [transcriptDir(worktree, env), transcriptDir(repo, env)];
+  const [from, to] = [transcriptDir(machine, worktree), transcriptDir(machine, repo)];
   const [id, bare, lost] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002', 'c1b2c3d4-0000-4000-8000-000000000003'];
   await mkdir(join(from, id, 'subagents'), { recursive: true });
   for (const file of [`${id}.jsonl`, join(id, 'subagents', 'agent-1.jsonl'), `${bare}.jsonl`, 'bad id.jsonl']) await writeFile(join(from, file), '{}\n');
-  assert.equal(await adoptTranscript(worktree, repo, id, 'claude', env), true);
+  assert.equal(await adoptTranscript(machine, worktree, repo, id, 'claude'), true);
   assert.deepEqual((await readdir(to)).sort(), [id, `${id}.jsonl`].sort());
   assert.deepEqual(await readdir(join(to, id, 'subagents')), ['agent-1.jsonl']);
   assert.deepEqual((await readdir(from)).sort(), [`${bare}.jsonl`, 'bad id.jsonl'].sort(), 'moved, never copied');
-  assert.equal(await adoptTranscript(worktree, repo, id, 'claude', env), true, 'already in the main repo: opened before');
-  assert.equal(await adoptTranscript(worktree, repo, bare, 'claude', env), true, 'a session with no subagents: only the file');
-  assert.equal(await adoptTranscript(worktree, repo, lost, 'claude', env), false, 'in neither: nothing to resume');
-  assert.equal(await adoptTranscript(worktree, repo, 'bad id', 'claude', env), false, 'not a session id: never a path');
+  assert.equal(await adoptTranscript(machine, worktree, repo, id, 'claude'), true, 'already in the main repo: opened before');
+  assert.equal(await adoptTranscript(machine, worktree, repo, bare, 'claude'), true, 'a session with no subagents: only the file');
+  assert.equal(await adoptTranscript(machine, worktree, repo, lost, 'claude'), false, 'in neither: nothing to resume');
+  assert.equal(await adoptTranscript(machine, worktree, repo, 'bad id', 'claude'), false, 'not a session id: never a path');
   assert.deepEqual(await readdir(from), ['bad id.jsonl']);
 });
 
 test('removeTranscripts removes a repo session in both transcript dirs, the worktree\'s and the main repo\'s, and a worktree session only in the worktree\'s (#208)', async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const machine = machineWith({ claudeConfigDir: await tempDir(t, 'claude-') });
   const [worktree, repo] = ['/repo/.hive/worktrees/hive-1-t', '/repo'];
-  const [from, to] = [transcriptDir(worktree, env), transcriptDir(repo, env)];
+  const [from, to] = [transcriptDir(machine, worktree), transcriptDir(machine, repo)];
   const [moved, stayed] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
   for (const dir of [from, to]) {
     await mkdir(dir, { recursive: true });
     for (const id of [moved, stayed]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
   }
-  await removeTranscripts(worktree, repo, [{ id: moved, repo: true }, { id: stayed }], { debug: () => undefined }, env);
+  await removeTranscripts(machine, worktree, repo, [{ id: moved, repo: true }, { id: stayed }], { debug: () => undefined });
   assert.deepEqual(await readdir(from), []);
   assert.deepEqual(await readdir(to), [`${stayed}.jsonl`], 'a worktree session never ran in the main repo: that file is not the task\'s');
 });
 
 test('copyTranscript copies <id>.jsonl from the first cwd whose transcript dir has it into the destination\'s, never its <id>/ and never over a file already there; same for one dir; missing for an absent session or a non-uuid id (#587)', async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const machine = machineWith({ claudeConfigDir: await tempDir(t, 'claude-') });
   const [worktree, repo, other] = ['/repo/.hive/worktrees/hive-1-t', '/repo', '/repo/.hive/worktrees/hive-2-u'];
   const id = 'a1b2c3d4-0000-4000-8000-000000000001';
-  const from = transcriptDir(worktree, env);
+  const from = transcriptDir(machine, worktree);
   await mkdir(join(from, id, 'subagents'), { recursive: true });
   await writeFile(join(from, `${id}.jsonl`), '{"a":1}\n');
-  assert.equal(await copyTranscript([worktree, repo], other, id, 'claude', env), 'copied', 'a repo session looks in the worktree\'s dir first (A13)');
-  const to = transcriptDir(other, env);
+  assert.equal(await copyTranscript(machine, [worktree, repo], other, id, 'claude'), 'copied', 'a repo session looks in the worktree\'s dir first (A13)');
+  const to = transcriptDir(machine, other);
   assert.deepEqual(await readdir(to), [`${id}.jsonl`], 'the conversation only: subagents stay');
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"a":1}\n');
   assert.deepEqual((await readdir(from)).sort(), [id, `${id}.jsonl`].sort(), 'copied, never moved');
   await writeFile(join(from, `${id}.jsonl`), '{"a":2}\n');
-  assert.equal(await copyTranscript([worktree], other, id, 'claude', env), 'same', 'one is there already: never overwritten');
+  assert.equal(await copyTranscript(machine, [worktree], other, id, 'claude'), 'same', 'one is there already: never overwritten');
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"a":1}\n');
-  assert.equal(await copyTranscript([worktree], worktree, id, 'claude', env), 'same', 'one dir: nothing to copy');
-  assert.equal(await copyTranscript([repo], other, 'b1b2c3d4-0000-4000-8000-000000000002', 'claude', env), 'missing');
-  assert.equal(await copyTranscript([worktree], other, 'bad id', 'claude', env), 'missing');
+  assert.equal(await copyTranscript(machine, [worktree], worktree, id, 'claude'), 'same', 'one dir: nothing to copy');
+  assert.equal(await copyTranscript(machine, [repo], other, 'b1b2c3d4-0000-4000-8000-000000000002', 'claude'), 'missing');
+  assert.equal(await copyTranscript(machine, [worktree], other, 'bad id', 'claude'), 'missing');
+  assert.equal(COPYFILE_EXCL, constants.COPYFILE_EXCL, 'the named constant is node:fs\'s value');
 });
 
 test('copyTranscript that fails to read its source leaves a transcript already in the destination untouched, and no staged file (#587)', { skip: NO_POSIX_FAULTS }, async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
+  const machine = machineWith({ claudeConfigDir: await tempDir(t, 'claude-') });
   const [worktree, other] = ['/repo/.hive/worktrees/hive-1-t', '/repo/.hive/worktrees/hive-2-u'];
   const id = 'a1b2c3d4-0000-4000-8000-000000000001';
-  const [from, to] = [transcriptDir(worktree, env), transcriptDir(other, env)];
+  const [from, to] = [transcriptDir(machine, worktree), transcriptDir(machine, other)];
   await mkdir(from, { recursive: true });
   await mkdir(to, { recursive: true });
   await writeFile(join(from, `${id}.jsonl`), '{"a":2}\n');
   await writeFile(join(to, `${id}.jsonl`), '{"real":1}\n');
   await chmod(join(from, `${id}.jsonl`), 0o000); // win32: chmod 000 does not stop the owner reading the source
   t.after(() => chmod(join(from, `${id}.jsonl`), 0o600));
-  await assert.rejects(copyTranscript([worktree], other, id, 'claude', env));
+  await assert.rejects(copyTranscript(machine, [worktree], other, id, 'claude'));
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"real":1}\n');
   assert.deepEqual(await readdir(to), [`${id}.jsonl`]);
 });
 
 test('dropCopiedTranscript removes only <id>.jsonl in the dir; a file already gone is a debug line; a non-uuid id touches nothing (#587)', async (t) => {
+  const machine = fakeMachine({ env: {} });
   const dir = await tempDir(t, 'transcripts-');
   const [id, other] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
   await mkdir(join(dir, id));
   for (const name of [`${id}.jsonl`, `${other}.jsonl`, 'bad id.jsonl']) await writeFile(join(dir, name), '{}\n');
   const lines: string[] = [];
   const log = { debug: (line: string) => lines.push(line) };
-  await dropCopiedTranscript(dir, id, log);
-  await dropCopiedTranscript(dir, id, log);
-  await dropCopiedTranscript(dir, 'bad id', log);
+  await dropCopiedTranscript(machine, dir, id, log);
+  await dropCopiedTranscript(machine, dir, id, log);
+  await dropCopiedTranscript(machine, dir, 'bad id', log);
   assert.deepEqual((await readdir(dir)).sort(), [id, `${other}.jsonl`, 'bad id.jsonl'].sort());
   assert.deepEqual(lines, [`transcript ${id}.jsonl: already gone`]);
 });
@@ -119,7 +122,7 @@ test('removeTranscripts removes a Codex session\'s rollout and its subagent\'s w
   process.chdir(cwd);
   t.after(() => process.chdir(previous));
   const lines: string[] = [];
-  await removeTranscripts('/repo/.hive/worktrees/hive-1-t', '/repo', [{ id: SESSION, agent: 'codex' }], { debug: (line) => lines.push(line) }, { CODEX_HOME: home });
+  await removeTranscripts(fakeMachine({ env: { CODEX_HOME: home } }), '/repo/.hive/worktrees/hive-1-t', '/repo', [{ id: SESSION, agent: 'codex' }], { debug: (line) => lines.push(line) });
   assert.deepEqual([existsSync(own), existsSync(child), existsSync(other)], [false, false, true]);
   assert.deepEqual((await readdir(cwd)).sort(), [SESSION, `${SESSION}.jsonl`].sort(), 'the daemon\'s cwd untouched');
   assert.deepEqual(lines, []);
@@ -127,14 +130,14 @@ test('removeTranscripts removes a Codex session\'s rollout and its subagent\'s w
 
 test('an agent without a transcript dir (Codex): adoptTranscript moves nothing; findTranscript answers its own rollout, matched by id and cwd, before its subagent\'s; copyTranscript answers same and writes nothing, missing with no rollout (#929, #933)', async (t) => {
   const home = await tempDir(t, 'codex-');
-  const env = { CODEX_HOME: home };
+  const machine = fakeMachine({ env: { CODEX_HOME: home } });
   const own = await writeRollout(home, DAY, SESSION, TWO_TURNS);
   await writeRollout(home, '2026/10/13', CHILD, subagent(CHILD, SESSION));
-  assert.equal(await adoptTranscript(CWD, '/repo', SESSION, 'codex', env), false);
-  assert.equal(await findTranscript(['/repo', CWD], SESSION, 'codex', env), own, 'the cwd its session_meta names, in the cwds\' order');
-  assert.equal(await findTranscript(['/repo'], SESSION, 'codex', env), undefined, 'a cwd its session_meta does not name');
+  assert.equal(await adoptTranscript(machine, CWD, '/repo', SESSION, 'codex'), false);
+  assert.equal(await findTranscript(machine, ['/repo', CWD], SESSION, 'codex'), own, 'the cwd its session_meta names, in the cwds\' order');
+  assert.equal(await findTranscript(machine, ['/repo'], SESSION, 'codex'), undefined, 'a cwd its session_meta does not name');
   const before = await readdir(join(home, 'sessions'), { recursive: true });
-  assert.equal(await copyTranscript([CWD], '/repo2', SESSION, 'codex', env), 'same', 'codex fork reads the source by id from anywhere');
+  assert.equal(await copyTranscript(machine, [CWD], '/repo2', SESSION, 'codex'), 'same', 'codex fork reads the source by id from anywhere');
   assert.deepEqual(await readdir(join(home, 'sessions'), { recursive: true }), before, 'no second rollout');
-  assert.deepEqual([await copyTranscript([CWD], '/repo2', OTHER, 'codex', env), await copyTranscript([CWD], '/repo2', 'bad id', 'codex', env)], ['missing', 'missing']);
+  assert.deepEqual([await copyTranscript(machine, [CWD], '/repo2', OTHER, 'codex'), await copyTranscript(machine, [CWD], '/repo2', 'bad id', 'codex')], ['missing', 'missing']);
 });

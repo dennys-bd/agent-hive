@@ -1,6 +1,7 @@
 // The contract every coding agent's runner meets (#924): a plain object of pure functions, one per agent in registry.ts. Shared code reads an
 // agent's flags, files and formats only through it; the agent's facts (label, command, subcommands, planLimits) stay in agents.ts, which the
 // page reads too.
+import type { Machine } from '../machine.js';
 import type { HookPayload, LaunchArg, RateLimits } from '../types.js';
 import type { TranscriptTurn } from '../usage.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
@@ -72,12 +73,12 @@ export interface AgentRunner {
   prepareHome(home: string, port: number): Promise<void>;
   mcpConfig(server: McpServer): string;
   lspPlugin(servers: LspServers): { path: string; content: string }[];
-  transcriptDir(cwd: string, env?: NodeJS.ProcessEnv): string | undefined; // #929: undefined when transcripts are not kept per cwd (Codex)
+  transcriptDir(machine: Machine, cwd: string): string | undefined; // #929: undefined when transcripts are not kept per cwd (Codex); #161: on the machine's home
   // #929: cwd: Claude keys transcripts by it, Codex ignores it; sessionId pins the file to that session (Codex owns nothing without one)
-  ownsTranscript(path: string, cwd: string, sessionId: string | undefined, env?: NodeJS.ProcessEnv): boolean;
-  sessionFiles(cwd: string, sessionId: string, env?: NodeJS.ProcessEnv): Promise<string[]>; // #929: what deleting the session's transcripts removes
-  readTurn(path: string, since?: number): Promise<TranscriptTurn>;
-  countMessages(path: string): Promise<number>;
+  ownsTranscript(machine: Machine, path: string, cwd: string, sessionId: string | undefined): boolean;
+  sessionFiles(machine: Machine, cwd: string, sessionId: string): Promise<string[]>; // #929: what deleting the session's transcripts removes
+  readTurn(machine: Machine, path: string, since?: number): Promise<TranscriptTurn>;
+  countMessages(machine: Machine, path: string): Promise<number>;
   planLimits(deps?: PlanLimitsDeps): Promise<RateLimits | undefined>;
   statusLimits(body: unknown, now: number): RateLimits | undefined;
 }
