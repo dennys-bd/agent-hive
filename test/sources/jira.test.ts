@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isNotConnected } from '../../src/source-errors.js';
+import { CreateRefusedError } from '../../src/source-create.js';
 import { adfToMarkdown } from '../../src/sources/adf.js';
+import { markdownToAdf } from '../../src/sources/adf-parse.js';
 import { JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import { createJiraSource, type JiraSourceConfig } from '../../src/sources/jira.js';
 import type { FilterRule } from '../../src/types.js';
@@ -191,4 +193,23 @@ test('fieldsOf with no credential rejects not connected before any call (#826)',
   const fake = fakeJira();
   await assert.rejects(adapter({ call: fake.call, cred: null }).fieldsOf?.('10001') ?? Promise.reject(new Error('no fieldsOf')), (err: unknown) => isNotConnected(err));
   assert.deepEqual(fake.sent, []);
+});
+
+test('comment posts the Markdown as ADF to the issue\'s comment endpoint (#832)', async () => {
+  const fake = fakeJira({ 'POST /issue/10001/comment': [{ id: '1' }] });
+  await adapter({ call: fake.call }).comment!('10001', '## Design\n\nStatic pages.');
+  assert.deepEqual(fake.sent, ['POST /issue/10001/comment']);
+  assert.deepEqual(fake.bodies, [{ body: markdownToAdf('## Design\n\nStatic pages.') }]);
+});
+
+test('createDepth answers 2, 1 and 0 from the stored level with no call, reads live when the row is missing, and refuses a level above the epic (#832)', async () => {
+  const typedIssue = (n: number, level: number) => issue(n, 'To Do', { issuetype: { name: 'T', hierarchyLevel: level } });
+  const db = await seeded([typedIssue(1, 1), typedIssue(2, 0), typedIssue(3, -1)]);
+  const fake = fakeJira({ 'GET /issue/10009': [read(typedIssue(9, 0))], 'GET /issue/10010': [read(typedIssue(10, 2))] });
+  const source = adapter({ call: fake.call, db });
+  assert.deepEqual([await source.createDepth!('10001'), await source.createDepth!('10002'), await source.createDepth!('10003')], [2, 1, 0]);
+  assert.deepEqual(fake.sent, [], 'the stored level answers');
+  assert.equal(await source.createDepth!('10009'), 1);
+  await assert.rejects(source.createDepth!('10010'), (err: unknown) => err instanceof CreateRefusedError && err.message === 'ABC-10 is at hierarchy level 2: the Hive creates nothing under it');
+  assert.deepEqual(fake.sent, ['GET /issue/10009', 'GET /issue/10010']);
 });

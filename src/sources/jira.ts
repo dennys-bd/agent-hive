@@ -4,14 +4,15 @@ import type { ReadModel } from '../read-model/db.js';
 import { SourceNotConnectedError } from '../source-errors.js';
 import type { Citation } from '../tasks.js';
 import type { FieldValue, FieldWrite, ItemAction, ItemField, ProjectView, ReadOptions, Source, SourceItem, SourceItemRead, TaskComment } from '../types.js';
+import { markdownToAdf } from './adf-parse.js';
 import { archiveIssue, deleteIssue, subtaskIds } from './jira-actions.js';
-import { createJiraIssue, readJiraCreateOptions } from './jira-create.js';
+import { createJiraIssue, jiraCreateDepth, readJiraCreateOptions } from './jira-create.js';
 import { JiraNotFoundError } from './jira-fetch.js';
 import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
 import { type JiraItemRows, jiraItemOf } from './jira-item.js';
 import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
 import { jiraProject } from './jira-project.js';
-import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type JiraCall, type JiraIssueRead, postComment, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
 import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, NO_CATEGORIES, relate, type RelationsContext, storedCategories } from './jira-relations.js';
 import { reconcileProject, syncProject, writeIssue, writeListing } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
@@ -131,6 +132,14 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     if (db !== undefined) db.transaction(() => writeListing(db, rowsOf(cred), source.project));
   }
 
+  // #832: the stored row's level when the sync has it, so the check before a decomposition's write sends nothing; else one live read
+  async function createDepth(itemId: string): Promise<number> {
+    const cred = await account();
+    const row = db?.items.items(rowsOf(cred), [itemId])[0];
+    const level = row?.item.data.hierarchyLevel;
+    return jiraCreateDepth(call, itemId, row !== undefined && typeof level === 'number' ? { key: row.item.key, level } : undefined);
+  }
+
   // The key the comment links need: the stored row's, else one live read, since the adapter is handed the issue id
   async function keyOf(cred: JiraCredential, itemId: string): Promise<string> {
     const row = db?.items.items(rowsOf(cred), [itemId])[0];
@@ -206,6 +215,8 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField,
     create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
     createOptions: () => readJiraCreateOptions(call, source.project),
+    comment: (itemId, body) => postComment(call, itemId, markdownToAdf(body)), // #832: Markdown in, ADF at the adapter, as create's body
+    createDepth,
     relate: async (itemId, change) => relate(relations(await account()), itemId, change),
     findBlockers: (_itemId, text) => findBlockers({ call, project: source.project }, text), // the search is the project's, whatever the item
     linkTypes: () => readLinkTypes(call),

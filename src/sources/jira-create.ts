@@ -12,6 +12,7 @@ type CreateOptions = Awaited<ReturnType<NonNullable<Source['createOptions']>>>;
 
 const HTTP_BAD_REQUEST = 400;
 const SUBTASK_LEVEL = -1; // Jira's hierarchyLevel: -1 a subtask, 0 a standard issue, 1 an epic
+const EPIC_LEVEL = 1;
 const WHITESPACE = /\s/;
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -22,6 +23,22 @@ export interface JiraCreateDeps {
 }
 
 interface Parent { id: string; key: string; level: number }
+
+/** The levels of issues an issue of Jira's hierarchy `level` takes under it (#832): 2 under an epic, 1 under a standard issue, 0 under a
+ * subtask; undefined above the epic (an Advanced Roadmaps level), which 6.5 leaves out of the tree too. */
+export const depthUnder = (level: number): number | undefined => (level >= SUBTASK_LEVEL && level <= EPIC_LEVEL ? level + 1 : undefined);
+
+// One rule for the create and the decomposition's depth check (#832), so the two never disagree on what goes under a parent
+function depthOf(parent: Parent): number {
+  const depth = depthUnder(parent.level);
+  if (depth === undefined) throw new CreateRefusedError(`${parent.key} is at hierarchy level ${parent.level}: the Hive creates nothing under it`);
+  return depth;
+}
+
+/** Source.createDepth (#832): from the stored level when the adapter has the row, else read live as a create's parent is. */
+export async function jiraCreateDepth(call: JiraCall, id: string, stored?: { key: string; level: number }): Promise<number> {
+  return depthOf(stored === undefined ? await readParent(call, id) : { id, ...stored });
+}
 
 // Jira has no "off the Project", and answers 400 for a label with a space: both refused before any call
 function columnOf(fields: CreateFields): string {
@@ -46,7 +63,7 @@ async function readParent(call: JiraCall, id: string): Promise<Parent> {
 
 // The type asked for, else the source's own for where the issue goes; checked against the project's types and one level under the parent
 function typeFor(types: readonly JiraIssueType[], fields: CreateFields, source: JiraCreateDeps['source'], parent: Parent | undefined): JiraIssueType {
-  if (parent?.level === SUBTASK_LEVEL) throw new CreateRefusedError(`${parent.key} is a subtask: nothing can be created under it`);
+  if (parent !== undefined && depthOf(parent) === 0) throw new CreateRefusedError(`${parent.key} is a subtask: nothing can be created under it`);
   const expected = parent === undefined ? undefined : parent.level - 1;
   const name = fields.issueType ?? (expected === SUBTASK_LEVEL ? source.subtaskType : source.issueType);
   const type = types.find((t) => t.name === name);
