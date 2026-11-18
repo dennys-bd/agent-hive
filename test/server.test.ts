@@ -8,7 +8,7 @@ import { WebSocket } from 'ws';
 import { createSources } from '../src/source.js';
 import { parseConfig } from '../src/config.js';
 import { renderMcpConfig } from '../src/agents/claude-home.js';
-import { PROTOCOL_DIR } from '../src/hooks-settings.js';
+import { PROMPTS_DIR, PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { type Logger, shortId } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { pluginRenderPath } from '../src/plugin-render.js';
@@ -30,10 +30,11 @@ import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { renderPrompt } from '../src/spawn.js';
 import { mergeBasePrompt } from '../src/merge-prompt.js';
 import { worktreePath } from '../src/worktree.js';
+import type { RunSpec } from '../src/machine.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceItemRead, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
+import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, fakeMachine, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
@@ -315,7 +316,7 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
       command: 'claude',
       argv: [
         ['--mcp-config', join(home, 'prompts', `${worker.runId}.mcp.json`)], ['--settings', join(home, 'hooks.json')], ['--plugin-dir', pluginRenderPath(home, WORKSPACE)],
-        ['--append-system-prompt-file', join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md')], // a stage run is told how to end it (#167), its workspace's memory under it (#797)
+        ['--append-system-prompt-file', join(home, PROMPTS_DIR, `${worker.runId}.protocol.md`)], // a stage run is told how to end it (#167), its workspace's memory under it (#797); #159: the machine's own copy
         '--session-id', work0(server)!.sessionId!, // #629: the activity's
       ],
     },
@@ -328,6 +329,20 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
   assert.match(prompt, /^Task #1: from Ready/, 'the command line reads the prompt from this file');
   assert.equal(prompt, renderPrompt(STAGES[0].prompt ?? '', task0(server).item), 'the rendered prompt and nothing after it: the protocol has its own file (#167)');
   assert.ok(!prompt.includes('curl') && !prompt.includes(worker.runId!), 'no curl and no worker id in the prompt: the id travels in the MCP config (#99)');
+});
+
+test('a stage run hands its machine a RunSpec with the prompt text, the protocol text and the agent inputs, and no host path (#159)', async (t) => {
+  const specs: RunSpec[] = [];
+  const machine = fakeMachine({ exec: noGit, pty: { spawn: (spec) => { specs.push(spec); return { started: Promise.resolve(), kill: async () => undefined }; } } });
+  const { home, repo, server } = await start(t, BODY, undefined, {}, { machines: { local: machine, for: () => machine } });
+  const slug = 'hive-1-from-ready';
+  assert.equal(specs.length, 1);
+  const [spec] = specs;
+  assert.deepEqual([spec.ptyId, spec.slug, spec.cwd], [worker0(server).runId, slug, join(repo, '.hive', 'worktrees', slug)]);
+  assert.match(spec.prompt?.text ?? '', /^Task #1: from Ready/);
+  assert.equal(spec.prompt?.name, slug);
+  assert.equal(spec.protocol, STAGE_PROTOCOL, 'the text, read on the host; the machine writes its own file');
+  assert.deepEqual([spec.agent?.id, spec.agent?.run.pluginDir, spec.agent?.run.session?.id], ['claude', pluginRenderPath(home, WORKSPACE), work0(server)?.sessionId]);
 });
 
 test('a spawn creates the task worktree before the worker exists and launches it there: the runner only ever gets a cwd', async (t) => {
@@ -2037,7 +2052,9 @@ test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a
   const { launch } = workers[1];
   assert.deepEqual([launch.slug, launch.cwd, launch.promptPath, plainArgs(launch), launchFlag(launch, '--mcp-config')],
     ['hive-1-from-ready', worktree, undefined, ['--session-id', first.sessionId], join(home, 'prompts', `${first.runId}.mcp.json`)]);
-  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'a free session on a task is told the session protocol (#167)');
+  const sessionProtocol = join(home, PROMPTS_DIR, `${first.runId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), sessionProtocol);
+  assert.equal(await readFile(sessionProtocol, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'utf8'), 'a free session on a task is told the session protocol (#167)');
   assert.equal(work0(server)?.workerId, undefined, 'task.workerId stays the automatic worker\'s');
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
   const live = server.getState()!.workers;
@@ -2470,7 +2487,9 @@ test('POST /activities/:id/continue resumes the stopped stage\'s latest session 
   await waitFor(() => work0(server)?.stopped === true);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/continue`)), { ok: true });
   assert.deepEqual(plainArgs(workers[1].launch), ['--resume', session]);
-  assert.equal(launchFlag(workers[1].launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), 'Continue is a stage run: the stage protocol (#167)');
+  const stageProtocol = join(home, PROMPTS_DIR, `${workers[1].launch.ptyId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.equal(launchFlag(workers[1].launch, '--append-system-prompt-file'), stageProtocol);
+  assert.equal(await readFile(stageProtocol, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), 'utf8'), 'Continue is a stage run: the stage protocol (#167)');
   assert.equal(await readFile(workers[1].launch.promptPath!, 'utf8'), CONTINUE_PROMPT);
 });
 

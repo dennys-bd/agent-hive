@@ -6,7 +6,7 @@ import { sessionsOf } from '../src/tasks.js';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { workspaceProtocolPaths } from '../src/hooks-settings.js';
+import { PROMPTS_DIR, workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { LOCAL_PROTOCOL } from '../src/protocol.js';
 import { createServer, type HiveServer, killStrays } from '../src/server.js';
 import type { AgentId, Exec, OpenResult, SettingsBody } from '../src/types.js';
@@ -126,7 +126,9 @@ test('a new local claude session runs claude in the workspace\'s checkout with i
   const { ptyId, sessionId } = localWorker(server);
   const { launch } = workers[0];
   const protocol = workspaceProtocolPaths(home, WORKSPACE).local;
-  assert.deepEqual([launch.slug, launch.cwd, launch.terminal, launch.promptPath, launchFlag(launch, '--append-system-prompt-file')], ['workspace', repo, undefined, undefined, protocol], 'its workspace\'s local protocol (#256)');
+  const told = join(home, PROMPTS_DIR, `${ptyId}.protocol.md`); // #159: the machine's copy of the protocol
+  assert.deepEqual([launch.slug, launch.cwd, launch.terminal, launch.promptPath, launchFlag(launch, '--append-system-prompt-file')], ['workspace', repo, undefined, undefined, told]);
+  assert.equal(await readFile(told, 'utf8'), await readFile(protocol, 'utf8'), 'its workspace\'s local protocol (#256)');
   assert.equal(await readFile(protocol, 'utf8'), LOCAL_PROTOCOL, 'no lesson yet: the bare local protocol');
   assert.ok('hive' in (JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')) as { mcpServers: object }).mcpServers, 'and the Hive\'s tools (#256)');
   assert.ok(launchFlag(launch, '--mcp-config')?.endsWith(`${ptyId}.mcp.json`), 'the worker id in claude\'s argv');

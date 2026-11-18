@@ -1,29 +1,50 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { Machine, RunSpec } from '../src/machine.js';
 import { createPtyPool } from '../src/ptys.js';
-import { fakeSpawn, type FakeSpawnOptions, LAUNCH } from './fakes.js';
+import { fakeMachine, fakeSpawn, type FakeSpawnOptions, type FakeWorker, LAUNCH } from './fakes.js';
 
 const noop = (): void => {};
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-function started(ptyId = 'W1', options: FakeSpawnOptions = {}) {
+const SPEC: RunSpec = { ptyId: 'W1', slug: 'hive-1-task', cwd: '/repo/.hive/worktrees/hive-1-task' };
+
+// A machine whose pty.spawn is fakeSpawn's: each spec it was handed, in order, and the workers to drive
+function machineOver(options: FakeSpawnOptions = {}): { machine: Machine; specs: RunSpec[]; workers: FakeWorker[] } {
   const { spawn, workers } = fakeSpawn(options);
-  const pool = createPtyPool(spawn);
+  const specs: RunSpec[] = [];
+  const machine = fakeMachine({ pty: { spawn: (spec, handlers) => { specs.push(spec); return spawn({ ...LAUNCH, ptyId: spec.ptyId }, handlers); } } });
+  return { machine, specs, workers };
+}
+
+function started(ptyId = 'W1', options: FakeSpawnOptions = {}) {
+  const { machine, workers } = machineOver(options);
+  const pool = createPtyPool();
   const exits: string[] = [];
   const errors: string[] = [];
   const failures: string[] = [];
   pool.start({
-    ptyId, launch: { ...LAUNCH, ptyId },
+    ptyId, spec: { ...SPEC, ptyId }, machine,
     onExit: () => exits.push(ptyId), onError: (message) => errors.push(message), onSpawnFailed: (message) => failures.push(message),
   });
-  return { pool, worker: workers[0], workers, exits, errors, failures };
+  return { pool, machine, worker: workers[0], workers, exits, errors, failures };
 }
 
-test('start hands the launch to the spawner and registers the worker', () => {
-  const { worker, pool } = started();
-  assert.deepEqual(worker.launch, LAUNCH);
-  assert.equal(pool.has('W1'), true);
-  assert.equal(pool.has('W2'), false);
+test('start hands the spec to its machine\'s pty.spawn and registers the run (#159)', () => {
+  const { machine, specs } = machineOver();
+  const pool = createPtyPool();
+  pool.start({ ptyId: 'W1', spec: SPEC, machine, onExit: noop, onError: noop, onSpawnFailed: noop });
+  assert.deepEqual(specs, [SPEC]);
+  assert.deepEqual([pool.has('W1'), pool.has('W2')], [true, false]);
+});
+
+test('a machine whose spawn fails frees the entry and reports onSpawnFailed with its message (#159)', async () => {
+  const { machine } = machineOver({ startError: 'machine: no such shell' });
+  const pool = createPtyPool();
+  const failures: string[] = [];
+  pool.start({ ptyId: 'W1', spec: SPEC, machine, onExit: noop, onError: noop, onSpawnFailed: (message) => failures.push(message) });
+  await tick();
+  assert.deepEqual([failures, pool.has('W1')], [['machine: no such shell'], false]);
 });
 
 test('an error reported by the spawner reaches StartPty.onError as is; the worker stays registered', () => {
@@ -59,10 +80,10 @@ test('kill reaches the handle of a live worker and returns true; the entry stays
 });
 
 test('killAll sends kill to every live worker and skips the ones that already exited', async () => {
-  const { spawn, workers } = fakeSpawn();
-  const pool = createPtyPool(spawn);
+  const { machine, workers } = machineOver();
+  const pool = createPtyPool();
   for (const ptyId of ['W1', 'W2', 'W3']) {
-    pool.start({ ptyId, launch: { ...LAUNCH, ptyId }, onExit: noop, onError: noop, onSpawnFailed: noop });
+    pool.start({ ptyId, spec: { ...SPEC, ptyId }, machine, onExit: noop, onError: noop, onSpawnFailed: noop });
   }
   workers[0].handlers.onExit();
   await pool.killAll();
@@ -70,12 +91,13 @@ test('killAll sends kill to every live worker and skips the ones that already ex
 });
 
 test('a spawner that reports the exit before returning the handle leaves no entry behind', () => {
-  const pool = createPtyPool((_launch, handlers) => {
+  const machine = fakeMachine({ pty: { spawn: (_spec, handlers) => {
     handlers.onExit();
     return { started: Promise.resolve(), kill: async () => {} };
-  });
+  } } });
+  const pool = createPtyPool();
   const exits: string[] = [];
-  pool.start({ ptyId: 'W1', launch: LAUNCH, onExit: () => exits.push('W1'), onError: noop, onSpawnFailed: noop });
+  pool.start({ ptyId: 'W1', spec: SPEC, machine, onExit: () => exits.push('W1'), onError: noop, onSpawnFailed: noop });
   assert.deepEqual(exits, ['W1']);
   assert.equal(pool.has('W1'), false);
 });
@@ -106,9 +128,9 @@ test('started rejects for a worker id the pool never started (#249)', async () =
 });
 
 test('kill resolves only when the handle kill resolves; killAll waits for every kill', async () => {
-  const { spawn, workers } = fakeSpawn({ holdKills: true });
-  const pool = createPtyPool(spawn);
-  for (const ptyId of ['W1', 'W2']) pool.start({ ptyId, launch: { ...LAUNCH, ptyId }, onExit: noop, onError: noop, onSpawnFailed: noop });
+  const { machine, workers } = machineOver({ holdKills: true });
+  const pool = createPtyPool();
+  for (const ptyId of ['W1', 'W2']) pool.start({ ptyId, spec: { ...SPEC, ptyId }, machine, onExit: noop, onError: noop, onSpawnFailed: noop });
   let killed = false;
   const kill = pool.kill('W1').then((known) => { killed = true; return known; });
   await tick();
@@ -128,9 +150,9 @@ test('kill resolves only when the handle kill resolves; killAll waits for every 
 });
 
 test('a pty started again in the same id outlives the old one\'s late exit: only the entry that exits leaves (#696)', () => {
-  const { pool, workers, exits } = started('T1');
+  const { pool, machine, workers, exits } = started('T1');
   assert.equal(pool.exit('T1'), true, 'the old one reported gone (the trailer) while its pty still dies');
-  pool.start({ ptyId: 'T1', launch: { ...LAUNCH, ptyId: 'T1' }, onExit: () => exits.push('T1 again'), onError: noop, onSpawnFailed: noop });
+  pool.start({ ptyId: 'T1', spec: { ...SPEC, ptyId: 'T1' }, machine, onExit: () => exits.push('T1 again'), onError: noop, onSpawnFailed: noop });
   workers[0].handlers.onExit(); // the old pty's own exit, late
   assert.deepEqual([pool.has('T1'), exits], [true, ['T1']]);
   workers[1].handlers.onExit();
@@ -141,9 +163,10 @@ test('an old start\'s late spawn failure never drops the entry a later start in 
   let fail: (err: Error) => void = noop;
   const first = new Promise<void>((_resolve, reject) => { fail = reject; });
   const handles = [first, Promise.resolve()];
-  const pool = createPtyPool(() => ({ started: handles.shift() ?? Promise.resolve(), kill: async () => undefined }));
+  const machine = fakeMachine({ pty: { spawn: () => ({ started: handles.shift() ?? Promise.resolve(), kill: async () => undefined }) } });
+  const pool = createPtyPool();
   const failures: string[] = [];
-  const begin = (): void => pool.start({ ptyId: 'T1', launch: { ...LAUNCH, ptyId: 'T1' }, onExit: noop, onError: noop, onSpawnFailed: (m) => failures.push(m) });
+  const begin = (): void => pool.start({ ptyId: 'T1', spec: { ...SPEC, ptyId: 'T1' }, machine, onExit: noop, onError: noop, onSpawnFailed: (m) => failures.push(m) });
   begin();
   assert.equal(pool.exit('T1'), true);
   begin();

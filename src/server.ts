@@ -316,7 +316,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const launch = deps.launchPty ?? launchInternalPty;
   const spawnOptions = { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) };
-  const ptyPool = createPtyPool((ptyLaunch, handlers) => launch(ptyLaunch, handlers, spawnOptions));
+  const ptyPool = createPtyPool();
   // #798: every pty's end frees what it holds on the Command Semaphores, whatever started it: a run, a terminal, a commands stage's command
   // A terminal woken in the same id (#696) has a new entry by the time the old pty's late exit runs: that exit frees nothing of the new one's
   const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };
@@ -335,7 +335,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
