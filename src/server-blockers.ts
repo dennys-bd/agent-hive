@@ -3,10 +3,10 @@ import { ItemNotOnSourceError } from './field-values.js';
 import { blockerProblem, hiveCandidates } from './hive-blockers.js';
 import type { Logger } from './log.js';
 import { backoffAnswer, refusedInBackoff } from './server-project.js';
-import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './blocker-errors.js';
+import { BadBlockerRefError, BadRelationTypeError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './blocker-errors.js';
 import { answeredRateLimit, rateLimitAnswer, type ReportRetry } from './source-errors.js';
 import { HIVE_SOURCE, itemSource } from './tasks.js';
-import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
+import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Relation, RelationChange, RelationWrite, Source, SourceConfig, SourceItem, State } from './types.js';
 
 /** The route's refusal codes (#56): stable keys the details panel maps to its copy (#57); `error` beside them is an English sentence. */
 export const BLOCKER_CODES = {
@@ -21,6 +21,7 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_BAD_GATEWAY = 502;
 const SEARCH_MAX = 200; // #57: the add row's text, as long as the longest ref may be; a longer one is no search
+const TYPE_MAX = 200; // a link type's name as a site names it; anything longer names none
 const REF_MAX = 200; // an owner (39), a repository (100), `/`, `#` and a number fit; anything longer names nothing
 
 const REFUSALS: Record<Refusal, { status: number; error: string }> = {
@@ -32,13 +33,14 @@ const REFUSALS: Record<Refusal, { status: number; error: string }> = {
   refused: { status: HTTP_BAD_GATEWAY, error: 'the source refused the relation' },
   badRequest: { status: HTTP_BAD_REQUEST, error: 'the body must be { action: add | remove, kind: blockedBy | blocking, ref }' },
 };
+const BAD_RELATION = 'the body must be { action: add | remove, type, direction: inward | outward, ref }';
 const NO_BLOCKERS: ItemBlockers = { blockedBy: [], blocking: [] };
 // The adapter's refusals that are the request's own, each to its code; anything else is the source's (502)
 const KNOWN: [new (...args: never[]) => Error, Refusal][] = [
   [BlockerRefNotFoundError, 'unknownRef'], [SelfBlockerError, 'self'], [ItemNotOnSourceError, 'unknownItem'],
 ];
 
-type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers' | 'linkTypes'>>;
+type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers' | 'linkTypes' | 'setRelation'>>;
 
 /** What the blocker route needs (#56): the live state and sources, the dispatch, the state after it, and the log a source's words go to. */
 export interface BlockerRouteDeps {
@@ -47,6 +49,7 @@ export interface BlockerRouteDeps {
   latest(): State | undefined;
   reportRetry: ReportRetry; // #812: a relation the source rate limited puts the source in backoff and answers 429
   log?: Logger;
+  blockingLinkTypes(source: string): readonly string[]; // #829: the source's blocking types, which link-types?relations=1 leaves out
 }
 type Live = NonNullable<ReturnType<BlockerRouteDeps['requireLive']>>;
 type RelateDeps = Pick<BlockerRouteDeps, 'dispatch' | 'latest' | 'log' | 'reportRetry'>;
@@ -55,6 +58,15 @@ type RelateDeps = Pick<BlockerRouteDeps, 'dispatch' | 'latest' | 'log' | 'report
 export interface RelateRefusal { status: number; error: string; code?: string; resetsAt?: string }
 /** One relation's outcome (#294): the item's blockers, or the refusal. */
 export type RelateOutcome = { blockers: ItemBlockers } | { refusal: RelateRefusal };
+
+/** #829: a source's blocking link types from comb.sources; a type with none (GitHub) or an unknown name has none. */
+export function blockingTypesOf(sources: readonly SourceConfig[], name: string): readonly string[] {
+  const entry = sources.find((s) => s.name === name);
+  return entry?.type === 'jira' ? entry.blockingLinkTypes : [];
+}
+
+/** One relation's outcome (#829): the item's relations, or the refusal. */
+type RelationOutcome = { relations: Relation[] } | { refusal: RelateRefusal };
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -65,9 +77,9 @@ function refuse(res: Response, refusal: Refusal): void {
 
 const refusalOf = (r: Refusal): { refusal: RelateRefusal } => ({ refusal: { status: REFUSALS[r].status, error: REFUSALS[r].error, code: BLOCKER_CODES[r] } });
 
-// The outcome as the route has always answered it: 200 with the blockers, or the refusal's status and body
-function answer(res: Response, outcome: RelateOutcome): void {
-  if ('blockers' in outcome) return void res.json(outcome);
+// The outcome as the routes answer it: the refusal's status and body, else 200 with the outcome
+function answer(res: Response, outcome: RelateOutcome | RelationOutcome): void {
+  if (!('refusal' in outcome)) return void res.json(outcome);
   const { status, ...body } = outcome.refusal;
   res.status(status).json(body);
 }
@@ -123,14 +135,55 @@ async function relateOnSource(deps: RelateDeps, current: Live, name: string, ite
     const limited = await rateLimitAnswer(err, name, deps.reportRetry); // #812: before the adapter's own refusals
     return limited === undefined ? failed(deps, itemId, err) : { refusal: limited };
   }
-  if (written.entry !== undefined) {
-    try {
-      await deps.dispatch({ type: 'itemRead', source: name, itemId, entry: written.entry });
-    } catch (err) {
-      deps.log?.error(`itemRead for ${itemId} failed: ${errorMessage(err)}`); // the write is done: the answer still goes out
-    }
-  }
+  await dispatchEntry(deps, name, itemId, written.entry);
   return { blockers: written.blockers };
+}
+
+// A written entry goes through itemRead, as a field write's; the write is done, so a failed dispatch only logs and the answer still goes out
+async function dispatchEntry(deps: RelateDeps, name: string, itemId: string, entry: SourceItem | undefined): Promise<void> {
+  if (entry === undefined) return;
+  try {
+    await deps.dispatch({ type: 'itemRead', source: name, itemId, entry });
+  } catch (err) {
+    deps.log?.error(`itemRead for ${itemId} failed: ${errorMessage(err)}`);
+  }
+}
+
+// #829: the body as a RelationChange; the type is compared exactly, as the site names it, so only the ref is trimmed
+function relationChangeOf(body: unknown): RelationChange | undefined {
+  const { action, type, direction, ref } = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+  if ((action !== 'add' && action !== 'remove') || (direction !== 'inward' && direction !== 'outward') || typeof type !== 'string' || typeof ref !== 'string') return undefined;
+  const trimmed = ref.trim();
+  if (type.trim() === '' || type.length > TYPE_MAX || trimmed === '' || trimmed.length > REF_MAX) return undefined;
+  return { action, type, direction, ref: trimmed };
+}
+
+// #829: relate's mapping, with the relations a failed re-read carries; a blocking type is the request's own fault, in the adapter's words
+function relationFailed(deps: RelateDeps, itemId: string, err: unknown): RelationOutcome {
+  if (err instanceof RelationRereadError) {
+    deps.log?.error(`relations of ${itemId} written, but their re-read failed: ${err.message}`);
+    return err.relations === undefined ? refusalOf('refused') : { relations: err.relations };
+  }
+  if (err instanceof BadRelationTypeError) return { refusal: { status: HTTP_BAD_REQUEST, error: err.message, code: BLOCKER_CODES.badRequest } };
+  const outcome = failed(deps, itemId, err);
+  return 'refusal' in outcome ? outcome : refusalOf('refused'); // failed answers blockers only for a re-read, handled above
+}
+
+// #829: a source item's relation through its setRelation, refused and dispatched as relateOnSource; the Hive's own tasks have none
+async function setRelationOnSource(deps: RelateDeps, current: Live, name: string, itemId: string, change: RelationChange): Promise<RelationOutcome> {
+  const setRelation = name === HIVE_SOURCE ? undefined : current.runtime.sources.get(name)?.setRelation;
+  if (setRelation === undefined || itemSource(itemId) !== name) return refusalOf('unknownItem');
+  const backoff = backoffAnswer(current.state, name);
+  if (backoff !== undefined) return { refusal: backoff };
+  let written: RelationWrite;
+  try {
+    written = await setRelation(itemId, change);
+  } catch (err) {
+    const limited = await rateLimitAnswer(err, name, deps.reportRetry);
+    return limited === undefined ? relationFailed(deps, itemId, err) : { refusal: limited };
+  }
+  await dispatchEntry(deps, name, itemId, written.entry);
+  return { relations: written.relations };
 }
 
 // The route's own choice: `hive` edits the Hive's tasks, any other name goes through that source's relate
@@ -183,7 +236,7 @@ async function findOnSource(deps: BlockerRouteDeps, res: Response, current: Live
   res.json({ candidates });
 }
 
-// #828: the site's link types for a saved source, read live. A source whose type has none answers [] with no call, and an unknown name 404.
+// #828: the site's link types for a saved source, read live; with relations=1 (#829), less the source's blockingLinkTypes. A source whose type has none answers [] with no call, and an unknown name 404.
 // Refused inside the backoff as the other source reads are; a rate limit is a 429 (#812); any other failure a 502 with the transport's words,
 // which never carry a body or a token (jira-fetch.ts)
 function registerLinkTypesRoute(app: Express, deps: BlockerRouteDeps): void {
@@ -196,7 +249,9 @@ function registerLinkTypesRoute(app: Express, deps: BlockerRouteDeps): void {
     if (source.linkTypes === undefined) return void res.json({ linkTypes: [] });
     if (refusedInBackoff(current.state, name, res)) return;
     try {
-      res.json({ linkTypes: await source.linkTypes() });
+      // #829: ?relations=1 answers the types the relations section may add: the site's less the source's blocking ones
+      const blocking = req.query.relations === '1' ? deps.blockingLinkTypes(name) : [];
+      res.json({ linkTypes: (await source.linkTypes()).filter((type) => !blocking.includes(type.name)) });
     } catch (err) {
       if (await answeredRateLimit(err, name, deps.reportRetry, res)) return;
       deps.log?.error(`link types of ${name} refused: ${errorMessage(err)}`);
@@ -208,7 +263,9 @@ function registerLinkTypesRoute(app: Express, deps: BlockerRouteDeps): void {
 /** POST /sources/:name/items/:itemId/blockers (#56): one relation added or removed, `{ action, kind, ref }`, answering the item's
  * `{ blockers }`. `hive` edits the Hive's own tasks (item `local:<n>`, ref a hive task's id); any other source goes through its relate.
  * GET …/blockers/candidates?q= (#57): the add row's suggestions, `{ candidates }`, from the hive tasks or the source's findBlockers.
- * GET /sources/:name/link-types (#828): the site's link types, `{ linkTypes }`. */
+ * GET /sources/:name/link-types (#828): the site's link types, `{ linkTypes }`.
+ * POST …/relations (#829): one non-blocking relation added or removed, `{ action, type, direction, ref }`, answering `{ relations }`; a source
+ * without setRelation and `hive` answer unknownItem. */
 export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): void {
   app.post('/sources/:name/items/:itemId/blockers', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
@@ -228,6 +285,13 @@ export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): voi
     const itemId = req.params.itemId as string;
     if (name === HIVE_SOURCE) return void res.json({ candidates: hiveCandidates(current.state.tasks, itemId, text) });
     await findOnSource(deps, res, current, name, itemId, text);
+  });
+  app.post('/sources/:name/items/:itemId/relations', async (req: Request, res: Response) => {
+    const current = deps.requireLive(res);
+    if (!current) return;
+    const change = relationChangeOf(req.body);
+    if (change === undefined) return void res.status(HTTP_BAD_REQUEST).json({ error: BAD_RELATION, code: BLOCKER_CODES.badRequest });
+    answer(res, await setRelationOnSource(deps, current, req.params.name as string, req.params.itemId as string, change));
   });
   registerLinkTypesRoute(app, deps);
 }

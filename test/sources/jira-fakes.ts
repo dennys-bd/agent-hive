@@ -75,3 +75,16 @@ type End = ReturnType<typeof end>;
 /** One issuelinks[] entry as the holding issue's read answers it: inwardIssue names an issue whose outward phrase points at this one. */
 export const inward = (linkId: string, other: End, type = BLOCKS) => ({ id: linkId, type, inwardIssue: other });
 export const outward = (linkId: string, other: End, type = BLOCKS) => ({ id: linkId, type, outwardIssue: other });
+
+export const GATES = { name: 'Gates', inward: 'is gated by', outward: 'gates' }; // no Jira default: a site's own type, as a custom one reads
+
+export interface PostedLink { type: { name: string }; inwardIssue: { key: string }; outwardIssue: { key: string } }
+// How Jira holds a posted link, as #828's plan reads Atlassian's example for POST /issueLink: the outward phrase runs from inwardIssue to
+// outwardIssue, so inwardIssue's own read lists the other end as its outwardIssue, and outwardIssue's read lists it as its inwardIssue
+export function heldBy({ inwardIssue, outwardIssue }: PostedLink, type = BLOCKS): Record<string, JiraIssue> {
+  const n = (key: string): number => Number(key.split('-')[1]);
+  return {
+    [inwardIssue.key]: issue(n(inwardIssue.key), 'To Do', { issuelinks: [outward('20001', end(n(outwardIssue.key)), type)] }),
+    [outwardIssue.key]: issue(n(outwardIssue.key), 'To Do', { issuelinks: [inward('20001', end(n(inwardIssue.key)), type)] }),
+  };
+}

@@ -4,15 +4,15 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { ItemNotOnSourceError } from '../src/field-values.js';
-import { canRelateItem, refsOf, registerBlockerRoutes, relateItem } from '../src/server-blockers.js';
-import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../src/blocker-errors.js';
-import type { BlockerChange, HiveEvent, ItemBlockers, Source, SourceItem, State, Task } from '../src/types.js';
+import { blockingTypesOf, canRelateItem, refsOf, registerBlockerRoutes, relateItem } from '../src/server-blockers.js';
+import { BadBlockerRefError, BadRelationTypeError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../src/blocker-errors.js';
+import type { BlockerChange, HiveEvent, ItemBlockers, Relation, RelationChange, Source, SourceConfig, SourceItem, State, Task } from '../src/types.js';
 import { namespaced } from '../src/source.js';
 import { SourceRateLimitError } from '../src/source-errors.js';
-import { fakeLog, JIRA_ENTRY } from './fakes.js';
-import { adapter, end, fakeJira, inward, issue, read } from './sources/jira-fakes.js';
+import { fakeLog, GITHUB_ENTRY, JIRA_ENTRY } from './fakes.js';
+import { adapter, end, fakeJira, inward, issue, outward, read, RELATES } from './sources/jira-fakes.js';
 
-type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers' | 'linkTypes'>>;
+type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers' | 'linkTypes' | 'setRelation'>>;
 const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z', at: '2026-10-06T12:00:00.000Z' };
 const hive = (n: number, blockers?: ItemBlockers): Task =>
   ({ item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `T${n}`, body: '', url: '', ...(blockers ? { blockers } : {}) }, stage: 'dev', boardColumn: '', created: true, auto: false });
@@ -23,7 +23,7 @@ const ENTRY: SourceItem = { item: GH_TASK.item, column: 'Ready' };
 
 interface Harness { base: string; dispatched: HiveEvent[]; lines: string[]; retries: string[]; state(): State }
 // The blocker route alone over these sources and tasks; blockerSet runs through the real reducer, every event lands in `dispatched`
-function routes(t: TestContext, sources: Record<string, RelateSource>, tasks: Task[] = [], extra: Partial<State> = {}): Harness {
+function routes(t: TestContext, sources: Record<string, RelateSource>, tasks: Task[] = [], extra: Partial<State> = {}, configs: SourceConfig[] = []): Harness {
   let state: State = { ...initialState(0), tasks, ...extra };
   const dispatched: HiveEvent[] = [];
   const retries: string[] = [];
@@ -36,6 +36,7 @@ function routes(t: TestContext, sources: Record<string, RelateSource>, tasks: Ta
     latest: () => state,
     reportRetry: async (source, until) => { retries.push(`${source} ${until}`); },
     log,
+    blockingLinkTypes: (name) => blockingTypesOf(configs, name),
   });
   const server = app.listen(0);
   t.after(() => server.close());
@@ -206,8 +207,8 @@ test('a source whose refs read ABC-12 gets ABC-12 at relate and its blockers bac
 });
 
 const TYPES = [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, { name: 'Relates', inward: 'relates to', outward: 'relates to' }];
-async function linkTypes(base: string, source: string): Promise<[number, unknown]> {
-  const res = await fetch(`${base}/sources/${source}/link-types`);
+async function linkTypes(base: string, source: string, query = ''): Promise<[number, unknown]> {
+  const res = await fetch(`${base}/sources/${source}/link-types${query}`);
   return [res.status, await res.json()];
 }
 
@@ -241,4 +242,71 @@ test('POST …/blockers on a jira task adds and removes a blocker by its key and
   assert.deepEqual(await post(h.base, 'tickets', 'tickets:10001', { action: 'remove', kind: 'blockedBy', ref: 'ABC-2' }), [200, { blockers: NONE }]);
   assert.deepEqual(fake.bodies, [{ type: { name: 'Blocks' }, inwardIssue: { key: 'ABC-2' }, outwardIssue: { key: 'ABC-1' } }]);
   assert.deepEqual(h.dispatched.map((e) => [e.type, 'itemId' in e && e.itemId]), [['itemRead', 'tickets:10001'], ['itemRead', 'tickets:10001']]);
+});
+
+async function postRelation(base: string, source: string, itemId: string, body: unknown): Promise<[number, unknown]> {
+  const res = await fetch(`${base}/sources/${source}/items/${encodeURIComponent(itemId)}/relations`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return [res.status, await res.json()];
+}
+const relAdd = (ref: string): RelationChange => ({ action: 'add', type: 'Relates', direction: 'outward', ref });
+const TWO_RELATES: Relation = { id: 'ABC-2', title: 'Issue 2', state: 'open', type: 'Relates', direction: 'outward', phrase: 'relates to' };
+
+test('POST …/relations on a jira task adds and removes a relation by its key and answers { relations }, dispatching each listed entry under the listed ids (#829)', async (t) => {
+  const linked = read(issue(1, 'To Do', { issuelinks: [outward('20001', end(2), RELATES)] }));
+  const fake = fakeJira({
+    'GET /issue/10001': [read(issue(1, 'To Do')), linked, linked, read(issue(1, 'To Do'))],
+    'GET /issue/ABC-2': [read(issue(2, 'To Do')), read(issue(2, 'To Do'))],
+    'POST /issueLink': [undefined], 'DELETE /issueLink/20001': [undefined],
+  });
+  const h = routes(t, { tickets: namespaced(JIRA_ENTRY, adapter({ call: fake.call })) });
+  assert.deepEqual(await postRelation(h.base, 'tickets', 'tickets:10001', relAdd('ABC-2')), [200, { relations: [TWO_RELATES] }]);
+  assert.deepEqual(await postRelation(h.base, 'tickets', 'tickets:10001', { ...relAdd('ABC-2'), action: 'remove' }), [200, { relations: [] }]);
+  assert.deepEqual(h.dispatched.map((e) => [e.type, e.type === 'itemRead' && e.entry?.item.itemId]), [['itemRead', 'tickets:10001'], ['itemRead', 'tickets:10001']]);
+});
+
+test('POST …/relations refuses with a code: a github source, hive and another source\'s item are unknownItem; a bad body and a blocking type badRequest; the source\'s words stay in the log (#829)', async (t) => {
+  const thrown: Record<string, Error> = {
+    blocks: new BadRelationTypeError('Blocks'), gone: new BlockerRefNotFoundError('ABC-9'), self: new SelfBlockerError(), raw: new Error('jira api: HTTP 400'),
+  };
+  const setRelation: NonNullable<RelateSource['setRelation']> = async (_itemId, change) => { throw thrown[change.ref] ?? new Error(`no answer for ${change.ref}`); };
+  const h = routes(t, { tickets: { setRelation }, work: { relate: async () => ({ blockers: NONE }) } }, [hive(1), hive(2)]);
+  const code = async (source: string, itemId: string, body: unknown) => codeOf(await postRelation(h.base, source, itemId, body));
+  assert.deepEqual(await code('work', 'work:PVTI_1', relAdd('ABC-2')), [404, 'blockers.unknownItem'], 'a github source has no setRelation');
+  assert.deepEqual(await code('hive', 'local:1', relAdd('HIVE-2')), [404, 'blockers.unknownItem'], 'hive tasks have no relations');
+  assert.deepEqual(await code('tickets', 'work:PVTI_1', relAdd('ABC-2')), [404, 'blockers.unknownItem'], 'another source\'s item');
+  const bad = [
+    { ...relAdd('ABC-2'), action: 'link' }, { ...relAdd('ABC-2'), type: ' ' }, { ...relAdd('ABC-2'), type: 'x'.repeat(201) },
+    { ...relAdd('ABC-2'), direction: 'both' }, relAdd(' '), { action: 'add', kind: 'blockedBy', ref: 'ABC-2' },
+  ];
+  for (const body of bad) assert.deepEqual(await code('tickets', 'tickets:10001', body), [400, 'blockers.badRequest'], JSON.stringify(body).slice(0, 60));
+  assert.deepEqual(await postRelation(h.base, 'tickets', 'tickets:10001', relAdd('blocks')),
+    [400, { error: '"Blocks" is a blocking link type: the blockers section edits it', code: 'blockers.badRequest' }]);
+  assert.deepEqual(await code('tickets', 'tickets:10001', relAdd('gone')), [404, 'blockers.unknownRef']);
+  assert.deepEqual(await code('tickets', 'tickets:10001', relAdd('self')), [400, 'blockers.self']);
+  const [status, body] = await postRelation(h.base, 'tickets', 'tickets:10001', relAdd('raw'));
+  assert.deepEqual([status, (body as { code?: unknown }).code], [502, 'blockers.refused']);
+  assert.equal(JSON.stringify(body).includes('HTTP 400'), false, 'Jira\'s words stay out of the answer');
+  assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('jira api: HTTP 400')), 'and go to the log');
+  assert.deepEqual(h.dispatched, []);
+});
+
+test('a relation written whose re-read failed answers 200 with the relations read, or 502 refused when none were read (#829)', async (t) => {
+  const h = routes(t, {
+    read: { setRelation: async () => { throw new RelationRereadError('timeout', undefined, [TWO_RELATES]); } },
+    none: { setRelation: async () => { throw new RelationRereadError('timeout'); } },
+  });
+  assert.deepEqual(await postRelation(h.base, 'read', 'read:1', relAdd('ABC-2')), [200, { relations: [TWO_RELATES] }]);
+  assert.deepEqual(codeOf(await postRelation(h.base, 'none', 'none:1', relAdd('ABC-2'))), [502, 'blockers.refused']);
+  assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('relations of read:1 written')));
+});
+
+test('blockingTypesOf reads a jira entry\'s blocking types and none for a github or unknown one (#829)', () => {
+  assert.deepEqual([blockingTypesOf([JIRA_ENTRY, GITHUB_ENTRY], JIRA_ENTRY.name), blockingTypesOf([JIRA_ENTRY, GITHUB_ENTRY], GITHUB_ENTRY.name), blockingTypesOf([], JIRA_ENTRY.name)], [['Blocks'], [], []]);
+});
+
+test('GET …/link-types?relations=1 leaves out the source\'s blocking types; without the flag it answers them all (#829)', async (t) => {
+  const tickets = namespaced(JIRA_ENTRY, adapter({ call: fakeJira({ 'GET /issueLinkType': [{ issueLinkTypes: TYPES }, { issueLinkTypes: TYPES }] }).call }));
+  const h = routes(t, { tickets }, [], {}, [JIRA_ENTRY]);
+  assert.deepEqual(await linkTypes(h.base, 'tickets', '?relations=1'), [200, { linkTypes: [TYPES[1]] }]);
+  assert.deepEqual(await linkTypes(h.base, 'tickets'), [200, { linkTypes: TYPES }]);
 });

@@ -75,7 +75,7 @@ import { registerDecompositionRoutes } from './server-decomposition.js';
 import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
-import { canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
+import { blockingTypesOf, canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerNestedRoute } from './server-nested.js';
 import { registerRepoRoutes } from './server-repos.js';
@@ -1373,7 +1373,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     await poll();
     res.json({ ok: true });
   });
-  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log, reportRetry }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead; GET /sources/:name/link-types (#828)
+  registerBlockerRoutes(app, {
+    requireLive, dispatch, latest: () => live?.state, log, reportRetry,
+    blockingLinkTypes: (name) => blockingTypesOf(live?.runtime.config.comb.sources ?? [], name),
+  }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead; GET /sources/:name/link-types (#828); POST …/relations (#829)
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
