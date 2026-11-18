@@ -69,8 +69,9 @@ const CLAUDE_RESUMES = ['-r', '--resume', '-c', '--continue', '--session-id'];
 const CLAUDE_ID_FLAGS = ['-r', '--resume', '--session-id'];
 const flagOf = (arg: string): string => (arg.startsWith('--') ? arg.split('=')[0] : arg);
 
-// The uuid a value flag of Claude's names, `--flag <id>` or `--flag=<id>`: only a uuid can be a session id (namedSession); the last one wins
-function claudeId(args: readonly string[], flags: readonly string[] = CLAUDE_ID_FLAGS): string | undefined {
+// The uuid a value flag names, `--flag <id>` or `--flag=<id>`: only a uuid can be a session id (namedSession); the last one wins. Claude's
+// and Copilot's flags share the shape (#876)
+function flagId(args: readonly string[], flags: readonly string[]): string | undefined {
   return args.flatMap((arg, i) => {
     const flag = flagOf(arg);
     const value = flag === arg ? args[i + 1] : arg.slice(flag.length + 1);
@@ -83,15 +84,21 @@ function claudeId(args: readonly string[], flags: readonly string[] = CLAUDE_ID_
 function claudeResume(args: readonly string[]): ShimResume {
   const flags = args.map(flagOf);
   if (!flags.some((flag) => CLAUDE_RESUMES.includes(flag))) return NEW;
-  if (!flags.includes('--fork-session')) return resumed(claudeId(args));
-  return flags.includes('--session-id') ? resumed(claudeId(args, ['--session-id'])) : NEW;
+  if (!flags.includes('--fork-session')) return resumed(flagId(args, CLAUDE_ID_FLAGS));
+  return flags.includes('--session-id') ? resumed(flagId(args, ['--session-id'])) : NEW;
 }
 
 // Codex: the resume subcommand, first as the shim reads a subcommand; fork stays a passthrough (#932)
 const codexResume = (args: readonly string[]): ShimResume => (args[0] === 'resume' ? resumed(args.slice(1).find((arg) => isUuid(arg))) : NEW);
 
-// One reader per agent: a new agent fails to compile until it has one. Copilot's reads every argv as a new conversation until #608's node 4
-const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume, copilot: () => NEW };
+// Copilot (#876): --session-id is the run's id whether it continues a session or starts one (spike §3); --continue and the picker name none
+const COPILOT_RESUMES = ['--resume', '--continue', '--session-id'];
+const COPILOT_ID_FLAGS = ['--resume', '--session-id'];
+const copilotResume = (args: readonly string[]): ShimResume =>
+  (args.some((arg) => COPILOT_RESUMES.includes(flagOf(arg))) ? resumed(flagId(args, COPILOT_ID_FLAGS)) : NEW);
+
+// One reader per agent: a new agent fails to compile until it has one
+const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume, copilot: copilotResume };
 
 /** The resume the args the shim posted ask for (#347). The shim parses nothing (sh cannot parse an argv safely): it posts every arg whole. */
 export const resumeOf = (agent: AgentId, args: readonly string[]): ShimResume => RESUME_READERS[agent](args);

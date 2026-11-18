@@ -275,3 +275,23 @@ test('resumeOf reads a new conversation or a resume, with the id only when the a
   ];
   for (const [agent, args, expected] of cases) assert.deepEqual(resumeOf(agent, args), expected, `${agent} ${args.join(' ')}`);
 });
+
+test('resumeOf reads copilot\'s --resume and --session-id with a uuid as that id, --continue and any other --resume as a resume with no id, the rest as new (#876)', () => {
+  const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const other = '3f2504e0-4f89-11d3-9a0c-0305e82c3309';
+  const NEW: ShimResume = { kind: 'new' };
+  const cases: [string[], ShimResume][] = [
+    [[], NEW],
+    [['-i', 'a prompt'], NEW],
+    [['--resume', id], { kind: 'resume', sessionId: id }],
+    [[`--resume=${id}`], { kind: 'resume', sessionId: id }],
+    [['--session-id', id], { kind: 'resume', sessionId: id }], // an existing id continues it, a new one starts under it (spike §3)
+    [[`--session-id=${id}`], { kind: 'resume', sessionId: id }],
+    [['--resume'], { kind: 'resume' }], // the picker
+    [['--resume', 'abc1234'], { kind: 'resume' }], // a prefix the Hive does not resolve
+    [['--resume', '--model', 'x'], { kind: 'resume' }], // never --model as the id
+    [['--continue'], { kind: 'resume' }],
+    [['--resume', id, '--session-id', other], { kind: 'resume', sessionId: other }], // the last uuid wins, as Claude's
+  ];
+  for (const [args, expected] of cases) assert.deepEqual(resumeOf('copilot', args), expected, args.join(' '));
+});
