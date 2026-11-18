@@ -56,10 +56,11 @@ export const LOCAL_DISK: Pick<Machine, 'exec' | 'fs'> = localDisk(promisify(exec
 // #806: win32's env names ignore case; elsewhere PATH is PATH
 function infoOf(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, agents: readonly AgentAvailability[]): MachineInfo {
   const path = (platform === 'win32' ? envValue(env, 'PATH') : env.PATH) ?? '';
-  const { CLAUDE_CONFIG_DIR: claudeConfigDir, CODEX_HOME: codexHome } = env;
+  const { CLAUDE_CONFIG_DIR: claudeConfigDir, CODEX_HOME: codexHome, COPILOT_HOME: copilotHome } = env;
   return {
     platform, arch: process.arch, homedir: homedir(), tmpdir: tmpdir(), path, shell: posixShell().shell,
-    ...(claudeConfigDir === undefined ? {} : { claudeConfigDir }), ...(codexHome === undefined ? {} : { codexHome }), agents: [...agents],
+    ...(claudeConfigDir === undefined ? {} : { claudeConfigDir }), ...(codexHome === undefined ? {} : { codexHome }),
+    ...(copilotHome === undefined ? {} : { copilotHome }), agents: [...agents],
   };
 }
 
