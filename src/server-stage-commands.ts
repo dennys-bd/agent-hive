@@ -10,7 +10,7 @@ import { commandIn, type ResolvedCommand, resolveCommand } from './run-commands.
 import type { Runtime } from './server.js';
 import { taskBranch } from './task-runs.js';
 import { branchFor, slugFor } from './tasks.js';
-import type { Activity, Command, Effect, Exec, HiveEvent, StageCommands, Task } from './types.js';
+import type { Activity, Command, Effect, HiveEvent, StageCommands, Task } from './types.js';
 import { taskDir } from './worktree.js';
 
 // How a commands stage's command runs (#755), out of server-spawn.ts: in a pty of its own, launched as a command terminal is (ptyCommand's
@@ -19,8 +19,7 @@ import { taskDir } from './worktree.js';
 type StageCommandEffect = Extract<Effect, { type: 'stageCommand' }>;
 
 export interface StageCommandDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
-  exec: Exec; // #854: the remote read behind a fork's GH_REPO
+  machineFor: MachineFor; // #158: the activity's machine
   pool: Pick<PtyPool, 'start' | 'kill'>;
   ptys: Pick<PtyHost, 'has' | 'subscribe'>;
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
@@ -148,7 +147,7 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
     if (cwd === undefined) return;
     const command = commandIn(commands, workspace.name, names[at] ?? '');
     if (command === undefined) return skip(effect, workspace.name);
-    start(runtime, effect, command, cwd, await runEnv(deps.exec, workspace)); // #854: a fork's GH_REPO under the workspace's env
+    start(runtime, effect, command, cwd, await runEnv(deps.machineFor(activity), workspace)); // #854: a fork's GH_REPO under the workspace's env
   }
 
   return { run };

@@ -10,7 +10,7 @@ import { createStageCommandRunner, OUTPUT_MAX, OUTPUT_THROTTLE_MS, outputTail } 
 import type { Activity, Command, Effect, HiveEvent, SettingsBody, Stage, StageCommands, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { bodyFlows, AUTH, combConfig, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, plainArgs, SOURCE, tempHive, WORKSPACE } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, fakeMachine, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, plainArgs, SOURCE, tempHive, WORKSPACE } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // A commands stage's commands on the server (#755): the runner alone over fakes, then end to end through a server over fake ptys.
@@ -40,7 +40,7 @@ function harness(current: () => StageCommands | undefined = () => runAt(0), prep
   const live = new Set<string>();
   const h: Omit<Harness, 'run'> = { started: [], killed: [], events: [], prepared: [], appended: [], begun: [], data: new Map(), ends: new Map() };
   const runner = createStageCommandRunner({
-    exec: async () => ({ stdout: '' }),
+    machineFor: () => fakeMachine({ exec: async () => ({ stdout: '' }) }),
     pool: { start: (o) => { h.started.push(o); if (registered) live.add(o.ptyId); }, kill: async (ptyId) => { h.killed.push(ptyId); return true; } },
     ptys: { has: (ptyId) => live.has(ptyId), subscribe: (ptyId, onData, onExit) => { h.data.set(ptyId, onData); h.ends.set(ptyId, onExit); return undefined; } },
     consoleStore: { begin: (channel, _ptyId, header, group) => { h.begun.push({ channel, header, group }); }, append: (_ptyId, data) => { h.appended.push(data); }, end: () => undefined },

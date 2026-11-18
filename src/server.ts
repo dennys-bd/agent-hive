@@ -336,7 +336,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   const spawner = createRunSpawner({ pool, exec, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
-  const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
+  const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
   const evaluator = createEvaluateRunner({
     exec, agents, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
@@ -1391,7 +1391,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, exec)).some((r) => r.repository === repository),
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
-  registerForkRoutes(app, { requireLive, exec, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
+  registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
   registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held

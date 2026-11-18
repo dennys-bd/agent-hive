@@ -241,7 +241,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       const resolved = requireWorkspace(config, task);
       workspace = resolved.name;
       external = await externalMcp(config, resolved.name); // #333
-      env = await runEnv(exec, resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
+      env = await runEnv(machineFor(activity), resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
       protocolText = await readFile(protocolPath, 'utf8'); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
@@ -293,7 +293,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && inFlow(task) && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
-    const env = await runEnv(exec, place.workspace); // #854
+    const env = await runEnv(machineFor(effect.activity), place.workspace); // #854
     const external = await externalMcp(config, place.workspace.name); // #333
     const first = copy?.notice ?? prompt;
     const runner = runners[agent];
@@ -358,7 +358,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       return;
     }
     const startDir = taskDir(workspace.path, activity);
-    const env = await runEnv(exec, workspace); // #854: a fork's GH_REPO, resolved once per launch
+    const env = await runEnv(machineFor(activity), workspace); // #854: a fork's GH_REPO, resolved once per launch
     const where = found ? { cwd: startDir, env } : await keptLaunch(machineFor(activity), terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({
       ptyId,
@@ -385,7 +385,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     pool.start({
       ptyId,
-      launch: { ptyId, slug: LOCAL_SLUG, port, terminal: true, ...sized(size), ...(await keptLaunch(machineFor({}), terminal, workspace.path, await runEnv(exec, workspace))) },
+      launch: { ptyId, slug: LOCAL_SLUG, port, terminal: true, ...sized(size), ...(await keptLaunch(machineFor({}), terminal, workspace.path, await runEnv(machineFor({}), workspace))) },
       ...handlers(ptyId, LOCAL_SLUG),
     });
   }
