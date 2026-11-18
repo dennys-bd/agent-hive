@@ -51,11 +51,14 @@ async function commitFiles(repo: string, worktree: string, git: Bases['git']): P
 }
 
 // deleted: the activity is gone, its record alone kept (#629); unresolved: the workspace configured by its tmpdir path, a symlink on macOS (#377)
+// Two repositories built a second apart must hash alike: the #160 test compares their answers, the commit's label included
+const FIXED_DATES = { GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
+
 async function startBases(t: TestContext, isDeleted = false, isUnresolved = false, isOnMachine = false): Promise<Bases> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo);
   const git = async (...args: string[]): Promise<string> =>
-    (await run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args])).stdout.trim();
+    (await run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args], { env: { ...process.env, ...FIXED_DATES } })).stdout.trim();
   const worktree = worktreePath(repo, SLUG);
   await commitFiles(repo, worktree, git);
   const base0 = { ...initialState(0), localCount: 1, tasks: [TASK] };
