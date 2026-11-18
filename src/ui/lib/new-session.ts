@@ -17,7 +17,7 @@ export function launchOf({ model, specializedAgent, args }: SessionPicks): Launc
 // What each runner puts a pick behind (agents/claude.ts, agents/codex.ts, agents/copilot.ts), mirrored here: the page never imports a runner. Codex has no
 // --agent: it gets the agent's text, so its line shows no flag
 const MODEL_FLAG: Record<AgentId, string> = { claude: '--model', codex: '-m', copilot: '--model' };
-const AGENT_FLAG: Partial<Record<AgentId, string>> = { claude: '--agent' };
+const AGENT_FLAG: Partial<Record<AgentId, string>> = { claude: '--agent', copilot: '--agent' };
 
 /** The summary's runs line (#257): the command, the global args, the session's, then the agent's flag and the model's, in the runner's order. */
 export function runsLine(picks: SessionPicks, globalArgs: readonly string[]): string {

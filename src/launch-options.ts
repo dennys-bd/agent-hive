@@ -71,7 +71,7 @@ export function launchOptions(codex: readonly LaunchOption[], agentArgs: Record<
   return {
     claude: { aliases: [...CLAUDE_ALIASES], versions: [...CLAUDE_VERSIONS], specializedAgents: agents, skills, args: [...agentArgs.claude] },
     codex: { aliases: [], versions: [...codex], specializedAgents: agents, skills, args: [...agentArgs.codex] },
-    copilot: { aliases: [], versions: [], specializedAgents: agents, skills, args: [...agentArgs.copilot] }, // #873: its picks are #608's node 4
+    copilot: { aliases: [], versions: [], specializedAgents: agents, skills, args: [...agentArgs.copilot] },
   };
 }
 
