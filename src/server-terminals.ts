@@ -1,4 +1,4 @@
-import type { MachineFor } from './machine.js';
+import type { Machine, MachineFor } from './machine.js';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
@@ -21,7 +21,7 @@ import { inFlow } from './tasks.js';
 import { strayAgents } from './shell-procs.js';
 import { capturedCwd, liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type AgentId, type Config, type Effect, type Exec, type HiveEvent, type SessionRef, type State, type Task, type Worker } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Config, type Effect, type HiveEvent, type SessionRef, type State, type Task, type Worker } from './types.js';
 
 // The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
 // shim's register, which captures an agent typed in it as a free session.
@@ -42,15 +42,13 @@ const UNKNOWN_AGENT_MESSAGE = `agent precisa ser um destes agentes: ${AGENT_IDS.
 const NO_WAKE_MESSAGE = 'o terminal não pode acordar: a atividade, a worktree ou o workspace não existe mais';
 
 export interface TerminalRouteDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
+  machineFor: MachineFor; // #158: the activity's machine
   requireLive(res: Response): { state: State; runtime: Runtime } | undefined;
   live(): { state: State; runtime: Runtime } | undefined; // the same, read with no answer written: after a dispatch, whose reply is the route's own
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, for a wake's spawn
   running(ptyId: string): boolean; // the pool's has: a terminal asleep in the state whose pty has not exited yet
   started(ptyId: string): Promise<void>; // the pool's: what a wake awaits before it answers the run, as /open does (#249)
   secret: string; // this boot's (#467): the captured session's MCP config carries it, as a free session's does
-  exec: Exec; // pgrep for the agents under a terminal's shell; tests inject a fake
-  pid(ptyId: string): number | undefined; // the pty host's
   home: string; // where the shim is, which the agents walk skips
   recordStart(runtime: Runtime, activity: Activity, task: Task, stage: string): Promise<void>; // #812: the spawner's, for a captured session
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
@@ -59,6 +57,12 @@ export interface TerminalRouteDeps {
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
+
+/** The machine a terminal's pty is on (#159): its activity's; a workspace's shell, on no task's activity, is on its workspace's, the local one. */
+export function terminalMachine(state: State | undefined, machineFor: MachineFor, terminalId: string): Machine {
+  const terminal = state?.terminals.find((t) => t.terminalId === terminalId);
+  return machineFor(state?.activities.find((a) => a.id === terminal?.activityId) ?? {});
+}
 
 // A terminal id is a randomUUID (state-store keeps no other shape): anything else is unknown before a lookup, a dispatch or a pid read
 function uuidParam(req: Request, res: Response, next: NextFunction): void {
@@ -209,7 +213,7 @@ function registerAgents(app: Express, deps: TerminalRouteDeps): void {
     if (!liveShell(current.state, terminalId)) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TERMINAL_MESSAGE });
     const captured = current.state.workers.flatMap((w) => (w.terminalId === terminalId && w.sessionId !== undefined ? [w.sessionId] : []));
     const shims = AGENT_IDS.map((id) => shimPath(deps.home, AGENTS[id])); // #932: every agent's shim, first on the terminal's PATH
-    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shims }, deps.exec, process.platform) });
+    res.json({ agents: await strayAgents(terminalMachine(current.state, deps.machineFor, terminalId), terminalId, { captured, shims }) });
   });
 }
 

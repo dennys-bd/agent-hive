@@ -1,4 +1,4 @@
-import type { MachineFor } from './machine.js';
+import type { Machine, MachineFor } from './machine.js';
 import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
@@ -64,7 +64,7 @@ export function taskProtocol(home: string, runtime: Pick<Runtime, 'config' | 'pr
 }
 
 export interface SpawnerDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
+  machineFor: MachineFor; // #158: the activity's machine
   pool: Pick<PtyPool, 'start'>;
   exec: Exec; // git for the worktree step; tests inject a fake
   log: Pick<Logger, 'info' | 'error'>;
@@ -157,7 +157,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, exec, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp } = deps;
+  const { pool, exec, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, secret, home, facts, lspDir, plugin, externalMcp, machineFor } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -330,9 +330,9 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir), its own history, and its ring:
   // written to its log as it ends, the old one replayed first after a sleep. Its env is the workspace's (#738) under its own HISTFILE, and
   // the shim dir goes first on the workspace's PATH when it sets one, so an agent typed there is still its shim's.
-  async function keptLaunch(terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<PtyLaunch, 'cwd' | 'env' | 'keep'>> {
+  async function keptLaunch(machine: Machine, terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<PtyLaunch, 'cwd' | 'env' | 'keep'>> {
     await ensureTerminalsDir(home);
-    const [cwd, seed] = await Promise.all([wakeDir(terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
+    const [cwd, seed] = await Promise.all([wakeDir(machine, terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
     const log = scrollbackPath(home, terminal.terminalId);
     const path = env.PATH ?? process.env.PATH ?? '';
     const own = terminalEnv(home, terminal.terminalId, path, { platform: process.platform, pwsh: windowsShell({ ...process.env, ...env }, process.platform) }); // #645: looked up on every launch
@@ -359,7 +359,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     const startDir = taskDir(workspace.path, activity);
     const env = await runEnv(exec, workspace); // #854: a fork's GH_REPO, resolved once per launch
-    const where = found ? { cwd: startDir, env } : await keptLaunch(terminal, startDir, env); // a command's run is never kept (#696)
+    const where = found ? { cwd: startDir, env } : await keptLaunch(machineFor(activity), terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({
       ptyId,
       launch: {
@@ -385,7 +385,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     pool.start({
       ptyId,
-      launch: { ptyId, slug: LOCAL_SLUG, port, terminal: true, ...sized(size), ...(await keptLaunch(terminal, workspace.path, await runEnv(exec, workspace))) },
+      launch: { ptyId, slug: LOCAL_SLUG, port, terminal: true, ...sized(size), ...(await keptLaunch(machineFor({}), terminal, workspace.path, await runEnv(exec, workspace))) },
       ...handlers(ptyId, LOCAL_SLUG),
     });
   }

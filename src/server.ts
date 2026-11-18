@@ -91,7 +91,7 @@ import { preloaderOf } from './server-pr-changes.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
 import { recordCheckpoint } from './server-checkpoints.js';
 import { registerRunRoutes, removeTaskTranscript } from './server-runs.js';
-import { registerTerminalRoutes } from './server-terminals.js';
+import { registerTerminalRoutes, terminalMachine } from './server-terminals.js';
 import { shellCwd } from './shell-procs.js';
 import { removeTerminalFiles, restoreScrollbacks } from './terminal-files.js';
 import { allowedHosts, attachPtySocket, type PtySocket } from './server-pty-socket.js';
@@ -627,7 +627,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         return;
       case 'readCwd': { // #696: the shell's cwd read before its kill, so the terminal wakes where it was; unreadable keeps the held one
         log.info(describeEffect(effect));
-        const cwd = await shellCwd(ptys.pid(effect.terminalId), exec, process.platform);
+        const cwd = await shellCwd(terminalMachine(live?.state, machineFor, effect.terminalId), effect.terminalId);
         await dispatch({ type: 'sleepTerminal', terminalId: effect.terminalId, ...(cwd === undefined ? {} : { cwd }) });
         return;
       }
@@ -1347,7 +1347,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // wake, forget (#696); the shim's register under /hooks/
   registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
