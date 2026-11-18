@@ -191,6 +191,7 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
 
   // #827: the native view from the store, under the account that reads it. Only handed with a store: without one the route answers 404.
   // fresh runs a round, then the reconcile: the round stores what changed in Jira, the reconcile drops what left the project
+  // ponytail: each fresh click pages every id of the project in the reconcile; skip it when the round changed nothing if large projects feel slow
   const project = db === undefined ? undefined : async (options?: ReadOptions): Promise<ProjectView> => {
     const cred = await account();
     const rows = rowsOf(cred);

@@ -57,7 +57,6 @@ function sortedRows(items: ProjectItem[], sort: ProjectSort | undefined, view: P
   return [...items].sort((a, b) => sign * compare(sortValue(a, sort.key, view), sortValue(b, sort.key, view)));
 }
 
-// The search (#756): the title or #number, case-insensitive
 // The search (#756, #827): the title, #<id> or the bare id, case-insensitive: proj-12 and 12 both find PROJ-12
 const matches = (item: ProjectItem, term: string): boolean => term === '' || item.title.toLowerCase().includes(term) || `#${item.id}`.toLowerCase().includes(term);
 
