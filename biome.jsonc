@@ -55,9 +55,6 @@
     // Pending: files a sibling node still has to move; each node deletes its own group
     {
       "includes": [
-        // 7.2 (#159): worktree, setup and spawn on the machine
-        "src/checkpoints.ts", "src/hooks-settings.ts", "src/restart.ts", "src/server-spawn.ts", "src/server-terminals.ts",
-        "src/shell-procs.ts", "src/worktree.ts", "src/worktree-setup.ts", "src/worktree-steps.ts", "src/worktree-teardown.ts",
         // 7.3 (#160): files, editor, diff, formatters and checkers on the machine
         "src/check-run.ts", "src/diff.ts", "src/format-run.ts", "src/formatter-detect.ts", "src/server-check.ts",
         "src/server-decomposition.ts", "src/server-design-frame.ts", "src/server-editor.ts", "src/server-file-base.ts",
