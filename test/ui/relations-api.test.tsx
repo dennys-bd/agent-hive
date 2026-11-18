@@ -36,3 +36,8 @@ test('groupByPhrase keeps each phrase\'s first-seen order and every relation und
     { type: 'Cloners', direction: 'inward', phrase: 'is cloned by' },
   ]);
 });
+
+test('groupByPhrase shows two identical links once, so their rows never share a key (#829)', () => {
+  expect(groupByPhrase([rel('ABC-2', 'relates to'), rel('ABC-2', 'relates to'), rel('ABC-3', 'relates to')]))
+    .toEqual([{ phrase: 'relates to', relations: [rel('ABC-2', 'relates to'), rel('ABC-3', 'relates to')] }]);
+});

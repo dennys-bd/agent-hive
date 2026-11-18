@@ -2,9 +2,12 @@ import type { LinkType, Relation, RelationChange } from '../../types.js';
 
 export interface RelationGroup { phrase: string; relations: Relation[] }
 /** The relations under each phrase as the site names it (#829), in the order of each phrase's first relation. No phrase or type is written
- * here, so a custom type groups with no change. */
+ * here, so a custom type groups with no change. Two identical links (made in Jira) show once: one × removes both, as the route deletes every
+ * match, and their rows would share a key. */
 export function groupByPhrase(relations: readonly Relation[]): RelationGroup[] {
-  return [...new Set(relations.map((r) => r.phrase))].map((phrase) => ({ phrase, relations: relations.filter((r) => r.phrase === phrase) }));
+  const keyOf = (r: Relation): string => `${r.type}:${r.direction}:${r.id}`;
+  const unique = relations.filter((r, i) => relations.findIndex((o) => keyOf(o) === keyOf(r)) === i);
+  return [...new Set(unique.map((r) => r.phrase))].map((phrase) => ({ phrase, relations: unique.filter((r) => r.phrase === phrase) }));
 }
 
 export interface RelationChoice { type: string; direction: RelationChange['direction']; phrase: string }

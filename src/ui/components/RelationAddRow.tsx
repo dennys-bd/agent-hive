@@ -18,7 +18,8 @@ export interface RelationAddRowProps {
 export function RelationAddRow({ source, itemId, selfId, relations, choices, isBusy, grammar, onAdd, onCancel }: RelationAddRowProps) {
   const [index, setIndex] = useState(0);
   const choice = choices[index];
-  const taken = relations.filter((r) => r.type === choice?.type && r.direction === choice.direction).map((r) => r.id);
+  // The same phrase counts too: a symmetric type (Relates) held inward reads as the outward choice, and adding it again would post a duplicate
+  const taken = relations.filter((r) => r.type === choice?.type && (r.direction === choice.direction || r.phrase === choice.phrase)).map((r) => r.id);
   return (
     <BlockerAddRow
       source={source} itemId={itemId} selfId={selfId} blockers={NONE} taken={taken} isBusy={isBusy} grammar={grammar}
