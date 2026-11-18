@@ -16,6 +16,7 @@ import { PLAN_LIMITS_INTERVAL_MS } from '../src/rate-limits.js';
 import { keepAwakeCommand, shutdownCommand } from '../src/platform-commands.js';
 import { HOUR_MS } from '../src/usage.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine } from './fake-machine.js';
 import { prStatesQuery } from '../src/pull-requests.js';
 import { createServer, type HiveServer, killStrays, type ServerDeps } from '../src/server.js';
 import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '../src/activities.js';
@@ -1681,7 +1682,7 @@ test('POST /activities/:id/delete follows the delete-activity scope (#236, #573)
   const worktree = worktreePath(repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const session = work0(server)!.sessionId!;
-  const dir = transcriptDir(worktree);
+  const dir = transcriptDir(fakeMachine(), worktree);
   await mkdir(join(dir, session), { recursive: true });
   for (const file of [`${session}.jsonl`, 'other-session-0001.jsonl']) await writeFile(join(dir, file), '{}\n');
   git.clear();
@@ -1717,8 +1718,8 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   await mkdir(worktree, { recursive: true });
   const kept = work0(server)!.sessionId!;
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: true });
-  await mkdir(transcriptDir(repo), { recursive: true });
-  await writeFile(join(transcriptDir(repo), `${kept}.jsonl`), '{}\n'); // a repo session's transcript sits in the main repo's dir (#208)
+  await mkdir(transcriptDir(fakeMachine(), repo), { recursive: true });
+  await writeFile(join(transcriptDir(fakeMachine(), repo), `${kept}.jsonl`), '{}\n'); // a repo session's transcript sits in the main repo's dir (#208)
   await server.dispatch({ type: 'setDeleteActivity', deleteActivity: { session: true, transcripts: true, nonAutoTasks: false } });
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   await hookEvent(base, worker0(server).runId!, { hook_event_name: 'SessionStart', cwd: repo });
@@ -1727,7 +1728,7 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   await waitFor(() => worker0(server).status === 'empty');
   await mkdir(worktree, { recursive: true });
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: true });
-  assert.deepEqual(await readdir(transcriptDir(repo)), [], 'the kept session\'s transcript goes too');
+  assert.deepEqual(await readdir(transcriptDir(fakeMachine(), repo)), [], 'the kept session\'s transcript goes too');
   assert.deepEqual(sessions0(server), [], 'every record\'s sessions go');
 });
 
@@ -2088,13 +2089,13 @@ test('POST /activities/:id/sessions/:session/open opens a listed session in a ma
   await refused('board:I1', s, 409, 'a worktree desta sessão não existe mais');
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
   await server.dispatch({ type: 'activityRemoved', activityId: workId(server.getState()!, 'board:I1') }); // the Hive removed it: the session moves to the main repo
-  await rm(join(transcriptDir(worktreePath(repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
+  await rm(join(transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
   await refused('board:I1', s, 409, 'O histórico desta sessão não existe mais');
-  const from = transcriptDir(worktreePath(repo, TASK_SLUG));
+  const from = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
   await mkdir(join(from, s), { recursive: true });
   await writeFile(join(from, `${s}.jsonl`), '{}\n');
   await opened(open('board:I1', s));
-  assert.deepEqual((await readdir(transcriptDir(repo))).sort(), [s, `${s}.jsonl`].sort(), 'moved before the session opened');
+  assert.deepEqual((await readdir(transcriptDir(fakeMachine(), repo))).sort(), [s, `${s}.jsonl`].sort(), 'moved before the session opened');
   assert.deepEqual(await readdir(from), []);
   assert.deepEqual([workers.length, workers[1].launch.cwd, plainArgs(workers[1].launch)], [2, repo, ['--resume', s]]);
   await refused('board:I1', s, 409, 'sessão já aberta ou desconhecida'); // its worker holds it now
@@ -2620,7 +2621,7 @@ test('POST /activities/:id/sessions/:session/clear forgets that one session and 
   await waitFor(() => worker0(server).status === 'empty');
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') }); // a second session, held by its free session
   const second = sessions0(server).at(-1)!.id;
-  const dir = transcriptDir(worktreePath(repo, TASK_SLUG));
+  const dir = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
   await mkdir(dir, { recursive: true });
   for (const id of [first, second]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
   assert.equal((await clear('nope', first)).status, 404);
@@ -2640,7 +2641,7 @@ test('POST /activities/:id/sessions/:session/clear keeps the transcript when the
   await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => work0(server)?.stopped === true);
-  const dir = transcriptDir(worktreePath(repo, TASK_SLUG));
+  const dir = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${session}.jsonl`), '{}\n');
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/sessions/${session}/clear`)), { ok: true });
@@ -2660,7 +2661,7 @@ test('deleteActivityOnDisk also checks and deletes the own branches a Restart le
     item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true,
   };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: `${TASK_BRANCH}-r3`, stageStart: { stage: 'fila', commit: 'a1b2c3d' } }; // #629: the activity's
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
+  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   const check = (b: string): string[][] => [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${b}`], ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'HEAD']];
   assert.deepEqual(calls, [
@@ -2682,7 +2683,7 @@ test('deleteActivityOnDisk drops the stage-start ref of an activity whose start 
   };
   const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH }; // entered a stage: no stageStart
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
+  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   assert.deepEqual(calls.slice(-3), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`]]);
 });
@@ -2697,7 +2698,7 @@ test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its me
   };
   const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH };
-  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
+  const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), machineFor: () => fakeMachine() };
   const pr = 'https://github.com/acme/r/pull/7';
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: pr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   assert.deepEqual(calls.filter((c) => c[0] === 'gh'), [['gh', 'pr', 'view', pr, '--json', 'state,headRefOid']]);

@@ -41,3 +41,16 @@ test('the page is outside the rule: src/ui never reaches a machine (#158)', asyn
   const { ran, output } = await lintAs(t, 'src/ui/lint-probe.ts');
   assert.deepEqual([ran.code, RULE.test(output)], [0, false]);
 });
+
+test('the transcript readers and the language servers are under the rule: no list exempts them any more (#161)', async (t) => {
+  for (const path of ['src/agents/jsonl.ts', 'src/agents/claude-transcript.ts', 'src/agents/codex-transcript.ts', 'src/transcript.ts', 'src/lsp-host.ts', 'src/lsp-process.ts']) {
+    const { ran, output } = await lintAs(t, path);
+    assert.notEqual(ran.code, 0, path);
+    assert.match(output, RULE, path);
+  }
+});
+
+test('the rest of src/agents stays host-only: the account\'s plan limits read the host (#161)', async (t) => {
+  const { ran, output } = await lintAs(t, 'src/agents/codex-limits.ts');
+  assert.deepEqual([ran.code, RULE.test(output)], [0, false]);
+});

@@ -1,7 +1,6 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { Tokens } from '../facts.js';
+import type { Machine } from '../machine.js';
 import { cleanTitle, type TranscriptTurn } from '../usage.js';
 import { eachLine, finite, isRealDir, newTally, tally, turnUsage, type UsageEntry, writtenSince } from './jsonl.js';
 
@@ -57,14 +56,14 @@ function parseTitleLine(line: string): string | undefined {
 // Claude Code writes each subagent's transcript to <transcript dir>/<session_id>/subagents/agent-<id>.jsonl, beside the main one. Only the
 // .jsonl regular files directly in that folder, through no linked folder: anything else is not this session's. No folder: none. A file
 // last written before the stage run holds none of its turns, so it is never opened: an old session's subagents would slow every Stop
-async function subagentTranscripts(path: string, since: number): Promise<string[]> {
+async function subagentTranscripts(machine: Pick<Machine, 'fs'>, path: string, since: number): Promise<string[]> {
   const session = join(dirname(path), basename(path, '.jsonl'));
   const dir = join(session, 'subagents');
-  if (!(await isRealDir(session)) || !(await isRealDir(dir))) return [];
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  if (!(await isRealDir(machine, session)) || !(await isRealDir(machine, dir))) return [];
+  const entries = await machine.fs.readdir(dir, { withFileTypes: true }).catch(() => []);
   // readdir's order is the file system's (APFS sorts, ext4 does not): sorted, so the models list the same on every machine
   const files = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => join(dir, e.name)).sort();
-  const fresh = await Promise.all(files.map((file) => writtenSince(file, since)));
+  const fresh = await Promise.all(files.map((file) => writtenSince(machine, file, since)));
   return files.filter((_, i) => fresh[i]);
 }
 
@@ -75,12 +74,12 @@ async function subagentTranscripts(path: string, since: number): Promise<string[
  * transcript's alone. Rejects when the file cannot be opened or read; the server treats that as "no tokens and no title this turn".
  * ponytail: reads the whole file at every turn end; if transcripts ever weigh, keep a byte offset per worker and tail from it.
  */
-export async function readTranscript(path: string, since?: number): Promise<TranscriptTurn> {
+export async function readTranscript(machine: Pick<Machine, 'fs'>, path: string, since?: number): Promise<TranscriptTurn> {
   const stage = newTally();
   const seen = new Set<string>();
   let total = 0;
   let title: string | undefined;
-  await eachLine(path, (line) => {
+  await eachLine(machine, path, (line) => {
     // Only a line naming the type is parsed a second time. A title cleaned to nothing keeps the one before: a rename never clears a name (#489)
     const renamed = line.includes('"custom-title"') ? parseTitleLine(line) : undefined;
     if (renamed !== undefined) {
@@ -99,29 +98,30 @@ export async function readTranscript(path: string, since?: number): Promise<Tran
   if (since === undefined) return base;
   // A subagent file that fails to read costs only its own share, never the turn's session total
   // One after the other, in name order: the tokens would add up in any order, but the models list in the order they are met
-  for (const sub of await subagentTranscripts(path, since)) {
-    await eachLine(sub, (line) => tally(stage, parseAssistant(line), since, true)).catch(() => undefined);
+  for (const sub of await subagentTranscripts(machine, path, since)) {
+    await eachLine(machine, sub, (line) => tally(stage, parseAssistant(line), since, true)).catch(() => undefined);
   }
   return { ...base, usage: turnUsage(stage) };
 }
 
-/** Where Claude Code keeps the transcripts of a cwd: `<config dir>/projects/<cwd with every non-alphanumeric as '-'>`. An empty or relative
+/** Where Claude Code keeps the transcripts of a cwd: `<config dir>/projects/<cwd with every non-alphanumeric as '-'>`, on the machine's home (#161). An empty or relative
  * CLAUDE_CONFIG_DIR falls back to ~/.claude: it would resolve against the daemon's cwd, not Claude Code's, and removeTranscripts deletes there (#236). */
-export function transcriptDir(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env.CLAUDE_CONFIG_DIR?.trim();
-  const root = configured && isAbsolute(configured) ? configured : join(homedir(), '.claude');
+export function transcriptDir(machine: Pick<Machine, 'info'>, cwd: string): string {
+  const { claudeConfigDir, homedir } = machine.info();
+  const configured = claudeConfigDir?.trim();
+  const root = configured && isAbsolute(configured) ? configured : join(homedir, '.claude');
   return join(root, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
 }
 
 /** A transcript the Claude run of `cwd` owns (#929, out of usage.ts and server.ts): directly in its transcript dir and, with a session id, that
  * session's own file, never the checkout's other transcripts (#590). */
-export function ownsTranscript(path: string, cwd: string, sessionId: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
-  return dirname(path) === transcriptDir(cwd, env) && (sessionId === undefined || basename(path) === `${sessionId}.jsonl`);
+export function ownsTranscript(machine: Pick<Machine, 'info'>, path: string, cwd: string, sessionId: string | undefined): boolean {
+  return dirname(path) === transcriptDir(machine, cwd) && (sessionId === undefined || basename(path) === `${sessionId}.jsonl`);
 }
 
 /** What deleting a session's transcripts removes (#236): <id>.jsonl and <id>/, its subagents', in the transcript dir of `cwd`. */
-export function sessionFiles(cwd: string, id: string, env: NodeJS.ProcessEnv = process.env): string[] {
-  const dir = transcriptDir(cwd, env);
+export function sessionFiles(machine: Pick<Machine, 'info'>, cwd: string, id: string): string[] {
+  const dir = transcriptDir(machine, cwd);
   return [join(dir, `${id}.jsonl`), join(dir, id)];
 }
 
@@ -136,15 +136,13 @@ const messageId = (line: string): { user: boolean; assistant?: string } => {
 };
 
 /** The user's prompts plus each assistant message once, not tool results nor metadata (#587). */
-// ponytail: reads the whole transcript once per dialog open; stream it as readTranscript does if transcripts ever weigh
-export async function countMessages(path: string): Promise<number> {
-  if (!(await stat(path)).isFile()) throw new Error(`${path}: not a regular file`);
+export async function countMessages(machine: Pick<Machine, 'fs'>, path: string): Promise<number> {
   const seen = new Set<string>();
   let users = 0;
-  for (const line of (await readFile(path, 'utf8')).split('\n')) {
+  await eachLine(machine, path, (line) => {
     const { user, assistant } = messageId(line);
     if (user) users += 1;
     if (assistant !== undefined) seen.add(assistant);
-  }
+  });
   return users + seen.size;
 }

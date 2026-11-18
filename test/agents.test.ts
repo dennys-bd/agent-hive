@@ -5,8 +5,19 @@ import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 import { agentCommand, agentDirs } from '../src/agents/command.js';
 import { resumeOf } from '../src/shim.js';
+import { fakeMachine } from './fake-machine.js';
 
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
+
+test('detectAgents asks the machine it is given: an exec that fails for codex answers Codex unavailable, the others found (#161)', async () => {
+  const machine = fakeMachine({
+    exec: async (file) => {
+      if (file === 'codex') throw Object.assign(new Error('spawn codex ENOENT'), { code: 'ENOENT' });
+      return { stdout: '1.0.0' };
+    },
+  });
+  assert.deepEqual(await detectAgents(machine), [{ agent: 'claude', available: true }, { agent: 'codex', available: false }, { agent: 'copilot', available: true }]);
+});
 
 test('detectAgents runs `<command> --version` once per agent, in AGENT_IDS order: a resolved exec is available, a rejected one is not (#516)', async () => {
   const calls: string[][] = [];
@@ -14,13 +25,13 @@ test('detectAgents runs `<command> --version` once per agent, in AGENT_IDS order
     calls.push([file, ...args]);
     return { stdout: '1.0.0' };
   };
-  assert.deepEqual(await detectAgents(found), AGENT_IDS.map((agent) => ({ agent, available: true })));
+  assert.deepEqual(await detectAgents({ exec: found }), AGENT_IDS.map((agent) => ({ agent, available: true })));
   assert.deepEqual(calls, AGENT_IDS.map((id) => [AGENTS[id].command, '--version']));
 
   const missing: Exec = async () => {
     throw Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' });
   };
-  assert.deepEqual(await detectAgents(missing), AGENT_IDS.map((agent) => ({ agent, available: false })));
+  assert.deepEqual(await detectAgents({ exec: missing }), AGENT_IDS.map((agent) => ({ agent, available: false })));
 });
 
 test("agentOf answers the stage's own agent, else the config's default (#516)", () => {
@@ -147,5 +158,5 @@ test('boot reports copilot unavailable when `copilot --version` fails, the other
     if (file === 'copilot') throw Object.assign(new Error('spawn copilot ENOENT'), { code: 'ENOENT' });
     return { stdout: '1.0.0' };
   };
-  assert.deepEqual(await detectAgents(exec), [{ agent: 'claude', available: true }, { agent: 'codex', available: true }, { agent: 'copilot', available: false }]);
+  assert.deepEqual(await detectAgents({ exec }), [{ agent: 'claude', available: true }, { agent: 'codex', available: true }, { agent: 'copilot', available: false }]);
 });

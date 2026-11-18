@@ -1,6 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { Tokens } from './facts.js';
+import type { Machine } from './machine.js';
 import type { Activity, AgentId, Budget, UsageSample } from './types.js';
 import { taskDir } from './worktree.js';
 
@@ -59,11 +60,11 @@ export function isTranscriptPath(value: unknown): value is string {
  * `<repo>/.hive/worktrees/<slug>`, or the workspace's checkout for a local task, #444), pinned to `sessionId` when given (#929). A forged hook
  * cannot point the excerpt at any other file.
  */
-export function isWorkerTranscript(value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, agent: AgentId, env: NodeJS.ProcessEnv = process.env, sessionId?: string): value is string {
-  return isTranscriptIn(value, taskDir(repo, activity), agent, env, sessionId);
+export function isWorkerTranscript(machine: Machine, value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, agent: AgentId, sessionId?: string): value is string {
+  return isTranscriptIn(machine, value, taskDir(repo, activity), agent, sessionId);
 }
 
 /** An absolute `.jsonl` that `agent`'s runner owns for `cwd` (#924, #929): a local session's (#587) is its workspace's checkout. */
-export function isTranscriptIn(value: unknown, cwd: string, agent: AgentId, env: NodeJS.ProcessEnv = process.env, sessionId?: string): value is string {
-  return isTranscriptPath(value) && runners[agent].ownsTranscript(value, cwd, sessionId, env);
+export function isTranscriptIn(machine: Machine, value: unknown, cwd: string, agent: AgentId, sessionId?: string): value is string {
+  return isTranscriptPath(value) && runners[agent].ownsTranscript(machine, value, cwd, sessionId);
 }

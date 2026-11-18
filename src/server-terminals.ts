@@ -42,7 +42,7 @@ const UNKNOWN_AGENT_MESSAGE = `agent precisa ser um destes agentes: ${AGENT_IDS.
 const NO_WAKE_MESSAGE = 'o terminal não pode acordar: a atividade, a worktree ou o workspace não existe mais';
 
 export interface TerminalRouteDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
+  machineFor: MachineFor; // #158: the activity's machine; #161 reads it
   requireLive(res: Response): { state: State; runtime: Runtime } | undefined;
   live(): { state: State; runtime: Runtime } | undefined; // the same, read with no answer written: after a dispatch, whose reply is the route's own
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, for a wake's spawn
@@ -182,7 +182,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
-      await deps.dispatch(await exitEvent(deps.live(), runId)); // #586: one builder for every exit; a captured run is never flagged
+      await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it

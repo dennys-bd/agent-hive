@@ -84,6 +84,6 @@ export async function readTaskAnswer(exec: Exec, live: Live, worker: Worker): Pr
   const answer = taskAnswer(live.state, worker, workspace?.name);
   if (!task || answer.task === null) return answer;
   const source = task.item.source === undefined ? undefined : live.sources.get(task.item.source); // the task's own source (#180)
-  const [repository, comments] = await Promise.all([originRepository(exec, workspace?.path), taskComments(source, task)]);
+  const [repository, comments] = await Promise.all([originRepository({ exec }, workspace?.path), taskComments(source, task)]);
   return { task: { ...answer.task, ...(repository === undefined ? {} : { repository }), ...comments } };
 }

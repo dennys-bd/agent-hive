@@ -80,7 +80,7 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
   // a config that cannot parse is refused before a store opens: win32 cannot remove an open usage.sqlite from the home (#655)
   const parsed = raw === undefined ? undefined : parseOrFallback(raw, log);
   // Process state, read once: which agent CLIs this machine has (#516). Installing one later means restarting the Hive, which the hint says.
-  const agents = given.agents ?? (await detectAgents(execFileAsync));
+  const agents = given.agents ?? (await detectAgents({ exec: execFileAsync })); // #161: the local machine is built after boot; its info().agents stays this answer
   // #271: one store for both modes, since a setup saved in place runs workers too. It never rejects: one that cannot open keeps nothing and says
   // so in hive.log.
   // #93: the fact log was events.jsonl. Its generations move first, so the usage store's first import below reads them and the server's

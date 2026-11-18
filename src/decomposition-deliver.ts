@@ -32,7 +32,7 @@ export async function fileCheckout(exec: Exec, file: string): Promise<FileChecko
   const toplevel = await git(dirname(file), 'rev-parse', '--show-toplevel').catch(() => '');
   if (toplevel === '') throw new OffGithubError('the decomposition file is in no git checkout');
   const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
-  const repository = await originRepository(exec, toplevel);
+  const repository = await originRepository({ exec }, toplevel);
   if (repository === undefined) throw new OffGithubError('the decomposition file\'s checkout has no GitHub origin', path); // #783: the hive keeps it local, here
   const branch = await git(toplevel, 'branch', '--show-current');
   if (branch === '') throw new Error('the decomposition file\'s checkout is on no branch: nothing to push');

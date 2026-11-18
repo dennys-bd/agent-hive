@@ -8,6 +8,7 @@ import { transcriptDir } from '../../src/agents/claude-transcript.js';
 import { AGENT_IDS, type AgentId, type RateLimits } from '../../src/types.js';
 import { isTranscriptIn } from '../../src/usage.js';
 import { tempDir } from '../temp-dir.js';
+import { machineWith } from '../fake-machine.js';
 
 test('every agent of AGENT_IDS has a runner (#924)', () => {
   assert.deepEqual(Object.keys(runners).sort(), [...AGENT_IDS].sort());
@@ -18,12 +19,12 @@ test('Claude\'s runner strips the env a Hive started from inside Claude Code wou
 });
 
 test('shared code reads a run\'s transcripts and status line through its agent\'s runner (#924)', async (t) => {
-  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  assert.equal(runners.claude.transcriptDir('/repo', env), transcriptDir('/repo', env));
-  assert.equal(isTranscriptIn(join(transcriptDir('/repo', env), 'a.jsonl'), '/repo', 'claude', env), true);
+  const machine = machineWith({ claudeConfigDir: '/cfg' });
+  assert.equal(runners.claude.transcriptDir(machine, '/repo'), transcriptDir(machine, '/repo'));
+  assert.equal(isTranscriptIn(machine, join(transcriptDir(machine, '/repo'), 'a.jsonl'), '/repo', 'claude'), true);
   const path = join(await tempDir(t, 'agents-'), 's.jsonl');
   await writeFile(path, `${JSON.stringify({ type: 'user', message: { content: 'hi' } })}\n${JSON.stringify({ type: 'assistant', message: { id: 'm1' } })}\n`);
-  assert.equal(await runners.claude.countMessages(path), 2);
+  assert.equal(await runners.claude.countMessages(machine, path), 2);
   assert.equal(runners.claude.statusLimits({ rate_limits: { five_hour: { used_percentage: 5, resets_at: 1_800_000_000 } } }, 0)?.windows.five_hour?.usedPercent, 5);
 });
 

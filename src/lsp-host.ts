@@ -1,7 +1,6 @@
 // The daemon's language servers (#780) and the checkers' own (#782): one process per (activity folder, server binary), started when a page's
 // socket asks for it if the server is installed (or the project has its own copy of a checker), its runtime on PATH and the workspace in its scope; stopped LSP_IDLE_MS after its last client, on remove and with the
 // Hive; the JSON server gets SchemaStore's file name → schema associations (#794). The folder is the activity's as activityFolders resolves it: the worktree, else the workspace.
-import { realpath } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { liveTarget } from './activity-routes.js';
 import { checkerOfServer, checkerOn } from './checkers.js';
@@ -10,6 +9,7 @@ import { type ConsoleStore, lspChannel } from './console.js';
 import { findCandidate } from './formatter-detect.js';
 import type { CatalogLoad, SchemaCatalog } from './json-schemas.js';
 import type { Logger } from './log.js';
+import type { MachineFor } from './machine.js';
 import { type Arch, inScope, isServerId, type Launch, languagesOfServer, type ServerDef, serverDef } from './languages.js';
 import { createLspProcess, type LspPeer, type LspProcess, type ProcessSpec } from './lsp-process.js';
 import { fileUri } from './lsp-uri.js';
@@ -30,6 +30,7 @@ export interface LspHostDeps {
   home: string;
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   live(): { config: Config; state: State } | undefined;
+  machineFor: MachineFor; // #161: the activity's machine resolves the folder and runs the server
   idleMs?: number;
   arch?: Arch;
   env?: NodeJS.ProcessEnv; // the daemon's; the workspace's goes on top
@@ -103,7 +104,8 @@ async function resolve(deps: LspHostDeps, activityId: string, id: string, binary
   if (workspace === undefined) return refused('no workspace');
   if (!isOn(live.config.editor, id, workspace.name)) return { code: LSP_CLOSE.outOfScope, reason: `${id} is off in ${workspace.name}` };
   const env = { ...withoutHiveEnv(deps.env ?? process.env), ...workspace.env };
-  const root = await realpath(folders.worktree ?? folders.workspace); // a server reports real paths: the page's URIs must match them
+  const machine = deps.machineFor(target.activity); // #161: the folder and the process are the activity's machine's; the install stays on the host
+  const root = await machine.fs.realpath(folders.worktree ?? folders.workspace); // a server reports real paths: the page's URIs must match them
   const launch = await launchOf(deps, server, binary, root, env);
   if ('code' in launch) return launch;
   const extra = extraArgs(live.config.editor, id);
@@ -114,7 +116,7 @@ async function resolve(deps: LspHostDeps, activityId: string, id: string, binary
   const key = [root, binary, ...extra].join('\0'); // new args, a new process
   // Only a start waits for the catalog (bounded by its timeout): a running server already has what it got
   const schemas = binary === JSON_BINARY && !isRunning(key) ? jsonSchemas(await deps.schemas.load()) : {};
-  return { key, server: id, spec: { command: launch.command, args, cwd: root, env, root, shown, channel: lspChannel(workspace.name, id), label, ...settings, ...schemas } };
+  return { key, server: id, spec: { command: launch.command, args, machine, cwd: root, env, root, shown, channel: lspChannel(workspace.name, id), label, ...settings, ...schemas } };
 }
 
 /** The daemon's language servers (#780). */

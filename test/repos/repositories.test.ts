@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { initialState } from '../../src/orchestrator.js';
 import { listRepositories, originRepository } from '../../src/repos/repositories.js';
 import type { CombConfig, Exec, State, Task, Workspace } from '../../src/types.js';
+import { fakeMachine } from '../fake-machine.js';
 
 const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' });
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: ['hive', 'site', 'docs', 'hive2'].map(workspace), sources: [], flows: [], commands: [], hiveSource: true, createIn: 'hive' };
@@ -33,7 +34,7 @@ test('listRepositories: the origins in the Comb\'s order, then the open PRs\' re
       { id: 'A2', taskIds: ['board:2'], sessions: [], prs: [pr('web', 5, 'open')] },
     ],
   };
-  assert.deepEqual(await listRepositories({ comb: COMB }, state, exec), [
+  assert.deepEqual(await listRepositories({ comb: COMB }, state, fakeMachine({ exec })), [
     { repository: 'acme/hive', workspace: 'hive' }, // hive2's origin is the same repository: the first workspace keeps it
     { repository: 'acme/site', workspace: 'site' }, // also an open PR's: listed once
     { repository: 'acme/api', workspace: 'docs' },
@@ -43,9 +44,9 @@ test('listRepositories: the origins in the Comb\'s order, then the open PRs\' re
 
 test('a workspace off GitHub or without a checkout adds none, and originRepository with no path reads nothing (#588, #757)', async () => {
   const comb: CombConfig = { ...COMB, workspaces: [workspace('docs'), workspace('none')] };
-  assert.deepEqual(await listRepositories({ comb }, initialState(0), exec), []);
-  assert.equal(await originRepository(exec, undefined), undefined);
-  assert.equal(await originRepository(exec, '/code/site'), 'acme/site');
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), fakeMachine({ exec })), []);
+  assert.equal(await originRepository(fakeMachine({ exec }), undefined), undefined);
+  assert.equal(await originRepository(fakeMachine({ exec }), '/code/site'), 'acme/site');
 });
 
 test('a fork workspace lists its original then its fork where its origin stood, each with its role, its PR target and the other as its pair; a fork whose original is off GitHub lists its origin alone (#854)', async () => {
@@ -62,7 +63,7 @@ test('a fork workspace lists its original then its fork where its origin stood, 
     ...COMB,
     workspaces: [{ ...workspace('ex'), fork: { remote: 'upstream', pr: 'original' } }, workspace('site'), { ...workspace('half'), fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }],
   };
-  assert.deepEqual(await listRepositories({ comb }, initialState(0), remotes), [
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), fakeMachine({ exec: remotes })), [
     { repository: 'ex/excalidraw', workspace: 'ex', role: 'original', pr: 'original', pair: 'me/excalidraw' },
     { repository: 'me/excalidraw', workspace: 'ex', role: 'fork', pr: 'original', pair: 'ex/excalidraw' },
     { repository: 'acme/site', workspace: 'site' },
@@ -84,7 +85,7 @@ test('a nested repo on GitHub follows its workspace\'s repositories, role nested
     ...COMB,
     workspaces: [{ ...workspace('hive'), nestedRepos: ['docs', 'ee', 'gone'] }, { ...workspace('ex'), fork: { remote: 'upstream', pr: 'original' }, nestedRepos: ['docs'] }],
   };
-  assert.deepEqual(await listRepositories({ comb }, initialState(0), remotes), [
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), fakeMachine({ exec: remotes })), [
     { repository: 'acme/hive', workspace: 'hive' },
     { repository: 'acme/docs', workspace: 'hive', role: 'nested', pair: 'acme/hive' },
     { repository: 'ex/excalidraw', workspace: 'ex', role: 'original', pr: 'original', pair: 'me/excalidraw' },

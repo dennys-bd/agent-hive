@@ -24,6 +24,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine } from './fake-machine.js';
 import { runners } from '../src/agents/registry.js';
 import type { AgentRun } from '../src/agents/runner.js';
 
@@ -391,7 +392,7 @@ export function fakeKeepAwakeSpawn(): { spawn: KeepAwakeSpawn; children: FakeKee
 /** A session's transcript as Claude Code leaves it in `cwd`'s transcript dir once a prompt ran (#586): a run whose session has none is
  * forgotten at its exit. CLAUDE_CONFIG_DIR must point at a temp dir first. */
 export async function writeTranscript(cwd: string, sessionId: string): Promise<string> {
-  const dir = transcriptDir(cwd);
+  const dir = transcriptDir(fakeMachine(), cwd);
   await mkdir(dir, { recursive: true });
   const path = join(dir, `${sessionId}.jsonl`);
   await writeFile(path, '{}\n');

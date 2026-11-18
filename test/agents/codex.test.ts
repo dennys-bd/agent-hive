@@ -17,6 +17,7 @@ import { SECRET } from '../secret-client.js';
 import { codexHook, CODEX_TURN, QUESTION, SUBAGENT } from '../fixtures/codex-hooks.js';
 import { tempDir } from '../temp-dir.js';
 import { assertMode } from '../posix-only.js';
+import { fakeMachine, machineWith } from '../fake-machine.js';
 
 // Codex's argv, word for word (#927, finding.codex-surface §1, §5, §6, §7, §13): every Hive setting is a `-c key=value` pair, the trust
 // bypass, the agent's own args, the model; the prompt is ptyCommand's last word, as Claude's.
@@ -105,14 +106,16 @@ test('a local copy (no Hive server) forks with no mcp_servers.hive key (#933)', 
   assert.equal(argv?.flat().some((word) => word.startsWith('mcp_servers.hive')), false);
 });
 
+const LOCAL = fakeMachine({ env: {} });
+
 test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear typed in the session); its rollouts are no per-cwd dir (#927, #929, #933)', async (t) => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
   assert.equal(codexRunner.clear(RUN), undefined);
   assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET', 'HIVE_MCP_TOKEN_*'], '', []]);
-  assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
-  assert.equal(codexRunner.ownsTranscript(join('/codex-home', 'sessions', '2026', '10', '12', `rollout-x-${ID}.jsonl`), '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
-  await assert.rejects(codexRunner.readTurn('/x.jsonl'));
-  assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), codexRunner.statusLimits({}, 0)], [0, undefined]);
+  assert.equal(codexRunner.transcriptDir(LOCAL, '/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
+  assert.equal(codexRunner.ownsTranscript(machineWith({ codexHome: '/codex-home' }), join('/codex-home', 'sessions', '2026', '10', '12', `rollout-x-${ID}.jsonl`), '/repo', ID), true);
+  await assert.rejects(codexRunner.readTurn(LOCAL, '/x.jsonl'));
+  assert.deepEqual([await codexRunner.countMessages(LOCAL, '/x.jsonl'), codexRunner.statusLimits({}, 0)], [0, undefined]);
   await assert.rejects(codexRunner.planLimits({ env: { CODEX_HOME: await tempDir(t, 'codex-') } }), { message: 'no Codex rollout found' }); // #557
 });
 

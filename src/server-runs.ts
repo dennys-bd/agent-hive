@@ -11,6 +11,7 @@ import { recordCheckpoint, registerCheckpointRoutes } from './server-checkpoints
 import { type TaskRouteDeps, type LiveView, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { removeTranscripts } from './transcript.js';
 import type { Logger } from './log.js';
+import type { Machine } from './machine.js';
 import type { Activity, ActivityRecord, HiveEvent, Session, Task, State, Worker } from './types.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn } from './terminal-wire.js';
@@ -210,14 +211,14 @@ function registerClearRoute(app: Express, deps: TaskRouteDeps): void {
   });
 }
 
-async function clearTaskSession({ dispatch, log }: TaskRouteDeps, current: LiveView, task: Task, record: ActivityRecord, sessionId: string, res: Response): Promise<void> {
+async function clearTaskSession({ dispatch, log, machineFor }: TaskRouteDeps, current: LiveView, task: Task, record: ActivityRecord, sessionId: string, res: Response): Promise<void> {
   const taskId = task.item.itemId;
   const session = continuable(task, current.state).find((s) => s.id === sessionId);
   if (!session || !record.sessions.some((s) => s.id === sessionId)) return refuse(res, { status: HTTP_CONFLICT, message: SESSION_UNAVAILABLE_MESSAGE });
   const repo = current.state.deleteActivity.transcripts ? taskWorkspace(current.runtime.config, task)?.path : undefined;
   const activity = activityOf(current.state, taskId); // read before the clear, which takes the session off its record
   await dispatch({ type: 'clearSessions', activityId: record.id, sessionId: session.id });
-  await removeTaskTranscript(repo, task, activity, record, session, log);
+  await removeTaskTranscript(machineFor(activity ?? {}), repo, task, activity, record, session, log);
   res.json({ ok: true });
 }
 
@@ -225,14 +226,14 @@ async function clearTaskSession({ dispatch, log }: TaskRouteDeps, current: LiveV
  * transcripts or the workspace is gone; the dir comes from the activity and record as they stood before the clear. A failure is logged, never
  * thrown: the session is already forgotten. */
 export async function removeTaskTranscript(
-  repo: string | undefined, task: Task, activity: Activity | undefined, record: Pick<ActivityRecord, 'id' | 'slug'> | undefined, session: Session,
-  log: Pick<Logger, 'debug' | 'error'>, env: NodeJS.ProcessEnv = process.env,
+  machine: Machine, repo: string | undefined, task: Task, activity: Activity | undefined, record: Pick<ActivityRecord, 'id' | 'slug'> | undefined, session: Session,
+  log: Pick<Logger, 'debug' | 'error'>,
 ): Promise<void> {
   if (repo === undefined) return;
-  await removeTranscripts(workDir(repo, task, activity, record), repo, [session], log, env).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
+  await removeTranscripts(machine, workDir(repo, task, activity, record), repo, [session], log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
-async function clearLocal({ dispatch, log }: TaskRouteDeps, current: LiveView, activityId: string, sessionId: string, res: Response): Promise<void> {
+async function clearLocal({ dispatch, log, machineFor }: TaskRouteDeps, current: LiveView, activityId: string, sessionId: string, res: Response): Promise<void> {
   const name = localWorkspaceOf(activityId) ?? '';
   const found = workspaceByName(current.runtime.config, name);
   if (!found) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_ACTIVITY_MESSAGE });
@@ -240,7 +241,7 @@ async function clearLocal({ dispatch, log }: TaskRouteDeps, current: LiveView, a
   if (!session) return refuse(res, { status: HTTP_CONFLICT, message: SESSION_UNAVAILABLE_MESSAGE });
   await dispatch({ type: 'clearLocalSession', activityId, sessionId });
   if (current.state.deleteActivity.transcripts) { // A11: the deleteActivity scope decides, as a task's limpar
-    await removeTranscripts(found.path, found.path, [session], log).catch((err: Error) => log.error(`transcripts local ${name}: ${err.message}`));
+    await removeTranscripts(machineFor(current.state.activities.find((a) => a.id === activityId) ?? {}), found.path, found.path, [session], log).catch((err: Error) => log.error(`transcripts local ${name}: ${err.message}`));
   }
   res.json({ ok: true });
 }
