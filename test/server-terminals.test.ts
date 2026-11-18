@@ -6,6 +6,7 @@ import { instructionsDir } from '../src/agents/copilot.js';
 import { MCP_SECRET_ENV } from '../src/agents/codex.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { runTmpDir } from '../src/run-tmp.js';
+import { existsSync } from 'node:fs';
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROTOCOL_DIR } from '../src/hooks-settings.js';
@@ -315,4 +316,19 @@ test('copilot --resume <uuid> of a held session registers under that id with no 
     const w = server.getState()?.workers.find((x) => x.runId === late.runId);
     assert.deepEqual([w?.sessionId, w?.resumed, late.argv.includes('--session-id')], [undefined, true, false], args.join(' '));
   }
+});
+
+test('a copilot register writes its instructions under the run\'s own tmp dir; its exit report removes that dir, and so does its Stop (#876)', async (t) => {
+  const { base } = await start(t);
+  const id = await openShell(base);
+  const exited = await copilotReply(t, base, id);
+  const file = join(instructionsDir(exited.runId), 'hive.instructions.md');
+  assert.ok(file.startsWith(runTmpDir(exited.runId)));
+  assert.match(await readFile(file, 'utf8'), /^---\napplyTo: "\*\*"\n---\n\n/, 'the workspace\'s local protocol behind Copilot\'s frontmatter');
+  assert.equal((await hiveFetch(`${base}/hooks/exit`, { method: 'POST', headers: { 'x-hive-pty': exited.runId } })).status, 200);
+  await waitFor(() => !existsSync(runTmpDir(exited.runId)));
+  const stopped = await copilotReply(t, base, id);
+  assert.ok(existsSync(runTmpDir(stopped.runId)));
+  assert.equal((await postJson(`${base}/ptys/${stopped.runId}/stop`)).status, 200); // killCaptured: the shim's later exit report finds no worker
+  await waitFor(() => !existsSync(runTmpDir(stopped.runId)));
 });

@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { heldSession, taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
+import { writeRunFiles } from './spawn.js';
 import { capturedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { MCP_SECRET_ENV } from './agents/codex.js';
@@ -57,6 +58,7 @@ export interface TerminalRouteDeps {
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, which a terminal's agent loads as any run does
   externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the spawner's, for a captured session
+  dropRunTmp(runId: string): Promise<void>; // #876: a captured run's tmp dir (its runFiles), which no pty of the Hive's removes; never rejects
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -191,6 +193,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
       await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
+      await deps.dropRunTmp(runId); // #876: whatever the write below got to
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
@@ -199,6 +202,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     let run: AgentRun;
     try {
       run = await captureRun(deps, after, worker, { runId, cwd, sessionId });
+      await writeRunFiles(runners[agent].runFiles(run)); // #876: Copilot's instructions, under runTmpDir(runId), before the shim starts it
     } catch (err) {
       return unregister(errorMessage(err));
     }

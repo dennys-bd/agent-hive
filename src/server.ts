@@ -1,4 +1,4 @@
-import { access, writeFile } from 'node:fs/promises';
+import { access, rm, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -120,7 +120,7 @@ import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachines } from './machine-local.js';
 import type { MachineFor, Machines } from './machine.js';
-import { killStray, writePrompt } from './spawn.js';
+import { killStray, runTmpDir, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool, type PtyPool } from './ptys.js';
 import { type CommandSemaphores, createSemaphores, isPidAlive } from './command-semaphores.js';
@@ -411,6 +411,10 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   const workerOf = (ptyId: string): Worker | undefined => live?.state.workers.find((s) => s.runId === ptyId);
+  // #876: a captured run's own tmp dir (Copilot's instructions). It has no pty of the Hive's, so launchInternalPty's dropTmp never runs for it;
+  // no process uses it as TMPDIR (the agent keeps its terminal's), so no retry. A failure only leaves a stray dir the OS purges
+  const dropCapturedTmp = (ptyId: string): Promise<void> =>
+    rm(runTmpDir(ptyId), { recursive: true, force: true }).catch((err: unknown) => log.error(`captured run tmp: ${errorMessage(err)}`));
   // #927: a live run's own runner's pattern; a run already gone has no agent to read, and its bare pty id is in every agent's argv (Claude's
   // <id>.mcp.json path, Codex's x-hive-pty header)
   const strayOf = (ptyId: string): string => {
@@ -641,6 +645,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         log.info(describeEffect(effect));
         await killStray(strayOf(effect.ptyId), exec, process.platform).catch((err) => fail('kill', err));
         await dispatch(await exitEvent(live, effect.ptyId, machineFor));
+        await dropCapturedTmp(effect.ptyId); // #876: the shim's exit report after the kill finds no worker left
         return;
       case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged
         log.info(describeEffect(effect));
@@ -1067,7 +1072,11 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.post('/hooks/exit', async (req: Request, res: Response) => {
     res.sendStatus(200);
     const ptyId = req.header('x-hive-pty');
-    if (ptyId && !pool.exit(ptyId)) await dispatch(await exitEvent(live, ptyId, machineFor));
+    if (!ptyId || pool.exit(ptyId)) return;
+    // #876: a captured run (a worker in a terminal), read before the exit frees it; a spawned run's dir is launchInternalPty's
+    const captured = workerOf(ptyId)?.terminalId !== undefined;
+    await dispatch(await exitEvent(live, ptyId, machineFor));
+    if (captured) await dropCapturedTmp(ptyId);
   });
 
   // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
@@ -1349,7 +1358,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor, dropRunTmp: dropCapturedTmp }); // wake, forget (#696); the shim's register under /hooks/
   registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
