@@ -2,11 +2,8 @@
 // folders are activityFolders'; the path resolves with resolveActivityPath (#697): any existing file, absolute or relative to the
 // worktree (the workspace once it is gone), a symlink to its target. A deleted activity has no activity space to hold the pane: refused.
 // The text routes: UTF-8 text only, up to EDITOR_FILE_MAX bytes: a lossy decode would corrupt the file on save.
-import { createHash, randomBytes } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { chmod, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { pipeline } from 'node:stream/promises';
-import { basename, dirname, extname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { extname } from 'node:path';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { activityParam, keptTarget } from './activity-routes.js';
 import { decodeText } from './decode-text.js';
@@ -15,8 +12,9 @@ import { detectFormatters } from './formatter-detect.js';
 import { type FormatOutcome, formatForSave } from './format-run.js';
 import { resolveActivityPath } from './ide.js';
 import { inScope } from './languages.js';
-import { replaceFile } from './replace-file.js';
-import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
+import { type Machine, MachineError } from './machine.js';
+import { fileFs, machineCode } from './machine-fs.js';
+import { activityFolders, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { type Activity, type Config, EDITOR_FILE_MAX, type EditorConfig, type FileSaved, type FileText, FORMATTER_IDS, IMAGE_TYPES, type FormatterState, type Task, type Workspace } from './types.js';
 
@@ -26,7 +24,6 @@ const HTTP_CONFLICT = 409;
 const HTTP_TOO_LARGE = 413;
 const HTTP_UNSUPPORTED = 415;
 const HTTP_SERVER_ERROR = 500;
-const MODE_BITS = 0o7777;
 const DELETED_MESSAGE = 'a atividade foi apagada';
 const TOO_LARGE_MESSAGE = 'arquivo grande demais para o editor';
 const BINARY_MESSAGE = 'arquivo binário ou fora de UTF-8';
@@ -40,6 +37,10 @@ const SAVE_BODY_MESSAGE = 'path must be a non-empty string, text and version str
 export const EDITOR_FILE_ROUTE = '/activities/:id/file';
 
 type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
+/** An image's or a design asset's cap (#160): both are read whole on their machine, which has no stream. ponytail: an image over it no
+ *  longer opens (it did through sendFile); a streamed read on MachineFs if one ever must. */
+export const IMAGE_MAX = 64 * 1024 * 1024;
+type MachineFor = TaskRouteDeps['machineFor'];
 interface Text { bytes: Buffer; text: string }
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -50,7 +51,7 @@ export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update
 
 /** The real path of an activity's file and what its routes need around it (#717, #749, #668): the folder git and a formatter run in (the
  * worktree; the checkout for a local activity), the workspace whose format applies, the run header's head, and the activity and its task. */
-export interface Located { file: string; folder: string; workspace?: Workspace; label: string; activity: Activity; task?: Task }
+export interface Located { file: string; folder: string; workspace?: Workspace; label: string; activity: Activity; task?: Task; machine: Machine }
 
 const workspaceOf = (config: Pick<Config, 'comb'>, target: { activity?: Activity; task?: Task }): Workspace | undefined =>
   (target.task ? taskWorkspace(config, target.task) : workspaceByName(config, target.activity?.workspace));
@@ -58,7 +59,7 @@ const workspaceOf = (config: Pick<Config, 'comb'>, target: { activity?: Activity
 /** The real path of the activity's file, or why there is none: an unknown activity (404), a deleted one (409), no path (400) or no such
  * file (404). No inside check (#697): the preview and the editor open any file, as the ponytail on resolveActivityPath says. The base route
  * locates its file here too (#668). */
-export async function locate(current: Live, id: string, path: unknown): Promise<Located | Refusal> {
+export async function locate(current: Live, id: string, path: unknown, machineFor: MachineFor): Promise<Located | Refusal> {
   const target = keptTarget(current.state, id);
   if ('status' in target) return target;
   if (target.activity === undefined) return { status: HTTP_CONFLICT, message: DELETED_MESSAGE };
@@ -66,80 +67,68 @@ export async function locate(current: Live, id: string, path: unknown): Promise<
   const { config } = current.runtime;
   const folders = activityFolders(config, target);
   if ('status' in folders) return folders;
-  const resolved = await resolveActivityPath({ ...folders, path, ...DISK });
+  const machine = machineFor(target.activity);
+  const resolved = await resolveActivityPath({ ...folders, path, ...fileFs(machine) });
   if ('reason' in resolved) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
   const { activity, task } = target;
   const label = task ? `#${task.item.id}` : activity.workspace; // [Q2]: a local activity has no task
-  return { file: resolved.file, folder: folders.worktree ?? folders.workspace, workspace: workspaceOf(config, target), label, activity, ...(task ? { task } : {}) };
+  return { file: resolved.file, folder: folders.worktree ?? folders.workspace, workspace: workspaceOf(config, target), label, activity, machine, ...(task ? { task } : {}) };
 }
 
-// The file as the pane holds it, or the 413 / 415 that says why it cannot
-async function readText(file: string): Promise<Text | Refusal> {
-  if ((await stat(file)).size > EDITOR_FILE_MAX) return { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE };
-  const bytes = await readFile(file);
+// A capped read's refusal, as these routes answered before (#160): over the cap 413, not a regular file the missing file's 404; else it throws (500)
+function readRefusal(err: unknown): Refusal {
+  const code = machineCode(err);
+  if (code === MachineError.TOO_LARGE) return { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE };
+  if (code === MachineError.NOT_FILE) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
+  throw err;
+}
+
+// The file as the pane holds it, or the 413 / 415 that says why it cannot. The cap is checked on the machine, so there is no stat first
+async function readText(machine: Machine, file: string): Promise<Text | Refusal> {
+  const bytes = await machine.fs.readFile(file, { maxBytes: EDITOR_FILE_MAX }).catch(readRefusal);
+  if (!Buffer.isBuffer(bytes)) return bytes;
   const text = decodeText(bytes);
   return text === undefined ? { status: HTTP_UNSUPPORTED, message: BINARY_MESSAGE } : { bytes, text };
 }
 
 // GET's steps: the file located, then read as text
-async function withText(req: Request, res: Response, current: Live, answer: (read: Text, path: string) => void): Promise<void> {
-  const located = await locate(current, activityParam(req), req.query.path);
+async function withText(req: Request, res: Response, current: Live, machineFor: MachineFor, answer: (read: Text, path: string) => void): Promise<void> {
+  const located = await locate(current, activityParam(req), req.query.path, machineFor);
   if ('status' in located) return refuse(res, located);
-  const read = await readText(located.file);
+  const read = await readText(located.machine, located.file);
   if ('status' in read) return refuse(res, read);
   answer(read, String(req.query.path));
 }
 
 const imageType = (path: unknown): string | undefined => IMAGE_TYPES[extname(String(path)).toLowerCase()];
 
-// An image's version (#498): the sha256 of a stream of its bytes, any size, without holding the file in memory on every poll
-async function streamedSha256(file: string): Promise<string> {
-  const hash = createHash('sha256');
-  await pipeline(createReadStream(file), hash);
-  return hash.digest('hex');
-}
+// An image's bytes (#498), read once on its machine under IMAGE_MAX: what the image route sends and the version hashes
+const readImage = (located: Located): Promise<Buffer | Refusal> => located.machine.fs.readFile(located.file, { maxBytes: IMAGE_MAX }).catch(readRefusal);
 
 // file-version: an image path's version is the hash of any bytes, any size, for its tab's reload (#498); a text path keeps the text read's
 // 413 / 415, so a text pane whose file grew past the cap or turned binary sees no new version it could never reload
-async function fileVersion(req: Request, res: Response, current: Live): Promise<void> {
-  if (imageType(req.query.path) === undefined) return withText(req, res, current, ({ bytes }) => { res.json({ version: sha256(bytes) }); });
-  const located = await locate(current, activityParam(req), req.query.path);
+async function fileVersion(req: Request, res: Response, current: Live, machineFor: MachineFor): Promise<void> {
+  if (imageType(req.query.path) === undefined) return withText(req, res, current, machineFor, ({ bytes }) => { res.json({ version: sha256(bytes) }); });
+  const located = await locate(current, activityParam(req), req.query.path, machineFor);
   if ('status' in located) return refuse(res, located);
-  res.json({ version: await streamedSha256(located.file) });
+  const bytes = await readImage(located);
+  if (!Buffer.isBuffer(bytes)) return refuse(res, bytes);
+  res.json({ version: sha256(bytes) });
 }
 
 // decision 10 of #498: an <img> never runs an SVG's scripts, and sandbox keeps them from running if the URL is ever opened as a page
 const IMAGE_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox' };
 
-// The image's bytes (#498), any size: they go to an <img>, never into a JSON body or a Monaco model, so the 1 MB cap's reason does not
-// apply. The type comes from the path the tab asked with, the one the page chose the view by. dotfiles: worktrees sit under .hive/
-async function sendImage(req: Request, res: Response, current: Live): Promise<void> {
-  const located = await locate(current, activityParam(req), req.query.path);
+// The image's bytes (#498), up to IMAGE_MAX: they go to an <img>, never into a JSON body or a Monaco model, so the 1 MB cap's reason does not
+// apply. The type comes from the path the tab asked with, the one the page chose the view by
+async function sendImage(req: Request, res: Response, current: Live, machineFor: MachineFor): Promise<void> {
+  const located = await locate(current, activityParam(req), req.query.path, machineFor);
   if ('status' in located) return refuse(res, located);
   const type = imageType(req.query.path);
   if (type === undefined) return refuse(res, { status: HTTP_UNSUPPORTED, message: BINARY_MESSAGE });
-  await new Promise<void>((resolve, reject) => {
-    // an error once the bytes started cannot become route's 500 any more, and a closed tab has no one to answer: the stream just ends
-    const isAnswerable = (err: Error): boolean => !res.headersSent && (err as NodeJS.ErrnoException).code !== 'ECONNABORTED';
-    res.sendFile(located.file, { dotfiles: 'allow', headers: { ...IMAGE_HEADERS, 'Content-Type': type } }, (err) => (err && isAnswerable(err) ? reject(err) : resolve()));
-  });
-}
-
-// The text in a temp file beside the original, with the original's mode, then renamed over it: a reader never sees half a file, and a
-// failure leaves no temp file behind. The tree's untitled save writes over an existing file through it too (#818).
-export async function writeAtomic(file: string, text: string): Promise<Buffer> {
-  const bytes = Buffer.from(text, 'utf8');
-  const mode = (await stat(file)).mode & MODE_BITS;
-  const temp = join(dirname(file), `.${basename(file)}.hive-${randomBytes(6).toString('hex')}.tmp`);
-  try {
-    await writeFile(temp, bytes, { flag: 'wx', mode: 0o600 }); // private until the chmod below gives it the original's mode
-    await chmod(temp, mode); // writeFile's mode goes through the umask; chmod sets the original's exactly
-    await replaceFile(temp, file);
-    return bytes;
-  } catch (err) {
-    await rm(temp, { force: true });
-    throw err;
-  }
+  const bytes = await readImage(located);
+  if (!Buffer.isBuffer(bytes)) return refuse(res, bytes);
+  res.set({ ...IMAGE_HEADERS, 'Content-Type': type }).send(bytes);
 }
 
 interface SaveBody { path: string; text: string; version: string; format: boolean }
@@ -175,23 +164,23 @@ function savedAnswer(version: string, sent: string, outcome: FormatOutcome | und
 // pane read; another one answers 409 with it. The format runs before the hash, so nothing touches the disk before the version check.
 // ponytail: the hash is checked, then the rename lands, so an agent writing in between is overwritten; no file lock exists and the window is
 // a few ms. A lock (or a compare in a rename loop) when it ever bites.
-async function saveFile(res: Response, current: Live, id: string, raw: unknown, consoleStore: Store): Promise<void> {
+async function saveFile(res: Response, current: Live, id: string, raw: unknown, { consoleStore, machineFor }: { consoleStore: Store; machineFor: MachineFor }): Promise<void> {
   const body = saveBody(raw);
   if (body === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: SAVE_BODY_MESSAGE });
   if (Buffer.byteLength(body.text, 'utf8') > EDITOR_FILE_MAX) return refuse(res, { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE });
-  const located = await locate(current, id, body.path);
+  const located = await locate(current, id, body.path, machineFor);
   if ('status' in located) return refuse(res, located);
-  const { size, mode } = await stat(located.file);
+  const { size, mode } = await located.machine.fs.stat(located.file);
   if (size > EDITOR_FILE_MAX) return refuse(res, { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE }); // never read what the pane could not have opened
   if ((mode & OWNER_WRITE) === 0) return refuse(res, { status: HTTP_CONFLICT, message: READ_ONLY_MESSAGE }); // the rename would replace what its owner marked unwritable
   const outcome = await formatted(located, body, consoleStore, current.runtime.config.editor);
   const text = outcome !== undefined && 'text' in outcome ? outcome.text : body.text;
-  const onDisk = sha256(await readFile(located.file));
+  const onDisk = sha256(await located.machine.fs.readFile(located.file, { maxBytes: EDITOR_FILE_MAX }));
   if (onDisk !== body.version) {
     res.status(HTTP_CONFLICT).json({ error: CHANGED_MESSAGE, version: onDisk });
     return;
   }
-  res.json(savedAnswer(sha256(await writeAtomic(located.file, text)), body.text, outcome));
+  res.json(savedAnswer(sha256(await located.machine.fs.writeAtomic(located.file, text)), body.text, outcome));
 }
 
 type Handler = (req: Request, res: Response, current: Live) => Promise<void>;
@@ -205,7 +194,7 @@ async function formatterStates(_req: Request, res: Response, current: Live): Pro
 }
 
 /** The editor pane's routes (#717) and Settings > editor's detected formatters (#749), behind the same requireLive as files. Whatever the disk throws answers 500 with its message. */
-export function registerEditorRoutes(app: Express, { requireLive, consoleStore }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore' | 'machineFor'>): void {
+export function registerEditorRoutes(app: Express, { requireLive, consoleStore, machineFor }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore' | 'machineFor'>): void {
   const route = (handle: Handler) => async (req: Request, res: Response): Promise<void> => {
     const current = requireLive(res);
     if (!current) return;
@@ -215,14 +204,14 @@ export function registerEditorRoutes(app: Express, { requireLive, consoleStore }
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     }
   };
-  app.get(EDITOR_FILE_ROUTE, route((req, res, current) => withText(req, res, current, ({ bytes, text }, path) => {
+  app.get(EDITOR_FILE_ROUTE, route((req, res, current) => withText(req, res, current, machineFor, ({ bytes, text }, path) => {
     const body: FileText = { path, text, version: sha256(bytes) };
     res.json(body);
   })));
-  app.get('/activities/:id/file-version', route(fileVersion));
-  app.get('/activities/:id/image', route(sendImage));
+  app.get('/activities/:id/file-version', route((req, res, current) => fileVersion(req, res, current, machineFor)));
+  app.get('/activities/:id/image', route((req, res, current) => sendImage(req, res, current, machineFor)));
   app.get('/settings/formatters', route(formatterStates));
-  app.put(EDITOR_FILE_ROUTE, route((req, res, current) => saveFile(res, current, activityParam(req), req.body, consoleStore)));
+  app.put(EDITOR_FILE_ROUTE, route((req, res, current) => saveFile(res, current, activityParam(req), req.body, { consoleStore, machineFor })));
 }
 
 /** express.json's refusal of a body over its 2 MB limit (server.ts), on the editor's save: the cap's own 413 instead of Express's HTML page. */

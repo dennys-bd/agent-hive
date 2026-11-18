@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { localActivityId } from '../src/activities.js';
 import type { ChannelView } from '../src/console.js';
 import { initialState } from '../src/orchestrator.js';
+import { type Machine, MachineError } from '../src/machine.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import { worktreePath } from '../src/worktree.js';
@@ -13,6 +14,7 @@ import type { CustomFormatter, FileSaved, FileText, EditorConfig, FormatterState
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, EDITOR_FILE_MAX, FORMATTER_IDS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
+import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { writeCmdTwin } from './npm-server.js';
 import { tempDir } from './temp-dir.js';
@@ -35,7 +37,7 @@ const sha = (bytes: string | Uint8Array): string => createHash('sha256').update(
 interface Editor { base: string; repo: string; worktree: string; server: HiveServer }
 
 // deleted: the activity is gone, its record alone kept (#629)
-async function startEditor(t: TestContext, { isDeleted = false, editor = EDITOR_DEFAULTS }: { isDeleted?: boolean; editor?: EditorConfig } = {}): Promise<Editor> {
+async function startEditor(t: TestContext, { isDeleted = false, editor = EDITOR_DEFAULTS, machine }: { isDeleted?: boolean; editor?: EditorConfig; machine?: Machine } = {}): Promise<Editor> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo); // resolveActivityPath answers real paths: macOS's tmpdir is a symlink
   const worktree = worktreePath(repo, SLUG);
@@ -46,7 +48,7 @@ async function startEditor(t: TestContext, { isDeleted = false, editor = EDITOR_
     ? withKeptRecord(base0, 'local:1', savedActivityId(1), { slug: SLUG })
     : withWork(base0, 'local:1', { id: savedActivityId(1), slug: SLUG });
   await saveState(made.home, state);
-  const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }), ...(machine ? { machines: fakeMachines(machine) } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -313,4 +315,23 @@ test('GET image refuses a file that is not an image with a 415, a missing one wi
     assert.equal(res.status, status, path);
     assert.deepEqual(await res.json(), { error }, path);
   }
+});
+
+test('an image the machine reads over IMAGE_MAX answers 413 on the image and the version route (#160)', async (t) => {
+  const tooLarge = async (): Promise<never> => { throw new MachineError('file over the cap', { code: MachineError.TOO_LARGE }); };
+  const e = await startEditor(t, { machine: fakeMachine({ fs: { readFile: tooLarge } }) });
+  await writeFile(join(e.worktree, 'shot.png'), PNG);
+  for (const route of ['image', 'file-version'] as const) {
+    const res = await get(e, 'shot.png', route);
+    assert.deepEqual([res.status, await res.json()], [413, { error: TOO_LARGE }], route);
+  }
+});
+
+test('a save writes through the machine\'s writeAtomic (#160)', async (t) => {
+  const local = fakeMachine();
+  const written: string[] = [];
+  const e = await startEditor(t, { machine: fakeMachine({ fs: { writeAtomic: (path, text) => { written.push(path); return local.fs.writeAtomic(path, text); } } }) });
+  const read = (await (await get(e, 'docs/spec.md')).json()) as FileText;
+  assert.equal((await put(e, { path: 'docs/spec.md', text: 'new\n', version: read.version, format: false })).status, 200);
+  assert.deepEqual(written, [join(e.worktree, 'docs', 'spec.md')]);
 });

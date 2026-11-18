@@ -1,7 +1,6 @@
 // The command-line checkers' runs (#782) and Settings › editor's detection of every checker. The page asks one run per checker once a save
 // answered or a file opened, so a slow checker never holds the save, nor a fast one waits for it. A path resolves inside the activity's folder
 // only: a report about a file the pane cannot place is no use.
-import { realpath } from 'node:fs/promises';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { type CheckRuns, createCheckRuns, runCheck } from './check-run.js';
@@ -9,6 +8,7 @@ import { CHECKERS, checkerOn, cliCheckerDef, cliCheckersFor, isCliCheckerId } fr
 import { findCandidate } from './formatter-detect.js';
 import { otherExtensions } from './formatters.js';
 import { languageOf } from './languages.js';
+import type { Machine } from './machine.js';
 import { locate } from './server-editor.js';
 import { samePath } from './same-path.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -25,29 +25,29 @@ type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
 type Store = TaskRouteDeps['consoleStore'];
 type Handler = (req: Request, res: Response, current: Live) => Promise<void>;
 // The activity's folder (a real path), the file in it, its path as the pane names it, the workspace whose config applies and the header's head
-interface Placed { folder: string; file: string; path: string; workspace: Workspace; label: string }
+interface Placed { folder: string; file: string; path: string; workspace: Workspace; label: string; machine: Machine }
 
 const refuse = (res: Response, { status, message }: Refusal): void => { res.status(status).json({ error: message }); };
 
 // The editor's own location of the file, then the checker's two extra rules: a workspace, and a file inside the folder
-async function place(current: Live, id: string, path: unknown): Promise<Placed | Refusal> {
-  const located = await locate(current, id, path);
+async function place(current: Live, id: string, path: unknown, machineFor: TaskRouteDeps['machineFor']): Promise<Placed | Refusal> {
+  const located = await locate(current, id, path, machineFor);
   if ('status' in located) return located;
   if (located.workspace === undefined) return { status: HTTP_CONFLICT, message: NO_WORKSPACE_MESSAGE };
-  const folder = await realpath(located.folder); // a tool reports real paths
+  const folder = await located.machine.fs.realpath(located.folder); // a tool reports real paths
   // #640: the prefix through samePath, for a drive letter in another case on win32; the separator after it keeps a sibling (`<folder>2`) out
-  const platform = process.platform;
+  const platform = located.machine.info().platform;
   const next = located.file.charAt(folder.length);
   const isSeparator = next === '/' || (platform === 'win32' && next === '\\');
   if (!isSeparator || !samePath(located.file.slice(0, folder.length), folder, platform)) return { status: HTTP_BAD_REQUEST, message: OUTSIDE_MESSAGE };
-  return { folder, file: located.file, path: located.file.slice(folder.length + 1), workspace: located.workspace, label: located.label };
+  return { folder, file: located.file, path: located.file.slice(folder.length + 1), workspace: located.workspace, label: located.label, machine: located.machine };
 }
 
 // One run (#782): a newer one of the same (activity, checker, target) supersedes it; off for the workspace answers absent without a run
-async function check(req: Request, res: Response, current: Live, deps: { runs: CheckRuns; consoleStore: Store }): Promise<void> {
+async function check(req: Request, res: Response, current: Live, deps: { runs: CheckRuns; consoleStore: Store; machineFor: TaskRouteDeps['machineFor'] }): Promise<void> {
   const id = String(req.params.checker);
   if (!isCliCheckerId(id)) return refuse(res, { status: HTTP_BAD_REQUEST, message: `${id} is not a command-line checker` });
-  const located = await place(current, activityParam(req), ((req.body ?? {}) as { path?: unknown }).path);
+  const located = await place(current, activityParam(req), ((req.body ?? {}) as { path?: unknown }).path, deps.machineFor);
   if ('status' in located) return refuse(res, located);
   const def = cliCheckerDef(id);
   const { editor } = current.runtime.config;
@@ -88,7 +88,7 @@ async function checkerStates(_req: Request, res: Response, current: Live): Promi
 
 /** POST /activities/:id/check/:checker and GET /settings/checkers (#782), behind the same requireLive as the editor's routes. Whatever the disk
  * throws answers 500 with its message. */
-export function registerCheckRoutes(app: Express, { requireLive, consoleStore }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore' | 'machineFor'>): void {
+export function registerCheckRoutes(app: Express, { requireLive, consoleStore, machineFor }: Pick<TaskRouteDeps, 'requireLive' | 'consoleStore' | 'machineFor'>): void {
   const runs = createCheckRuns();
   const route = (handle: Handler) => async (req: Request, res: Response): Promise<void> => {
     const current = requireLive(res);
@@ -99,6 +99,6 @@ export function registerCheckRoutes(app: Express, { requireLive, consoleStore }:
       res.status(HTTP_SERVER_ERROR).json({ error: err instanceof Error ? err.message : String(err) });
     }
   };
-  app.post('/activities/:id/check/:checker', route((req, res, current) => check(req, res, current, { runs, consoleStore })));
+  app.post('/activities/:id/check/:checker', route((req, res, current) => check(req, res, current, { runs, consoleStore, machineFor })));
   app.get('/settings/checkers', route(checkerStates));
 }
