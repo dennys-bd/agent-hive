@@ -60,10 +60,11 @@ function feedbackEvent(activityId: string, body: unknown, task: Task, _state: St
 }
 
 // Aprovar (#268), unless the stage's decomposition still has to be written (#865): approving would end it with nothing written, from
-// whichever door the approve came (the detail, a menu, the flow's button, the search). #784: the hive is somewhere to write it too; with
-// neither a GitHub source nor the hive there is nowhere, and the approve is plain
+// whichever door the approve came (the detail, a menu, the flow's button, the search). #784: the hive is somewhere to write it too; #832: so
+// is a Jira goal's own source. With none of them there is nowhere, and the approve is plain
 function approveEvent(activityId: string, task: Task, state: State, config: Pick<Config, 'comb'>): HiveEvent | Refusal {
-  const hasTarget = config.comb.hiveSource || config.comb.sources.some((s) => s.type === 'github');
+  const ownJira = config.comb.sources.some((s) => s.name === task.item.source && s.type === 'jira');
+  const hasTarget = config.comb.hiveSource || ownJira || config.comb.sources.some((s) => s.type === 'github');
   if (hasTarget && decompositionPending(resultOf(state, task.item.itemId))) return { status: HTTP_CONFLICT, message: DECOMPOSITION_MESSAGE };
   return { type: 'approve', activityId };
 }

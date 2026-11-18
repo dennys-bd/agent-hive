@@ -19,10 +19,10 @@ const STAGES: Stage[] = [{ name: 'Brainstorm', from: {}, prompt: '/brainstorm', 
 const ROUTED_ONLY: Transition[] = [{ from: 'Brainstorm', to: 'Spike', when: 'verdict', verdict: 'spike' }];
 
 // #784: the Comb the approve gate reads, and the result a pending decomposition sits in
-interface Setup { comb?: { sources: { type: string }[]; hiveSource?: boolean }; result?: Record<string, unknown> }
+interface Setup { comb?: { sources: { name?: string; type: string }[]; hiveSource?: boolean }; result?: Record<string, unknown>; task?: Task }
 
-async function routes(t: TestContext, approval: TaskApproval, { comb = { sources: [] }, result }: Setup = {}) {
-  const state: State = withWork({ ...initialState(0), ...flowed(STAGES, ROUTED_ONLY), tasks: [TASK] }, TASK.item.itemId, { approval }, result === undefined ? {} : { result });
+async function routes(t: TestContext, approval: TaskApproval, { comb = { sources: [] }, result, task = TASK }: Setup = {}) {
+  const state: State = withWork({ ...initialState(0), ...flowed(STAGES, ROUTED_ONLY), tasks: [task] }, task.item.itemId, { approval }, result === undefined ? {} : { result });
   const events: HiveEvent[] = [];
   const app = express();
   app.use(express.json());
@@ -30,7 +30,7 @@ async function routes(t: TestContext, approval: TaskApproval, { comb = { sources
   registerApprovalRoutes(app, { requireLive: (() => ({ state, runtime: { config: { comb } } })) as unknown as TaskRouteDeps['requireLive'], dispatch });
   const server = app.listen(0);
   t.after(() => server.close());
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(TASK.item.itemId))}`;
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}`;
   return { base, events };
 }
 
@@ -56,4 +56,19 @@ test('approve refuses 409 a pending decomposition in a Comb with only the hive, 
   const off = await routes(t, approval, { comb: { sources: [], hiveSource: false }, result });
   const ok = await post(`${off.base}/approve`);
   assert.deepEqual([ok.status, off.events.map((e) => e.type)], [200, ['approve']]);
+});
+
+const JIRA_TASK: Task = { ...TASK, item: { ...TASK.item, itemId: 'tickets:10001', id: 'ABC-1', source: 'tickets' } };
+
+test('approve refuses 409 a pending decomposition of a Jira goal in a Comb with only that Jira source, and approves once it is written; a goal from elsewhere approves plain (#832)', async (t) => {
+  const approval = { since: SINCE, verdict: 'spike' }; // a routed verdict, so the stage has an exit (#693)
+  const comb = { sources: [{ name: 'tickets', type: 'jira' }], hiveSource: false };
+  const pending = { decomposition: 'decomposition.md' };
+  const held = await routes(t, approval, { comb, result: pending, task: JIRA_TASK });
+  const refused = await post(`${held.base}/approve`);
+  assert.deepEqual([refused.status, await refused.json(), held.events], [409, { error: 'a decomposição ainda não foi escrita: use o botão de criar' }, []]);
+  const written = await routes(t, approval, { comb, result: { ...pending, decompositionIssues: { done: 10001 } }, task: JIRA_TASK });
+  assert.deepEqual([(await post(`${written.base}/approve`)).status, written.events.map((e) => e.type)], [200, ['approve']]);
+  const other = await routes(t, approval, { comb, result: pending });
+  assert.deepEqual([(await post(`${other.base}/approve`)).status, other.events.map((e) => e.type)], [200, ['approve']]);
 });
