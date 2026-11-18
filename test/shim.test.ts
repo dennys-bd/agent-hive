@@ -6,6 +6,7 @@ import { access, chmod, copyFile, mkdir, readFile, symlink, writeFile } from 'no
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import pty from 'node-pty';
 import { AGENTS } from '../src/agents.js';
 import { envValue, resolveExec } from '../src/exec-path.js';
 import { posixShell } from '../src/posix-shell.js';
@@ -15,9 +16,12 @@ import { SECRET_HEADER } from '../src/secret.js';
 import { AGENT_IDS, type AgentId } from '../src/types.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
-import { assertMode } from './posix-only.js';
+import { assertMode, MSYS_TTY } from './posix-only.js';
 
 const run = promisify(execFile);
+// #876: the shim in a pty of its own, as inTerminal (test/command-shim-rig.ts) runs the command shim: its stdin is a terminal, as in a Hive one
+const inPty = (file: string, args: readonly string[], env: Record<string, string>, cwd?: string): Promise<void> =>
+  new Promise((resolve) => { pty.spawn(posixShell().shell, [file, ...args], { env, cwd, cols: 200, rows: 10 }).onExit(() => resolve()); });
 const RUN_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 // The register's reply as the server writes it (#876): the run id, the count of env lines, those NAME=value lines, then the args
 const answer = (args: readonly string[], env: readonly string[] = []): string => [RUN_ID, String(env.length), ...env, ...args].join('\n');
@@ -62,7 +66,7 @@ async function fakeHive(t: TestContext, answer: { status: number; body: string }
 }
 
 // The agent's shim installed in a home of its own, the fake CLI in a dir after it on PATH, a secret file and a terminal's env
-async function shimmed(t: TestContext, port: number, extraEnv: Record<string, string> = {}, agent: ShimAgent = AGENTS.claude): Promise<(...args: string[]) => Promise<string[]>> {
+async function shimmed(t: TestContext, port: number, extraEnv: Record<string, string> = {}, agent: ShimAgent = AGENTS.claude, tty = false): Promise<(...args: string[]) => Promise<string[]>> {
   const home = await tempDir(t, 'home-');
   const real = join(home, 'real');
   await mkdir(real);
@@ -80,7 +84,7 @@ async function shimmed(t: TestContext, port: number, extraEnv: Record<string, st
   await mkdir(join(home, 'decoy', agent.command), { recursive: true });
   const env = { HOME: home, PATH: `${join(home, 'bin')}:${linked}:${join(home, 'decoy')}:${real}:/usr/bin:/bin`, HIVE_PTY_ID: 'T1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, OUT: out, ...extraEnv };
   return async (...args) => {
-    await run(shimPath(home, agent), args, { env, cwd: extraEnv.PWD });
+    await (tty ? inPty(shimPath(home, agent), args, env, extraEnv.PWD) : run(shimPath(home, agent), args, { env, cwd: extraEnv.PWD }));
     return (await readFile(out, 'utf8')).trimEnd().split('\n');
   };
 }
@@ -317,4 +321,26 @@ test('resumeOf reads copilot\'s --resume and --session-id with a uuid as that id
     [['--resume', id, '--session-id', other], { kind: 'resume', sessionId: other }], // the last uuid wins, as Claude's
   ];
   for (const [args, expected] of cases) assert.deepEqual(resumeOf('copilot', args), expected, args.join(' '));
+});
+
+test('a copilot whose stdin is a pipe (a headless prompt, spike §4) runs the real copilot as typed and posts no register (#876)', POSIX_ONLY, async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1']) });
+  const copilot = await shimmed(t, hive.port, {}, AGENTS.copilot); // execFile: stdin is a pipe
+  for (const args of [[], ['-i', 'a prompt']]) assert.deepEqual(await copilot(...args), ['pty=T1', ...args], args.join(' '));
+  assert.deepEqual(hive.seen, []);
+});
+
+test('a copilot typed in a terminal registers, runs the real copilot with the Hive\'s args before the user\'s, then reports its exit (#876)', { skip: MSYS_TTY }, async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1'], ['COPILOT_AUTO_UPDATE=false']) });
+  const copilot = await shimmed(t, hive.port, {}, AGENTS.copilot, true);
+  assert.deepEqual(await copilot('-i', 'a prompt'), [`pty=${RUN_ID}`, '--session-id', 'S1', '-i', 'a prompt']);
+  assert.deepEqual([hive.seen.map((s) => s.url), hive.args, hive.forms[0]?.agent], [['/hooks/terminals/T1/session', '/hooks/exit'], [['-i', 'a prompt']], 'copilot']);
+});
+
+test('in a terminal too, copilot --connect and every copilot passthrough flag and subcommand run as typed, unregistered (#876)', { skip: MSYS_TTY }, async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: answer(['--session-id', 'S1']) });
+  const copilot = await shimmed(t, hive.port, {}, AGENTS.copilot, true);
+  const typed = [['--connect', 'x'], ['--connect=x'], ...AGENTS.copilot.subcommands.map((word) => [word, 'x']), ...AGENTS.copilot.shimFlags.map((flag) => ['-i', 'a prompt', flag])];
+  for (const args of typed) assert.deepEqual(await copilot(...args), ['pty=T1', ...args], args.join(' '));
+  assert.deepEqual(hive.seen, []);
 });

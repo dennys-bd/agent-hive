@@ -149,7 +149,7 @@ test('copilot runs as `copilot`, chooses its session id, resumes any folder and 
   const { copilot } = AGENTS;
   assert.deepEqual([copilot.label, copilot.command, copilot.canChooseSessionId, copilot.resumesAnyFolder, copilot.planLimits], ['Copilot', 'copilot', true, true, false]);
   assert.deepEqual(copilot.subcommands, ['app', 'login', 'help', 'init', 'config', 'update', 'version', 'workflow', 'sessions', 'memories', 'plugin', 'mcp', 'skill', 'instruction', 'lsp', 'sandbox', 'completion']);
-  assert.deepEqual(copilot.shimFlags, ['-p', '--prompt', '--acp', '-h', '--help', '-v', '--version']);
+  assert.deepEqual(copilot.shimFlags, ['-p', '--prompt', '--acp', '--connect', '--connect=*', '-h', '--help', '-v', '--version']);
   assert.deepEqual(resumeOf('copilot', ['--resume', '01a12d45-1dff-7000-8000-000000000001']), { kind: 'new' }, 'node 4 owns the reader');
 });
 

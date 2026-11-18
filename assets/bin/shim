@@ -32,6 +32,8 @@ passthrough() {
 }
 
 if passthrough "$@"; then exec "$real" "$@"; fi
+# #876: Copilot reads a piped stdin without -p as a headless prompt (spike §4), which no free session can follow; a terminal's stdin is a tty
+case "$cli" in copilot) [ -t 0 ] || exec "$real" "$@" ;; esac
 
 # The secret goes as curl's header file, never in an argv (#467), and never through a proxy the env names: the Hive is on loopback. -q
 # first on every curl, so no ~/.curlrc (a --trace) ever applies. 5 s, since a register the server took but the shim gave up on leaves a run
