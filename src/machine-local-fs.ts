@@ -2,24 +2,48 @@
 // of its own so a host-only reader (codex-limits.ts: the account's plan limits) takes the host's disk without importing machine-local.ts,
 // whose pty half reaches agents/registry.ts and back: that cycle would read localFs before it is defined.
 import { randomBytes } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { access, appendFile, chmod, copyFile, cp, link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { MachineError, type MachineFs } from './machine.js';
 import { replaceFile } from './replace-file.js';
 
 const MODE_BITS = 0o7777;
 
-// The cap is checked on the stat, so an oversized file is never read (only a regular file's size means anything); and again on the bytes, for a file that grew in between
+const tooLarge = (maxBytes: number): MachineError => new MachineError(`file over ${maxBytes} bytes`, { code: MachineError.TOO_LARGE });
+
+// Only a regular file's size means anything (a FIFO or a device would hold the read forever), so it is checked before the cap
+async function checkFile(path: string, maxBytes: number): Promise<void> {
+  const info = await stat(path);
+  if (!info.isFile()) throw new MachineError(`not a regular file: ${path}`, { code: MachineError.NOT_FILE });
+  if (info.size > maxBytes) throw tooLarge(maxBytes);
+}
+
+// The cap is checked on the stat, so an oversized file is never read; and again on the bytes, for a file that grew in between
 function readCapped(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
 function readCapped(path: string, options: { maxBytes: number }): Promise<Buffer>;
 async function readCapped(path: string, { maxBytes, encoding }: { maxBytes: number; encoding?: BufferEncoding }): Promise<string | Buffer> {
-  const tooLarge = (): MachineError => new MachineError(`file over ${maxBytes} bytes`, { code: MachineError.TOO_LARGE });
-  const info = await stat(path);
-  if (!info.isFile()) throw new MachineError(`not a regular file: ${path}`, { code: MachineError.NOT_FILE });
-  if (info.size > maxBytes) throw tooLarge();
+  await checkFile(path, maxBytes);
   const bytes = await readFile(path);
-  if (bytes.length > maxBytes) throw tooLarge();
+  if (bytes.length > maxBytes) throw tooLarge(maxBytes);
   return encoding === undefined ? bytes : bytes.toString(encoding);
+}
+
+// A stream through readline, so a transcript costs one line of memory, as eachLine's did. A generator: a refusal rejects the first next(),
+// and a loop's break (return()) runs the finally, which closes the stream.
+// ponytail: the cap holds on the stat only; a file that grows past it while it is read is read to its end. Count the stream's bytes if a
+// remote machine ever needs the hard bound
+async function* readLines(path: string, { maxBytes }: { maxBytes: number }): AsyncGenerator<string> {
+  await checkFile(path, maxBytes);
+  const input = createReadStream(path);
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  try {
+    yield* lines;
+  } finally {
+    lines.close();
+    input.destroy();
+  }
 }
 
 // Lifted from server-editor.ts' writeAtomic, which 7.3 deletes when it switches to this one: the text in a temp file beside the original,
@@ -40,5 +64,5 @@ async function writeAtomic(file: string, contents: string): Promise<Buffer> {
 }
 
 export const localFs: MachineFs = {
-  stat, lstat, realpath, access, readdir, readFile: readCapped, writeFile, writeAtomic, mkdir, mkdtemp, rename, rm, cp, copyFile, link, chmod, unlink, appendFile,
+  stat, lstat, realpath, access, readdir, readFile: readCapped, readLines, writeFile, writeAtomic, mkdir, mkdtemp, rename, rm, cp, copyFile, link, chmod, unlink, appendFile,
 };
