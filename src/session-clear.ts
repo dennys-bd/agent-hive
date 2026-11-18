@@ -17,14 +17,12 @@ function renamed(sessions: Session[], from: string, id: string, keep: boolean): 
   });
 }
 
-// A clear has no token baseline: the new transcript starts empty, so its first Stop counts from zero (#248). A fork's counts from the source's,
-// and its forkOf goes: the fork is named, so no later SessionStart is taken for it (#875)
+// A clear has no token baseline: the new transcript starts empty, so its first Stop counts from zero (#248). A fork's counts from the source's.
+// Either way forkOf goes: the run now holds a session of its own, so no later SessionStart is taken for a fork (#875)
 function moved(worker: Worker, id: string, keep: boolean): Worker {
-  if (keep) {
-    const { forkOf: _forkOf, ...named } = worker;
-    return { ...named, sessionId: id };
-  }
-  const { tokens: _tokens, ...rest } = worker;
+  const { forkOf: _forkOf, ...named } = worker;
+  if (keep) return { ...named, sessionId: id };
+  const { tokens: _tokens, ...rest } = named;
   return { ...rest, sessionId: id };
 }
 

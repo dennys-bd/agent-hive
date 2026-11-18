@@ -265,6 +265,22 @@ test('a SessionStart with source new and another uuid on a live copilot session 
   assert.deepEqual([cleared.workers.at(-1)!.sessionId, localSessionsOf(cleared, 'hive').map((s) => [s.id, s.agent])], [CLEARED, [[CLEARED, 'copilot']]]);
 });
 
+test('a SessionStart with source new or clear on a free run with no id yet records it as its first session, not as a clear (#875, #932)', () => {
+  for (const source of ['new', 'clear']) {
+    const opened = reduce(hive([]), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: 'codex' }).state; // codex: no id until its first SessionStart
+    assert.equal(opened.workers.at(-1)!.sessionId, undefined);
+    const first = sessionStart(opened, CLEARED, source);
+    assert.deepEqual([first.workers.at(-1)!.sessionId, localSessionsOf(first, 'hive').map((s) => s.id)], [CLEARED, [CLEARED]], source);
+  }
+});
+
+test('a clear drops a copy\'s forkOf too: the run holds a session of its own, so no later SessionStart is taken for the fork (#875)', () => {
+  const copied = copyTo(copilotHive(), TASK_B, { copied: undefined }).state;
+  const cleared = sessionStart(copied, CLEARED, 'new');
+  assert.deepEqual([cleared.workers.at(-1)!.sessionId, 'forkOf' in cleared.workers.at(-1)!], [CLEARED, false]);
+  assert.equal(sessionStart(cleared, FORK, 'resume').workers.at(-1)!.sessionId, CLEARED);
+});
+
 test('a codex or copilot copy whose run ends before the fork\'s SessionStart leaves no entry, into a task and into local, even after a hook; one the fork named keeps it; a failed spawn leaves none (#875)', () => {
   const forks = [[copilotHive, 'resume'], [codexHive, 'fork']] as const;
   for (const [before, source] of forks) {

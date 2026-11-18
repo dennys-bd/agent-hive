@@ -863,7 +863,7 @@ const namedFork = (worker: Worker, p: HookPayload): p is HookPayload & { session
 function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayload): State {
   const id = p.session_id;
   if (namedFork(worker, p)) return renameSession(state, worker, p.session_id);
-  if ((p.source === 'clear' || p.source === 'new') && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id); // #875: Copilot's /clear says new
+  if ((p.source === 'clear' || p.source === 'new') && worker.sessionId !== undefined && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id); // #875: Copilot's says new; a run with no id yet takes its first below
   if (worker.sessionId === undefined && isUuid(id)) {
     const named = patch(state, ptyId, { sessionId: id }).state;
     return worker.freeSession === true ? firstFreeSession(named, worker, id, p.cwd) : firstSession(named, worker, id);
