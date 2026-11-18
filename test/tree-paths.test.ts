@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { destination, existingItem, GIT_MESSAGE, newItem, type PathFs, refusal, rootsOf, sourceItem } from '../src/tree-paths.js';
+import { destination, existingItem, GIT_MESSAGE, newItem, type PathFs, refusal, rootsOf, sourceItem, treeFolder, treeItem } from '../src/tree-paths.js';
 
 // Every path exists and is its own real path, so only the guards under test can refuse
 const FS: PathFs = { realpath: async (path) => path, stat: async () => ({ isDirectory: () => true }) };
@@ -20,4 +20,10 @@ test('a .git segment anywhere in the path is refused, in any case, for a new ite
 test('a name that only contains .git is not refused (#818)', async () => {
   const roots = await rootsOf('/root', FS);
   for (const path of ['.github/x', 'sub/.gitignore', 'a.git/x']) assert.equal(await newItem(roots, path, FS), resolve('/root', path), path);
+});
+
+test('treeFolder and treeItem check with the PathFs they are handed (#160)', async () => {
+  assert.equal(await treeFolder('/root', 'sub', FS), resolve('/root', 'sub'));
+  assert.equal(await treeItem('/root', 'a.ts', FS), resolve('/root', 'a.ts'));
+  assert.deepEqual(await treeItem('/root', '.git/x', FS), BAD);
 });

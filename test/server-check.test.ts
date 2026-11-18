@@ -12,9 +12,9 @@ import { registerCheckRoutes } from '../src/server-check.js';
 import { type CheckAnswer, type CheckerState, EDITOR_DEFAULTS, type EditorConfig } from '../src/types.js';
 import { combConfig, LOCAL_STAGES } from './fakes.js';
 import { savedActivityId, withLocal } from './fixtures/work.js';
+import { fakeMachine } from './fake-machine.js';
 import { writeCmdTwin } from './npm-server.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
-import { fakeMachine } from './fake-machine.js';
 
 const ACTIVITY = encodeURIComponent(localActivityId('hive'));
 

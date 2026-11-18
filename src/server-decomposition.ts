@@ -1,5 +1,5 @@
-import type { MachineFor } from './machine.js';
-import { readFile, stat } from 'node:fs/promises';
+import { fileFs, machineCode } from './machine-fs.js';
+import { type Machine, type MachineFor, MachineError } from './machine.js';
 import type { Express, Request, Response } from 'express';
 import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
@@ -13,7 +13,7 @@ import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
 import { type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
-import { activityFolders, DISK, MISSING_FILE_MESSAGE } from './server-files.js';
+import { activityFolders, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { fetchStatusField, type GithubSourceConfig } from './sources/github.js';
@@ -42,7 +42,7 @@ const HIVE_TARGET_MESSAGE = 'a decomposição já começou a ser escrita no hive
 
 /** What the decomposition's routes need (#865). */
 export interface DecompositionRouteDeps {
-  machineFor?: MachineFor; // #158: the activity's machine; 7.2–7.4 read it
+  machineFor: MachineFor; // #158: the activity's machine; the goal's file and git run on it
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
   latest(): State | undefined; // #783: the state after each hive step's dispatch, which checks the step landed
@@ -89,29 +89,37 @@ function epicOf(config: Pick<Config, 'comb'>, task: Task): Item['epic'] {
 
 // The file the result names, wherever it is (#936: a docsRepo outside the worktree included), resolved as the file routes resolve it (#258,
 // #697): absolute, or relative to the goal's worktree. Still under FILE_MAX, and a read failure keeps its fixed words
-async function readDecompositionFile(config: Pick<Config, 'comb'>, target: { task: Task; activity: NonNullable<Parameters<typeof activityFolders>[1]['activity']> }, path: string): Promise<{ text: string; file: string } | Refusal> {
+async function readDecompositionFile(config: Pick<Config, 'comb'>, target: { task: Task; activity: NonNullable<Parameters<typeof activityFolders>[1]['activity']> }, path: string, machine: Machine): Promise<{ text: string; file: string } | Refusal> {
   const folders = activityFolders(config, target);
   if ('status' in folders) return folders;
-  const resolved = await resolveActivityPath({ ...folders, path, ...DISK });
+  const resolved = await resolveActivityPath({ ...folders, path, ...fileFs(machine) });
   if ('reason' in resolved) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
   try {
-    if ((await stat(resolved.file)).size > FILE_MAX) return { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE };
-    return { text: await readFile(resolved.file, 'utf8'), file: resolved.file };
-  } catch {
+    return { text: await machine.fs.readFile(resolved.file, { maxBytes: FILE_MAX, encoding: 'utf8' }), file: resolved.file };
+  } catch (err) {
+    const code = machineCode(err);
+    if (code === MachineError.TOO_LARGE) return { status: HTTP_TOO_LARGE, message: TOO_LARGE_MESSAGE };
+    if (code === MachineError.NOT_FILE) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
     return { status: HTTP_SERVER_ERROR, message: READ_MESSAGE };
   }
 }
 
+// The machine of the activity a route serves; a refused target (unknown, local) reads the host's, and the route then refuses it
+const goalMachine = (deps: DecompositionRouteDeps, current: Live, id: string): Machine => {
+  const target = taskTarget(current.state, id);
+  return deps.machineFor('status' in target ? {} : target.activity);
+};
+
 // The live task awaiting approval, its decomposition.md parsed, and where its issues go: the goal issue's repository, else a local goal's
 // workspace origin (absent when it is not on GitHub)
-async function readGoal(deps: DecompositionRouteDeps, current: Live, activityId: string): Promise<Goal | Refusal> {
+async function readGoal(deps: DecompositionRouteDeps, current: Live, activityId: string, machine: Machine): Promise<Goal | Refusal> {
   const target = taskTarget(current.state, activityId);
   if ('status' in target) return target;
   if (!target.activity.approval) return { status: HTTP_CONFLICT, message: NOT_AWAITING_MESSAGE };
   const result = resultOf(current.state, target.task.item.itemId) ?? {};
   if (typeof result.decomposition !== 'string') return { status: HTTP_CONFLICT, message: NO_DECOMPOSITION_MESSAGE };
   if (!result.decomposition.endsWith('.md')) return { status: HTTP_CONFLICT, message: NOT_MD_MESSAGE };
-  const read = await readDecompositionFile(current.runtime.config, target, result.decomposition);
+  const read = await readDecompositionFile(current.runtime.config, target, result.decomposition, machine);
   if ('status' in read) return read;
   const issue = issueOfLink(target.task.item.url);
   const repository = issue?.repository ?? (await originRepository({ exec: deps.exec }, taskWorkspace(current.runtime.config, target.task)?.path));
@@ -181,8 +189,10 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
 // The write and the stage's end: the file's checkout resolved first (#936), so a file the Hive cannot deliver writes nothing; each step
 // dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr, unless git ignores it (#741); `done` once everything is done; then, for a GitHub goal whose source
 // shows or hides epics, markEpic (#556); then approve for a GitHub goal or closeTask for a local one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
-async function write(deps: DecompositionRouteDeps, current: Live, activityId: string, body: unknown, res: Response): Promise<void> {
-  const goal = await readGoal(deps, current, activityId);
+async function write(base: DecompositionRouteDeps, current: Live, activityId: string, body: unknown, res: Response): Promise<void> {
+  const machine = goalMachine(base, current, activityId);
+  const deps = { ...base, exec: machine.exec }; // the goal's git runs on its machine
+  const goal = await readGoal(deps, current, activityId, machine);
   if ('status' in goal) return refuse(res, goal);
   const tree = pendingTree(goal);
   if ('status' in tree) return refuse(res, tree);
@@ -231,11 +241,13 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
     const current = deps.requireLive(res);
     if (!current) return;
     try {
-      const goal = await readGoal(deps, current, activityParam(req));
+      const machine = goalMachine(deps, current, activityParam(req));
+      const on = { ...deps, exec: machine.exec };
+      const goal = await readGoal(on, current, activityParam(req), machine);
       if ('status' in goal) return refuse(res, goal);
       const recorded = recordedIssues(goal.result);
       // #783: read once, for both targets; nothing once pr is recorded
-      const read = recorded[PR_KEY] === undefined ? await readDelivery(deps.exec, deps.gql, goal.file) : undefined;
+      const read = recorded[PR_KEY] === undefined ? await readDelivery(on.exec, deps.gql, goal.file) : undefined;
       const shown = preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), deliveryPreview(read, recorded));
       const target = decompositionTarget(goal.result); // #783: answered whatever hiveSource is, so a write under way stays locked
       res.json({ ...shown, ...(target === undefined ? {} : { target }), ...(current.runtime.config.comb.hiveSource ? { hive: hivePreview(current.state, goal, read) } : {}) });

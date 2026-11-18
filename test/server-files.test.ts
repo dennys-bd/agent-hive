@@ -9,6 +9,8 @@ import { worktreePath } from '../src/worktree.js';
 import type { Task, TaskFile, Exec, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import type { Machine } from '../src/machine.js';
+import { fakeMachine, fakeMachines, statsOf } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -32,7 +34,7 @@ const files = async (f: Files, id = 'local:1'): Promise<TaskFile[]> => (await hi
 
 // The task's worktree holds docs/spec.md; the exec records every call and, once fail() is called, rejects like a CLI that failed.
 // others: more tasks, each with an activity of its own (#588, #629), a terminal of theirs needs one to post from
-async function startFiles(t: TestContext, saved: Task = task(), isDeleted = false, others: Task[] = [], result: Record<string, unknown> = RESULT): Promise<Files> {
+async function startFiles(t: TestContext, saved: Task = task(), isDeleted = false, others: Task[] = [], result: Record<string, unknown> = RESULT, machine?: Machine): Promise<Files> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo); // the routes answer real paths: macOS's tmpdir is a symlink
   const worktree = worktreePath(repo, SLUG);
@@ -52,7 +54,7 @@ async function startFiles(t: TestContext, saved: Task = task(), isDeleted = fals
     if (failure) throw new Error(failure);
     return { stdout: args.includes('get-url') ? `${origin}\n` : '' };
   };
-  const server = createServer({ secret: SECRET, home: made.home, exec });
+  const server = createServer({ secret: SECRET, home: made.home, exec, ...(machine ? { machines: fakeMachines(machine) } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -144,4 +146,9 @@ test('POST /activities/:id/open-file is gone with the IDE: 404, and nothing runs
   const f = await startFiles(t);
   assert.equal((await postJson(`${f.base}${workPath(f.server, 'local:1')}/open-file`, { path: 'docs/spec.md' })).status, 404);
   assert.deepEqual(f.calls, []);
+});
+
+test('files resolves each path of the result on the activity\'s machine: one whose stat finds no file lists none (#160)', async (t) => {
+  const f = await startFiles(t, task(), false, [], RESULT, fakeMachine({ fs: { stat: async () => statsOf('folder') } }));
+  assert.deepEqual(await files(f), []);
 });

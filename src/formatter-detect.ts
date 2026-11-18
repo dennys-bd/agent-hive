@@ -1,16 +1,24 @@
-import { access, constants, stat } from 'node:fs/promises';
 import { delimiter, join, win32 } from 'node:path';
 import { type ExecLookup, findExec } from './exec-path.js';
 import { FORMATTERS } from './formatters.js';
+import type { MachineFs, MachineInfo } from './machine.js';
 import type { FormatterId } from './types.js';
 
-// "Installed" (#749): a few stats per formatter on every ask, never cached, since a worker may install a dependency at any time.
+// "Installed" (#749): a few stats per formatter on every ask, never cached, since a worker may install a dependency at any time. Every probe
+// is on the machine the folder is on (#160).
+
+const X_OK = 1; // node:fs's constants.X_OK: node:fs is a restricted import here (#158)
+
+/** What a lookup probes (#160): a machine's fs, or HOST's for a host-only caller. */
+export type ExecProbe = Pick<MachineFs, 'access' | 'stat'>;
+/** What a lookup reads of a machine: its probes, and its platform and PATH. A Machine is one; so is HOST (host-fs.ts). */
+export interface ExecHost { fs: ExecProbe; info(): Pick<MachineInfo, 'platform' | 'path'> }
 
 // A regular file this process may run: access alone also passes a folder
-async function isExecutable(path: string): Promise<boolean> {
+async function isExecutable(fs: ExecProbe, path: string): Promise<boolean> {
   try {
-    await access(path, constants.X_OK);
-    return (await stat(path)).isFile();
+    await fs.access(path, X_OK);
+    return (await fs.stat(path)).isFile();
   } catch {
     return false;
   }
@@ -20,15 +28,14 @@ async function isExecutable(path: string): Promise<boolean> {
 const placesOf = (candidate: string, folder: string, dirs: string[]): string[] =>
   candidate.includes('/') ? [join(folder, candidate)] : dirs.map((dir) => join(dir, candidate));
 
-async function firstExecutable(paths: string[]): Promise<string | undefined> {
+async function firstExecutable(fs: ExecProbe, paths: string[]): Promise<string | undefined> {
   for (const path of paths) {
-    if (await isExecutable(path)) return path;
+    if (await isExecutable(fs, path)) return path;
   }
   return undefined;
 }
 
-/** The platform the lookup answers for; `isFile` fakes the win32 file system in a test. Left out it is process.platform, until the call
- *  sites pass it with the resolver (#633, #634, #635). */
+/** findOnPath's platform and win32 file system, which its host-only callers' tests fake. */
 export interface DetectLookup {
   readonly platform?: NodeJS.Platform;
   readonly isFile?: ExecLookup['isFile'];
@@ -36,7 +43,7 @@ export interface DetectLookup {
 
 // On win32 a file is runnable by its PATHEXT extension, not a mode bit (X_OK only checks it exists there), so the lookup is exec-path's
 // (#632). A candidate with a slash is the project's copy, an absolute name under the folder; a bare one goes through PATH.
-const findWin32 = (candidates: readonly string[], folder: string, pathList: string, isFile: ExecLookup['isFile']): string | undefined => {
+const findWin32 = (candidates: readonly string[], folder: string, pathList: string, isFile: (file: string) => boolean): string | undefined => {
   const env = { PATH: pathList, PATHEXT: process.env.PATHEXT };
   for (const candidate of candidates) {
     const name = candidate.includes('/') ? win32.join(folder, candidate) : candidate;
@@ -46,23 +53,41 @@ const findWin32 = (candidates: readonly string[], folder: string, pathList: stri
   return undefined;
 };
 
-/** The first of `candidates` installed for `folder` (#749, #782): one with a slash under the folder (the project's copy) before a bare name in
- * each of `path`'s folders. */
-export const findCandidate = (candidates: readonly string[], folder: string, path: string, lookup: DetectLookup = {}): Promise<string | undefined> => {
-  if ((lookup.platform ?? process.platform) === 'win32') return Promise.resolve(findWin32(candidates, folder, path, lookup.isFile));
+// findExec's isFile is synchronous and a machine's stat is not (#160): a first pass answering false names every path the lookup would try,
+// those are stat'ed at once on the machine, and the second pass reads the answers
+async function probedIsFile(fs: ExecProbe, lookup: (isFile: (file: string) => boolean) => unknown): Promise<(file: string) => boolean> {
+  const asked: string[] = [];
+  lookup((file) => {
+    asked.push(file);
+    return false;
+  });
+  const found = await Promise.all(asked.map((file) => fs.stat(file).then((s) => s.isFile(), () => false)));
+  const files = new Set(asked.filter((_, i) => found[i]));
+  return (file) => files.has(file);
+}
+
+async function onWin32(fs: ExecProbe, candidates: readonly string[], folder: string, path: string, isFile?: ExecLookup['isFile']): Promise<string | undefined> {
+  const lookup = (probe: (file: string) => boolean): string | undefined => findWin32(candidates, folder, path, probe);
+  return lookup(isFile ?? (await probedIsFile(fs, lookup)));
+}
+
+/** The first of `candidates` installed for `folder` on `on`'s machine (#749, #782, #160): one with a slash under the folder (the project's
+ * copy) before a bare name in each of `path`'s folders, the machine's own PATH unless the caller passes the run's. */
+export const findCandidate = (on: ExecHost, candidates: readonly string[], folder: string, path = on.info().path): Promise<string | undefined> => {
+  if (on.info().platform === 'win32') return onWin32(on.fs, candidates, folder, path);
   const dirs = path.split(delimiter).filter((dir) => dir !== '');
-  return firstExecutable(candidates.flatMap((c) => placesOf(c, folder, dirs)));
+  return firstExecutable(on.fs, candidates.flatMap((c) => placesOf(c, folder, dirs)));
 };
 
 /** Each of `ids`' binary when it is installed for `folder` (#749): its first candidate that is an executable file, the project's local one
- * before the daemon's PATH. A formatter with none is absent from the answer. */
-export async function detectFormatters(folder: string, ids: readonly FormatterId[], path = process.env.PATH ?? '', lookup: DetectLookup = {}): Promise<Partial<Record<FormatterId, string>>> {
-  const found = await Promise.all(FORMATTERS.filter((def) => ids.includes(def.id)).map(async (def) => [def.id, await findCandidate(def.candidates, folder, path, lookup)] as const));
+ * before the machine's PATH. A formatter with none is absent from the answer. */
+export async function detectFormatters(on: ExecHost, folder: string, ids: readonly FormatterId[], path = on.info().path): Promise<Partial<Record<FormatterId, string>>> {
+  const found = await Promise.all(FORMATTERS.filter((def) => ids.includes(def.id)).map(async (def) => [def.id, await findCandidate(on, def.candidates, folder, path)] as const));
   return Object.fromEntries(found.filter(([, binary]) => binary !== undefined));
 }
 
-/** The first executable `name` in `path`'s folders (#780): an install's requires check and a server's run check. */
-export const findOnPath = (name: string, path: string, lookup: DetectLookup = {}): Promise<string | undefined> =>
+/** The first executable `name` in `path`'s folders (#780): an install's requires check and a server's run check, on the host (HOST.fs). */
+export const findOnPath = (fs: ExecProbe, name: string, path: string, lookup: DetectLookup = {}): Promise<string | undefined> =>
   (lookup.platform ?? process.platform) === 'win32'
-    ? Promise.resolve(findWin32([name], '', path, lookup.isFile))
-    : firstExecutable(path.split(delimiter).filter((dir) => dir !== '').map((dir) => join(dir, name)));
+    ? onWin32(fs, [name], '', path, lookup.isFile)
+    : firstExecutable(fs, path.split(delimiter).filter((dir) => dir !== '').map((dir) => join(dir, name)));

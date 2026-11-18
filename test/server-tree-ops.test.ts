@@ -5,6 +5,8 @@ import { access, mkdir, readdir, readFile, realpath, stat, symlink, writeFile } 
 import { join, resolve } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { trashCommand } from '../src/platform-commands.js';
+import type { Machine } from '../src/machine.js';
+import { treeFs } from '../src/machine-fs.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { CREATE_BODY_MESSAGE, createItem, FILE_BODY_MESSAGE, INTO_ITSELF_MESSAGE, IS_FOLDER_MESSAGE, renameItem, saveNewFile, TAKEN_MESSAGE, TOO_LARGE_MESSAGE, type TreeFs } from '../src/server-tree-ops.js';
 import { saveState } from '../src/state-store.js';
@@ -15,6 +17,7 @@ import { APPROVAL_MINUTES_DEFAULT, CLOSE_TAB_DEFAULTS, DELETE_ACTIVITY_DEFAULTS,
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 // The files tree's own operations (#818) end to end: one local task's worktree is a real temp folder; the exec records the trash's argv and
@@ -36,7 +39,7 @@ const sha256 = (text: string): string => createHash('sha256').update(Buffer.from
 
 interface Ops { base: string; wt: string; outside: string; calls: [string, string[]][]; server: HiveServer }
 
-async function startOps(t: TestContext): Promise<Ops> {
+async function startOps(t: TestContext, machine?: Machine): Promise<Ops> {
   const { home, repo } = await tempHive(t);
   const wt = worktreePath(repo, 'hive-1-task');
   for (const [path, text] of Object.entries(FILES)) {
@@ -49,7 +52,7 @@ async function startOps(t: TestContext): Promise<Ops> {
     calls.push([file, args]);
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -127,6 +130,14 @@ test('tree/file writes an untitled buffer to the dialog\'s absolute path and ans
   assert.deepEqual([await exists(join(f.outside, 'x.md')), await exists(join(f.wt, 'big.txt'))], [false, false]);
 });
 
+test('tree/trash runs its trash command with the activity\'s machine\'s exec and platform, never the host\'s exec (#160)', async (t) => {
+  const ran: [string, string[]][] = [];
+  const machine = fakeMachine({ exec: async (file, args) => { ran.push([file, [...args]]); return { stdout: '' }; }, info: { platform: 'linux' } });
+  const f = await startOps(t, machine);
+  assert.deepEqual(await post(f, 'trash', { paths: ['README.md'] }), [204, undefined]);
+  assert.deepEqual([ran, f.calls], [[trashCommand('linux', [join(await realpath(f.wt), 'README.md')])], []]);
+});
+
 // The fake volume's root as a native path (#641): on win32 '/root' resolves to the runner's drive
 const ROOT = resolve('/root');
 const at = (name: string): string => join(ROOT, name);
@@ -178,10 +189,10 @@ const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its nati
 
 test('on win32 create, rename and an untitled file\'s first save answer their nested paths with / only, from real paths of the runner (#641)', WIN32_ONLY, async (t) => {
   const root = await tempDir(t, 'wire-ops-');
-  assert.equal(await createItem({ root, path: 'a/b/c.ts', kind: 'file' }), 'a/b/c.ts');
-  assert.equal(await renameItem({ root, from: 'a/b/c.ts', to: 'x/y/z.ts' }), 'x/y/z.ts');
+  assert.equal(await createItem({ root, path: 'a/b/c.ts', kind: 'file' }, treeFs(fakeMachine())), 'a/b/c.ts');
+  assert.equal(await renameItem({ root, from: 'a/b/c.ts', to: 'x/y/z.ts' }, treeFs(fakeMachine())), 'x/y/z.ts');
   await mkdir(join(root, 'n', 'm'), { recursive: true });
-  const saved = await saveNewFile({ root, path: join(root, 'n', 'm', 'new.ts'), text: 'x', replace: false });
+  const saved = await saveNewFile({ root, path: join(root, 'n', 'm', 'new.ts'), text: 'x', replace: false }, treeFs(fakeMachine()));
   assert.ok('path' in saved);
   assert.equal(saved.path, 'n/m/new.ts');
 });

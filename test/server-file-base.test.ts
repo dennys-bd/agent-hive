@@ -17,6 +17,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, E
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 // GET /activities/:id/file-base (#668) over a real repository: its first commit is the task's base (BASE_REF), its second changes
@@ -50,11 +51,14 @@ async function commitFiles(repo: string, worktree: string, git: Bases['git']): P
 }
 
 // deleted: the activity is gone, its record alone kept (#629); unresolved: the workspace configured by its tmpdir path, a symlink on macOS (#377)
-async function startBases(t: TestContext, isDeleted = false, isUnresolved = false): Promise<Bases> {
+// Two repositories built a second apart must hash alike: the #160 test compares their answers, the commit's label included
+const FIXED_DATES = { GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' };
+
+async function startBases(t: TestContext, isDeleted = false, isUnresolved = false, isOnMachine = false): Promise<Bases> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo);
   const git = async (...args: string[]): Promise<string> =>
-    (await run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args])).stdout.trim();
+    (await run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args], { env: { ...process.env, ...FIXED_DATES } })).stdout.trim();
   const worktree = worktreePath(repo, SLUG);
   await commitFiles(repo, worktree, git);
   const base0 = { ...initialState(0), localCount: 1, tasks: [TASK] };
@@ -62,7 +66,7 @@ async function startBases(t: TestContext, isDeleted = false, isUnresolved = fals
     ? withKeptRecord(base0, 'local:1', savedActivityId(1), { slug: SLUG })
     : withWork(base0, 'local:1', { id: savedActivityId(1), slug: SLUG, base: { ref: BASE_REF, tellWorker: false } });
   await saveState(made.home, state);
-  const server = createServer({ secret: SECRET, home: made.home, exec });
+  const server = createServer({ secret: SECRET, home: made.home, exec: isOnMachine ? async () => ({ stdout: '' }) : exec, ...(isOnMachine ? { machines: fakeMachines(fakeMachine({ exec })) } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -145,4 +149,9 @@ test('baseCommit answers the commit file-base reads: the design-frame-base frame
     const { url } = (await res.json()) as { url: string };
     assert.equal(await (await fetch(`${b.base}${url}`)).text(), withBridge((base as { text: string }).text), against);
   }
+});
+
+test('the base is read with the activity\'s machine\'s git: a server whose own exec answers nothing answers as before (#160)', async (t) => {
+  const askBase = async (b: Bases): Promise<unknown> => (await hiveFetch(`${b.base}${workPath(b.server, 'local:1')}/file-base?${new URLSearchParams({ path: 'docs/spec.md', against: 'task' })}`)).json();
+  assert.deepEqual(await askBase(await startBases(t, false, false, true)), await askBase(await startBases(t)));
 });

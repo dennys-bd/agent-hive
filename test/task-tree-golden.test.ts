@@ -4,6 +4,7 @@ import { taskTree } from '../src/server-tree.js';
 import { buildTree, type TreeNode } from '../src/ui/lib/file-tree.js';
 import type { Exec, TaskTree } from '../src/types.js';
 import { TODAY_TREE } from './fixtures/task-tree-golden.js';
+import { fakeMachine } from './fake-machine.js';
 import { realExec, treeRepo } from './fixtures/tree-repo.js';
 
 // What the sidebar draws before any folder read: an unloaded ignored folder shows collapsed and empty (HIVE-22), whatever buildTree put under it
@@ -13,7 +14,7 @@ const draw = (tree: Omit<TaskTree, 'root'>, showHidden: boolean): TreeNode[] => 
 
 test('the 3-run taskTree draws the tree the recorded 5-run answer drew, with the same files, marks, folders, branch and ignored folders; only the ignored files under an ignored folder are gone (#502)', async (t) => {
   const repo = await treeRepo(t);
-  const { root, ...now } = await taskTree(repo, realExec);
+  const { root, ...now } = await taskTree(fakeMachine({ exec: realExec }), repo);
   assert.equal(root, repo);
   for (const showHidden of [false, true]) assert.deepEqual(draw(now, showHidden), draw(TODAY_TREE, showHidden), `showHidden: ${showHidden}`);
   assert.deepEqual([now.files, now.marks, now.folders, now.branch, now.ignored.folders], [TODAY_TREE.files, TODAY_TREE.marks, TODAY_TREE.folders, TODAY_TREE.branch, TODAY_TREE.ignored.folders]);
@@ -29,7 +30,7 @@ test('taskTree spawns exactly 3 git runs: the listing, one status v2 and the --d
   const repo = await treeRepo(t);
   const calls: string[][] = [];
   const counting: Exec = (file, args, opts) => { calls.push(args); return realExec(file, args, opts); };
-  await taskTree(repo, counting);
+  await taskTree(fakeMachine({ exec: counting }), repo);
   // the 7 leading args are gitIn's: --no-optional-locks -C <root> -c core.fsmonitor=false -c core.quotepath=off
   assert.deepEqual(calls.map((args) => args.slice(7).join(' ')).sort(), [
     'ls-files -z --cached --others --exclude-standard',

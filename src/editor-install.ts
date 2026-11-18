@@ -9,6 +9,7 @@ import { download, type DownloadLimits, type Latest, latestOf, REGISTRIES, type 
 import { type ExecCommand, type ExecLookup, findExec, resolveExec } from './exec-path.js';
 import { githubStep, npmStep, openVsxStep, type StepContext, toolchainStep } from './editor-unpack.js';
 import { findOnPath } from './formatter-detect.js';
+import { HOST } from './host-fs.js';
 import { type Arch, requiredTools, serverDef } from './languages.js';
 import { posixShell } from './posix-shell.js';
 import { type EditorInstallEvent, type EditorInstalls, type InstallAction, type InstallState, type InstallTarget, SERVER_IDS, type ServerId, SYNTAX_IDS, type SyntaxId } from './types.js';
@@ -68,7 +69,7 @@ function resolveStep(command: string, args: string[], lookup: ExecLookup): ExecC
 
 // A server that ships with its SDK (#782): installed while its tool is on PATH, at the version the tool prints; nothing of the Hive's on disk
 async function systemState(tool: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform, exec: StepExec): Promise<InstallState> {
-  const binary = await findOnPath(tool, env.PATH ?? '', { platform, isFile: exec.isFile });
+  const binary = await findOnPath(HOST.fs, tool, env.PATH ?? '', { platform, isFile: exec.isFile });
   if (binary === undefined) return { state: 'requires', tool };
   const printed = await new Promise<string>((resolve) => {
     const run = resolveStep(binary, ['--version'], { platform, env, isFile: exec.isFile }); // a dart.bat runs through cmd.exe
@@ -195,7 +196,7 @@ class EditorInstaller implements Installer {
     if (target.kind !== 'server') return undefined;
     const path = this.env().PATH ?? '';
     for (const tool of requiredTools(serverDef(target.id))) {
-      if ((await findOnPath(tool, path, { platform: this.platform, isFile: this.exec.isFile })) === undefined) return tool;
+      if ((await findOnPath(HOST.fs, tool, path, { platform: this.platform, isFile: this.exec.isFile })) === undefined) return tool;
     }
     return undefined;
   }

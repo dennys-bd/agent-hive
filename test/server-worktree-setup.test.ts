@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf, taskOfWorker } from '../src/activities.js';
 import { shortId } from '../src/log.js';
+import { MachineError, type Machine } from '../src/machine.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { ChannelView } from '../src/console.js';
 import type { Activity, Task, Exec, OpenResult, SettingsBody, Worker } from '../src/types.js';
@@ -13,6 +14,7 @@ import { worktreePath } from '../src/worktree.js';
 import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
 import { bodyFlows, AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
+import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workPath } from './fixtures/work.js';
 
@@ -69,7 +71,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 
 // git answers nothing, except the worktree's git dir: a temp folder standing in for <repo>/.git/worktrees/<slug>. `worktree add` makes the
 // worktree's folder, as git would: a RUN needs it as its cwd, and a folder already there is what makes a start check its marker first (#351).
-async function start(t: TestContext, setup: string, gitHeld?: Promise<void>): Promise<Started> {
+async function start(t: TestContext, setup: string, gitHeld?: Promise<void>, machine?: Machine): Promise<Started> {
   const { home, repo } = await tempHive(t);
   const gitDir = join(repo, '.git', 'worktrees', SLUG);
   await mkdir(gitDir, { recursive: true });
@@ -82,7 +84,7 @@ async function start(t: TestContext, setup: string, gitHeld?: Promise<void>): Pr
     return { stdout: args.includes('--absolute-git-dir') ? `${gitDir}\n` : '' };
   };
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec, log });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec, log, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -215,6 +217,17 @@ test('a first /open on a worktree folder already there and set up emits no setup
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
   assert.deepEqual([trail(lines, from), workers.length, work0(server)?.setup], [['worktreeReady', 'openTerminal'], 1, undefined]);
   assert.deepEqual(await json(hiveFetch(`${base}/console`)), []);
+});
+
+test('a first /open asks the task\'s machine whether its worktree folder is there: one that answers no sets it up, though the host has it (#160)', async (t) => {
+  const local = fakeMachine();
+  const machine = fakeMachine({ fs: { access: async (path, mode) => { if (path.endsWith(SLUG)) throw new MachineError('ENOENT', { code: 'ENOENT' }); return local.fs.access(path, mode); } } });
+  const { base, repo, gitDir, server, lines } = await start(t, '# nothing yet\n', undefined, machine);
+  await mkdir(worktreePath(repo, SLUG), { recursive: true });
+  await writeFile(join(gitDir, SETUP_MARKER), '');
+  const from = lines.length;
+  assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
+  assert.deepEqual([trail(lines, from), work0(server)?.setup], [['setupStarted', 'setupStep', 'worktreeReady', 'setupEnded', 'openTerminal'], undefined]);
 });
 
 test('a first /open on a workspace with no setup steps marks the task, runs the worktree\'s git in the Setup worktree channel, then opens the session (#576)', async (t) => {
