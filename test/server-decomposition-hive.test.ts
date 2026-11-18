@@ -80,7 +80,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined });
   const server = app.listen(0);
   t.after(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}/decomposition`;
