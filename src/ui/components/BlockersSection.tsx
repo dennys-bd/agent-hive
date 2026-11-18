@@ -1,13 +1,12 @@
 import { XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
-import type { RefGrammar } from '../../blocker-refs';
 import type { BlockerChange, BlockerRef, Item, ItemBlockers, State, Task } from '../../types';
 import { BlockerAddRow, shownBlockerId } from '@/components/BlockerAddRow';
 import { Button } from '@/components/ui/button';
 import { useRefGrammar } from '@/hooks/use-ref-grammar';
+import { useSectionEdit } from '@/hooks/use-section-edit';
 import { type MessageKey, t } from '@/i18n';
-import { blockerErrorText } from '@/lib/blocker-errors';
 import { editBlocker } from '@/lib/blockers-api';
 
 type Kind = BlockerChange['kind'];
@@ -26,38 +25,19 @@ export const inheritedIds = (item: Pick<Item, 'inheritedBlockedBy'>): string[] =
   (item.inheritedBlockedBy ?? []).map((b) => t('task.blockedVia', { id: `#${b.id}`, via: `#${b.via}` }));
 
 // A row's right side: fechada; else the stage of the task the ref names in the flow (same source, same id); else aberta
-function refState(blocker: BlockerRef, source: string, tasks: readonly Task[]): string {
+export function refState(blocker: BlockerRef, source: string, tasks: readonly Task[]): string {
   if (blocker.state === 'closed') return t('blockers.closed');
   return tasks.find((other) => sourceOf(other) === source && other.item.id === blocker.id)?.stage ?? t('blockers.open');
 }
 
-// One edit at a time per section, and no optimistic change: the list stays as the state has it, so a refusal needs no rollback, only its copy
-function useBlockerEdit(source: string, itemId: string, grammar: RefGrammar | undefined) {
-  const [pending, setPending] = useState<string>();
-  const [error, setError] = useState<string>();
-  const edit = async (key: string, change: BlockerChange): Promise<boolean> => {
-    setPending(key);
-    setError(undefined);
-    try {
-      await editBlocker(source, itemId, change);
-      return true;
-    } catch (err) {
-      setError(blockerErrorText(err, grammar));
-      return false;
-    } finally {
-      setPending(undefined);
-    }
-  };
-  return { pending, error, edit };
-}
+export interface BlockerRowProps { label: string; blocker: BlockerRef; stateText: string; isPending: boolean; onRemove(): void }
 
-interface RowProps { kind: Kind; blocker: BlockerRef; stateText: string; isPending: boolean; onRemove(): void }
-
-function BlockerRow({ kind, blocker, stateText, isPending, onRemove }: RowProps) {
+/** One relation's row (#57): its label (the kind, or a relation's phrase, #829), the id, the title, the state and its ×. */
+export function BlockerRow({ label, blocker, stateText, isPending, onRemove }: BlockerRowProps) {
   const id = shownBlockerId(blocker.id);
   return (
     <div data-slot="blocker-row" className="flex min-w-0 items-center gap-2">
-      <span className={`w-[84px] shrink-0 ${MUTED}`}>{t(KIND_LABEL[kind])}</span>
+      <span className={`w-[84px] shrink-0 ${MUTED}`}>{label}</span>
       <span className="shrink-0 font-medium">{id}</span>
       <span className={`min-w-0 flex-1 truncate ${blocker.state === 'closed' ? MUTED : ''}`} title={blocker.title}>{blocker.title}</span>
       <span className={`shrink-0 ${MUTED}`}>{stateText}</span>
@@ -75,7 +55,7 @@ export function BlockersSection({ task, state }: { task: Task; state: State }) {
   const [isAdding, setIsAdding] = useState(false);
   const source = sourceOf(task);
   const grammar = useRefGrammar(source);
-  const { pending, error, edit } = useBlockerEdit(source, task.item.itemId, grammar);
+  const { pending, error, edit } = useSectionEdit((change: BlockerChange) => editBlocker(source, task.item.itemId, change), grammar);
   if (!hasBlockersSection(task)) return null;
   const blockers = task.item.blockers ?? NONE;
   const add = async (kind: Kind, ref: string): Promise<void> => {
@@ -92,7 +72,7 @@ export function BlockersSection({ task, state }: { task: Task; state: State }) {
       </div>
       {rows.map(([kind, b]) => {
         const key = `${kind}:${b.id}`;
-        return <BlockerRow key={key} kind={kind} blocker={b} stateText={refState(b, source, state.tasks)} isPending={pending === key} onRemove={() => void edit(key, { action: 'remove', kind, ref: b.id })} />;
+        return <BlockerRow key={key} label={t(KIND_LABEL[kind])} blocker={b} stateText={refState(b, source, state.tasks)} isPending={pending === key} onRemove={() => void edit(key, { action: 'remove', kind, ref: b.id })} />;
       })}
       {/* #424: read-only: the relation lives on the ancestor and is edited there */}
       {inheritedIds(task.item).map((text) => (
