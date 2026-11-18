@@ -175,7 +175,10 @@ async function saveFile(res: Response, current: Live, id: string, raw: unknown, 
   if ((mode & OWNER_WRITE) === 0) return refuse(res, { status: HTTP_CONFLICT, message: READ_ONLY_MESSAGE }); // the rename would replace what its owner marked unwritable
   const outcome = await formatted(located, body, consoleStore, current.runtime.config.editor);
   const text = outcome !== undefined && 'text' in outcome ? outcome.text : body.text;
-  const onDisk = sha256(await located.machine.fs.readFile(located.file, { maxBytes: EDITOR_FILE_MAX }));
+  // A file that grew past the cap or turned into a folder since the stat answers as a read of it would, not a 500
+  const read = await located.machine.fs.readFile(located.file, { maxBytes: EDITOR_FILE_MAX }).catch(readRefusal);
+  if (!Buffer.isBuffer(read)) return refuse(res, read);
+  const onDisk = sha256(read);
   if (onDisk !== body.version) {
     res.status(HTTP_CONFLICT).json({ error: CHANGED_MESSAGE, version: onDisk });
     return;

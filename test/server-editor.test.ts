@@ -327,6 +327,14 @@ test('an image the machine reads over IMAGE_MAX answers 413 on the image and the
   }
 });
 
+test('a save whose file the machine finds over the cap after its stat answers 413, not a 500, and writes nothing (#160)', async (t) => {
+  const tooLarge = async (): Promise<never> => { throw new MachineError('file over the cap', { code: MachineError.TOO_LARGE }); };
+  const written: string[] = [];
+  const e = await startEditor(t, { machine: fakeMachine({ fs: { readFile: tooLarge, writeAtomic: async (path) => { written.push(path); return Buffer.from(''); } } }) });
+  const res = await put(e, { path: 'docs/spec.md', text: 'new\n', version: 'any', format: false });
+  assert.deepEqual([res.status, await res.json(), written], [413, { error: TOO_LARGE }, []]);
+});
+
 test('a save writes through the machine\'s writeAtomic (#160)', async (t) => {
   const local = fakeMachine();
   const written: string[] = [];
