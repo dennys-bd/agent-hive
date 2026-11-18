@@ -74,11 +74,12 @@ export function githubRefusal(deps: Pick<PrRouteDeps, 'log'>, res: Response, err
 
 /** The repository a route's :owner/:name names (#758): one GET /repositories lists, #757's guard, with its ref (#854: its role and pair) and the
  * live config; undefined once its 404 is out. The Hive reads and writes the PRs of the repositories it lists only. */
-export async function listedRepository(deps: Pick<PrRouteDeps, 'requireLive' | 'exec'>, req: Request, res: Response): Promise<{ state: State; repository: string; ref: RepoRef; config: LiveView['runtime']['config'] } | undefined> {
+export async function listedRepository(deps: Pick<PrRouteDeps, 'requireLive' | 'machineFor'>, req: Request, res: Response): Promise<{ state: State; repository: string; ref: RepoRef; config: LiveView['runtime']['config'] } | undefined> {
   const live = deps.requireLive(res);
   if (!live) return undefined;
   const repository = `${req.params.owner as string}/${req.params.name as string}`;
-  const ref = (await listRepositories(live.runtime.config, live.state, deps.exec)).find((r) => r.repository === repository);
+  // a workspace has no machine until 10.1: the local one
+  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor({}))).find((r) => r.repository === repository);
   if (ref) return { state: live.state, repository, ref, config: live.runtime.config };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;
@@ -89,7 +90,7 @@ export interface PrTarget { url: string; state: State; config: LiveView['runtime
 
 /** The PR a route's :owner/:name/:number names, or undefined once the refusal is out: a malformed number 400, an unlisted repository 404. No
  * task is needed: a PR without one is read, reviewed and merged the same way. */
-export async function prTarget(deps: Pick<PrRouteDeps, 'requireLive' | 'exec'>, req: Request, res: Response): Promise<PrTarget | undefined> {
+export async function prTarget(deps: Pick<PrRouteDeps, 'requireLive' | 'machineFor'>, req: Request, res: Response): Promise<PrTarget | undefined> {
   const raw = req.params.number;
   if (typeof raw !== 'string' || !PR_NUMBER.test(raw)) {
     badRequest(res, NUMBER_MESSAGE);
@@ -126,7 +127,7 @@ async function conflictsOf(deps: PrRouteDeps, found: PrTarget, data: Pick<PrData
   const live = activityOf(found.state, found.task.item.itemId);
   if (live?.worktree === undefined || live.worktreeGone) return undefined;
   const remote = workspaceBase(found.config, taskWorkspace(found.config, found.task)).remote; // #854: the PR's base is on the base remote
-  return conflictedFiles(live.worktree, data.baseRef, data.head, deps.exec, deps.log, remote);
+  return conflictedFiles(deps.machineFor(live), live.worktree, data.baseRef, data.head, deps.log, remote);
 }
 
 /** The PR's file as stored (#592), or undefined once its 500 is out. */

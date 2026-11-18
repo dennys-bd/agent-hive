@@ -77,7 +77,7 @@ function registerRefRoutes(app: Express, { exec, requireLive }: Pick<TaskRouteDe
     const { config } = current.runtime;
     const workspace = task ? taskWorkspace(config, task) : activity && workspaceByName(config, activity.workspace);
     if (!task && !workspace) return refuse(res, { status: HTTP_NOT_FOUND, message: activity ? UNKNOWN_WORKSPACE_MESSAGE : UNKNOWN_ACTIVITY_MESSAGE });
-    const repository = task?.item.facets?.repository ?? (await originRepository(exec, workspace?.path));
+    const repository = task?.item.facets?.repository ?? (await originRepository({ exec }, workspace?.path));
     openRef(res, req.body, current.state, repository);
   });
 }

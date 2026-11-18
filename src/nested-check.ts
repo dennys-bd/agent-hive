@@ -72,7 +72,7 @@ async function readOne(workspacePath: string, path: string, baseName: string, ex
   const problem = await nestedRepoProblem(workspacePath, path, exec);
   if (problem) return { path, problem };
   const dir = join(workspacePath, path);
-  const read = withRepository({ path }, await originRepository(exec, dir));
+  const read = withRepository({ path }, await originRepository({ exec }, dir));
   return { ...read, base: await nestedBase(dir, baseName, exec, false) };
 }
 
@@ -80,6 +80,6 @@ async function readOne(workspacePath: string, path: string, baseName: string, ex
 export async function readNestedRepos(workspacePath: string, baseName: string, repos: readonly string[], exec: Exec = execFileAsync): Promise<NestedReposAnswer> {
   const read = await Promise.all(repos.map((path) => readOne(workspacePath, path, baseName, exec)));
   const found = await detectNested(workspacePath, repos, exec);
-  const suggested = await Promise.all(found.map(async (path) => withRepository({ path }, await originRepository(exec, join(workspacePath, path)))));
+  const suggested = await Promise.all(found.map(async (path) => withRepository({ path }, await originRepository({ exec }, join(workspacePath, path)))));
   return { repos: read, suggested };
 }

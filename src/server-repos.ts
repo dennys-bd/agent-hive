@@ -82,7 +82,7 @@ function contextOf(deps: RepoRouteDeps): RepoContext {
 async function listed(ctx: RepoContext, res: Response): Promise<{ state: State; refs: RepoRef[] } | undefined> {
   const live = ctx.deps.requireLive(res);
   if (!live) return undefined;
-  return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, ctx.deps.exec) };
+  return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, { exec: ctx.deps.exec }) };
 }
 
 // The repository a route's :owner/:name names, one listRepositories gives, with its ref (#186: an original's role and pair), or undefined

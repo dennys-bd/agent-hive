@@ -114,7 +114,7 @@ async function readGoal(deps: DecompositionRouteDeps, current: Live, activityId:
   const read = await readDecompositionFile(current.runtime.config, target, result.decomposition);
   if ('status' in read) return read;
   const issue = issueOfLink(target.task.item.url);
-  const repository = issue?.repository ?? (await originRepository(deps.exec, taskWorkspace(current.runtime.config, target.task)?.path));
+  const repository = issue?.repository ?? (await originRepository({ exec: deps.exec }, taskWorkspace(current.runtime.config, target.task)?.path));
   return {
     task: target.task, result, parsed: parseDecomposition(read.text), file: read.file,
     ...(repository === undefined ? {} : { repository }), ...(issue ? { number: issue.number } : {}),

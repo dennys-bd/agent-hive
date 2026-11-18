@@ -1368,7 +1368,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
-    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
+    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machines.local) : []),
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
   });
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1390,7 +1390,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
   preloadPr ??= preloaderOf({
     ...repoModel, log,
-    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, exec)).some((r) => r.repository === repository),
+    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, machines.local)).some((r) => r.repository === repository),
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, exec, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
