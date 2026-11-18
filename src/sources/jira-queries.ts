@@ -1,6 +1,6 @@
 import { WireError } from '../read-model/normalize.js';
 import type { LinkType } from '../types.js';
-import { type AdfNode, adfToMarkdown } from './adf.js';
+import { type AdfDoc, type AdfNode, adfToMarkdown } from './adf.js';
 
 /** One call to the site's REST API v3, path from /rest/api/3 on. 5.2 binds it from jiraFetch, so the site and the credential stay in the transport. */
 export type JiraCall = (path: string, init?: RequestInit) => Promise<unknown>;
@@ -233,6 +233,11 @@ export async function readTransitions(call: JiraCall, id: string): Promise<JiraT
 
 export async function postTransition(call: JiraCall, id: string, transition: string): Promise<void> {
   await call(`${issuePath(id)}/transitions`, { method: 'POST', body: JSON.stringify({ transition: { id: transition } }) });
+}
+
+/** A comment on an issue (#832): POST /issue/{id}/comment with its body as ADF. */
+export async function postComment(call: JiraCall, id: string, body: AdfDoc): Promise<void> {
+  await call(`${issuePath(id)}/comment`, { method: 'POST', body: JSON.stringify({ body }) });
 }
 
 export interface JiraProject { key: string; name: string }

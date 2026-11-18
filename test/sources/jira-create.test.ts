@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CreateRefusedError, IssuePlacementError } from '../../src/source-create.js';
 import { markdownToAdf } from '../../src/sources/adf-parse.js';
+import { depthUnder } from '../../src/sources/jira-create.js';
 import { JiraHttpError, JiraNotFoundError } from '../../src/sources/jira-fetch.js';
 import type { ReadModel } from '../../src/read-model/db.js';
 import { adapter, type Fake, fakeJira, issue, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
@@ -63,6 +64,7 @@ test('under a subtask, a chosen type of the wrong level, a subtask type with no 
     [{ parent: '10023' }, { 'GET /issue/10023': [typed(23, -1)] }, 'ABC-23 is a subtask: nothing can be created under it'],
     [{ parent: '10022', issueType: 'Bug' }, { 'GET /issue/10022': [typed(22, 0)] }, 'issue type "Bug" cannot go under ABC-22: it takes Sub-task'],
     [{ parent: '10021', issueType: 'Sub-task' }, { 'GET /issue/10021': [typed(21, 1)] }, 'issue type "Sub-task" cannot go under ABC-21: it takes Story, Bug'],
+    [{ parent: '10024' }, { 'GET /issue/10024': [typed(24, 2)] }, 'ABC-24 is at hierarchy level 2: the Hive creates nothing under it'],
     [{ issueType: 'Sub-task' }, {}, 'issue type "Sub-task" needs a parent'],
     [{ parent: '10099' }, { 'GET /issue/10099': [new JiraNotFoundError()] }, 'parent 10099 is not an issue Jira has'],
     [{ parent: '../x' }, {}, 'parent ../x is not a Jira issue id or key'],
@@ -123,4 +125,8 @@ test('a source default the project lacks is named as the source\'s, and a 400 on
   await assert.rejects(create(required), refusedWith('Jira refused the issue: customfield_10010'));
   assert.deepEqual(required.sent, ['GET /issue/createmeta/ABC/issuetypes', 'POST /issue'], 'nothing placed after a refused POST');
   await assert.rejects(create(fakeJira(answers({ 'POST /issue': [new JiraHttpError(500, [])] }))), (err: unknown) => err instanceof JiraHttpError);
+});
+
+test('depthUnder gives the levels of issues under an epic, a standard issue and a subtask, and none above the epic (#832)', () => {
+  assert.deepEqual([1, 0, -1, 2, 3].map((level) => depthUnder(level)), [2, 1, 0, undefined, undefined]);
 });

@@ -2129,6 +2129,8 @@ export interface Source {
   linkTypes?(): Promise<LinkType[]>; // #828: the site's issue link types, read live, for a source whose type has them
   create?(fields: { title: string; body?: string; column: string | null; labels: string[]; issueType?: string; parent?: string }): Promise<{ itemId?: string; ref: CreatedRef }>; // #846: a new item (GitHub: an issue) in column, resolving to its item's adapter id (namespaced: its itemId); #767: with labels, and off the Project (no itemId) when column is null; #831: issueType (a type's name) and parent (namespaced: its itemId; the adapter: its own id) for a type with issue types, which GitHub ignores; a type that cannot create leaves it out
   createOptions?(): Promise<{ statuses: string[]; labels: string[]; issueTypes?: { name: string; level: number }[] }>; // #768: the create dialog's menus; rejects with CreateRefusedError when the source has no repository; #831: issueTypes, each with Jira's hierarchy level, only for a type with issue types
+  comment?(itemId: string, body: string): Promise<void>; // #832: a comment in Markdown, which the adapter converts (Jira: ADF); GitHub leaves it out, since its decomposition write keeps ADD_COMMENT
+  createDepth?(itemId: string): Promise<number>; // #832: how many levels of issues a create may nest under the item (Jira: 2 under an epic, 1 under a standard issue, 0 under a subtask); rejects with CreateRefusedError above the epic
   project?(options?: ReadOptions): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; #282: from the read model unless fresh
 }
 

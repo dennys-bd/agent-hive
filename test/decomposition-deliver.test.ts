@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkoutPreview, deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout, githubDeliveryWords, hiveDeliveryWords, OffGithubError, readDelivery } from '../src/decomposition-deliver.js';
+import { checkoutPreview, deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout, githubDeliveryWords, hiveDeliveryWords, OffGithubError, readDelivery, sourceDeliveryWords } from '../src/decomposition-deliver.js';
 import { CREATE_PULL_REQUEST, OPEN_PULL_REQUEST } from '../src/sources/github-queries.js';
 import type { Exec } from '../src/types.js';
 import { fakeMachine } from './fake-machine.js';
@@ -207,6 +207,13 @@ test('the GitHub write\'s words are today\'s, byte for byte; the hive write\'s n
     title: 'docs: decomposition for HIVE-1: Site for XPTO',
     body: 'The decomposition of HIVE-1. Its tasks are in the Hive; each one\'s `Design:` link opens this file on the default branch once this PR merges.',
     commit: 'docs: decomposition for HIVE-1: Site for XPTO',
+  });
+});
+
+test('sourceDeliveryWords names the Jira goal\'s key and title, and says its issues are in Jira (#832)', () => {
+  const line = 'docs: decomposition for ABC-1: Site for XPTO';
+  assert.deepEqual(sourceDeliveryWords('ABC-1', 'Site for XPTO'), {
+    title: line, commit: line, body: 'The decomposition of ABC-1. Its issues are in Jira already; each one\'s `Design:` link opens this file on the default branch once this PR merges.',
   });
 });
 

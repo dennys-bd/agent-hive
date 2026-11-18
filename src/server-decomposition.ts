@@ -5,8 +5,9 @@ import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { DONE_KEY, PR_KEY, decompositionPending, decompositionTarget, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
-import { checkoutPreview, deliverDecomposition, type DeliveryRead, deliveryRefusal, githubDeliveryWords, readDelivery } from './decomposition-deliver.js';
+import { checkoutPreview, type Delivery, deliverDecomposition, type DeliveryRead, deliveryRefusal, githubDeliveryWords, readDelivery, sourceDeliveryWords } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteOutcome, type WriteTarget } from './decomposition-write.js';
+import { isWritable, keyOfUrl, sourceRefusal, type SourceGoal, type WriteSource, writeSourceDecomposition } from './decomposition-write-source.js';
 import { resolveActivityPath } from './ide.js';
 import type { Logger } from './log.js';
 import { issueOfLink } from './repos/issue-task.js';
@@ -18,7 +19,7 @@ import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { fetchStatusField, type GithubSourceConfig } from './sources/github.js';
 import { HIVE_SOURCE } from './tasks.js';
-import type { Config, Decomposition, DecompositionPreview, DecompositionSource, Exec, Gql, HiveEvent, Item, Stage, State, Task } from './types.js';
+import type { Config, Decomposition, DecompositionPreview, DecompositionSource, Exec, Gql, HiveEvent, Item, Source, Stage, State, Task } from './types.js';
 import { flatten } from './flows.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -43,7 +44,8 @@ const HIVE_TARGET_MESSAGE = 'a decomposição já começou a ser escrita no hive
 /** What the decomposition's routes need (#865). */
 export interface DecompositionRouteDeps {
   machineFor: MachineFor; // #158: the activity's machine; the goal's file and git run on it
-  requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
+  requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'>; sources: ReadonlyMap<string, Source> } } | undefined; // #832: sources, a Jira goal's own source writes it
+
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
   latest(): State | undefined; // #783: the state after each hive step's dispatch, which checks the step landed
   exec: Exec; // git remote get-url origin: a local goal's repository; the file's checkout, and the delivery's status, add, commit and push (#936)
@@ -56,7 +58,7 @@ export type Live = NonNullable<ReturnType<DecompositionRouteDeps['requireLive']>
 
 // The goal as both routes read it: its task and result, its parsed file and the file's real path (#936: what its checkout is found from),
 // where its issues go, and a GitHub goal's issue number
-export interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number }
+export interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number; key?: string } // #832: key, a Jira goal's, read from its URL; such a goal has no number
 
 const TRANSIENT_CODE = 'transient'; // #702: the dialog tells this refusal apart (parseJson attaches code, #797)
 
@@ -80,11 +82,13 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 const asGql = (gql: GqlJson): Gql => (query, variables) => gql(query, variables ?? {});
 const githubSources = (config: Pick<Config, 'comb'>): GithubSourceConfig[] => config.comb.sources.filter((s): s is GithubSourceConfig => s.type === 'github');
 
-// #556: the stamp the GitHub adapter gives an issue with sub-issues (asEpic), read from the goal's own source: the next poll writes the same
-// value, so nothing flips. Under show and hide the goal never runs as a task; under ignore, or off any GitHub source of the Comb, none
+// #556: the stamp an issue with children gets, read from the goal's own source of any type (#832): the next sync writes the same value, so
+// nothing flips. Under show and hide the goal never runs as a task; under ignore, or off the Comb's sources, none. A Jira epic's
+// deleteActivity is false (6.5)
 function epicOf(config: Pick<Config, 'comb'>, task: Task): Item['epic'] {
-  const source = githubSources(config).find((s) => s.name === task.item.source);
-  return source === undefined || source.epics === 'ignore' ? undefined : { follows: source.epicFollows, switchAt: source.switchAt, deleteActivity: source.epicDeleteActivity };
+  const source = config.comb.sources.find((s) => s.name === task.item.source);
+  if (source === undefined || source.epics === 'ignore') return undefined;
+  return { follows: source.epicFollows, switchAt: source.switchAt, deleteActivity: source.type === 'github' ? source.epicDeleteActivity : false };
 }
 
 // The file the result names, wherever it is (#936: a docsRepo outside the worktree included), resolved as the file routes resolve it (#258,
@@ -121,10 +125,13 @@ async function readGoal(deps: DecompositionRouteDeps, current: Live, activityId:
   if (!result.decomposition.endsWith('.md')) return { status: HTTP_CONFLICT, message: NOT_MD_MESSAGE };
   const read = await readDecompositionFile(current.runtime.config, target, result.decomposition, machine);
   if ('status' in read) return read;
-  const issue = issueOfLink(target.task.item.url);
+  // #832: a Jira goal is named by its key and has no issue number; its repository is still the workspace origin's, which the dialog shows
+  const own = current.runtime.config.comb.sources.find((s) => s.name === target.task.item.source);
+  const key = own?.type === 'jira' ? keyOfUrl(target.task.item.url) : undefined;
+  const issue = key === undefined ? issueOfLink(target.task.item.url) : undefined;
   const repository = issue?.repository ?? (await originRepository({ exec: deps.exec }, taskWorkspace(current.runtime.config, target.task)?.path));
   return {
-    task: target.task, result, parsed: parseDecomposition(read.text), file: read.file,
+    task: target.task, result, parsed: parseDecomposition(read.text), file: read.file, ...(key === undefined ? {} : { key }),
     ...(repository === undefined ? {} : { repository }), ...(issue ? { number: issue.number } : {}),
   };
 }
@@ -145,6 +152,14 @@ async function sourcesOf(config: Pick<Config, 'comb'>, gql: GqlJson, own?: strin
   }));
 }
 
+// #832: a Jira goal's issues go only into its own source, in one of its statuses, read as the create dialog reads them
+async function ownSourceOf(current: Live, name: string): Promise<DecompositionSource[]> {
+  const options = await current.runtime.sources.get(name)?.createOptions?.();
+  if (options === undefined) return [];
+  const column = suggestedColumn(flatten(current.runtime.config.comb.flows).stages, name, options.statuses);
+  return [{ name, statuses: options.statuses, ...(column === undefined ? {} : { column }) }];
+}
+
 // What the dialog shows of the GitHub target's delivery, or why it cannot go; nothing once pr is recorded (read is then undefined)
 function deliveryPreview(read: DeliveryRead | undefined, recorded: Readonly<Record<string, number>>): Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'> {
   if (read === undefined) return {};
@@ -156,7 +171,7 @@ function preview(goal: Goal, sources: DecompositionSource[], delivery: Pick<Deco
   const nodes = d?.nodes ?? [];
   return {
     ...(d ? { title: d.title } : {}), problems, warnings, suggestions, sources,
-    issues: d === undefined ? 0 : nodes.length + (goal.number === undefined ? 1 : 0), // a local goal's root issue too
+    issues: d === undefined ? 0 : nodes.length + (goal.number === undefined && goal.key === undefined ? 1 : 0), // a local goal's root issue too
     blockers: nodes.reduce((n, node) => n + node.blockedBy.length, 0),
     ...(goal.repository === undefined ? {} : { repository: goal.repository }), ...delivery,
   };
@@ -185,6 +200,60 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
   return option ? { projectId: field.projectId, fieldId: field.id, optionId: option.id } : { status: HTTP_BAD_REQUEST, message: CHOICE_MESSAGE };
 }
 
+type SourceAnswer = { ok: true } | Refusal;
+const CHOICE: Refusal = { status: HTTP_BAD_REQUEST, message: CHOICE_MESSAGE };
+
+// #832: the body names the goal's own source and one of its statuses; and no hive write is under way (decision 6)
+async function sourceChoice(current: Live, goal: Goal, body: unknown): Promise<{ source: WriteSource; column: string } | Refusal> {
+  if (decompositionTarget(goal.result) === HIVE_SOURCE) return { status: HTTP_CONFLICT, message: HIVE_TARGET_MESSAGE };
+  const name = goal.task.item.source ?? '';
+  const source = current.runtime.sources.get(name);
+  const { source: chosen, column } = (body ?? {}) as { source?: unknown; column?: unknown };
+  if (chosen !== name || typeof column !== 'string' || !isWritable(source) || source.createOptions === undefined) return CHOICE;
+  return (await source.createOptions()).statuses.includes(column) ? { source, column } : CHOICE;
+}
+
+// As the GitHub target reads it: a read error is thrown (a 502), a refused delivery writes nothing, a file git ignores stays local (#741)
+async function shippedOf(deps: DecompositionRouteDeps, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<{ delivery?: Delivery } | Refusal> {
+  if (recorded[PR_KEY] !== undefined) return {};
+  const read = await readDelivery(deps.exec, deps.gql, goal.file);
+  if ('error' in read) throw read.error;
+  const refusal = deliveryRefusal(read.delivery.checkout, read.delivery.docs.defaultBranch, recorded);
+  if (refusal !== undefined) return { status: HTTP_CONFLICT, message: refusal };
+  return read.delivery.checkout.ignored ? {} : { delivery: read.delivery };
+}
+
+const hasBlockingType = (config: Pick<Config, 'comb'>, name: string | undefined): boolean =>
+  config.comb.sources.some((s) => s.name === name && s.type === 'jira' && s.blockingLinkTypes.length > 0);
+
+// #832: a Jira goal's write, in the spec's order: the checks, the delivery's refusal, the tree through the source, the delivery, then done,
+// markEpic and the approve, straight to the reducer
+async function writeSource(deps: DecompositionRouteDeps, current: Live, goal: Goal & { key: string }, d: Decomposition, activityId: string, body: unknown): Promise<SourceAnswer> {
+  const chosen = await sourceChoice(current, goal, body);
+  if ('status' in chosen) return chosen;
+  const target: SourceGoal = { itemId: goal.task.item.itemId, key: goal.key };
+  const refused = await sourceRefusal(chosen.source, d, target, hasBlockingType(current.runtime.config, goal.task.item.source));
+  if (refused !== undefined) return refused;
+  const recorded = recordedIssues(goal.result);
+  const shipped = await shippedOf(deps, goal, recorded);
+  if ('status' in shipped) return shipped;
+  const taskId = goal.task.item.itemId;
+  const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
+  const { delivery } = shipped;
+  const address = delivery === undefined ? {} : { address: fileAddress(delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path) };
+  const written = await writeSourceDecomposition({ source: chosen.source, record }, d, { goal: target, column: chosen.column, ...address }, recorded);
+  if ('error' in written) return { status: written.status, message: written.error };
+  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
+    checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, ...sourceDeliveryWords(goal.key, goal.task.item.title),
+  }, recorded);
+  if (delivered !== undefined) return { status: HTTP_BAD_GATEWAY, message: delivered };
+  await record(DONE_KEY, written.root);
+  const epic = epicOf(current.runtime.config, goal.task);
+  if (epic !== undefined) await deps.dispatch({ type: 'markEpic', taskId, epic });
+  await deps.dispatch({ type: 'approve', activityId });
+  return { ok: true };
+}
+
 // #783: a hive body takes writeHive's path; the rest is the GitHub target, unchanged.
 // The write and the stage's end: the file's checkout resolved first (#936), so a file the Hive cannot deliver writes nothing; each step
 // dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr, unless git ignores it (#741); `done` once everything is done; then, for a GitHub goal whose source
@@ -197,6 +266,7 @@ async function write(base: DecompositionRouteDeps, current: Live, activityId: st
   const tree = pendingTree(goal);
   if ('status' in tree) return refuse(res, tree);
   if (isHiveChoice(body)) return answer(res, await writeHive(deps, current, goal, tree, activityId, body)); // #783: the hive target's own path
+  if (goal.key !== undefined) return answer(res, await writeSource(deps, current, { ...goal, key: goal.key }, tree, activityId, body)); // #832: a Jira goal's tree goes into its own source
   const repository = githubRepository(goal);
   if (typeof repository !== 'string') return refuse(res, repository);
   const project = await choiceOf(current.runtime.config, deps.gql, body);
@@ -248,7 +318,9 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
       const recorded = recordedIssues(goal.result);
       // #783: read once, for both targets; nothing once pr is recorded
       const read = recorded[PR_KEY] === undefined ? await readDelivery(on.exec, deps.gql, goal.file) : undefined;
-      const shown = preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), deliveryPreview(read, recorded));
+      const name = goal.task.item.source ?? '';
+      const sources = goal.key === undefined ? await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source) : await ownSourceOf(current, name);
+      const shown = preview(goal, sources, deliveryPreview(read, recorded));
       const target = decompositionTarget(goal.result); // #783: answered whatever hiveSource is, so a write under way stays locked
       res.json({ ...shown, ...(target === undefined ? {} : { target }), ...(current.runtime.config.comb.hiveSource ? { hive: hivePreview(current.state, goal, read) } : {}) });
     } catch (err) {

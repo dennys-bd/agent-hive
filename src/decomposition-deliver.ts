@@ -116,6 +116,12 @@ export function hiveDeliveryWords(ref: string, title: string): DeliveryWords {
   return { title: line, commit: line, body: `The decomposition of ${ref}. Its tasks are in the Hive; each one's \`Design:\` link opens this file on the default branch once this PR merges.` };
 }
 
+// #832: a Jira goal has no owner/repo#n: the PR names its key and title, and its issues are in Jira
+export function sourceDeliveryWords(key: string, title: string): DeliveryWords {
+  const line = `docs: decomposition for ${key}: ${title}`;
+  return { title: line, commit: line, body: `The decomposition of ${key}. Its issues are in Jira already; each one's \`Design:\` link opens this file on the default branch once this PR merges.` };
+}
+
 // The file's own changes only: a hand edit in the editor pane is committed, nothing else of the checkout slips in
 async function commitFile(exec: Exec, { toplevel, path }: FileCheckout, message: string): Promise<void> {
   // literal: a name with glob or magic characters matches only itself, never other files of the checkout

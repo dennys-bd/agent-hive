@@ -107,7 +107,7 @@ export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGra
     ...t, ...tree(t), ...(t.blockers ? { blockers: ids.shownBlockers(t.blockers) } : {}),
     itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shownPrefix}-${t.id}` } : {}),
   });
-  const { comments, project, fieldsOf, setField, create, relate, findBlockers, setRelation, stored } = adapter;
+  const { comments, comment, createDepth, project, fieldsOf, setField, create, relate, findBlockers, setRelation, stored } = adapter;
   const shown = (list: SourceItem[]): SourceItem[] => list.map((c) => ({ ...c, item: item(c.item) })); // #191: listItems' and stored's one mapping
   // #756: the native view's rows under the same namespaced ids the listed tasks carry, so a row finds its task; the id stays the issue number
   const rows = (view: ProjectView): ProjectView => ({ ...view, items: view.items.map((i) => ({ ...i, itemId: `${prefix}${i.itemId}` })) });
@@ -131,6 +131,9 @@ export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGra
     apply: (itemId, action, url) => adapter.apply(own(itemId), action, url),
     ...(created ? { create: created } : {}),
     ...(comments ? { comments: (itemId: string) => comments(own(itemId)) } : {}),
+    // #832: the decomposition write hands the namespaced itemId; the adapter's own id goes to issuePath
+    ...(comment ? { comment: (itemId: string, body: string) => comment(own(itemId), body) } : {}),
+    ...(createDepth ? { createDepth: (itemId: string) => createDepth(own(itemId)) } : {}),
     ...(project ? { project: async (options?: ReadOptions) => rows(await project(options)) } : {}),
     ...(fieldsOf ? { fieldsOf: (itemId: string, options?: ReadOptions) => fieldsOf(own(itemId), options) } : {}),
     ...(setField ? { setField: async (itemId: string, field: string, value: FieldValue) => written(await setField(own(itemId), field, value)) } : {}),

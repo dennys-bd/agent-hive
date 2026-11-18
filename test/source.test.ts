@@ -965,6 +965,19 @@ test('namespaced strips the source\'s prefix from a create\'s parent, as from ev
   assert.equal(created?.itemId, 'tickets:10007');
 });
 
+test('namespaced strips the source\'s prefix from the item a comment and a createDepth are handed (#832)', async () => {
+  const handed: string[] = [];
+  const adapter: Source = {
+    item: goneItem, resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    comment: async (itemId, body) => { handed.push(`${itemId} ${body}`); },
+    createDepth: async (itemId) => { handed.push(itemId); return 2; },
+  };
+  const source = namespaced(JIRA_ENTRY, adapter);
+  await source.comment?.('tickets:10001', '## Design');
+  assert.equal(await source.createDepth?.('tickets:10001'), 2);
+  assert.deepEqual(handed, ['10001 ## Design', '10001']);
+});
+
 test('at boot a source whose login is missing is kept and its poll rejects not connected; a save still refuses it (#820)', async () => {
   const missing = new SourceNotConnectedError('jira:acme.example');
   const source: Source = { item: goneItem, resolveFields: async () => { throw missing; }, listItems: async () => [], settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {} };

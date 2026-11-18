@@ -90,7 +90,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   app.use(express.json());
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
   const { log, lines } = fakeLog();
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => setup.machine ?? fakeMachine({ exec }), sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => setup.machine ?? fakeMachine({ exec }), sleep: async () => undefined });
   registerApprovalRoutes(app, { requireLive: (() => ({ state, runtime: { config: { comb } } })) as unknown as TaskRouteDeps['requireLive'], dispatch });
   const server = app.listen(0);
   t.after(() => server.close());
