@@ -1,4 +1,5 @@
 import { WireError } from '../read-model/normalize.js';
+import type { LinkType } from '../types.js';
 import { type AdfNode, adfToMarkdown } from './adf.js';
 
 /** One call to the site's REST API v3, path from /rest/api/3 on. 5.2 binds it from jiraFetch, so the site and the credential stay in the transport. */
@@ -120,7 +121,28 @@ export function issuePath(idOrKey: string): string {
   return `/issue/${encodeURIComponent(idOrKey)}`;
 }
 
-export async function readIssue(call: JiraCall, idOrKey: string): Promise<JiraFieldMeta & { issue: JiraIssue }> {
+/** What readIssue answers (#828): the issue and its fields' names and schemas, what the adapter maps into a row. */
+export type JiraIssueRead = JiraFieldMeta & { issue: JiraIssue };
+
+const LINK_ID = /^\d+$/; // a link id as issuelinks[] answers it
+
+/** One issue link (#828). The type's outward phrase runs from inwardKey to outwardKey, as Atlassian's example for POST /issueLink reads:
+ * "A blocks B" is inwardKey A, outwardKey B, and A's own read then lists B as its outwardIssue. */
+export async function postIssueLink(call: JiraCall, type: string, inwardKey: string, outwardKey: string): Promise<void> {
+  await call('/issueLink', { method: 'POST', body: JSON.stringify({ type: { name: type }, inwardIssue: { key: inwardKey }, outwardIssue: { key: outwardKey } }) });
+}
+
+export async function deleteIssueLink(call: JiraCall, linkId: string): Promise<void> {
+  if (!LINK_ID.test(linkId)) throw new Error('jira issue link id is not one');
+  await call(`/issueLink/${linkId}`, { method: 'DELETE' });
+}
+
+/** One page of a JQL search (#828), what a picker needs: nextPageToken is never followed. */
+export async function searchPage(call: JiraCall, jql: string, fields: readonly string[], maxResults: number): Promise<JiraSearchPage> {
+  return searchPageOf(await call('/search/jql', { method: 'POST', body: JSON.stringify({ jql, fields, maxResults }) }));
+}
+
+export async function readIssue(call: JiraCall, idOrKey: string): Promise<JiraIssueRead> {
   const query = new URLSearchParams({ fields: SEARCH_FIELDS.join(','), expand: SEARCH_EXPAND });
   const json = recordAt(await call(`${issuePath(idOrKey)}?${query}`), 'jira issue');
   return { issue: issueAt(json, 'jira issue'), ...metaOf(json) };
@@ -129,7 +151,8 @@ export async function readIssue(call: JiraCall, idOrKey: string): Promise<JiraFi
 export interface JiraFieldDef { id: string; name: string; schema: JiraSchema | null }
 /** A workflow status; category is its statusCategory key (new, indeterminate, done). */
 export interface JiraStatus { name: string; category: string }
-export interface JiraLinkType { name: string; inward: string; outward: string }
+/** #828: the route and 6.4 read it outside src/sources/, so the type lives in types.ts. */
+export type JiraLinkType = LinkType;
 /** created as UTC ISO, so 5.2 sorts comments oldest first as text; body as Markdown. */
 export interface JiraComment { id: string; author: string | null; created: string; body: string }
 

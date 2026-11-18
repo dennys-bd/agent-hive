@@ -122,6 +122,12 @@ test('another non-ok status throws JiraHttpError with the keys of the body\'s er
   for (const err of [refused, broken]) assert.ok(!err.message.includes(CRED.token) && !err.message.includes(BASIC) && !err.message.includes('plan'));
 });
 
+test('a 201 or a 200 with no body answers undefined, as POST /issueLink gives it (#828)', async () => {
+  assert.equal(await jiraFetch(SITE, '/issueLink', { method: 'POST' }, harness(new Response(null, { status: 201 })).deps), undefined);
+  assert.equal(await jiraFetch(SITE, '/x', undefined, harness(new Response('', { status: 200 })).deps), undefined);
+  assert.equal(await jiraFetch(SITE, '/issueLink/1', { method: 'DELETE' }, harness(new Response(null, { status: 204 })).deps), undefined);
+});
+
 test('api agile calls the Agile API under the same site and header (#826)', async () => {
   const { calls, deps } = harness(json({ values: [] }));
   await jiraFetch(SITE, '/board?type=scrum', {}, { ...deps, api: 'agile' });

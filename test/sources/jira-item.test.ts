@@ -49,8 +49,8 @@ test('an issue maps to its item: identity, UTC updatedAt, parent columns and dat
       title: 'Ship it', body: adfToMarkdown(DESCRIPTION as Parameters<typeof adfToMarkdown>[0]), status: 'In Progress', statusCategory: 'indeterminate',
       issueType: 'Story', hierarchyLevel: 0, assignees: ['Ana Lima'], labels: ['api', 'ui'], createdAt: '2026-11-01T10:00:00.000Z',
       links: [
-        { type: 'Blocks', direction: 'outward', phrase: 'blocks', id: '10002', key: 'ABC-2', title: 'Two', statusCategory: 'new' },
-        { type: 'Relates', direction: 'inward', phrase: 'relates to', id: '10003', key: 'ABC-3', title: 'Three', statusCategory: 'done' },
+        { type: 'Blocks', direction: 'outward', phrase: 'blocks', linkId: 'L1', id: '10002', key: 'ABC-2', title: 'Two', statusCategory: 'new' },
+        { type: 'Relates', direction: 'inward', phrase: 'relates to', linkId: 'L2', id: '10003', key: 'ABC-3', title: 'Three', statusCategory: 'done' },
       ],
     },
   });
@@ -98,13 +98,14 @@ test('an issue without an id, a key or updated is refused with a wire error', ()
   assert.throws(() => jiraItemOf(SOURCE, 'ABC', issue({ updated: 'yesterday' }), NAMES, SCHEMA), /jira issue updated/);
 });
 
-test('linksOf skips a link with no type or no other issue, and a missing phrase reads as the type\'s name', () => {
+test('linksOf skips a link with no type, no other issue or no link id, and a missing phrase reads as the type\'s name (#828)', () => {
   const links = linksOf(issue({ issuelinks: [
-    { type: { name: 'Blocks' }, outwardIssue: other('10002', 'ABC-2', 'Two', 'new') },
-    { type: {}, outwardIssue: other('10004', 'ABC-4', 'Four', 'new') },
-    { type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' } },
+    { id: '20002', type: { name: 'Blocks' }, outwardIssue: other('10002', 'ABC-2', 'Two', 'new') },
+    { id: '20004', type: {}, outwardIssue: other('10004', 'ABC-4', 'Four', 'new') },
+    { id: '20005', type: { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' } },
+    { type: { name: 'Blocks' }, outwardIssue: other('10006', 'ABC-6', 'Six', 'new') },
   ] }));
-  assert.deepEqual(links, [{ type: 'Blocks', direction: 'outward', phrase: 'Blocks', id: '10002', key: 'ABC-2', title: 'Two', statusCategory: 'new' }]);
+  assert.deepEqual(links, [{ type: 'Blocks', direction: 'outward', phrase: 'Blocks', linkId: '20002', id: '10002', key: 'ABC-2', title: 'Two', statusCategory: 'new' }]);
 });
 
 test('fieldRowsOf puts Status first with the statuses, then each field the mapping knows, by kind', () => {

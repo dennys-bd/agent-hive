@@ -7,7 +7,6 @@ const MAX_RETRY_MS = 60 * 60_000;
 const MS_PER_SECOND = 1000;
 const UNAUTHORIZED = 401;
 const TOO_MANY_REQUESTS = 429;
-const NO_CONTENT = 204;
 const NOT_FOUND = 404;
 const BAD_REQUEST = 400;
 // One transport for both REST APIs (#826): the platform's and the Agile API's, which alone answers boards and sprints
@@ -114,8 +113,12 @@ export async function jiraFetch(site: string, path: string, init: RequestInit = 
   if (res.status === BAD_REQUEST) throw await badRequest(res);
   // the catch keeps a body that is not JSON (and res.json's message quoting it) out
   if (!res.ok) throw new JiraHttpError(res.status, errorKeysOf(await res.json().catch(() => undefined)));
-  if (res.status === NO_CONTENT) return undefined;
-  return res.json().catch(() => {
-    throw new Error('jira api: invalid JSON body'); // res.json() would quote the body
-  });
+  // #828: POST /issueLink answers 201 with no body, as a 204 has none: an empty answer is no value, never a JSON error after a write that landed
+  const text = await res.text();
+  if (text.trim() === '') return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error('jira api: invalid JSON body'); // JSON.parse's message would quote the body
+  }
 }

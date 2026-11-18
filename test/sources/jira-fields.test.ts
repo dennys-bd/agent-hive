@@ -8,6 +8,7 @@ import { JiraBadRequestError, JiraHttpError, JiraNotFoundError } from '../../src
 import { jiraFieldsOf, type JiraFieldsContext, jiraSetField } from '../../src/sources/jira-fields.js';
 import { jiraItemOf, SPRINT_FIELD, TEXTAREA_FIELD } from '../../src/sources/jira-item.js';
 import { taskOf } from '../../src/sources/jira-listing.js';
+import { NO_CATEGORIES } from '../../src/sources/jira-relations.js';
 import type { JiraCall, JiraSchema } from '../../src/sources/jira-queries.js';
 import { JIRA_ENTRY } from '../fakes.js';
 
@@ -93,7 +94,7 @@ function harness(answers: Answers, extra: Record<string, unknown[]> = {}): Harne
     keep: (read) => {
       const rows = jiraItemOf(ROWS, 'ABC', read.issue, read.names, read.schema);
       kept.push(rows.item.updatedAt);
-      return { rows, task: taskOf(rows, JIRA_ENTRY), isOwn: true };
+      return { rows, task: taskOf(rows, JIRA_ENTRY, NO_CATEGORIES), isOwn: true };
     },
     setColumn: async (id, column) => { moved.push([id, column]); },
     labels: () => ['api', 'ui'], isListed: () => true, isFiltered: () => false,

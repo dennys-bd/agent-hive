@@ -2,6 +2,7 @@ import { STATUS } from '../field-values.js';
 import type { SourceItemValue, StoredSourceItem } from '../read-model/source-items.js';
 import type { ProjectItem } from '../types.js';
 import { type JiraSourceConfig, taskOf } from './jira-listing.js';
+import { NO_CATEGORIES } from './jira-relations.js';
 
 type Stored = Pick<StoredSourceItem, 'item' | 'values'>;
 
@@ -15,9 +16,9 @@ function fieldsOf(values: readonly SourceItemValue[]): Record<string, string | n
 }
 
 /** A stored Jira issue as a project row (#826), its parent named by the parent's key: the field write's `row` now, 6.2's view later. The id is the key; the itemId the adapter's own,
- * namespaced by source.ts as every row is. No pull requests and no blockers yet: 6.3 reads the relations. */
-export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, 'site' | 'taskProps'>, isOut: boolean): ProjectItem {
-  const { item, column } = taskOf(stored, source);
+ * namespaced by source.ts as every row is. No pull requests and no blockers: the row shows none, so no blocker's category is read (#828). */
+export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, 'site' | 'taskProps' | 'blockingLinkTypes'>, isOut: boolean): ProjectItem {
+  const { item, column } = taskOf(stored, source, NO_CATEGORIES);
   const { labels, assignees } = item.facets ?? { labels: [], assignees: [] }; // taskOf always sets them
   return {
     itemId: item.itemId, id: item.id, title: item.title, body: item.body, url: item.url,

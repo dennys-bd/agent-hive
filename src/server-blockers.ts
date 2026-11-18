@@ -4,7 +4,7 @@ import { blockerProblem, hiveCandidates } from './hive-blockers.js';
 import type { Logger } from './log.js';
 import { backoffAnswer, refusedInBackoff } from './server-project.js';
 import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './blocker-errors.js';
-import { rateLimitAnswer, type ReportRetry } from './source-errors.js';
+import { answeredRateLimit, rateLimitAnswer, type ReportRetry } from './source-errors.js';
 import { HIVE_SOURCE, itemSource } from './tasks.js';
 import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
 
@@ -15,6 +15,7 @@ export const BLOCKER_CODES = {
 } as const;
 type Refusal = keyof typeof BLOCKER_CODES;
 
+const NO_SOURCE = 'no such source';
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -37,7 +38,7 @@ const KNOWN: [new (...args: never[]) => Error, Refusal][] = [
   [BlockerRefNotFoundError, 'unknownRef'], [SelfBlockerError, 'self'], [ItemNotOnSourceError, 'unknownItem'],
 ];
 
-type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers'>>;
+type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers' | 'linkTypes'>>;
 
 /** What the blocker route needs (#56): the live state and sources, the dispatch, the state after it, and the log a source's words go to. */
 export interface BlockerRouteDeps {
@@ -182,9 +183,32 @@ async function findOnSource(deps: BlockerRouteDeps, res: Response, current: Live
   res.json({ candidates });
 }
 
+// #828: the site's link types for a saved source, read live. A source whose type has none answers [] with no call, and an unknown name 404.
+// Refused inside the backoff as the other source reads are; a rate limit is a 429 (#812); any other failure a 502 with the transport's words,
+// which never carry a body or a token (jira-fetch.ts)
+function registerLinkTypesRoute(app: Express, deps: BlockerRouteDeps): void {
+  app.get('/sources/:name/link-types', async (req: Request, res: Response) => {
+    const current = deps.requireLive(res);
+    if (!current) return;
+    const name = req.params.name as string;
+    const source = current.runtime.sources.get(name);
+    if (source === undefined) return void res.status(HTTP_NOT_FOUND).json({ error: NO_SOURCE });
+    if (source.linkTypes === undefined) return void res.json({ linkTypes: [] });
+    if (refusedInBackoff(current.state, name, res)) return;
+    try {
+      res.json({ linkTypes: await source.linkTypes() });
+    } catch (err) {
+      if (await answeredRateLimit(err, name, deps.reportRetry, res)) return;
+      deps.log?.error(`link types of ${name} refused: ${errorMessage(err)}`);
+      res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
+    }
+  });
+}
+
 /** POST /sources/:name/items/:itemId/blockers (#56): one relation added or removed, `{ action, kind, ref }`, answering the item's
  * `{ blockers }`. `hive` edits the Hive's own tasks (item `local:<n>`, ref a hive task's id); any other source goes through its relate.
- * GET …/blockers/candidates?q= (#57): the add row's suggestions, `{ candidates }`, from the hive tasks or the source's findBlockers. */
+ * GET …/blockers/candidates?q= (#57): the add row's suggestions, `{ candidates }`, from the hive tasks or the source's findBlockers.
+ * GET /sources/:name/link-types (#828): the site's link types, `{ linkTypes }`. */
 export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): void {
   app.post('/sources/:name/items/:itemId/blockers', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
@@ -205,4 +229,5 @@ export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): voi
     if (name === HIVE_SOURCE) return void res.json({ candidates: hiveCandidates(current.state.tasks, itemId, text) });
     await findOnSource(deps, res, current, name, itemId, text);
   });
+  registerLinkTypesRoute(app, deps);
 }

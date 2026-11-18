@@ -4,11 +4,13 @@ import type { SourceField, SourceItem, SourceItemValue } from '../read-model/sou
 import { type AdfNode, adfToMarkdown } from './adf.js';
 import { type JiraFieldDef, type JiraIssue, type JiraSchema, type JiraStatus, utcIso } from './jira-queries.js';
 
-/** One issue link as data.links keeps it (6.3 and 6.4 read it). A type alias, not an interface, so it is assignable to the store's JsonValue. */
+/** One issue link as data.links keeps it (6.3 and 6.4 read it). linkId (#828): the link's own id, what DELETE /issueLink takes; id is the other
+ * issue's. A type alias, not an interface, so it is assignable to the store's JsonValue. */
 export type JiraLink = {
   type: string;
   direction: 'inward' | 'outward';
   phrase: string;
+  linkId: string;
   id: string;
   key: string;
   title: string | null;
@@ -25,7 +27,8 @@ const OPTION_TYPES: ReadonlySet<string> = new Set(['option', 'priority', 'issuet
 // Lenient readers: a field value of the wrong shape gives no row, never a refusal (the spec's unknown-kind criterion)
 const recordOf = (value: unknown): Json | undefined => (typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Json) : undefined);
 const textOf = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
-const categoryOf = (fields: Json | undefined): string | null => textOf(recordOf(recordOf(fields?.status)?.statusCategory)?.key) ?? null;
+// exported for the blocker search (#828), which reads a found issue's category as the mapping does
+export const statusCategoryOf = (fields: Json | undefined): string | null => textOf(recordOf(recordOf(fields?.status)?.statusCategory)?.key) ?? null;
 
 /** Jira Software's sprint field and Jira's multi-line text field (#826), told apart from any other json or string field by their custom type. */
 export const SPRINT_FIELD = 'com.pyxis.greenhopper.jira:gh-sprint';
@@ -92,10 +95,10 @@ function linkOf(entry: unknown): JiraLink[] {
   const outward = recordOf(link?.outwardIssue);
   const other = outward ?? recordOf(link?.inwardIssue);
   const direction = outward === undefined ? 'inward' : 'outward';
-  const [name, id, key] = [textOf(type?.name), textOf(other?.id), textOf(other?.key)];
-  if (name === undefined || id === undefined || key === undefined) return [];
+  const [name, linkId, id, key] = [textOf(type?.name), textOf(link?.id), textOf(other?.id), textOf(other?.key)];
+  if (name === undefined || linkId === undefined || id === undefined || key === undefined) return [];
   const fields = recordOf(other?.fields);
-  return [{ type: name, direction, phrase: textOf(type?.[direction]) ?? name, id, key, title: textOf(fields?.summary) ?? null, statusCategory: categoryOf(fields) }];
+  return [{ type: name, direction, phrase: textOf(type?.[direction]) ?? name, linkId, id, key, title: textOf(fields?.summary) ?? null, statusCategory: statusCategoryOf(fields) }];
 }
 
 export const linksOf = (issue: JiraIssue): JiraLink[] => (Array.isArray(issue.fields.issuelinks) ? issue.fields.issuelinks.flatMap(linkOf) : []);
@@ -110,7 +113,7 @@ function dataOf(issue: JiraIssue): SourceItem['data'] {
     // the codec checks every node before reading it (adf.ts), so the unchecked wire value is safe to hand it
     body: adfToMarkdown(fields.description as AdfNode | null | undefined),
     status: textOf(status?.name) ?? null,
-    statusCategory: categoryOf(fields),
+    statusCategory: statusCategoryOf(fields),
     issueType: textOf(type?.name) ?? null,
     hierarchyLevel: typeof type?.hierarchyLevel === 'number' ? type.hierarchyLevel : null,
     assignees: assignee === undefined ? [] : [assignee],

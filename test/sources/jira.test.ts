@@ -7,9 +7,10 @@ import { createJiraSource, type JiraSourceConfig } from '../../src/sources/jira.
 import type { FilterRule } from '../../src/types.js';
 import { JIRA_ENTRY } from '../fakes.js';
 import type { JiraIssue } from '../../src/sources/jira-queries.js';
-import { adapter, CITED, CRED, doc, fakeJira, issue, read, ROWS, seeded, STATUSES } from './jira-fakes.js';
+import { adapter, BLOCKS, CITED, CRED, doc, end, fakeJira, inward, issue, outward, read, RELATES, ROWS, seeded, STATUSES } from './jira-fakes.js';
 
 const markdown = (text: string): string => adfToMarkdown(doc(text) as Parameters<typeof adfToMarkdown>[0]);
+const LINK_TYPES = { issueLinkTypes: [BLOCKS, RELATES] };
 const ids = (tasks: { item: { id: string } }[]): string[] => tasks.map((t) => t.item.id);
 
 test('with no credential, listItems and resolveFields reject not connected before any call, and stored answers [] (#820)', async () => {
@@ -32,9 +33,21 @@ test('listItems answers the cited, filtered issues in listing order from the rea
     item: {
       itemId: '10001', id: 'ABC-1', title: 'Issue 1', body: markdown('Body 1'), url: 'https://acme.example/browse/ABC-1', createdAt: '2026-11-01T10:00:00.000Z',
       facets: { assignees: ['Ana Lima'], labels: ['api'], fields: { Components: 'Core, Web' } }, workspaceHint: 'site', autoOnEntry: true, entry: { flow: 'main' },
+      blockers: { blockedBy: [], blocking: [] },
     },
   });
   assert.deepEqual(fake.sent, [], 'a listing makes no call to Jira');
+});
+
+test('listItems answers blockers on every task, and a source filter\'s blocked rule drops a task with an open blocker (#828)', async () => {
+  const db = await seeded([issue(1, 'To Do', { issuelinks: [inward('20001', end(2))] }), issue(2, 'To Do', { issuelinks: [outward('20001', end(1))] }), issue(3, 'To Do')]);
+  assert.deepEqual((await adapter({ db }).listItems()).map((t) => [t.item.id, t.item.blockers]), [
+    ['ABC-1', { blockedBy: [{ id: 'ABC-2', title: 'Issue 2', state: 'open' }], blocking: [] }],
+    ['ABC-2', { blockedBy: [], blocking: [{ id: 'ABC-1', title: 'Issue 1', state: 'open' }] }],
+    ['ABC-3', { blockedBy: [], blocking: [] }],
+  ]);
+  const unblocked: FilterRule[] = [{ field: 'blocked', op: 'none' }];
+  assert.deepEqual(ids(await adapter({ db, source: { filter: unblocked } }).listItems()), ['ABC-2', 'ABC-3']);
 });
 
 test('stored answers every cited issue unfiltered; with no store, both listings are empty (#820)', async () => {
@@ -63,7 +76,7 @@ test('resolveFields rejects naming a cited column the statuses lack, and renews 
   ];
   for (const [me, expected] of cases) {
     const renamed: string[] = [];
-    await adapter({ call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /myself': [me] }).call, renamed }).resolveFields();
+    await adapter({ call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES], 'GET /myself': [me] }).call, renamed }).resolveFields();
     assert.deepEqual(renamed, expected, JSON.stringify(me));
   }
 });
@@ -72,11 +85,18 @@ test('a name renewal that fails to write never fails the resolve, and is logged 
   const warned: string[] = [];
   const source = createJiraSource(JIRA_ENTRY, CITED, {
     agile: fakeJira().call,
-    call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /myself': [{ accountId: 'acc-1', displayName: 'Ana L.' }] }).call,
+    call: fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES], 'GET /myself': [{ accountId: 'acc-1', displayName: 'Ana L.' }] }).call,
     credential: async () => CRED, renewName: async () => { throw new Error('EACCES'); }, log: { warn: (line: string) => { warned.push(line); } },
   });
   await source.resolveFields();
   assert.deepEqual(warned, ['jira:acme.example: display name not renewed (EACCES)']);
+});
+
+test('resolveFields rejects naming the first blocking type the site lacks, with the site\'s types, before /myself (#828)', async () => {
+  const fake = fakeJira({ 'GET /project/ABC/statuses': [STATUSES], 'GET /issueLinkType': [LINK_TYPES] });
+  await assert.rejects(adapter({ call: fake.call, source: { blockingLinkTypes: ['Blocks', 'Depends', 'Gates'] } }).resolveFields(),
+    { message: '"Depends" is not a link type of acme.example: Blocks, Relates' });
+  assert.equal(fake.sent.includes('GET /myself'), false);
 });
 
 test('settingsOptions answers the project\'s statuses in Jira\'s order (#820)', async () => {

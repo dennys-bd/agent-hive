@@ -3,13 +3,14 @@ import type { JsonValue, SourceItems, SourceItemValue, StoredSourceItem } from '
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type { Item, ItemFacets, SourceConfig, SourceItem } from '../types.js';
+import { blockersOf, type CategoryOf, linkedIds, openBlockers, storedCategories, storedLinks } from './jira-relations.js';
 import type { JiraIssue } from './jira-queries.js';
 import { groupUnderParents, isHidden, treeLinks, withTree } from './jira-tree.js';
 
 export type JiraSourceConfig = Extract<SourceConfig, { type: 'jira' }>;
 /** What the mapping reads of a stored issue: its row and its values, as the store and jiraItemOf both answer them. */
 type Stored = Pick<StoredSourceItem, 'item' | 'values'>;
-type Listed = Pick<JiraSourceConfig, 'site' | 'taskProps'>;
+type Listed = Pick<JiraSourceConfig, 'site' | 'taskProps' | 'blockingLinkTypes'>;
 
 const textOf = (value: JsonValue | undefined): string => (typeof value === 'string' ? value : '');
 const textsOf = (value: JsonValue | undefined): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
@@ -33,14 +34,17 @@ export function issueReader({ item, values }: Stored): (field: string) => string
 }
 
 /** A stored issue as the Hive's task, its status the column. As GitHub's issueItem: the hint only from a rule, auto and entry resolved whole
- * (never ??: a rule's null entry is a value). Its tree is jira-tree.ts's, read over the whole listing (#830). */
-export function taskOf(stored: Stored, source: Listed): SourceItem {
+ * (never ??: a rule's null entry is a value). Its tree is jira-tree.ts's, read over the whole listing (#830). Its blockers on every task
+ * (#828), empty lists included, so the section shows; blockedBy only when one is open, as GitHub's. */
+export function taskOf(stored: Stored, source: Listed, categoryOf: CategoryOf): SourceItem {
   const { item: row, values } = stored;
   const facets: ItemFacets = { assignees: textsOf(row.data.assignees), labels: textsOf(row.data.labels), fields: fieldsOf(values) };
   const createdAt = textOf(row.data.createdAt);
+  const blockers = blockersOf(storedLinks(row.data.links), source.blockingLinkTypes, categoryOf);
+  const blockedBy = openBlockers(blockers);
   const item: Item = {
     itemId: row.nodeId, id: row.key, title: textOf(row.data.title), body: textOf(row.data.body),
-    url: `https://${source.site}/browse/${row.key}`, facets, ...(createdAt === '' ? {} : { createdAt }),
+    url: `https://${source.site}/browse/${row.key}`, facets, ...(createdAt === '' ? {} : { createdAt }), blockers, ...(blockedBy.length > 0 ? { blockedBy } : {}),
   };
   const { workspace, auto, entry } = matchTaskProps(source.taskProps.rules, issueReader(stored));
   const { defaults } = source.taskProps;
@@ -69,11 +73,13 @@ export function projectOf(issue: JiraIssue): string | undefined {
 export type ListedSource = Listed & Pick<JiraSourceConfig, 'project' | 'tree' | 'epics' | 'epicFollows' | 'switchAt'>;
 
 /** The scope's listing in its stored order, each issue as its task with its tree (#830), kept when its status is a cited column and it is no
- * parent `epics: hide` takes off; children follow their parent. The links are read over every stored issue, before a status drops one. */
+ * parent `epics: hide` takes off; children follow their parent. The links are read over every stored issue, before a status drops one. The
+ * linked issues' categories come from one store read for the whole listing, not one per link (#828). */
 export function listedTasks(items: Pick<SourceItems, 'listing' | 'items'>, rows: string, source: ListedSource, columns: ReadonlySet<string>): SourceItem[] {
   const stored = items.items(rows, items.listing(rows, source.project));
   const links = treeLinks(stored, source.tree);
-  const tasks = stored.map((s) => withTree(taskOf(s, source), links.get(s.item.nodeId), source)).filter((task) => columns.has(task.column));
+  const categoryOf = storedCategories(items, rows, linkedIds(stored));
+  const tasks = stored.map((s) => withTree(taskOf(s, source, categoryOf), links.get(s.item.nodeId), source)).filter((task) => columns.has(task.column));
   return groupUnderParents(tasks).filter((task) => !isHidden(task, source));
 }
 

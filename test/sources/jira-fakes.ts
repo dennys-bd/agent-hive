@@ -11,8 +11,8 @@ import { JIRA_ENTRY } from '../fakes.js';
 export const ROWS = 'jira:acme.example:acc-1';
 export const CRED: JiraCredential = { email: 'ana@example.com', token: 'fake-token-820', accountId: 'acc-1', displayName: 'Ana Lima' };
 export const CITED: Citation[] = [{ column: 'To Do', by: 'fila' }, { column: 'In Progress', by: 'fila' }];
-const NAMES = { components: 'Components' };
-const SCHEMA = { components: { type: 'array', items: 'component' } };
+export const NAMES = { components: 'Components' };
+export const SCHEMA = { components: { type: 'array', items: 'component' } };
 export const STATUSES = [{ name: 'Story', statuses: ['To Do', 'In Progress', 'Done'].map((name) => ({ name, statusCategory: { key: 'new' } })) }];
 export const doc = (text: string) => ({ version: 1, type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
 
@@ -59,8 +59,19 @@ export function fakeJira(answers: Record<string, unknown[]> = {}): Fake {
   return { call, sent, paths, bodies };
 }
 
-export interface Setup { call?: JiraCall; agile?: JiraCall; db?: ReadModel; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
+export interface Setup { call?: JiraCall; agile?: JiraCall; db?: Pick<ReadModel, 'items' | 'transaction'>; cred?: JiraCredential | null; source?: Partial<JiraSourceConfig>; renamed?: string[] }
 export const adapter = ({ call = fakeJira().call, agile = fakeJira().call, db, cred = CRED, source = {}, renamed = [] }: Setup): Source =>
   createJiraSource({ ...JIRA_ENTRY, ...source }, CITED, {
     call, agile, credential: async () => cred ?? undefined, renewName: async (name) => { renamed.push(name); }, ...(db === undefined ? {} : { items: { db } }),
   });
+
+export const BLOCKS = { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' };
+export const DEPENDS = { name: 'Depends', inward: 'is needed by', outward: 'needs' };
+export const RELATES = { name: 'Relates', inward: 'relates to', outward: 'relates to' };
+/** The other end of a link as an issue's read names it: id 10000 + n, key <project>-<n>, its summary and its category snapshot. */
+export const end = (n: number, { category = 'new', project = 'ABC' } = {}) =>
+  ({ id: String(10000 + n), key: `${project}-${n}`, fields: { summary: `Issue ${n}`, status: { statusCategory: { key: category } } } });
+type End = ReturnType<typeof end>;
+/** One issuelinks[] entry as the holding issue's read answers it: inwardIssue names an issue whose outward phrase points at this one. */
+export const inward = (linkId: string, other: End, type = BLOCKS) => ({ id: linkId, type, inwardIssue: other });
+export const outward = (linkId: string, other: End, type = BLOCKS) => ({ id: linkId, type, outwardIssue: other });

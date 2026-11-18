@@ -1359,7 +1359,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     await poll();
     res.json({ ok: true });
   });
-  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log, reportRetry }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
+  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log, reportRetry }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead; GET /sources/:name/link-types (#828)
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));

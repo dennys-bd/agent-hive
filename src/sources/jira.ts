@@ -10,7 +10,8 @@ import { JiraNotFoundError } from './jira-fetch.js';
 import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
 import { type JiraItemRows, jiraItemOf } from './jira-item.js';
 import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
-import { type JiraCall, type JiraFieldMeta, type JiraIssue, postTransition, readComments, readIssue, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
+import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, NO_CATEGORIES, relate, type RelationsContext, storedCategories } from './jira-relations.js';
 import { writeIssue, writeListing } from './jira-sync.js';
 import { inPlace, isHidden, treeLinks, withTree } from './jira-tree.js';
 
@@ -40,21 +41,33 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     return cred;
   }
 
+  // #828: the linked issues' stored categories, under this account's rows
+  const categoriesOf = (cred: JiraCredential, ids: readonly string[]): CategoryOf =>
+    (db === undefined ? NO_CATEGORIES : storedCategories(db.items, rowsOf(cred), ids));
+
   // One issue's read stored as a write only when it is in the source's project: its scope would otherwise put it into this listing
-  function keep(cred: JiraCredential, read: JiraFieldMeta & { issue: JiraIssue }): { rows: JiraItemRows; task: SourceItem; isOwn: boolean } {
+  function keep(cred: JiraCredential, read: JiraIssueRead): { rows: JiraItemRows; task: SourceItem; isOwn: boolean } {
     const rows = jiraItemOf(rowsOf(cred), source.project, read.issue, read.names, read.schema);
     const isOwn = projectOf(read.issue) === source.project;
     if (isOwn && db !== undefined) db.transaction(() => writeIssue(db, rows, 'write'));
     // #830: its tree read over the stored listing with the issue in its place, so a single read's links equal the next listing's
     const listing = !isOwn || db === undefined ? [] : db.items.items(rowsOf(cred), db.items.listing(rowsOf(cred), source.project));
     const links = treeLinks(inPlace(listing, rows), source.tree);
-    return { rows, task: withTree(taskOf(rows, source), links.get(rows.item.nodeId), source), isOwn };
+    return { rows, task: withTree(taskOf(rows, source, categoriesOf(cred, linkedIds([rows]))), links.get(rows.item.nodeId), source), isOwn };
   }
 
   async function readTask(cred: JiraCredential, itemId: string): Promise<{ task: SourceItem; isOwn: boolean }> {
     const { task, isOwn } = keep(cred, await readIssue(call, itemId));
     return { task, isOwn };
   }
+  // #828: what jira-relations.ts reads and writes through, under this account's rows
+  const relations = (cred: JiraCredential): RelationsContext => ({
+    call, blockingTypes: source.blockingLinkTypes, categories: (ids) => categoriesOf(cred, ids),
+    keep: (read) => {
+      const { task, isOwn } = keep(cred, read);
+      return { task, isListed: isOwn && isListed(task, source, columns, cred.displayName) && !isHidden(task, source) };
+    },
+  });
 
   async function resolveFields(): Promise<void> {
     const cred = await account();
@@ -63,6 +76,7 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     if (missing !== undefined) throw new Error(`"${missing.column}" is not a status of ${source.project}: ${names.join(', ')}`);
     // checked in the same answer, so a wrong name shows as the source's sync error before any stage closes
     if (!names.includes(source.doneStatus)) throw new Error(`"${source.doneStatus}" is not a status of ${source.project}: ${names.join(', ')}`);
+    await checkLinkTypes(call, source.site, source.blockingLinkTypes);
     const me = await readMyself(call);
     // another account is reconnecting's business: the store key hangs on the account id, so only the name of this one is renewed
     if (me.accountId === cred.accountId && me.displayName !== undefined && me.displayName !== cred.displayName) {
@@ -178,5 +192,8 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     resolveFields, listItems, stored, item, setColumn: moveTo, apply, settingsOptions, comments, fieldsOf, setField,
     create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
     createOptions: () => readJiraCreateOptions(call, source.project),
+    relate: async (itemId, change) => relate(relations(await account()), itemId, change),
+    findBlockers: (_itemId, text) => findBlockers({ call, project: source.project }, text), // the search is the project's, whatever the item
+    linkTypes: () => readLinkTypes(call),
   };
 }

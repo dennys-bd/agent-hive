@@ -7,9 +7,12 @@ import { ItemNotOnSourceError } from '../src/field-values.js';
 import { canRelateItem, refsOf, registerBlockerRoutes, relateItem } from '../src/server-blockers.js';
 import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../src/blocker-errors.js';
 import type { BlockerChange, HiveEvent, ItemBlockers, Source, SourceItem, State, Task } from '../src/types.js';
-import { fakeLog } from './fakes.js';
+import { namespaced } from '../src/source.js';
+import { SourceRateLimitError } from '../src/source-errors.js';
+import { fakeLog, JIRA_ENTRY } from './fakes.js';
+import { adapter, end, fakeJira, inward, issue, read } from './sources/jira-fakes.js';
 
-type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers'>>;
+type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers' | 'linkTypes'>>;
 const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z', at: '2026-10-06T12:00:00.000Z' };
 const hive = (n: number, blockers?: ItemBlockers): Task =>
   ({ item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `T${n}`, body: '', url: '', ...(blockers ? { blockers } : {}) }, stage: 'dev', boardColumn: '', created: true, auto: false });
@@ -18,11 +21,12 @@ const NONE: ItemBlockers = { blockedBy: [], blocking: [] };
 const SEVEN: ItemBlockers = { blockedBy: [{ id: '7', title: 'T7', state: 'open' }], blocking: [] };
 const ENTRY: SourceItem = { item: GH_TASK.item, column: 'Ready' };
 
-interface Harness { base: string; dispatched: HiveEvent[]; lines: string[]; state(): State }
+interface Harness { base: string; dispatched: HiveEvent[]; lines: string[]; retries: string[]; state(): State }
 // The blocker route alone over these sources and tasks; blockerSet runs through the real reducer, every event lands in `dispatched`
 function routes(t: TestContext, sources: Record<string, RelateSource>, tasks: Task[] = [], extra: Partial<State> = {}): Harness {
   let state: State = { ...initialState(0), tasks, ...extra };
   const dispatched: HiveEvent[] = [];
+  const retries: string[] = [];
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
@@ -30,12 +34,12 @@ function routes(t: TestContext, sources: Record<string, RelateSource>, tasks: Ta
     requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)) } }),
     dispatch: async (event) => { dispatched.push(event); if (event.type === 'blockerSet') state = reduce(state, event).state; },
     latest: () => state,
-    reportRetry: async () => {},
+    reportRetry: async (source, until) => { retries.push(`${source} ${until}`); },
     log,
   });
   const server = app.listen(0);
   t.after(() => server.close());
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, dispatched, lines, state: () => state };
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, dispatched, lines, retries, state: () => state };
 }
 
 async function post(base: string, source: string, itemId: string, body: unknown): Promise<[number, unknown]> {
@@ -199,4 +203,42 @@ test('a source whose refs read ABC-12 gets ABC-12 at relate and its blockers bac
   assert.deepEqual(asked, ['ABC-12']);
   assert.deepEqual(await post(h.base, 'jira', 'jira:J1', add('acme/r12')), [400, { error: '"acme/r12" is no ref: write ABC-12 or a task id', code: 'blockers.badRequest' }]);
   assert.deepEqual(h.dispatched, []);
+});
+
+const TYPES = [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, { name: 'Relates', inward: 'relates to', outward: 'relates to' }];
+async function linkTypes(base: string, source: string): Promise<[number, unknown]> {
+  const res = await fetch(`${base}/sources/${source}/link-types`);
+  return [res.status, await res.json()];
+}
+
+test('GET /sources/:name/link-types answers a jira source\'s types with their phrases, [] for a github source, 404 for an unknown name; a rate limit is a 429, any other failure a 502 (#828)', async (t) => {
+  const tickets = namespaced(JIRA_ENTRY, adapter({ call: fakeJira({ 'GET /issueLinkType': [{ issueLinkTypes: TYPES }] }).call }));
+  const until = '2999-01-01T00:00:00.000Z';
+  const h = routes(t, {
+    tickets, work: { relate: async () => ({ blockers: NONE }) },
+    limited: { linkTypes: async () => { throw new SourceRateLimitError(until); } },
+    broken: { linkTypes: async () => { throw new Error('jira api: HTTP 500'); } },
+  });
+  assert.deepEqual(await linkTypes(h.base, 'tickets'), [200, { linkTypes: TYPES }]);
+  assert.deepEqual(await linkTypes(h.base, 'work'), [200, { linkTypes: [] }]);
+  assert.deepEqual(await linkTypes(h.base, 'nope'), [404, { error: 'no such source' }]);
+  assert.deepEqual(await linkTypes(h.base, 'limited'), [429, { error: `rate limited until ${until}`, resetsAt: until }]);
+  assert.deepEqual(h.retries, [`limited ${until}`]);
+  assert.deepEqual(await linkTypes(h.base, 'broken'), [502, { error: 'jira api: HTTP 500' }]);
+  assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('jira api: HTTP 500')));
+});
+
+test('POST …/blockers on a jira task adds and removes a blocker by its key and answers the re-read relations, dispatching each listed entry (#828)', async (t) => {
+  const linked = read(issue(1, 'To Do', { issuelinks: [inward('20001', end(2))] }));
+  const fake = fakeJira({
+    'GET /issue/10001': [read(issue(1, 'To Do')), linked, linked, read(issue(1, 'To Do'))],
+    'GET /issue/ABC-2': [read(issue(2, 'To Do')), read(issue(2, 'To Do'))],
+    'POST /issueLink': [undefined], 'DELETE /issueLink/20001': [undefined],
+  });
+  const h = routes(t, { tickets: namespaced(JIRA_ENTRY, adapter({ call: fake.call })) });
+  const two = { blockedBy: [{ id: 'ABC-2', title: 'Issue 2', state: 'open' }], blocking: [] };
+  assert.deepEqual(await post(h.base, 'tickets', 'tickets:10001', add('ABC-2')), [200, { blockers: two }]);
+  assert.deepEqual(await post(h.base, 'tickets', 'tickets:10001', { action: 'remove', kind: 'blockedBy', ref: 'ABC-2' }), [200, { blockers: NONE }]);
+  assert.deepEqual(fake.bodies, [{ type: { name: 'Blocks' }, inwardIssue: { key: 'ABC-2' }, outwardIssue: { key: 'ABC-1' } }]);
+  assert.deepEqual(h.dispatched.map((e) => [e.type, 'itemId' in e && e.itemId]), [['itemRead', 'tickets:10001'], ['itemRead', 'tickets:10001']]);
 });
