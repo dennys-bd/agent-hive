@@ -84,6 +84,7 @@ export const claudeRunner: AgentRunner = {
   promptFlag: undefined, // the prompt is its last positional word
   launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...agentWords(run), ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
   copy: (run, from, name) => (run.session === undefined ? undefined : [...hiveFlags(run), ...run.extraArgs, ...copyWords(from, run.session.id, name)]),
+  copyNotice: 'prompt', // the notice is the fork's first prompt (#587)
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
   headlessMcp: true,
   headless,

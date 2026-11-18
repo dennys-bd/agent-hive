@@ -80,6 +80,7 @@ export const copilotRunner: AgentRunner = {
   promptFlag: PROMPT_FLAG,
   launch: (run) => [...hiveFlags(run), ...sessionWords(run.session), ...run.extraArgs, ...tailWords(run)],
   copy: () => undefined, // node 3
+  copyNotice: 'instructions', // #875: the one -i holds /fork, so the notice reaches the fork through the run's instructions file
   clear: () => undefined, // node 3
   headlessMcp: HEADLESS_MCP,
   headless,
