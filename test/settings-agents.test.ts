@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { ALL_AGENTS } from '../src/agents.js';
 import { offeredAgents } from '../src/ui/lib/agent-settings.js';
-import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from '../src/ui/lib/settings-agents.js';
+import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem, trustHintFolders } from '../src/ui/lib/settings-agents.js';
 import { draftFrom, toSettingsBody } from '../src/ui/lib/settings-form.js';
 import { emptyRow, emptyStage } from '../src/ui/lib/settings-stages.js';
 import { setLanguage, t } from '../src/ui/i18n.js';
@@ -48,4 +49,12 @@ test('agentsProblem flags a bare Claude alias on copilot, and takes a claude- id
 test('a first setup drafts every agent on but copilot; a saved value wins (#873)', () => {
   assert.deepEqual(agentEnabledDraft(), { claude: true, codex: true, copilot: false });
   assert.deepEqual(agentEnabledDraft({ copilot: true }), { claude: true, codex: true, copilot: true });
+});
+
+test('the Copilot trust hint names the uncovered folders only while Copilot is installed and enabled in the draft (#880)', () => {
+  const uncovered = ['/a/repo', '/a/other'];
+  assert.deepEqual(trustHintFolders({ agentEnabled: ON }, ALL_AGENTS, uncovered), uncovered);
+  assert.deepEqual(trustHintFolders({ agentEnabled: { ...ON, copilot: false } }, ALL_AGENTS, uncovered), [], 'a disabled Copilot runs no worker');
+  assert.deepEqual(trustHintFolders({ agentEnabled: ON }, [{ agent: 'claude', available: true }, { agent: 'copilot', available: false }], uncovered), [], 'not installed');
+  assert.deepEqual(trustHintFolders({ agentEnabled: ON }, ALL_AGENTS, []), []);
 });

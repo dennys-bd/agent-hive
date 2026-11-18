@@ -1,9 +1,9 @@
 // Settings › execução's agents (#482): each agent's default model as typed and its switch, and the problems a save would meet, named before
 // the round trip as parseConfig names them.
-import { agentName } from '../../agents.js';
+import { agentName, isAvailable } from '../../agents.js';
 import { foreignModel } from '../../config-agent-args.js';
 import { isLaunchModel } from '../../launch-pick.js';
-import { AGENT_IDS, type AgentId } from '../../types.js';
+import { AGENT_IDS, type AgentAvailability, type AgentId } from '../../types.js';
 import { t } from '../i18n.js';
 import type { SettingsDraft, SettingsProblem } from './settings-form.js';
 import { isAgentDraft, type StageDraft } from './settings-stages.js';
@@ -36,3 +36,8 @@ export function agentsProblem(draft: Pick<SettingsDraft, 'agentModels' | 'agentE
   const agent = stage === undefined ? undefined : namedAgents(stage).find((a) => !draft.agentEnabled[a]);
   return stage === undefined || agent === undefined ? undefined : { section: 'flow', stage: stage.id, message: t('settings.agents.error.stage', { n: n + 1, agent: agentName(agent) }) };
 }
+
+/** The folders the Copilot trust hint names (#880): GET /settings/copilot-trust's answer while Copilot is installed and on in the draft, else
+ * none, since a disabled Copilot runs no worker to stop on its trust screen. */
+export const trustHintFolders = (draft: Pick<SettingsDraft, 'agentEnabled'>, agents: readonly AgentAvailability[], uncovered: readonly string[]): readonly string[] =>
+  (isAvailable('copilot', agents) && draft.agentEnabled.copilot ? uncovered : []);

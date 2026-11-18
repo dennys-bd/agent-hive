@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { useCopilotTrust } from '@/hooks/use-copilot-trust';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { t } from '@/i18n';
+import { trustHintFolders } from '@/lib/settings-agents';
 import type { SettingsDraft } from '@/lib/settings-form';
 import { settingAnchor } from '@/lib/settings-search';
 import { agentName, isAvailable } from '../../../agents';
@@ -17,7 +19,7 @@ import { AGENT_IDS, type AgentAvailability, type AgentId, type AgentLaunchOption
 
 // Settings › execução's agentes (#482, the handoff): one section per agent, its mark in its own colour (design system "Agent colour"), the
 // default's badge or tornar padrão, the habilitado switch (the default's is locked on), then its default model and its arguments (#924). An
-// agent boot did not find shows why and no fields: availability is boot's finding (#516), never written to agentEnabled.
+// agent boot did not find shows why and no fields: availability is boot's finding (#516), never written to agentEnabled. Under Copilot, the workspace folders it does not trust yet (#880).
 
 type Patch = (patch: Partial<SettingsDraft>) => void;
 interface AgentsCardProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; launchWorkspace?: string; onChange: Patch; onOpenFlow(): void }
@@ -80,8 +82,26 @@ function AgentFields({ agent, draft, options, onChange }: SectionProps & { optio
   );
 }
 
+// #880: the folders Copilot would stop in on its trust question, one line each under its header, the path in mono; none when Copilot is off,
+// missing or trusts every workspace. Muted like the status beside the name: a step to take once, not a status colour
+function TrustHint({ folders }: { folders: readonly string[] }) {
+  if (folders.length === 0) return null;
+  const name = agentName('copilot');
+  return (
+    <div className="flex flex-col gap-1 text-muted-foreground text-xs">
+      <p>{t('settings.agents.trust.hint', { agent: name })}</p>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {folders.map((folder) => (
+          <li key={folder}><span className="font-mono">{folder}</span>{' · '}{t('settings.agents.trust.step', { agent: name })}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function AgentsCard({ draft, agents, launchWorkspace, onChange, onOpenFlow }: AgentsCardProps) {
   const options = useLaunchOptions(launchWorkspace); // the config's first workspace's lists, as ReviewerMenu reads them
+  const trust = trustHintFolders(draft, agents, useCopilotTrust());
   const hint = (
     <span className="text-muted-foreground text-xs">
       {t('settings.agents.hint')}{' '}<button type="button" className="text-review" onClick={onOpenFlow}>{t('settings.section.flow')}</button>
@@ -94,6 +114,7 @@ export function AgentsCard({ draft, agents, launchWorkspace, onChange, onOpenFlo
         return (
           <fieldset key={agent} aria-label={agentName(agent)} className="m-0 flex min-w-0 flex-col gap-3 border-0 border-t px-5 py-4 first:border-t-0">
             <AgentHeader agent={agent} draft={draft} isInstalled={isInstalled} onChange={onChange} />
+            {agent === 'copilot' && <TrustHint folders={trust} />}
             {isInstalled && <AgentFields agent={agent} draft={draft} options={options?.[agent]} onChange={onChange} />}
           </fieldset>
         );

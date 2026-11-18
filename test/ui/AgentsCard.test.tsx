@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AgentsCard } from '@/components/settings/AgentsCard';
 import { setLanguage, t } from '@/i18n';
 import { draftFrom } from '@/lib/settings-form';
@@ -10,6 +10,15 @@ beforeEach(() => setLanguage('pt'));
 const section = (agent: string): HTMLElement => screen.getByRole('group', { name: agent });
 const renderCard = (patch = {}, agents: readonly AgentAvailability[] = ALL_AGENTS, onChange = vi.fn()) =>
   render(<AgentsCard draft={{ ...draftFrom(undefined), ...patch }} agents={agents} onChange={onChange} onOpenFlow={vi.fn()} />);
+
+const FOLDER = '/a/repo';
+const COPILOT_ON = { agentEnabled: { claude: true, codex: true, copilot: true } };
+// GET /settings/copilot-trust's answer; renderCard passes no launchWorkspace, so it is the card's only fetch
+const trustAnswer = (uncovered: readonly string[]) => vi.stubGlobal('fetch', vi.fn(async () =>
+  new Response(JSON.stringify({ uncovered }), { status: 200, headers: { 'content-type': 'application/json' } })));
+// one macrotask: the stubbed fetch's answer and its setState have landed, so an absent hint is absent for good
+const settled = () => act(() => new Promise<void>((resolve) => { setTimeout(resolve, 0); }));
+afterEach(() => { vi.unstubAllGlobals(); });
 
 test('one section per agent: the default carries padrão and a locked switch with its title; another offers tornar padrão, which sets it (#482)', () => {
   const onChange = vi.fn();
@@ -70,4 +79,38 @@ test('Settings › execution › agents lists copilot with its mark and its swit
     expect(within(copilot).getByRole('switch', { name: t('settings.agents.enabled.of', { agent: 'copilot' }) })).toBeInTheDocument();
     unmount();
   }
+});
+
+test('with Copilot installed and enabled, each folder it does not trust yet gets a line under Copilot only, its path in mono with the step; both languages name no other agent (#880)', async () => {
+  trustAnswer([FOLDER]);
+  for (const language of ['en', 'pt'] as const) {
+    setLanguage(language);
+    const { unmount } = renderCard(COPILOT_ON);
+    const copilot = section('copilot');
+    const path = await within(copilot).findByText(FOLDER);
+    expect(path).toHaveClass('font-mono');
+    const hint = within(copilot).getByText(t('settings.agents.trust.hint', { agent: 'copilot' }));
+    const line = path.closest('li')?.textContent ?? '';
+    expect(line).toContain(t('settings.agents.trust.step', { agent: 'copilot' }));
+    expect(`${hint.textContent} ${line}`).not.toMatch(/claude|codex/i);
+    for (const other of ['claude', 'codex']) expect(within(section(other)).queryByText(FOLDER)).not.toBeInTheDocument();
+    unmount();
+  }
+});
+
+test('no trust hint when every folder is trusted, when Copilot is disabled in the draft or when it is not installed (#880)', async () => {
+  const noHint = () => expect(screen.queryByText(t('settings.agents.trust.hint', { agent: 'copilot' }))).not.toBeInTheDocument();
+  trustAnswer([]);
+  const covered = renderCard(COPILOT_ON);
+  await settled();
+  noHint();
+  covered.unmount();
+  trustAnswer([FOLDER]);
+  const off = renderCard({ agentEnabled: { claude: true, codex: true, copilot: false } });
+  await settled();
+  noHint();
+  off.unmount();
+  renderCard(COPILOT_ON, [{ agent: 'claude', available: true }, { agent: 'codex', available: true }]);
+  await settled();
+  noHint();
 });
