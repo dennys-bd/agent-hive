@@ -1,8 +1,7 @@
 // The design pane's frame (#108): an authenticated call mints a URL for one Hive design of an activity, and a read-only route serves that
 // design's folder under the URL's token, outside the secret gate. A sandboxed frame has an opaque origin and no usable credential, so the
 // token is the capability and the route never reads the port's cookie. Every answer carries its own sandboxing policy.
-import type { MachineFor } from './machine.js';
-import { readFile } from 'node:fs/promises';
+import type { Machine, MachineFor } from './machine.js';
 import { basename, dirname, extname, posix, relative, resolve, sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
@@ -11,9 +10,10 @@ import { assemble, gitBlob, gitEntry, isRegularBlob, OUTPUT_MAX, readPartFrom, r
 import { isInside } from './ide.js';
 import type { Logger } from './log.js';
 import { DESIGN_FRAME_PREFIX, newSecret } from './secret.js';
-import { type Located, locate } from './server-editor.js';
+import { fileFs } from './machine-fs.js';
+import { IMAGE_MAX, type Located, locate } from './server-editor.js';
 import { baseCommit } from './server-file-base.js';
-import { DISK, MISSING_FILE_MESSAGE } from './server-files.js';
+import { MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import type { Exec } from './types.js';
 import { toWire } from './wire-path.js';
@@ -25,13 +25,12 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 const DESIGN_SUFFIX = '.hv.html';
 const HTML_FILE = /\.html?$/i;
-const BLOB_MAX = 64 * 1024 * 1024; // ponytail: a before frame's asset is read whole into memory; stream it if designs carry larger media
 const NOT_DESIGN_MESSAGE = 'not a Hive design';
 // A refusal is for no folder the route serves, so it gets the tightest policy rather than one naming the asked token
 const REFUSED_POLICY = "sandbox; default-src 'none'; frame-ancestors 'self'";
 
 type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
-interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'>; machineFor?: MachineFor }
+interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'>; machineFor: MachineFor }
 interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens; exec: Exec; machineFor: MachineFor }
 
 /** A before frame's folder (#675): `folder` of `commit` in the repository at `top`, in git's path space (posix, relative to top). */
@@ -92,11 +91,12 @@ const hasDotSegment = (folder: string, path: string): boolean => relative(folder
 
 // The asked file, if it is a regular file strictly inside the token's folder and under no dot segment: checked on the joined path (nothing
 // outside is even probed), then on its realpath (a symlink out, or onto a dotfile, is caught)
-async function servedFile(folder: string, segments: string[]): Promise<string | undefined> {
+async function servedFile(machine: Machine, folder: string, segments: string[]): Promise<string | undefined> {
   const asked = resolve(folder, ...segments);
   if (!isInside(folder, asked) || hasDotSegment(folder, asked)) return undefined;
-  const real = await DISK.realpath(asked).catch(() => undefined);
-  return real !== undefined && isInside(folder, real) && !hasDotSegment(folder, real) && (await DISK.isFile(real)) ? real : undefined;
+  const fs = fileFs(machine);
+  const real = await fs.realpath(asked).catch(() => undefined);
+  return real !== undefined && isInside(folder, real) && !hasDotSegment(folder, real) && (await fs.isFile(real)) ? real : undefined;
 }
 
 // A refusal: 404 with no body, so an unknown token, an escape, a folder and a missing file look the same. The debug line names the method
@@ -117,42 +117,44 @@ async function pageOf(screen: string, text: string, read: ReadPart): Promise<str
 
 interface Served { name: string; bytes: Buffer; page(): Promise<string> }
 
-async function diskServed(folder: string, segments: string[]): Promise<Served | undefined> {
-  const file = await servedFile(folder, segments);
+async function diskServed(machine: Machine, folder: string, segments: string[]): Promise<Served | undefined> {
+  const file = await servedFile(machine, folder, segments);
   if (file === undefined) return undefined;
-  const bytes = await readFile(file);
+  const bytes = await machine.fs.readFile(file, { maxBytes: IMAGE_MAX }).catch(() => undefined); // over the cap, or gone since the check: the bare 404
+  if (bytes === undefined) return undefined;
   return { name: file, bytes, page: () => pageOf(toWire(relative(folder, file), process.platform), bytes.toString('utf8'), readPartFrom(folder)) };
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
 // escape or a dot segment before git is asked; then only a regular blob within its cap, so a link, a tree or a huge blob is never read. A
-// page is held to OUTPUT_MAX, as its assembly is; an asset (an image, a video) to BLOB_MAX, since the disk route serves one of any size
+// page is held to OUTPUT_MAX, as its assembly is; an asset (an image, a video) to IMAGE_MAX, since the disk route serves one of any size
 async function servedBlob({ top, commit, folder }: BaseFolder, segments: string[]): Promise<Served | undefined> {
   const path = posix.join(folder, ...segments);
   const screen = posix.relative(folder, path);
   if (screen === '' || screen.split('/').some((part) => part.startsWith('.'))) return undefined; // '..' is a dot segment too
   const entry = await gitEntry(top, commit, path);
-  const cap = HTML_FILE.test(path) ? OUTPUT_MAX : BLOB_MAX;
+  const cap = HTML_FILE.test(path) ? OUTPUT_MAX : IMAGE_MAX;
   if (entry === undefined || !isRegularBlob(entry) || entry.size > cap) return undefined;
   const bytes = await gitBlob(top, entry.oid, cap).catch(() => undefined); // a blob gone or grown past the cap since ls-tree: the bare 404
   if (bytes === undefined) return undefined;
   return { name: path, bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(top, commit, folder)) };
 }
 
-async function servedOf(tokens: DesignFrameTokens, token: string, segments: string[]): Promise<Served | undefined> {
+async function servedOf(tokens: DesignFrameTokens, machine: Machine, token: string, segments: string[]): Promise<Served | undefined> {
   const folder = tokens.folderOf(token);
-  if (folder !== undefined) return diskServed(folder, segments);
+  if (folder !== undefined) return diskServed(machine, folder, segments);
   const base = tokens.baseOf(token);
   return base === undefined ? undefined : servedBlob(base, segments);
 }
 
 // ponytail: the whole file is read into memory, which is fine for a design's pages, styles and images; stream it if designs ever carry large media
-async function serveFrame(req: Request, res: Response, { tokens, log }: FrameDeps): Promise<void> {
+async function serveFrame(req: Request, res: Response, { tokens, log, machineFor }: FrameDeps): Promise<void> {
   // no-store: the pane reloads on a version change and must get the new file; no-referrer: the token never leaves in a Referer
   res.set({ 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
   const token = String(req.params.token);
   const segments: unknown = req.params.path; // Express 5's *path: the decoded segments
-  const served = await servedOf(tokens, token, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
+  const machine = machineFor({}); // ponytail: a token names a folder, not an activity, so the frame reads the local machine; node 8 puts the machine's id in the token's value
+  const served = await servedOf(tokens, machine, token, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
   if (served === undefined) return refuseFrame(req, res, log);
   res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(extname(served.name)); // the Host check already ran
   const isHtml = res.get('content-type')?.startsWith('text/html') === true;

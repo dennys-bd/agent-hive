@@ -4,6 +4,7 @@ import { chmod, mkdir, realpath, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
+import { MachineError, type Machine } from '../src/machine.js';
 import { initialState } from '../src/orchestrator.js';
 import { registerApprovalRoutes } from '../src/server-approval.js';
 import { registerDecompositionRoutes } from '../src/server-decomposition.js';
@@ -11,6 +12,7 @@ import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { ADD_PROJECT_ITEM, CREATE_ISSUE, CREATE_PULL_REQUEST, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
 import type { CombConfig, DecompositionPreview, Exec, HiveEvent, SourceConfig, State, Task } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { fakeGqlJson, fakeLog, GITHUB_ENTRY } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
@@ -35,7 +37,7 @@ const DOCS_ORIGIN = 'git@github.com:acme/docs.git';
 
 interface Setup {
   task?: Task; result?: Record<string, unknown>; awaiting?: boolean; text?: string; origin?: string; fail?: string; sources?: SourceConfig[];
-  dirty?: boolean; pushFails?: string; noCheckout?: boolean; ignored?: boolean; branch?: string; // #936: the file's checkout as git answers it
+  machine?: Machine; dirty?: boolean; pushFails?: string; noCheckout?: boolean; ignored?: boolean; branch?: string; // #936: the file's checkout as git answers it
 }
 
 async function routes(t: TestContext, setup: Setup = {}) {
@@ -88,7 +90,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   app.use(express.json());
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
   const { log, lines } = fakeLog();
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb } } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => setup.machine ?? fakeMachine({ exec }), sleep: async () => undefined });
   registerApprovalRoutes(app, { requireLive: (() => ({ state, runtime: { config: { comb } } })) as unknown as TaskRouteDeps['requireLive'], dispatch });
   const server = app.listen(0);
   t.after(() => server.close());
@@ -328,6 +330,14 @@ test('GET answers a fixed 500 for a local read failure, without the path, and 41
   });
   const big = await routes(t, { text: 'x'.repeat(256 * 1024 + 1) });
   const refused = await fetch(big.url);
+  assert.deepEqual([refused.status, await refused.json()], [413, { error: 'o decomposition.md passa de 256 KB' }]);
+});
+
+test('the goal\'s file is read on its machine under FILE_MAX: a machine that answers too_large for it is a 413 (#160)', async (t) => {
+  const tooLarge = async (): Promise<never> => { throw new MachineError('file over the cap', { code: MachineError.TOO_LARGE }); };
+  const exec: Exec = async () => ({ stdout: '' });
+  const { url } = await routes(t, { machine: fakeMachine({ exec, fs: { readFile: tooLarge as Machine['fs']['readFile'] } }) });
+  const refused = await fetch(url);
   assert.deepEqual([refused.status, await refused.json()], [413, { error: 'o decomposition.md passa de 256 KB' }]);
 });
 

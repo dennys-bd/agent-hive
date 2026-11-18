@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { checkoutPreview, deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout, githubDeliveryWords, hiveDeliveryWords, OffGithubError, readDelivery } from '../src/decomposition-deliver.js';
 import { CREATE_PULL_REQUEST, OPEN_PULL_REQUEST } from '../src/sources/github-queries.js';
 import type { Exec } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { fakeGqlJson } from './fakes.js';
 
 // Where a decomposition's file lives and its delivery (#936): its checkout, then the file committed when dirty (that path only), the
@@ -27,7 +28,7 @@ function checkoutGit(answers: Partial<Record<'rev-parse' | 'get-url' | 'branch',
     if (answer === undefined) throw Object.assign(new Error('Command failed'), { stderr: 'fatal: not a git repository\n' });
     return { stdout: `${answer}\n` };
   };
-  return { calls, exec };
+  return { calls, exec: fakeMachine({ exec }).exec };
 }
 const FULL = { 'rev-parse': '/docs-repo', 'get-url': 'git@github.com:acme/docs.git', branch: 'hive/7-site' };
 

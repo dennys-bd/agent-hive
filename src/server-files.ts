@@ -1,4 +1,3 @@
-import { realpath, stat } from 'node:fs/promises';
 import type { Express, Request, Response } from 'express';
 import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import { resolveActivityPath } from './ide.js';
@@ -24,12 +23,6 @@ const UNKNOWN_REF_MESSAGE = 'no task or issue for this reference'; // #588: a st
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const refuse = (res: Response, refusal: Refusal): void => {
   res.status(refusal.status).json({ error: refusal.message });
-};
-
-// What the file routes read from the disk (#258): realpath follows symlinks, so a link out of the task's folder is caught.
-export const DISK = {
-  realpath: (path: string): Promise<string> => realpath(path),
-  isFile: (path: string): Promise<boolean> => stat(path).then((s) => s.isFile(), () => false),
 };
 
 interface TaskFolders { worktree?: string; workspace: string } // no worktree: a deleted activity's, so the main checkout

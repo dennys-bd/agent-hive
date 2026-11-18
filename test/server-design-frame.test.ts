@@ -6,11 +6,13 @@ import { bridgeScript } from '../src/design-bridge.js';
 import { PART_REASONS, partNotice } from '../src/design-parts.js';
 import { initialState } from '../src/orchestrator.js';
 import { SECRET_HEADER, secretCookie } from '../src/secret.js';
+import { MachineError, type Machine } from '../src/machine.js';
 import { createServer } from '../src/server.js';
 import { createDesignFrameTokens, framePolicy, withBridge } from '../src/server-design-frame.js';
 import { saveState } from '../src/state-store.js';
 import type { Task } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
+import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { fakeLog, tempHive } from './fakes.js';
 import { savedActivityId, withWork, workPath } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
@@ -65,7 +67,7 @@ interface Frames { base: string; port: number; repo: string; activity: string; l
 
 // One local task whose worktree holds design/ (a design, its stylesheet, a note, a folder, a symlink out to secret.txt beside design/);
 // the checkout holds a design outside the worktree
-async function startFrames(t: TestContext): Promise<Frames> {
+async function startFrames(t: TestContext, machine: Machine = fakeMachine()): Promise<Frames> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo); // locate answers real paths: macOS's tmpdir is a symlink
   const worktree = worktreePath(repo, SLUG);
@@ -86,7 +88,7 @@ async function startFrames(t: TestContext): Promise<Frames> {
   await writeFile(join(worktree, 'root.hv.html'), DESIGN);
   await saveState(made.home, withWork({ ...initialState(0), localCount: 1, tasks: [TASK] }, 'local:1', { id: savedActivityId(1), slug: SLUG }));
   const { log, lines } = fakeLog();
-  const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }), log });
+  const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }), log, machines: fakeMachines(machine) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -186,4 +188,13 @@ test('a screen is served assembled: its part in place and marked, a missing one 
   assert.equal(part.status, 200);
   assert.equal(part.headers.get('content-security-policy'), framePolicy(`127.0.0.1:${f.port}`, token));
   assert.equal(await part.text(), withBridge(PART));
+});
+
+test('a design\'s sibling file is read on the machine under the image cap: a read that answers too_large is the bare 404 (#160)', async (t) => {
+  const tooLarge = async (): Promise<never> => { throw new MachineError('file over the cap', { code: MachineError.TOO_LARGE }); };
+  const f = await startFrames(t, fakeMachine({ fs: { readFile: tooLarge as Machine['fs']['readFile'] } }));
+  const url = await minted(f, 'design/home.hv.html');
+  const css = await fetch(`${f.base}${url.slice(0, url.lastIndexOf('/') + 1)}style.css`);
+  assert.equal(css.status, 404);
+  assert.equal(await css.text(), '');
 });
