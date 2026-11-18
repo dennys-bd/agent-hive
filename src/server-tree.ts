@@ -1,6 +1,7 @@
 import { access, lstat, readdir } from 'node:fs/promises';
 import { join, posix, relative, win32 } from 'node:path';
 import type { Express, Request, Response } from 'express';
+import type { Machine, MachineFor } from './machine.js';
 import { canDiff } from './task-runs.js';
 import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import type { TaskRouteDeps, Refusal } from './server-tasks.js';
@@ -121,6 +122,12 @@ export function treeRoot(state: State, config: Parameters<typeof taskWorkspace>[
   if (!workspace) return { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
   if (!canDiff(task, activity, 'worktree')) return { status: HTTP_CONFLICT, message: NO_WORKTREE_MESSAGE };
   return taskDir(workspace.path, activity);
+}
+
+/** The machine a tree route's root is on (#160): the live activity's. treeRoot has refused anything else already. */
+export function treeMachine(state: State, id: string, machineFor: MachineFor): Machine {
+  const target = liveTarget(state, id);
+  return machineFor('status' in target ? {} : target.activity);
 }
 
 // #131: the tree's root as a session or a terminal at the main checkout reaches it (`.hive/worktrees/<slug>`), resolved as treeRoot resolves

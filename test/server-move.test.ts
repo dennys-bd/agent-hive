@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { access, mkdir, readdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
+import { MACHINE_REMOTE, MACHINE_REMOTE_MESSAGE, moveFs } from '../src/machine-fs.js';
+import type { Machine } from '../src/machine.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { freeName, MOVE_BODY_MESSAGE, MOVE_DISK, type MoveFs, moveItems } from '../src/server-move.js';
+import { freeName, MOVE_BODY_MESSAGE, type MoveFs, moveItems } from '../src/server-move.js';
 import { ABSOLUTE_MOVE_MESSAGE, FOLDER_MISSING_MESSAGE, GIT_MESSAGE, MISSING_FILE_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
 import { saveState } from '../src/state-store.js';
@@ -13,12 +15,14 @@ import type { Task, Exec, Language, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, SLEEP_NOTICE_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 
 // The file tree's drop (#594): free names, and a move that crosses volumes, through an injected fs.
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 const taken = (names: string[]) => async (name: string): Promise<boolean> => names.includes(name);
+const disk = moveFs(fakeMachine());
 const fsError = (code: string, message: string): Error => Object.assign(new Error(message), { code });
 
 test('freeName keeps a free name, else adds " - <suffix>" before the last extension, then a number from 2; a dotfile and a folder have none (#594)', async () => {
@@ -39,18 +43,18 @@ test('a move across volumes (EXDEV) copies each item, then removes the original 
   await writeFile(join(root, 'folder/b.txt'), 'b');
   const calls: string[] = [];
   const fs: MoveFs = {
-    ...MOVE_DISK,
+    ...disk,
     rename: async () => {
       calls.push('rename');
       throw fsError('EXDEV', 'EXDEV: cross-device link not permitted');
     },
     cp: async (from, to) => {
       calls.push('cp');
-      await MOVE_DISK.cp(from, to);
+      await disk.cp(from, to);
     },
     rm: async (path) => {
       calls.push('rm');
-      await MOVE_DISK.rm(path);
+      await disk.rm(path);
     },
   };
   assert.deepEqual(await moveItems({ root, sources: ['a.txt', 'folder'], into: 'sub', copy: false, suffix: 'copy' }, fs), { moved: ['sub/a.txt', 'sub/folder'], from: ['a.txt', 'folder'] });
@@ -64,7 +68,7 @@ test('any other rename failure rejects with its own words and copies nothing (#5
   const root = await tempDir(t, 'move-');
   await mkdir(join(root, 'sub'));
   await writeFile(join(root, 'a.txt'), 'a');
-  const fs: MoveFs = { ...MOVE_DISK, rename: async () => { throw fsError('EACCES', 'EACCES: permission denied'); } };
+  const fs: MoveFs = { ...disk, rename: async () => { throw fsError('EACCES', 'EACCES: permission denied'); } };
   await assert.rejects(moveItems({ root, sources: ['a.txt'], into: 'sub', copy: false, suffix: 'copy' }, fs), /EACCES: permission denied/);
   assert.deepEqual([await exists(join(root, 'a.txt')), await exists(join(root, 'sub/a.txt'))], [true, false]);
 });
@@ -90,7 +94,7 @@ const noGit: Exec = async () => ({ stdout: '' });
 interface Moving { base: string; wt: string; repo: string; outside: string; server: HiveServer }
 
 // Activity 1 has its worktree on disk with FILES; 2 has none; 3's is gone. `outside` is a folder out of the worktree: Finder's side.
-async function startMove(t: TestContext, systemLanguage?: Language): Promise<Moving> {
+async function startMove(t: TestContext, systemLanguage?: Language, machine?: Machine): Promise<Moving> {
   const { home, repo } = await tempHive(t);
   const wt = worktreePath(repo, 'hive-1-task');
   for (const [path, text] of Object.entries(FILES)) {
@@ -99,7 +103,7 @@ async function startMove(t: TestContext, systemLanguage?: Language): Promise<Mov
   }
   const tasks = [task(1, { worktree: wt }), task(2), task(3, { worktree: worktreePath(repo, 'hive-3-task'), worktreeGone: true })];
   await saveState(home, savedTasks({ ...initialState(0), localCount: tasks.length }, tasks, SLUG_OF)); // #629: each worktree on its activity
-  const server = createServer({ secret: SECRET, home, exec: noGit, systemLanguage });
+  const server = createServer({ secret: SECRET, home, exec: noGit, systemLanguage, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -239,7 +243,7 @@ test('a copy that fails across volumes removes the half-copied destination; a so
   const exdev = async (): Promise<void> => { throw fsError('EXDEV', 'EXDEV: cross-device link not permitted'); };
   const removed: string[] = [];
   const failingCp: MoveFs = {
-    ...MOVE_DISK, rename: exdev,
+    ...disk, rename: exdev,
     cp: async () => { throw new Error('ENOSPC: no space left'); },
     rm: async (path) => { removed.push(path); },
   };
@@ -247,7 +251,7 @@ test('a copy that fails across volumes removes the half-copied destination; a so
   await assert.rejects(moveItems(job, failingCp), /ENOSPC: no space left/);
   assert.equal(removed.length, 1);
   assert.match(removed[0] as string, /sub[\\/]a\.txt$/);
-  const failingRm: MoveFs = { ...MOVE_DISK, rename: exdev, rm: async () => { throw new Error('EACCES: permission denied'); } };
+  const failingRm: MoveFs = { ...disk, rename: exdev, rm: async () => { throw new Error('EACCES: permission denied'); } };
   await assert.rejects(moveItems(job, failingRm), /copied.*original.*could not be removed.*EACCES: permission denied/);
 });
 
@@ -282,6 +286,19 @@ test('a copy onto its own folder lands under a free name, as Finder\'s duplicate
   assert.deepEqual(await move(f, drop(['src'], 'src/deep', true)), [200, { moved: [] }]);
 });
 
+test('on a machine that is not local a drop with an absolute source answers 409 machine_remote and copies nothing; a move inside the tree goes through the machine\'s fs (#160)', async (t) => {
+  const local = fakeMachine();
+  const renames: string[][] = [];
+  const remote = fakeMachine({ id: 'AB:CD', fs: { rename: async (from, to) => { renames.push([from, to]); await local.fs.rename(from, to); } } });
+  const f = await startMove(t, undefined, remote);
+  await writeFile(join(f.outside, 'notes.txt'), 'n');
+  const res = await postJson(`${f.base}${workPath(f.server, 'local:1')}/tree/move`, drop([join(f.outside, 'notes.txt')], 'docs', true));
+  assert.deepEqual([res.status, await res.json()], [409, { error: MACHINE_REMOTE_MESSAGE, code: MACHINE_REMOTE }]);
+  assert.equal(await exists(join(f.wt, 'docs', 'notes.txt')), false);
+  assert.deepEqual(await move(f, drop(['README.md'], 'docs')), [200, { moved: ['docs/README.md'] }]);
+  assert.equal(renames.length, 1);
+});
+
 const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
 
 test('on win32 a drop answers moved and an inside from with / only; a Finder file\'s from stays absolute and native (#641)', WIN32_ONLY, async (t) => {
@@ -291,6 +308,6 @@ test('on win32 a drop answers moved and an inside from with / only; a Finder fil
   await mkdir(join(root, 'docs', 'old'), { recursive: true });
   await writeFile(join(root, 'src', 'deep', 'a.ts'), 'a');
   await writeFile(join(outside, 'f.txt'), 'f');
-  const done = await moveItems({ root, sources: ['src/deep/a.ts', join(outside, 'f.txt')], into: 'docs/old', copy: true, suffix: 'copy' });
+  const done = await moveItems({ root, sources: ['src/deep/a.ts', join(outside, 'f.txt')], into: 'docs/old', copy: true, suffix: 'copy' }, disk);
   assert.deepEqual(done, { moved: ['docs/old/a.ts', 'docs/old/f.txt'], from: ['src/deep/a.ts', join(outside, 'f.txt')] });
 });
