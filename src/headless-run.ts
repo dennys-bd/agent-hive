@@ -2,7 +2,9 @@
 // (mkdtemp: 0700), or, given cwd, in that folder with the temp folder holding only the schema and Codex's answer (#877); with readOnlyTools
 // the agent reads but nothing is written to a worktree. Ask the agent (#330) and the template reviewer (#328) pass no cwd, so no repository's
 // CLAUDE.md / AGENTS.md reaches them; an evaluation (#877) passes the task's worktree, where Claude Code runs --restricted (the worktree's own
-// settings and hooks never load, nor its CLAUDE.md, which the prompt names instead). Each agent's flags and answer are its runner's.
+// settings and hooks never load, nor its CLAUDE.md, which the prompt names instead).
+// A Copilot run gets a Copilot home of its own inside the temp folder (#877): a fresh home trusts no folder, so the worktree's hooks never load,
+// and Copilot's session folder goes with the run. Each agent's flags and answer are its runner's.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -60,9 +62,11 @@ export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {})
       ...(input.outsideRepo ? { outsideRepo: true as const } : {}),
     };
     await writeFile(run.schemaPath, schema, { mode: FILE_MODE });
-    const proc = headlessProcess(input.agent, runner.headless(run), withoutHiveEnv(deps.env ?? process.env), { platform: deps.platform ?? process.platform, isFile: deps.isFile });
+    // #877: the runner's env over the Hive-free one, before the lookup: the child's PATH and Copilot's own home both come from it
+    const env = { ...withoutHiveEnv(deps.env ?? process.env), ...runner.headlessEnv(run) };
+    const proc = headlessProcess(input.agent, runner.headless(run), env, { platform: deps.platform ?? process.platform, isFile: deps.isFile });
     if ('failure' in proc) return proc;
-    const ran = await runCapped(proc, input.prompt, input.cwd ?? dir, deps.timeoutMs ?? input.timeoutMs ?? HEADLESS_TIMEOUT_MS, input.signal);
+    const ran = await runCapped(proc, runner.headlessPrompt(input.prompt, schema), input.cwd ?? dir, deps.timeoutMs ?? input.timeoutMs ?? HEADLESS_TIMEOUT_MS, input.signal);
     if (ran.failure !== undefined) return { failure: ran.failure, detail: detailOf(ran) };
     const answerFile = await readFile(run.answerPath, 'utf8').catch(() => undefined); // only Codex writes one
     const answer = runner.headlessAnswer(ran.stdout?.toString('utf8') ?? '', answerFile);

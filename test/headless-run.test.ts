@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { AGENTS } from '../src/agents.js';
 import { type HeadlessInput, headlessProcess, runHeadless } from '../src/headless-run.js';
@@ -58,6 +58,27 @@ test("Codex's answer is the file it wrote to -o, inside the run's folder, which 
     `while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done; cat > /dev/null; printf '{"from":1,"to":1,"text":"x"}' > "$out"`);
   assert.deepEqual(await runHeadless(input('codex'), { env: cli.env, tmpRoot: cli.tmpRoot }), { answer: '{"from":1,"to":1,"text":"x"}' });
   assert.deepEqual(await readdir(cli.tmpRoot), []);
+});
+
+test('Copilot gets the schema in its prompt and a home of its own inside the run\'s folder, whose session folder goes with it; a fenced answer is unfenced (#877)', POSIX_ONLY, async (t) => {
+  const fenced = '```json\n{"from":1,"to":1,"text":"x"}\n```';
+  // records its stdin and the env the isolation rests on in REC, writes a session folder as Copilot does, and answers fenced
+  const cli = await fakeCli(t, 'copilot', [
+    'cat > "$REC/stdin"',
+    `printf '%s\\n%s\\n%s' "$COPILOT_HOME" "$COPILOT_AUTO_UPDATE" "\${COPILOT_ALLOW_ALL-unset}" > "$REC/env"`,
+    'mkdir -p "$COPILOT_HOME/session-state/s1" && echo "{}" > "$COPILOT_HOME/session-state/s1/events.jsonl"',
+    `printf '%s\\n' '${fenced}'`,
+  ].join('\n'));
+  const env = { ...cli.env, REC: cli.bin, COPILOT_ALLOW_ALL: 'true' }; // an inherited "true" must not trust the cwd again
+  assert.deepEqual(await runHeadless(input('copilot'), { env, tmpRoot: cli.tmpRoot }), { answer: '{"from":1,"to":1,"text":"x"}' });
+  assert.equal(await readFile(join(cli.bin, 'stdin'), 'utf8'),
+    'the prompt\n\nAnswer with one JSON object that matches this JSON Schema, and nothing else: no prose, no code fence.\n\n{"type":"object"}');
+  const [home, autoUpdate, allowAll] = (await readFile(join(cli.bin, 'env'), 'utf8')).split('\n');
+  assert.equal(basename(home), 'copilot-home');
+  assert.match(basename(dirname(home)), /^hive-headless-/);
+  assert.equal(dirname(dirname(home)), cli.tmpRoot);
+  assert.deepEqual([autoUpdate, allowAll], ['false', '']);
+  assert.deepEqual(await readdir(cli.tmpRoot), [], 'the run\'s folder, its Copilot home and session folder with it, is gone');
 });
 
 test('a non-zero exit, an output over the cap, the timeout and no answer each fail with the reason, and remove the folder (#330)', POSIX_ONLY, async (t) => {
