@@ -43,7 +43,13 @@ export function numberOf(itemId: string): number {
 export function keyOfUrl(url: string): string | undefined {
   if (!URL.canParse(url)) return undefined;
   const last = new URL(url).pathname.split('/').at(-1);
-  return last === undefined || last === '' ? undefined : decodeURIComponent(last);
+  if (last === undefined || last === '') return undefined;
+  // a stray % would throw URIError out of the preview route: such a URL has no key we can use
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The checks before anything is written (#832): blockers on a source with no blocking type, a goal above the epic (createDepth's refusal),

@@ -162,5 +162,5 @@ test('a failure on the third create answers 502 with what was created, and a ret
 test('numberOf reads the adapter\'s numeric id after the source\'s name, and keyOfUrl the key a browse URL ends in (#832)', () => {
   assert.equal(numberOf('tickets:10101'), 10101);
   assert.throws(() => numberOf('tickets:ABC-1'), /no numeric id/);
-  assert.deepEqual([keyOfUrl('https://acme.example/browse/ABC-1'), keyOfUrl(''), keyOfUrl('https://acme.example/')], ['ABC-1', undefined, undefined]);
+  assert.deepEqual([keyOfUrl('https://acme.example/browse/ABC-1'), keyOfUrl(''), keyOfUrl('https://acme.example/'), keyOfUrl('https://acme.example/browse/%E0%A4%A')], ['ABC-1', undefined, undefined, undefined]);
 });
