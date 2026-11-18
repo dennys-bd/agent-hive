@@ -150,7 +150,7 @@ test('a .cmd checker reports its diagnostics on Windows (#634)', { skip: process
   assert.equal(answer.diagnostics[0]?.message, 'bad');
 });
 
-// findCandidate still reads the host's disk until the detection moves (#160, Task 10): the candidate is a real stub in a temp folder, the run is fake
+// The candidate is a real stub in a temp folder, found through the default fake machine's fs (the local one); the run is fake
 test('a checker runs on the context\'s machine with no stdin, the folder as cwd and the env it is given; a stop is superseded, a missing binary names the checker only (#160)', { skip: POSIX_ONLY }, async (t) => {
   const folder = await realpath(await tempDir(t, 'check-run-'));
   await tool(join(folder, '.venv', 'bin', 'mypy'), 'exit 0');

@@ -75,11 +75,12 @@ async function check(req: Request, res: Response, current: Live, deps: { runs: C
 
 // Settings › editor's detection (#782): every checker on each workspace's checkout, as the formatters' are; a language-server one by its project
 // copy only (the Hive's install is the installs listing's), a command-line one by its candidates, the workspace's PATH before the daemon's
-async function checkerStates(_req: Request, res: Response, current: Live): Promise<void> {
+async function checkerStates(_req: Request, res: Response, current: Live, machineFor: TaskRouteDeps['machineFor']): Promise<void> {
+  const machine = machineFor({}); // the workspaces' checkouts are the host's
   const { workspaces } = current.runtime.config.comb;
   const states = await Promise.all(CHECKERS.map(async (def): Promise<CheckerState> => {
     const found = await Promise.all(workspaces.map(async (w) => {
-      const binary = def.kind === 'lsp' ? await findCandidate(def.project, w.path, '') : await findCandidate(def.candidates, w.path, w.env.PATH ?? process.env.PATH ?? '');
+      const binary = def.kind === 'lsp' ? await findCandidate(machine, def.project, w.path, '') : await findCandidate(machine, def.candidates, w.path, w.env.PATH ?? machine.info().path);
       return binary === undefined ? [] : [w.name];
     }));
     return { id: def.id, found: found.flat() };
@@ -101,5 +102,5 @@ export function registerCheckRoutes(app: Express, { requireLive, consoleStore, m
     }
   };
   app.post('/activities/:id/check/:checker', route((req, res, current) => check(req, res, current, { runs, consoleStore, machineFor })));
-  app.get('/settings/checkers', route(checkerStates));
+  app.get('/settings/checkers', route((req, res, current) => checkerStates(req, res, current, machineFor)));
 }

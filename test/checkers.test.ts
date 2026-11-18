@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { findCandidate } from '../src/formatter-detect.js';
+import { fakeFiles, fakeMachine } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { CHECKERS, checkArgv, checkerOfServer, checkerOn, checkersOf, cliCheckerDef, cliCheckersFor, shownCommand } from '../src/checkers.js';
 import { LANGUAGES, serverDef } from '../src/languages.js';
@@ -66,7 +67,7 @@ test('a venv\'s tools are tried as .venv/bin/x, then .venv/Scripts/x, then the b
 
 test('a project with .venv\\Scripts\\mypy.exe gets mypy on win32; one with .venv/bin/mypy gets it on a POSIX platform (#634)', async (t) => {
   const candidates = cliCheckerDef('mypy').candidates;
-  const win = await findCandidate(candidates, 'C:\\p', 'C:\\bin', { platform: 'win32', isFile: (f) => f === 'C:\\p\\.venv\\Scripts\\mypy.exe' });
+  const win = await findCandidate(fakeMachine({ info: { platform: 'win32' }, fs: fakeFiles('C:\\p\\.venv\\Scripts\\mypy.exe') }), candidates, 'C:\\p', 'C:\\bin');
   assert.equal(win, 'C:\\p\\.venv\\Scripts\\mypy.exe');
   if (process.platform === 'win32') return;
   const folder = await tempDir(t, 'chk-venv-');
@@ -74,5 +75,5 @@ test('a project with .venv\\Scripts\\mypy.exe gets mypy on win32; one with .venv
   await mkdir(dirname(tool), { recursive: true });
   await writeFile(tool, '#!/bin/sh\n');
   await chmod(tool, 0o755);
-  assert.equal(await findCandidate(candidates, folder, '', { platform: process.platform }), tool);
+  assert.equal(await findCandidate(fakeMachine(), candidates, folder, ''), tool);
 });

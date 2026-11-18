@@ -114,7 +114,7 @@ export async function runFormatter(pick: FormatterPick, text: string, ctx: Forma
 /** The format a save asks for (#749, #780): the file's language's formatters that may run in the workspace detected in the activity's folder,
  * the first that runs picked and run; undefined when none does, and the text is saved as it is. */
 export async function formatForSave(editor: EditorConfig, text: string, ctx: FormatContext): Promise<FormatOutcome | undefined> {
-  const binaries = await detectFormatters(ctx.cwd, candidatesFor(editor, ctx.file, ctx.workspace.name));
+  const binaries = await detectFormatters(ctx.machine, ctx.cwd, candidatesFor(editor, ctx.file, ctx.workspace.name));
   const pick = pickFormatter(editor, ctx.file, ctx.workspace.name, binaries);
   if (pick === undefined) return undefined;
   const outcome = await runFormatter(pick, text, ctx);

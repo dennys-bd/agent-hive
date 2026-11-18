@@ -97,7 +97,7 @@ async function finish(def: CliCheckerDef, ctx: CheckContext, ran: Ran, dir: stri
 /** One run of a command-line checker for `ctx.file` (#782), logged as a run of its console channel: the header, the tool's stderr and, on a
  * failure, the reason in red. absent, before any console run, when no candidate is installed for the folder. Never throws on the tool's behalf. */
 export async function runCheck(def: CliCheckerDef, ctx: CheckContext): Promise<CheckAnswer> {
-  const binary = await findCandidate(def.candidates, ctx.folder, ctx.env.PATH ?? '');
+  const binary = await findCandidate(ctx.machine, def.candidates, ctx.folder, ctx.env.PATH ?? '');
   if (binary === undefined) return { state: 'absent' };
   if (ctx.signal.aborted) return { state: 'superseded' };
   const channel = checkChannel(ctx.workspace, def.id);

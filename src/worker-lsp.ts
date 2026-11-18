@@ -7,6 +7,7 @@ import { activityOfWorker, taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
 import { editorDir, readInstalled } from './editor-install.js';
 import { findOnPath } from './formatter-detect.js';
+import { HOST } from './host-fs.js';
 import { type Arch, inScope, LANGUAGES, type Launch, lspLanguageId, runtimeTools, type ServerDef, serverDef, serverFor } from './languages.js';
 import type { Logger } from './log.js';
 import { replaceFile } from './replace-file.js';
@@ -47,7 +48,7 @@ export async function hiveLaunch(home: string, server: ServerDef, binary: string
   const isNpmOnWin32 = server.install === 'npm' && platform === 'win32';
   const entry = isNpmOnWin32 ? await npmEntry(dir, server.source, binary) : undefined;
   if (isNpmOnWin32 && entry === undefined) return { reason: 'not installed' };
-  for (const tool of runtimeTools(server)) if ((await findOnPath(tool, path, { platform })) === undefined) return { reason: `requires ${tool}` };
+  for (const tool of runtimeTools(server)) if ((await findOnPath(HOST.fs, tool, path, { platform })) === undefined) return { reason: `requires ${tool}` };
   return server.launch({ dir, arch, platform, version: installed?.version ?? '', entry }, binary);
 }
 
@@ -62,7 +63,7 @@ const LANGUAGE_SERVERS = [...new Set(LANGUAGES.flatMap((l) => (l.server === unde
 // also the runtime the editor's host runs
 async function absolute(launch: Launch, path: string): Promise<Launch | undefined> {
   if (isAbsolute(launch.command)) return launch;
-  const found = await findOnPath(launch.command, path);
+  const found = await findOnPath(HOST.fs, launch.command, path);
   return found !== undefined && isAbsolute(found) ? { ...launch, command: found } : undefined;
 }
 

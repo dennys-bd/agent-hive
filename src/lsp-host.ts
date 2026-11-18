@@ -8,6 +8,7 @@ import { checkerOfServer, checkerOn } from './checkers.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { type ConsoleStore, lspChannel } from './console.js';
 import { findCandidate } from './formatter-detect.js';
+import { HOST } from './host-fs.js';
 import type { CatalogLoad, SchemaCatalog } from './json-schemas.js';
 import type { Logger } from './log.js';
 import { type Arch, inScope, isServerId, type Launch, languagesOfServer, type ServerDef, serverDef } from './languages.js';
@@ -82,7 +83,7 @@ const jsonSchemas = (loaded: CatalogLoad): Pick<ProcessSpec, 'afterInitialized' 
 // found (hiveLaunch, shared with the workers' plugins, #803)
 async function launchOf(deps: LspHostDeps, server: ServerDef, binary: string, root: string, env: NodeJS.ProcessEnv): Promise<Launch | { code: number; reason: string }> {
   const checker = checkerOfServer(server.id);
-  const own = checker?.launchesProject ? await findCandidate(checker.project, root, '') : undefined;
+  const own = checker?.launchesProject ? await findCandidate(HOST, checker.project, root, '') : undefined;
   if (own !== undefined) return { command: own, args: [...server.args] };
   const launch = await hiveLaunch(deps.home, server, binary, env.PATH ?? '', deps.arch ?? hostArch());
   return 'reason' in launch ? { code: LSP_CLOSE.absent, reason: launch.reason } : launch;
