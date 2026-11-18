@@ -10,8 +10,9 @@ import { jiraRefs } from './jira-refs.js';
 // Blockers from a Jira issue's links of the source's blocking types (#828): what a task shows and what gates its start. Link types that do not
 // block (6.4) and remote links stay out
 
-/** What a blocker list reads of a link: data.links' shape less linkId and phrase. A row stored before #828 has no linkId until its next sync. */
-export type BlockingLink = Pick<JiraLink, 'type' | 'direction' | 'id' | 'key' | 'title' | 'statusCategory'>;
+/** What a link list reads of a link: data.links' shape less linkId. A row stored before #828 has no linkId until its next sync; one stored
+ * without a phrase (#829) reads its type's name, as linkOf stores it. */
+export type BlockingLink = Pick<JiraLink, 'type' | 'direction' | 'phrase' | 'id' | 'key' | 'title' | 'statusCategory'>;
 /** A linked issue's status category in the read model: undefined when the model has no row for it, null when its row has none. */
 export type CategoryOf = (nodeId: string) => string | null | undefined;
 /** No store to read: every blocker keeps its link's own category. */
@@ -25,9 +26,12 @@ const NO_TYPE = 'no blocking link type is configured';
 
 function linkAt(value: JsonValue): BlockingLink[] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return [];
-  const { type, direction, id, key, title, statusCategory } = value;
+  const { type, direction, phrase, id, key, title, statusCategory } = value;
   if (typeof type !== 'string' || (direction !== 'inward' && direction !== 'outward') || typeof id !== 'string' || typeof key !== 'string') return [];
-  return [{ type, direction, id, key, title: typeof title === 'string' ? title : null, statusCategory: typeof statusCategory === 'string' ? statusCategory : null }];
+  return [{
+    type, direction, phrase: typeof phrase === 'string' ? phrase : type, id, key,
+    title: typeof title === 'string' ? title : null, statusCategory: typeof statusCategory === 'string' ? statusCategory : null,
+  }];
 }
 
 /** data.links as stored, read leniently: an entry of another shape is no link, never a refusal. */
@@ -48,7 +52,8 @@ export function storedCategories(items: Pick<SourceItems, 'items'>, rows: string
   };
 }
 
-function stateOf(link: BlockingLink, categoryOf: CategoryOf): BlockerRef['state'] {
+// exported for the relations (#829): one state rule for both sections
+export function stateOf(link: BlockingLink, categoryOf: CategoryOf): BlockerRef['state'] {
   const stored = categoryOf(link.id);
   return (stored === undefined ? link.statusCategory : stored) === DONE ? 'closed' : 'open';
 }
@@ -80,7 +85,7 @@ function required(value: string | undefined, what: string): string {
   if (value === undefined) throw new WireError(what);
   return value;
 }
-const relationsOf = (ctx: RelationsContext, links: readonly BlockingLink[]): ItemBlockers =>
+const blockersRead = (ctx: RelationsContext, links: readonly BlockingLink[]): ItemBlockers =>
   blockersOf(links, ctx.blockingTypes, ctx.categories(links.map((l) => l.id)));
 
 // The type an added link takes: the first configured. With none, the add is refused before any call
@@ -90,8 +95,8 @@ function addedType(ctx: RelationsContext): string {
   return type;
 }
 
-// The issue a ref names: only a key reads, and a key Jira does not answer is a ref to nothing
-async function otherOf(ctx: RelationsContext, ref: string): Promise<JiraIssueRead> {
+// The issue a ref names (#828, #829): only a key reads, and a key Jira does not answer is a ref to nothing
+export async function otherOf(ctx: RelationsContext, ref: string): Promise<JiraIssueRead> {
   const key = jiraRefs.refOf(ref);
   if (key === undefined) throw new BadBlockerRefError(ref, jiraRefs.forms);
   try {
@@ -102,22 +107,33 @@ async function otherOf(ctx: RelationsContext, ref: string): Promise<JiraIssueRea
   }
 }
 
-// [inwardIssue, outwardIssue] for the change: the outward phrase runs from inwardIssue to outwardIssue, so the blocker is inwardIssue
-const endsOf = (kind: BlockerChange['kind'], own: JiraIssueRead, other: JiraIssueRead): [string, string] => {
-  const [blocker, blocked] = kind === 'blockedBy' ? [other, own] : [own, other];
-  return [required(blocker.issue.key, 'jira issue key'), required(blocked.issue.key, 'jira issue key')];
+/** The other issue's id; the item itself is refused, whichever section asks (#828, #829). */
+export function checkedOtherId(own: JiraIssueRead, other: JiraIssueRead): string {
+  const otherId = required(other.issue.id, 'jira issue id');
+  if (otherId === required(own.issue.id, 'jira issue id')) throw new SelfBlockerError();
+  return otherId;
+}
+
+/** [inwardIssue, outwardIssue] for a link the item reads in `direction`: the outward phrase runs from inwardIssue to outwardIssue, so a link
+ * the item reads outward names the item inwardIssue ("A blocks B" posts A as inwardIssue). */
+export const endsOf = (direction: JiraLink['direction'], own: JiraIssueRead, other: JiraIssueRead): [string, string] => {
+  const [from, to] = direction === 'outward' ? [own, other] : [other, own];
+  return [required(from.issue.key, 'jira issue key'), required(to.issue.key, 'jira issue key')];
 };
 
-// After the write: the relations as they read now, then the entry. The write has landed, so a failure carries what was read so far
-async function afterWrite(ctx: RelationsContext, itemId: string): Promise<BlockerWrite> {
-  let blockers: ItemBlockers | undefined;
+/** After a write (#828, #829): what `of` reads of the links now, then the entry when the task is listed. The write has landed, so a failure
+ * throws `fail` with what was read so far. */
+export async function afterWrite<T>(
+  ctx: RelationsContext, itemId: string, of: (links: readonly JiraLink[]) => T, fail: (message: string, read: T | undefined) => Error,
+): Promise<{ value: T; entry?: SourceItem }> {
+  let value: T | undefined;
   try {
     const read = await readIssue(ctx.call, itemId);
-    blockers = relationsOf(ctx, linksOf(read.issue));
+    value = of(linksOf(read.issue));
     const { task, isListed } = ctx.keep(read);
-    return { blockers, ...(isListed ? { entry: task } : {}) };
+    return { value, ...(isListed ? { entry: task } : {}) };
   } catch (err) {
-    throw new RelationRereadError(errorMessage(err), blockers);
+    throw fail(errorMessage(err), value);
   }
 }
 
@@ -128,17 +144,17 @@ export async function relate(ctx: RelationsContext, itemId: string, change: Bloc
   const type = change.action === 'add' ? addedType(ctx) : undefined;
   const own = await readIssue(ctx.call, itemId);
   const other = await otherOf(ctx, change.ref);
-  const otherId = required(other.issue.id, 'jira issue id');
-  if (otherId === required(own.issue.id, 'jira issue id')) throw new SelfBlockerError();
+  const otherId = checkedOtherId(own, other);
   const links = linksOf(own.issue);
   const matches = links.filter((l) => l.id === otherId && l.direction === DIRECTION[change.kind] && ctx.blockingTypes.includes(l.type));
-  if ((matches.length > 0) === (change.action === 'add')) return { blockers: relationsOf(ctx, links) };
+  if ((matches.length > 0) === (change.action === 'add')) return { blockers: blockersRead(ctx, links) };
   if (type === undefined) {
     for (const link of matches) await deleteIssueLink(ctx.call, link.linkId); // in turn: a retry deletes whatever a failure left
   } else {
-    await postIssueLink(ctx.call, type, ...endsOf(change.kind, own, other));
+    await postIssueLink(ctx.call, type, ...endsOf(DIRECTION[change.kind], own, other));
   }
-  return afterWrite(ctx, itemId);
+  const { value, entry } = await afterWrite(ctx, itemId, (l) => blockersRead(ctx, l), (message, blockers) => new RelationRereadError(message, blockers));
+  return { blockers: value, ...(entry === undefined ? {} : { entry }) };
 }
 
 /** A text as a JQL string's content: backslash and double quote escaped, so the text cannot close the string it is put in. */

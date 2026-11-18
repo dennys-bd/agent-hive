@@ -7,7 +7,7 @@ import { blockersOf, openBlockers, storedLinks } from '../../src/sources/jira-re
 import { writeIssue } from '../../src/sources/jira-sync.js';
 import type { JiraIssue } from '../../src/sources/jira-queries.js';
 import type { BlockerChange, Item, Source } from '../../src/types.js';
-import { adapter, DEPENDS, end, fakeJira, inward, issue, NAMES, outward, read, RELATES, ROWS, SCHEMA, seeded, type Setup } from './jira-fakes.js';
+import { adapter, DEPENDS, end, fakeJira, heldBy, inward, issue, NAMES, outward, type PostedLink, read, RELATES, ROWS, SCHEMA, seeded, type Setup } from './jira-fakes.js';
 
 const NO_ROWS = (): undefined => undefined;
 const shown = (item: Item | undefined) => [item?.blockers?.blockedBy, item?.blockedBy];
@@ -44,9 +44,13 @@ test('with no row a blocker takes its link\'s category; an outward link is block
   assert.deepEqual(blockersOf(links, [], NO_ROWS), { blockedBy: [], blocking: [] });
 });
 
-test('storedLinks reads data.links leniently: a link stored before #828 has no linkId and still reads; another shape is no link (#828)', () => {
+test('storedLinks reads data.links leniently: a link stored before #828 has no linkId and still reads, one with no phrase reads its type\'s name; another shape is no link (#828, #829)', () => {
   const old = { type: 'Blocks', direction: 'inward', phrase: 'is blocked by', id: '10002', key: 'ABC-2', title: null, statusCategory: 'new' };
-  assert.deepEqual(storedLinks([old, { type: 'Blocks' }, 'x', null]), [{ type: 'Blocks', direction: 'inward', id: '10002', key: 'ABC-2', title: null, statusCategory: 'new' }]);
+  const bare = { type: 'Relates', direction: 'outward', id: '10003', key: 'ABC-3', title: 'Three', statusCategory: null };
+  assert.deepEqual(storedLinks([old, bare, { type: 'Blocks' }, 'x', null]), [
+    { type: 'Blocks', direction: 'inward', phrase: 'is blocked by', id: '10002', key: 'ABC-2', title: null, statusCategory: 'new' },
+    { type: 'Relates', direction: 'outward', phrase: 'Relates', id: '10003', key: 'ABC-3', title: 'Three', statusCategory: null },
+  ]);
   assert.deepEqual(storedLinks(undefined), []);
 });
 
@@ -77,17 +81,6 @@ test('an add on blockedBy posts one link of the first blocking type, the blocker
   assert.deepEqual(await relating({ call: again.call })('10001', add('ABC-2')), { blockers: TWO });
   assert.deepEqual(again.sent, ['GET /issue/10001', 'GET /issue/ABC-2']);
 });
-
-interface PostedLink { type: { name: string }; inwardIssue: { key: string }; outwardIssue: { key: string } }
-// How Jira holds a posted link, as the plan reads Atlassian's example for POST /issueLink: the outward phrase runs from inwardIssue to
-// outwardIssue, so inwardIssue's own read lists the other end as its outwardIssue, and outwardIssue's read lists it as its inwardIssue
-function heldBy({ inwardIssue, outwardIssue }: PostedLink): Record<string, JiraIssue> {
-  const n = (key: string): number => Number(key.split('-')[1]);
-  return {
-    [inwardIssue.key]: issue(n(inwardIssue.key), 'To Do', { issuelinks: [outward('20001', end(n(outwardIssue.key)))] }),
-    [outwardIssue.key]: issue(n(outwardIssue.key), 'To Do', { issuelinks: [inward('20001', end(n(inwardIssue.key)))] }),
-  };
-}
 
 test('the posted link reads back through linkOf in the asked direction on both issues: A blocks B is A\'s outward link and B\'s inward one (#828)', async () => {
   for (const kind of ['blockedBy', 'blocking'] as const) {
