@@ -747,3 +747,9 @@ test('the semaphore picker, its hint and the commands card foot read as the scre
     'puts the line in a semaphore, which caps how many run together across the whole Hive:', 'rules › Command Semaphores',
   ]);
 });
+
+test('the relations section\'s copy (#829): both languages, relação in Portuguese, agent-neutral', () => {
+  const keys = ['relations.title', 'relations.add', 'relations.type', 'relations.none'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['relations', '+ add', 'relation type', 'no relations']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['relações', '+ adicionar', 'tipo de relação', 'nenhuma relação']);
+});
