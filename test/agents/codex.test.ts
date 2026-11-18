@@ -233,6 +233,11 @@ test("headlessAnswer reads Codex's -o file, never its stdout; a missing or blank
   assert.equal(codexRunner.headlessAnswer('', '  \n'), undefined);
 });
 
+test('a headless run\'s prompt goes to Codex as it is, the schema rides --output-schema; nothing is added to its env (#877)', () => {
+  assert.equal(codexRunner.headlessPrompt('the prompt', HEADLESS.schema), 'the prompt');
+  assert.deepEqual(codexRunner.headlessEnv(HEADLESS), {});
+});
+
 const EXTERNAL: RunMcpServer[] = [
   { name: 'playwright', command: 'npx', args: ['@playwright/mcp@latest', '--headless'] },
   { name: 'github', url: 'https://api.githubcopilot.com/mcp/', header: { name: 'Authorization', value: 'Bearer t0k' } },

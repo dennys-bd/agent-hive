@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
 import { copilotRunner, instructionsDir } from '../../src/agents/copilot.js';
 import { copilotHome } from '../../src/agents/copilot-home.js';
+import { headless, headlessAnswer, headlessEnv, headlessPrompt } from '../../src/agents/copilot-headless.js';
 import { copilotHooksPlugin } from '../../src/agents/copilot-hooks.js';
 import type { AgentRun, McpServer, RunMcpServer } from '../../src/agents/runner.js';
 import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
@@ -112,10 +113,8 @@ test('the stray pattern matches the argv\'s MCP path; the command line runs copi
 
 const LOCAL = fakeMachine({ env: {} });
 
-test('copy, clear, headless, transcripts and limits answer their placeholders until nodes 3 to 7; hooks pass a Stop on (#873, #874)', async () => {
-  assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({}), copilotRunner.headlessMcp], [undefined, undefined, ['COPILOT_ALLOW_ALL'], [], false]);
-  assert.throws(() => copilotRunner.headless({ dir: '/t', schema: '{}', schemaPath: '/t/s', answerPath: '/t/a' }), { message: 'copilot: headless runs are not supported yet' });
-  assert.equal(copilotRunner.headlessAnswer('{}', undefined), undefined);
+test('copy, clear, transcripts and limits answer their placeholders until nodes 3 to 7; hooks pass a Stop on (#873, #874)', async () => {
+  assert.deepEqual([copilotRunner.copy(RUN, ID), copilotRunner.clear(RUN), copilotRunner.hostEnv, copilotRunner.lspPlugin({})], [undefined, undefined, ['COPILOT_ALLOW_ALL'], []]);
   const stop = { hook_event_name: 'Stop', session_id: ID };
   assert.equal(copilotRunner.hookPayload(stop), stop);
   assert.deepEqual([copilotRunner.transcriptDir(LOCAL, '/repo'), copilotRunner.ownsTranscript(LOCAL, '/x', '/repo', ID)], [undefined, false]);
@@ -138,4 +137,12 @@ test('copilotHome is $COPILOT_HOME when set and not empty, else ~/.copilot (#873
   assert.equal(copilotHome({ COPILOT_HOME: join('/c', 'home') }), join('/c', 'home'));
   assert.equal(copilotHome({}), join(homedir(), '.copilot'));
   assert.equal(copilotHome({ COPILOT_HOME: '' }), join(homedir(), '.copilot'));
+});
+
+test('the headless members are copilot-headless.ts\'s, and a headless run takes the tester\'s MCP config (#877)', () => {
+  assert.equal(copilotRunner.headlessMcp, true);
+  assert.equal(copilotRunner.headless, headless);
+  assert.equal(copilotRunner.headlessAnswer, headlessAnswer);
+  assert.equal(copilotRunner.headlessPrompt, headlessPrompt);
+  assert.equal(copilotRunner.headlessEnv, headlessEnv);
 });

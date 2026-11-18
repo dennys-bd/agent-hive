@@ -42,7 +42,7 @@ export interface LspServerEntry { command: string; args: string[]; extensionToLa
 export type LspServers = Readonly<Record<string, LspServerEntry>>;
 
 /** One headless run (#330): no pty, no hook, no Hive MCP server; a prompt in on stdin and one answer out. Every path is inside `dir`, the
- * run's own temp folder, but `cwd`. `schema` is the answer's JSON Schema as text (Claude takes it inline), `schemaPath` the same text on disk (Codex). */
+ * run's own temp folder, but `cwd`. `schema` is the answer's JSON Schema as text (Claude takes it inline, Copilot in its prompt: headlessPrompt), `schemaPath` the same text on disk (Codex). */
 export interface HeadlessRun {
   dir: string;
   schema: string;
@@ -65,6 +65,8 @@ export interface AgentRunner {
   headlessMcp: boolean; // #474: whether headless() passes HeadlessRun.mcpConfig on; the benchmark refuses a tester row whose agent cannot
   headless(run: HeadlessRun): string[]; // #330: the argv after the command; the prompt goes on stdin
   headlessAnswer(stdout: string, answerFile: string | undefined): string | undefined; // #330: the final message's text; answerFile: answerPath's content
+  headlessPrompt(prompt: string, schema: string): string; // #877: what goes on stdin; an agent with no schema flag (Copilot) asks for the schema's JSON in it
+  headlessEnv(run: HeadlessRun): Record<string, string>; // #877: laid over the run's env before the agent is looked up (Copilot's own home in run.dir); {} = none
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
   runEnv(server: McpServer, run: AgentRun): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex); #873: the run, for a folder named after its pty id
   runFiles(run: AgentRun): { path: string; content: string }[]; // #873: absolute paths the spawn writes (0600, folders made) before the pty starts; [] = none
