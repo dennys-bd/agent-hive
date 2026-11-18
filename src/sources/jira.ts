@@ -10,6 +10,7 @@ import { JiraNotFoundError } from './jira-fetch.js';
 import { type JiraFieldsContext, jiraFieldsOf, jiraSetField } from './jira-fields.js';
 import { type JiraItemRows, jiraItemOf } from './jira-item.js';
 import { isFiltered, isListed, type JiraSourceConfig, listedTasks, projectOf, storedLabels, taskOf } from './jira-listing.js';
+import { setRelation } from './jira-links.js';
 import { jiraProject } from './jira-project.js';
 import { type JiraCall, type JiraIssueRead, postTransition, readComments, readIssue, readLinkTypes, readMyself, readStatuses, readTransitions } from './jira-queries.js';
 import { type CategoryOf, checkLinkTypes, findBlockers, linkedIds, NO_CATEGORIES, relate, type RelationsContext, storedCategories } from './jira-relations.js';
@@ -207,6 +208,7 @@ export function createJiraSource(source: JiraSourceConfig, cited: Citation[], de
     create: (fields) => createJiraIssue({ call, source, place: placeNew }, fields),
     createOptions: () => readJiraCreateOptions(call, source.project),
     relate: async (itemId, change) => relate(relations(await account()), itemId, change),
+    setRelation: async (itemId, change) => setRelation(relations(await account()), itemId, change),
     findBlockers: (_itemId, text) => findBlockers({ call, project: source.project }, text), // the search is the project's, whatever the item
     linkTypes: () => readLinkTypes(call),
     ...(project === undefined ? {} : { project }),
