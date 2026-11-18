@@ -88,6 +88,8 @@ export const claudeRunner: AgentRunner = {
   headlessMcp: true,
   headless,
   headlessAnswer: (stdout) => headlessAnswer(stdout),
+  headlessPrompt: (prompt) => prompt, // the schema rides --json-schema
+  headlessEnv: () => ({}),
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
   runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
   runFiles: () => [], // its protocol rides --append-system-prompt-file
@@ -96,11 +98,11 @@ export const claudeRunner: AgentRunner = {
   prepareHome: (home, port) => prepareClaudeHome(home, port),
   mcpConfig: (server) => claudeMcpConfig(server),
   lspPlugin: (servers) => claudeLspPlugin(servers),
-  transcriptDir: (cwd, env) => transcriptDir(cwd, env),
-  ownsTranscript: (path, cwd, sessionId, env) => ownsTranscript(path, cwd, sessionId, env),
-  sessionFiles: (cwd, id, env) => Promise.resolve(sessionFiles(cwd, id, env)),
-  readTurn: (path, since) => readTranscript(path, since),
-  countMessages: (path) => countMessages(path),
+  transcriptDir: (machine, cwd) => transcriptDir(machine, cwd),
+  ownsTranscript: (machine, path, cwd, sessionId) => ownsTranscript(machine, path, cwd, sessionId),
+  sessionFiles: (machine, cwd, id) => Promise.resolve(sessionFiles(machine, cwd, id)),
+  readTurn: (machine, path, since) => readTranscript(machine, path, since),
+  countMessages: (machine, path) => countMessages(machine, path),
   planLimits: (deps) => readPlanLimits(deps),
   statusLimits: (body, now) => parseRateLimits(body, new Date(now)),
 };

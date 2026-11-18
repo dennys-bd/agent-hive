@@ -11,7 +11,10 @@ import {
 import { parseUsageLine, readTranscript, transcriptDir } from '../src/agents/claude-transcript.js';
 import { ZERO_TOKENS } from '../src/facts.js';
 import type { UsageSample } from '../src/types.js';
+import { fakeMachine, machineWith } from './fake-machine.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+
+const LOCAL = fakeMachine({ env: {} });
 import { NO_POSIX_FAULTS } from './posix-only.js';
 
 const NOW = Date.parse('2026-09-16T12:00:00.000Z');
@@ -60,13 +63,13 @@ test('readTranscript counts each message.id once, sums distinct ids and skips ev
     'garbage line',
     assistant('m2', { input_tokens: 10, output_tokens: 5 }),
   ]);
-  assert.deepEqual(await readTranscript(path), { tokens: 1165 });
+  assert.deepEqual(await readTranscript(LOCAL, path), { tokens: 1165 });
 });
 
 test('readTranscript rejects for a missing file and resolves 0 for an empty one', async (t) => {
   const dir = await tempDir(t, 'usage-');
-  await assert.rejects(readTranscript(join(dir, 'missing.jsonl')), { code: 'ENOENT' });
-  assert.deepEqual(await readTranscript(await writeTranscript(t, [])), { tokens: 0 });
+  await assert.rejects(readTranscript(LOCAL, join(dir, 'missing.jsonl')), { code: 'ENOENT' });
+  assert.deepEqual(await readTranscript(LOCAL, await writeTranscript(t, [])), { tokens: 0 });
 });
 
 test('readTranscript rejects anything that is not a regular file instead of waiting on it forever', async (t) => {
@@ -74,14 +77,14 @@ test('readTranscript rejects anything that is not a regular file instead of wait
   await t.test('a FIFO with no writer never reaches EOF', { skip: NO_POSIX_FAULTS }, async () => {
     const fifo = join(dir, 'fifo.jsonl');
     await promisify(execFile)('mkfifo', [fifo]); // win32: no mkfifo
-    await assert.rejects(readTranscript(fifo), /not a regular file/);
+    await assert.rejects(readTranscript(LOCAL, fifo), /not a regular file/);
   });
-  await assert.rejects(readTranscript(dir), /not a regular file/);
+  await assert.rejects(readTranscript(LOCAL, dir), /not a regular file/);
 });
 
 test('readTranscript rejects when finite fields overflow the total to Infinity', async (t) => {
   const huge = { input_tokens: Number.MAX_VALUE, output_tokens: Number.MAX_VALUE };
-  await assert.rejects(readTranscript(await writeTranscript(t, [assistant('a1', huge), assistant('a2', huge)])), /not finite/);
+  await assert.rejects(readTranscript(LOCAL, await writeTranscript(t, [assistant('a1', huge), assistant('a2', huge)])), /not finite/);
 });
 
 // A /rename line in the shape Claude Code appends to the transcript (#489)
@@ -91,11 +94,11 @@ test('readTranscript returns the last /rename title beside the tokens, which tit
   const reply = assistant('m1', { input_tokens: 100, output_tokens: 50 });
   const mention = JSON.stringify({ type: 'user', message: { role: 'user', content: 'custom-title' } }); // names the type, is not one
   const path = await writeTranscript(t, [titled('first name'), reply, titled('fix the login'), mention]);
-  assert.deepEqual(await readTranscript(path), { tokens: 150, title: 'fix the login' });
-  assert.deepEqual(await readTranscript(await writeTranscript(t, [reply, mention])), { tokens: 150 });
+  assert.deepEqual(await readTranscript(LOCAL, path), { tokens: 150, title: 'fix the login' });
+  assert.deepEqual(await readTranscript(LOCAL, await writeTranscript(t, [reply, mention])), { tokens: 150 });
   // cleaned before it leaves; a line cleaned to nothing, or not a string, leaves the title read before it
   const odd = await writeTranscript(t, [titled(`\u0007${'y'.repeat(70)}`), titled('   '), titled(42), reply]);
-  assert.deepEqual(await readTranscript(odd), { tokens: 150, title: 'y'.repeat(60) });
+  assert.deepEqual(await readTranscript(LOCAL, odd), { tokens: 150, title: 'y'.repeat(60) });
 });
 
 test('cleanTitle drops control characters, trims, keeps at most 60 characters without splitting one, and reads an empty or non-string title as none (#489)', () => {
@@ -148,43 +151,43 @@ test('isTranscriptPath accepts only an absolute string ending in .jsonl', () => 
 });
 
 test('transcriptDir is <config dir>/projects/<cwd with every non-alphanumeric as ->; CLAUDE_CONFIG_DIR wins over ~/.claude', () => {
-  assert.equal(transcriptDir('/Users/x/my repo/.claude/worktrees/hive-7-fix', {}), join(homedir(), '.claude', 'projects', '-Users-x-my-repo--claude-worktrees-hive-7-fix'));
-  assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR: '/cfg' }), join('/cfg', 'projects', '-w'));
+  assert.equal(transcriptDir(LOCAL, '/Users/x/my repo/.claude/worktrees/hive-7-fix'), join(homedir(), '.claude', 'projects', '-Users-x-my-repo--claude-worktrees-hive-7-fix'));
+  assert.equal(transcriptDir(machineWith({ claudeConfigDir: '/cfg' }), '/w'), join('/cfg', 'projects', '-w'));
 });
 
 test('transcriptDir ignores an empty or relative CLAUDE_CONFIG_DIR (#236)', () => {
   for (const CLAUDE_CONFIG_DIR of ['', '  ', 'cfg', './cfg']) {
-    assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR }), join(homedir(), '.claude', 'projects', '-w'));
+    assert.equal(transcriptDir(machineWith({ claudeConfigDir: CLAUDE_CONFIG_DIR }), '/w'), join(homedir(), '.claude', 'projects', '-w'));
   }
 });
 
 const TASK7 = { slug: 'hive-7-fix' };
 
 test('isWorkerTranscript accepts only a .jsonl directly under the transcript dir of the worker worktree', () => {
-  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
+  const machine = machineWith({ claudeConfigDir: '/cfg' });
   const own = join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl');
-  assert.equal(isWorkerTranscript(own, '/repo', TASK7, 'claude', env), true);
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-8-other', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another worker');
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-Users-x-secret', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'another project');
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'sub', 'abc.jsonl'), '/repo', TASK7, 'claude', env), false, 'a subdirectory');
-  assert.equal(isWorkerTranscript(`${join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix')}${sep}..${sep}x${sep}abc.jsonl`, '/repo', TASK7, 'claude', env), false, 'no traversal');
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.json'), '/repo', TASK7, 'claude', env), false);
-  assert.equal(isWorkerTranscript(undefined, '/repo', TASK7, 'claude', env), false);
+  assert.equal(isWorkerTranscript(machine, own, '/repo', TASK7, 'claude'), true);
+  assert.equal(isWorkerTranscript(machine, join('/cfg', 'projects', '-repo--hive-worktrees-hive-8-other', 'abc.jsonl'), '/repo', TASK7, 'claude'), false, 'another worker');
+  assert.equal(isWorkerTranscript(machine, join('/cfg', 'projects', '-Users-x-secret', 'abc.jsonl'), '/repo', TASK7, 'claude'), false, 'another project');
+  assert.equal(isWorkerTranscript(machine, join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'sub', 'abc.jsonl'), '/repo', TASK7, 'claude'), false, 'a subdirectory');
+  assert.equal(isWorkerTranscript(machine, `${join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix')}${sep}..${sep}x${sep}abc.jsonl`, '/repo', TASK7, 'claude'), false, 'no traversal');
+  assert.equal(isWorkerTranscript(machine, join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.json'), '/repo', TASK7, 'claude'), false);
+  assert.equal(isWorkerTranscript(machine, undefined, '/repo', TASK7, 'claude'), false);
 });
 
 test('isWorkerTranscript on a checkout task accepts a .jsonl under the project\'s own transcript dir, and no longer the worktree\'s (#444)', () => {
-  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
+  const machine = machineWith({ claudeConfigDir: '/cfg' });
   const checkout = { ...TASK7, local: true as const };
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', checkout, 'claude', env), true, 'its usage keeps counting');
-  assert.equal(isWorkerTranscript(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', checkout, 'claude', env), false);
+  assert.equal(isWorkerTranscript(machine, join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', checkout, 'claude'), true, 'its usage keeps counting');
+  assert.equal(isWorkerTranscript(machine, join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', checkout, 'claude'), false);
 });
 
 test('isTranscriptIn takes only a .jsonl directly under the transcript folder of the given checkout (#590)', () => {
-  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
-  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', 'claude', env), true);
-  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', 'claude', env), false, 'a worktree of it');
-  assert.equal(isTranscriptIn(join('/cfg', 'projects', '-repo', 'sub', 'abc.jsonl'), '/repo', 'claude', env), false);
-  assert.equal(isTranscriptIn('relative/abc.jsonl', '/repo', 'claude', env), false);
+  const machine = machineWith({ claudeConfigDir: '/cfg' });
+  assert.equal(isTranscriptIn(machine, join('/cfg', 'projects', '-repo', 'abc.jsonl'), '/repo', 'claude'), true);
+  assert.equal(isTranscriptIn(machine, join('/cfg', 'projects', '-repo--hive-worktrees-hive-7-fix', 'abc.jsonl'), '/repo', 'claude'), false, 'a worktree of it');
+  assert.equal(isTranscriptIn(machine, join('/cfg', 'projects', '-repo', 'sub', 'abc.jsonl'), '/repo', 'claude'), false);
+  assert.equal(isTranscriptIn(machine, 'relative/abc.jsonl', '/repo', 'claude'), false);
 });
 
 test('readTranscript with a since also sums by type the turns from that time on and lists their models, each message once; without it the read is as before (#742)', async (t) => {
@@ -198,13 +201,13 @@ test('readTranscript with a since also sums by type the turns from that time on 
     line('a3', '2026-10-03T12:00:02.000Z', 'claude-haiku-4-5', { output_tokens: 5 }),
     JSON.stringify({ type: 'assistant', message: { id: 'a4', usage: { output_tokens: 7 } } }), // no time: never the stage run's
   ]);
-  assert.deepEqual(await readTranscript(path, Date.parse('2026-10-03T12:00:00.000Z')), {
+  assert.deepEqual(await readTranscript(LOCAL, path, Date.parse('2026-10-03T12:00:00.000Z')), {
     tokens: 114, usage: {
       tokens: { input: 10, output: 25, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1', 'claude-haiku-4-5'], subagentTokens: ZERO_TOKENS,
       tokensByModel: { 'claude-opus-4-1': { input: 10, output: 20, cache_write: 30, cache_read: 40 }, 'claude-haiku-4-5': { input: 0, output: 5, cache_write: 0, cache_read: 0 } },
     },
   });
-  assert.deepEqual(await readTranscript(path), { tokens: 114 });
+  assert.deepEqual(await readTranscript(LOCAL, path), { tokens: 114 });
 });
 
 test('readTranscript with a since adds the session\'s subagent transcripts to the stage run\'s usage and as its subagent share; only .jsonl regular files directly under its own subagents folder; the session total is untouched (#742)', { skip: NO_POSIX_FAULTS }, async (t) => {
@@ -227,7 +230,7 @@ test('readTranscript with a since adds the session\'s subagent transcripts to th
   await symlink(path, join(sub, 'agent-link.jsonl')); // a link, not a regular file
   await write('agent-locked.jsonl', [line('l1', '2026-10-03T12:00:05.000Z', 'x', { input_tokens: 5000 })]);
   await chmod(join(sub, 'agent-locked.jsonl'), 0o000); // unreadable: costs only its own share, never the read. win32: chmod 000 does not stop the owner reading it, and its 5000 tokens shape every total
-  assert.deepEqual(await readTranscript(path, Date.parse('2026-10-03T12:00:00.000Z')), {
+  assert.deepEqual(await readTranscript(LOCAL, path, Date.parse('2026-10-03T12:00:00.000Z')), {
     tokens: 11,
     usage: {
       tokens: { input: 110, output: 28, cache_write: 0, cache_read: 3 }, models: ['claude-opus-4-1', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
@@ -238,7 +241,7 @@ test('readTranscript with a since adds the session\'s subagent transcripts to th
       },
     },
   });
-  assert.deepEqual(await readTranscript(path), { tokens: 11 }, 'the session total, for budgets, never reads the subagents');
+  assert.deepEqual(await readTranscript(LOCAL, path), { tokens: 11 }, 'the session total, for budgets, never reads the subagents');
 });
 
 test('readTranscript skips a subagent transcript last written before the stage run, and never follows a linked session or subagents folder (#742)', async (t) => {
@@ -250,12 +253,12 @@ test('readTranscript skips a subagent transcript last written before the stage r
   await writeFile(join(sub, 'agent-old.jsonl'), `${line('o1', '2026-10-03T12:00:05.000Z')}\n`); // a stale mtime: never opened
   await utimes(join(sub, 'agent-old.jsonl'), new Date(SINCE - 60_000), new Date(SINCE - 60_000));
   await writeFile(join(sub, 'agent-new.jsonl'), `${line('n1', '2026-10-03T12:00:06.000Z')}\n`);
-  assert.deepEqual((await readTranscript(path, SINCE)).usage?.subagentTokens, { input: 10, output: 0, cache_write: 0, cache_read: 0 });
+  assert.deepEqual((await readTranscript(LOCAL, path, SINCE)).usage?.subagentTokens, { input: 10, output: 0, cache_write: 0, cache_read: 0 });
   const linkedSub = await writeTranscript(t, []); // its subagents folder is a link to the real one
   await mkdir(join(dirname(linkedSub), 'session'));
   await symlink(sub, join(dirname(linkedSub), 'session', 'subagents'));
-  assert.deepEqual((await readTranscript(linkedSub, SINCE)).usage?.subagentTokens, ZERO_TOKENS, 'a linked subagents folder');
+  assert.deepEqual((await readTranscript(LOCAL, linkedSub, SINCE)).usage?.subagentTokens, ZERO_TOKENS, 'a linked subagents folder');
   const linkedSession = await writeTranscript(t, []); // its session folder is a link
   await symlink(join(dirname(path), 'session'), join(dirname(linkedSession), 'session'));
-  assert.deepEqual((await readTranscript(linkedSession, SINCE)).usage?.subagentTokens, ZERO_TOKENS, 'a linked session folder');
+  assert.deepEqual((await readTranscript(LOCAL, linkedSession, SINCE)).usage?.subagentTokens, ZERO_TOKENS, 'a linked session folder');
 });

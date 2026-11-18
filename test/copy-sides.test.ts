@@ -8,7 +8,10 @@ import type { Activity, Task, Config, Exec, Worker, State } from '../src/types.j
 import { countMessages, transcriptDir } from '../src/agents/claude-transcript.js';
 import { worktreePath } from '../src/worktree.js';
 import { localActivityId } from '../src/activities.js';
+import { fakeMachine } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
+
+const LOCAL = fakeMachine({ env: {} });
 import { activityIdOf, withLocal, withWork } from './fixtures/work.js';
 
 const ID = 'a1b2c3d4-0000-4000-8000-000000000001';
@@ -67,7 +70,7 @@ test('countMessages counts the user\'s prompts and each assistant message once, 
     { type: 'user', message: { content: [{ type: 'tool_result' }] } }, { type: 'custom-title', customTitle: 'x' },
   ];
   await writeFile(path, `${lines.map((l) => JSON.stringify(l)).join('\n')}\nnot json\n`);
-  assert.equal(await countMessages(path), 2);
+  assert.equal(await countMessages(LOCAL, path), 2);
   const from = noticeSide({ cwd: '/repo/.hive/worktrees/hive-1', onDisk: true, transcriptCwds: [], label: 'task HIVE-1 (task 1)' }, 'hive/HIVE-1');
   const to = noticeSide({ cwd: '/repo', onDisk: true, transcriptCwds: [], label: 'the local checkout of hive' }, null);
   assert.equal(copyNotice(from, to), [
@@ -80,14 +83,14 @@ test('countMessages counts the user\'s prompts and each assistant message once, 
 test('trustedCopies keeps a saved copy mark only when its dir is the transcript dir of its own worker\'s task or workspace, and never one naming the worker\'s own session (#587)', () => {
   const NEW = 'b1b2c3d4-0000-4000-8000-000000000002';
   const mark = (id: string, owner: Partial<Worker>, dir: string): Worker => ({ id, status: 'working', runId: ID, sessionId: NEW, freeSession: true, ...owner, copyOf: { from: ID, dir } });
-  const own = transcriptDir(worktreePath('/repo', 'hive-1'));
+  const own = transcriptDir(LOCAL, worktreePath('/repo', 'hive-1'));
   const workers = [
-    mark('a', { activityId: activityIdOf('local:1') }, own), mark('b', { activityId: localActivityId('hive') }, transcriptDir('/repo')),
-    mark('c', { activityId: activityIdOf('local:1') }, transcriptDir('/repo')), mark('d', { activityId: localActivityId('hive') }, '/Users/someone/.ssh'),
-    mark('e', { activityId: activityIdOf('nope') }, own), mark('f', { activityId: localActivityId('site') }, transcriptDir('/repo')),
+    mark('a', { activityId: activityIdOf('local:1') }, own), mark('b', { activityId: localActivityId('hive') }, transcriptDir(LOCAL, '/repo')),
+    mark('c', { activityId: activityIdOf('local:1') }, transcriptDir(LOCAL, '/repo')), mark('d', { activityId: localActivityId('hive') }, '/Users/someone/.ssh'),
+    mark('e', { activityId: activityIdOf('nope') }, own), mark('f', { activityId: localActivityId('site') }, transcriptDir(LOCAL, '/repo')),
     mark('g', { activityId: activityIdOf('local:1'), sessionId: ID }, own),
   ];
-  const trusted = trustedCopies(withLocal(state([task(1)], { workers }), 'hive'), config); // #629: the activities the workers point at
-  assert.deepEqual(trusted.workers.map((s) => s.copyOf?.dir), [own, transcriptDir('/repo'), undefined, undefined, undefined, undefined, undefined]);
-  assert.equal(workers[2].copyOf?.dir, transcriptDir('/repo'), 'the input is not mutated');
+  const trusted = trustedCopies(withLocal(state([task(1)], { workers }), 'hive'), config, () => LOCAL); // #629: the activities the workers point at
+  assert.deepEqual(trusted.workers.map((s) => s.copyOf?.dir), [own, transcriptDir(LOCAL, '/repo'), undefined, undefined, undefined, undefined, undefined]);
+  assert.equal(workers[2].copyOf?.dir, transcriptDir(LOCAL, '/repo'), 'the input is not mutated');
 });

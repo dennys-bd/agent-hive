@@ -156,15 +156,15 @@ test('a hive row: the stage menu as its status, the Workspace as plain text, its
   const onOpenIssue = vi.fn();
   resetViewState();
   renderHive({ onGoTo, onOpenIssue });
-  const three = within(rowOf('#HIVE-3'));
+  const three = within(rowOf('HIVE-3'));
   expect(three.getByRole('button', { name: 'spec' })).toHaveAttribute('data-slot', 'field-cell');
   expect(within(three.getAllByRole('cell')[2]).getByText('site')).toBeInTheDocument();
   expect(three.queryByRole('button', { name: 'editar Workspace' })).not.toBeInTheDocument(); // decision 5: read-only
   expect(three.getByRole('button', { name: 'build · spec ›' })).toBeInTheDocument();
-  expect(within(rowOf('#HIVE-1')).getByText('#9')).toHaveClass('text-review');
-  expect(within(rowOf('#HIVE-2')).getByRole('button', { name: '—' })).toHaveAttribute('data-slot', 'field-cell');
-  expect(within(rowOf('#HIVE-2')).getByRole('button', { name: 'sem fluxo ›' })).toBeInTheDocument();
-  await user.click(within(rowOf('#HIVE-2')).getByText('Task 2'));
+  expect(within(rowOf('HIVE-1')).getByText('#9')).toHaveClass('text-review');
+  expect(within(rowOf('HIVE-2')).getByRole('button', { name: '—' })).toHaveAttribute('data-slot', 'field-cell');
+  expect(within(rowOf('HIVE-2')).getByRole('button', { name: 'sem fluxo ›' })).toBeInTheDocument();
+  await user.click(within(rowOf('HIVE-2')).getByText('Task 2'));
   expect(onGoTo).toHaveBeenCalledWith('local:2');
   expect(onOpenIssue).not.toHaveBeenCalled();
 });

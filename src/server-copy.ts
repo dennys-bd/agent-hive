@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { copyNotice, type CopySide, noticeSide, readBranch, sourceSide, targetSide, uncommitted } from './copy-sides.js';
 import { activityParam, keptTarget } from './activity-routes.js';
 import { copyPending } from './local-sessions.js';
+import type { Machine, MachineFor } from './machine.js';
 import { answerOpen, type TaskRouteDeps, type Refusal } from './server-tasks.js';
 import { COPY_PENDING_MESSAGE } from './server-sessions.js';
 import { copyTranscript, dropCopiedTranscript, findTranscript } from './transcript.js';
@@ -11,7 +12,7 @@ import { runners } from './agents/registry.js';
 import { cleanTitle } from './usage.js';
 
 type Deps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'exec' | 'log' | 'machineFor'>;
-interface Planned { from: SessionRef; to: SessionTarget; source: CopySide; target: CopySide; session: Session }
+interface Planned { from: SessionRef; to: SessionTarget; source: CopySide; target: CopySide; session: Session; machine: Machine }
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_CONFLICT = 409;
@@ -38,21 +39,23 @@ const unknownSource = (current: NonNullable<ReturnType<Deps['requireLive']>>, re
   return 'status' in kept ? kept : undefined;
 };
 
-function plan(current: NonNullable<ReturnType<Deps['requireLive']>>, from: SessionRef, to: SessionTarget): Planned | Refusal {
+function plan(machineFor: MachineFor, current: NonNullable<ReturnType<Deps['requireLive']>>, from: SessionRef, to: SessionTarget): Planned | Refusal {
   const found = sourceSide(current.state, current.runtime.config, from);
   if ('status' in found) return found;
   const target = targetSide(current.state, current.runtime.config, to, from);
   if ('status' in target) return target;
-  if (copyPending(current.state.workers, from.sessionId, runners[found.session.agent].transcriptDir(target.cwd))) return { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE };
-  return { from, to, source: found.side, target, session: found.session };
+  // #161: one machine for both ends, the target activity's; a copy across two machines waits for #130
+  const machine = machineFor(current.state.activities.find((a) => a.id === to.activityId) ?? {});
+  if (copyPending(current.state.workers, from.sessionId, runners[found.session.agent].transcriptDir(machine, target.cwd))) return { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE };
+  return { from, to, source: found.side, target, session: found.session, machine };
 }
 
-async function summarize({ source, target, session }: Planned, exec: Exec): Promise<CopySummary | undefined> {
-  const transcript = await findTranscript(source.transcriptCwds, session.id, session.agent);
+async function summarize({ source, target, session, machine }: Planned, exec: Exec): Promise<CopySummary | undefined> {
+  const transcript = await findTranscript(machine, source.transcriptCwds, session.id, session.agent);
   if (transcript === undefined) return undefined;
   const [fromBranch, toBranch, changes, messages] = await Promise.all([
     source.onDisk ? readBranch(source.cwd, exec) : null, readBranch(target.cwd, exec),
-    source.onDisk ? uncommitted(source.cwd, exec) : 0, runners[session.agent].countMessages(transcript),
+    source.onDisk ? uncommitted(source.cwd, exec) : 0, runners[session.agent].countMessages(machine, transcript),
   ]);
   return { from: { path: source.cwd, branch: fromBranch }, to: { path: target.cwd, branch: toBranch }, messages, tokens: session.tokens ?? 0, uncommitted: changes };
 }
@@ -66,12 +69,12 @@ async function noticeFor({ source, target }: Planned, exec: Exec): Promise<strin
 async function runCopy(deps: Deps, planned: Planned, body: { name?: unknown; notice: boolean; size?: TerminalSize }, res: Response): Promise<void> {
   let copied: Awaited<ReturnType<typeof copyTranscript>>;
   try {
-    copied = await copyTranscript(planned.source.transcriptCwds, planned.target.cwd, planned.session.id, planned.session.agent);
+    copied = await copyTranscript(planned.machine, planned.source.transcriptCwds, planned.target.cwd, planned.session.id, planned.session.agent);
   } catch (err) {
     return failed(deps, res, COPY_FAILED, err);
   }
   if (copied === 'missing') return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT });
-  const dir = runners[planned.session.agent].transcriptDir(planned.target.cwd);
+  const dir = runners[planned.session.agent].transcriptDir(planned.machine, planned.target.cwd);
   const placed = copied === 'copied' ? dir : undefined; // #933: an agent without a dir answers same: nothing placed, no copyOf mark
   const name = cleanTitle(body.name);
   const notice = body.notice ? await noticeFor(planned, deps.exec) : undefined;
@@ -80,7 +83,7 @@ async function runCopy(deps: Deps, planned: Planned, body: { name?: unknown; not
     ...(name === undefined ? {} : { name }), ...(notice === undefined ? {} : { notice }), ...(placed === undefined ? {} : { copied: placed }),
   }, body.size); // #808: the grid of the copy's session
   if (effects.some((e) => e.type === 'spawnSession')) return answerOpen(deps, effects, res);
-  if (placed !== undefined) await dropCopiedTranscript(placed, planned.session.id, deps.log);
+  if (placed !== undefined) await dropCopiedTranscript(planned.machine, placed, planned.session.id, deps.log);
   refuse(res, { status: HTTP_CONFLICT, message: TARGET_GONE });
 }
 
@@ -94,7 +97,7 @@ export function registerCopyRoutes(app: Express, deps: Deps): void {
     if (unknown) return refuse(res, unknown);
     const to = targetOf(req.query.toActivity);
     if (!to) return refuse(res, { status: HTTP_BAD_REQUEST, message: BAD_TARGET });
-    const planned = plan(current, refOf(req), to);
+    const planned = plan(deps.machineFor, current, refOf(req), to);
     if ('status' in planned) return refuse(res, planned);
     let summary: CopySummary | undefined;
     try {
@@ -113,7 +116,7 @@ export function registerCopyRoutes(app: Express, deps: Deps): void {
     const { to: raw, name, notice } = (req.body ?? {}) as { to?: { activityId?: unknown }; name?: unknown; notice?: unknown };
     const to = raw && typeof raw === 'object' ? targetOf(raw.activityId) : undefined;
     if (!to || typeof notice !== 'boolean' || (name !== undefined && typeof name !== 'string')) return refuse(res, { status: HTTP_BAD_REQUEST, message: BAD_TARGET });
-    const planned = plan(current, refOf(req), to);
+    const planned = plan(deps.machineFor, current, refOf(req), to);
     if ('status' in planned) return refuse(res, planned);
     await runCopy(deps, planned, { name, notice, size: sizeIn(req.body) }, res);
   });

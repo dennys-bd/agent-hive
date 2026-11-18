@@ -4,6 +4,8 @@ import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { createConsoleStore, lspChannel } from '../src/console.js';
 import { createLspProcess, type LspProcess, type ProcessSpec } from '../src/lsp-process.js';
+import type { Machine } from '../src/machine.js';
+import { fakeMachine } from './fake-machine.js';
 import { type FakePeer, fakePeer, LSP_STUB, until } from './lsp-helpers.js';
 import { tempDir } from './temp-dir.js';
 
@@ -17,10 +19,19 @@ function start(command = process.execPath, extra: Partial<ProcessSpec> = {}): { 
   let isGone = false;
   const proc = createLspProcess({
     command, args: [LSP_STUB], cwd: dirname(LSP_STUB), env: process.env, root: '/w/root', shown: 'stub --stdio',
-    channel: lspChannel('hive', 'pyright'), label: '#HIVE-1', consoleStore: store, onGone: () => { isGone = true; }, ...extra,
+    channel: lspChannel('hive', 'pyright'), label: '#HIVE-1', consoleStore: store, onGone: () => { isGone = true; }, machine: fakeMachine(), ...extra,
   });
   return { proc, store, gone: () => isGone };
 }
+
+test('the server starts through its machine\'s process, with the resolved command, its args and the cwd (#161)', async (t) => {
+  const base = fakeMachine();
+  const seen: { command: string; args: string[]; cwd: string }[] = [];
+  const machine: Pick<Machine, 'process'> = { process: (command, args, options) => { seen.push({ command, args, cwd: options.cwd }); return base.process(command, args, options); } };
+  const { proc } = start(process.execPath, { machine });
+  t.after(() => proc.stop());
+  assert.deepEqual(seen, [{ command: process.execPath, args: [LSP_STUB], cwd: dirname(LSP_STUB) }]);
+});
 
 test('initialize goes to the server once, with the root injected; a later client gets the stored answer (#780)', async (t) => {
   const { proc } = start();
@@ -93,7 +104,7 @@ test('a server that ignores shutdown and SIGTERM is killed, so stop always ends;
   const store = createConsoleStore(() => 5000);
   const proc = createLspProcess({
     command: process.execPath, args: ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], cwd: dirname(LSP_STUB), env: process.env, root: '/w/root', shown: 'stub',
-    channel: lspChannel('hive', 'pyright'), label: '#HIVE-1', consoleStore: store, onGone: () => undefined, graceMs: 150,
+    channel: lspChannel('hive', 'pyright'), label: '#HIVE-1', consoleStore: store, onGone: () => undefined, graceMs: 150, machine: fakeMachine(),
   });
   const a = fakePeer();
   proc.join(a);

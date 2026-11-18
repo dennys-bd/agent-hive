@@ -46,9 +46,10 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
 /** Every agent, available: what the server assumes when nothing was detected (tests only: boot always detects). */
 export const ALL_AGENTS: AgentAvailability[] = AGENT_IDS.map((agent) => ({ agent, available: true }));
 
-/** Checks every agent's CLI once, in parallel, with the daemon's own env: the PATH the worker's pty resolves the command with. */
-export async function detectAgents(exec: Exec): Promise<AgentAvailability[]> {
-  const found = await Promise.all(AGENT_IDS.map((id) => exec(AGENTS[id].command, ['--version']).then(() => true, () => false)));
+/** Checks every agent's CLI once, in parallel, on the machine (#161): the boot's is the daemon's own exec, the PATH a worker's pty resolves the
+ * command with. Typed by its exec alone: the page imports this file, and machine.ts is the server's. */
+export async function detectAgents(machine: { exec: Exec }): Promise<AgentAvailability[]> {
+  const found = await Promise.all(AGENT_IDS.map((id) => machine.exec(AGENTS[id].command, ['--version']).then(() => true, () => false)));
   return AGENT_IDS.map((agent, i) => ({ agent, available: found[i] }));
 }
 

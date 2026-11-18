@@ -1,6 +1,7 @@
 // The contract every coding agent's runner meets (#924): a plain object of pure functions, one per agent in registry.ts. Shared code reads an
 // agent's flags, files and formats only through it; the agent's facts (label, command, subcommands, planLimits) stay in agents.ts, which the
 // page reads too.
+import type { Machine } from '../machine.js';
 import type { HookPayload, LaunchArg, RateLimits } from '../types.js';
 import type { TranscriptTurn } from '../usage.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
@@ -41,7 +42,7 @@ export interface LspServerEntry { command: string; args: string[]; extensionToLa
 export type LspServers = Readonly<Record<string, LspServerEntry>>;
 
 /** One headless run (#330): no pty, no hook, no Hive MCP server; a prompt in on stdin and one answer out. Every path is inside `dir`, the
- * run's own temp folder, but `cwd`. `schema` is the answer's JSON Schema as text (Claude takes it inline), `schemaPath` the same text on disk (Codex). */
+ * run's own temp folder, but `cwd`. `schema` is the answer's JSON Schema as text (Claude takes it inline, Copilot in its prompt: headlessPrompt), `schemaPath` the same text on disk (Codex). */
 export interface HeadlessRun {
   dir: string;
   schema: string;
@@ -64,6 +65,8 @@ export interface AgentRunner {
   headlessMcp: boolean; // #474: whether headless() passes HeadlessRun.mcpConfig on; the benchmark refuses a tester row whose agent cannot
   headless(run: HeadlessRun): string[]; // #330: the argv after the command; the prompt goes on stdin
   headlessAnswer(stdout: string, answerFile: string | undefined): string | undefined; // #330: the final message's text; answerFile: answerPath's content
+  headlessPrompt(prompt: string, schema: string): string; // #877: what goes on stdin; an agent with no schema flag (Copilot) asks for the schema's JSON in it
+  headlessEnv(run: HeadlessRun): Record<string, string>; // #877: laid over the run's env before the agent is looked up (Copilot's own home in run.dir); {} = none
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
   runEnv(server: McpServer, run: AgentRun): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex); #873: the run, for a folder named after its pty id
   runFiles(run: AgentRun): { path: string; content: string }[]; // #873: absolute paths the spawn writes (0600, folders made) before the pty starts; [] = none
@@ -72,12 +75,12 @@ export interface AgentRunner {
   prepareHome(home: string, port: number): Promise<void>;
   mcpConfig(server: McpServer): string;
   lspPlugin(servers: LspServers): { path: string; content: string }[];
-  transcriptDir(cwd: string, env?: NodeJS.ProcessEnv): string | undefined; // #929: undefined when transcripts are not kept per cwd (Codex)
+  transcriptDir(machine: Machine, cwd: string): string | undefined; // #929: undefined when transcripts are not kept per cwd (Codex); #161: on the machine's home
   // #929: cwd: Claude keys transcripts by it, Codex ignores it; sessionId pins the file to that session (Codex owns nothing without one)
-  ownsTranscript(path: string, cwd: string, sessionId: string | undefined, env?: NodeJS.ProcessEnv): boolean;
-  sessionFiles(cwd: string, sessionId: string, env?: NodeJS.ProcessEnv): Promise<string[]>; // #929: what deleting the session's transcripts removes
-  readTurn(path: string, since?: number): Promise<TranscriptTurn>;
-  countMessages(path: string): Promise<number>;
+  ownsTranscript(machine: Machine, path: string, cwd: string, sessionId: string | undefined): boolean;
+  sessionFiles(machine: Machine, cwd: string, sessionId: string): Promise<string[]>; // #929: what deleting the session's transcripts removes
+  readTurn(machine: Machine, path: string, since?: number): Promise<TranscriptTurn>;
+  countMessages(machine: Machine, path: string): Promise<number>;
   planLimits(deps?: PlanLimitsDeps): Promise<RateLimits | undefined>;
   statusLimits(body: unknown, now: number): RateLimits | undefined;
 }

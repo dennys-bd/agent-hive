@@ -41,7 +41,8 @@
     // Host-only, permanent: what is not a task's (config, state, credentials, logs, the Hive's home, the daemon) and the machine's own code
     {
       "includes": [
-        "src/agents/**", "src/benchmark/**", "src/read-model/**", "src/sources/**",
+        "src/agents/**", "!src/agents/claude-transcript.ts", "!src/agents/codex-transcript.ts", "!src/agents/jsonl.ts", // #161: the transcripts are the machine's
+        "src/benchmark/**", "src/read-model/**", "src/sources/**",
         "src/*-store.ts", "src/config.ts", "src/credentials.ts", "src/github-token.ts", "src/daemon*.ts", "src/hive.ts", "src/home-*.ts",
         "src/log.ts", "src/facts.ts", "src/editor-*.ts", "src/server-editor-install.ts", "src/plugin-render.ts", "src/launch-options.ts",
         "src/custom-*.ts", "src/command-shim.ts", "src/shim.ts", "src/shell-init.ts", "src/exec-path.ts", "src/posix-shell.ts",
@@ -58,11 +59,11 @@
         // 7.2 (#159): worktree, setup and spawn on the machine
         "src/checkpoints.ts", "src/hooks-settings.ts", "src/restart.ts", "src/server-spawn.ts", "src/server-terminals.ts",
         "src/shell-procs.ts", "src/worktree.ts", "src/worktree-setup.ts", "src/worktree-steps.ts", "src/worktree-teardown.ts",
-        // 7.4 (#161): git, transcripts, language servers and processes on the machine
-        "src/lsp-host.ts", "src/lsp-process.ts", "src/transcript.ts", "src/server.ts",
         // unowned, 7.5 (#882): nested repos, tree watch, design parts and exit cwd on the machine
         "src/worktree-nested.ts", "src/worktree-stranded.ts", "src/nested-check.ts", "src/server-nested.ts",
-        "src/tree-watch-root.ts", "src/design-parts.ts", "src/server-exit.ts"
+        "src/tree-watch-root.ts", "src/design-parts.ts", "src/server-exit.ts",
+        // src/server.ts: exists' access and the config write, the host's own; #161 moved only its call sites, and no node owns the file
+        "src/server.ts"
       ],
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     }

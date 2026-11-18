@@ -2,19 +2,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { addTokens, finiteTokens, firstLine, newTally, tally, turnUsage, writtenSince } from '../../src/agents/jsonl.js';
+import { addTokens, eachLine, finiteTokens, firstLine, newTally, TRANSCRIPT_MAX_BYTES, tally, turnUsage, writtenSince } from '../../src/agents/jsonl.js';
 import { ZERO_TOKENS } from '../../src/facts.js';
+import { type Machine, MachineError } from '../../src/machine.js';
+import { fakeMachine } from '../fake-machine.js';
 import { tempDir } from '../temp-dir.js';
+
+const LOCAL = fakeMachine({ env: {} });
 
 test('firstLine reads a file\'s first line only, undefined for an empty file, and refuses what is not a regular file (#929)', async (t) => {
   const dir = await tempDir(t, 'jsonl-');
   const path = join(dir, 'a.jsonl');
   await writeFile(path, '{"type":"session_meta"}\n{"type":"turn_context"}\n');
-  assert.equal(await firstLine(path), '{"type":"session_meta"}');
+  assert.equal(await firstLine(LOCAL, path), '{"type":"session_meta"}');
   await writeFile(join(dir, 'empty.jsonl'), '');
-  assert.equal(await firstLine(join(dir, 'empty.jsonl')), undefined);
+  assert.equal(await firstLine(LOCAL, join(dir, 'empty.jsonl')), undefined);
   await mkdir(join(dir, 'folder.jsonl'));
-  await assert.rejects(firstLine(join(dir, 'folder.jsonl')), /not a regular file/);
+  await assert.rejects(firstLine(LOCAL, join(dir, 'folder.jsonl')), /not a regular file/);
 });
 
 test('tally counts each id once, only at or after since, a subagent\'s share apart; turnUsage lists the models in the order met (#742, #929)', () => {
@@ -47,5 +51,17 @@ test('writtenSince compares the file\'s mtime; a missing file is never fresh (#9
   const path = join(await tempDir(t, 'jsonl-'), 'a.jsonl');
   await writeFile(path, '\n');
   await utimes(path, 1000, 1000); // epoch seconds: mtimeMs 1_000_000
-  assert.deepEqual([await writtenSince(path, 1_000_000), await writtenSince(path, 1_000_001), await writtenSince(`${path}.gone`, 0)], [true, false, false]);
+  assert.deepEqual([await writtenSince(LOCAL, path, 1_000_000), await writtenSince(LOCAL, path, 1_000_001), await writtenSince(LOCAL, `${path}.gone`, 0)], [true, false, false]);
+});
+
+test('every line a reader reads goes through the machine\'s readLines under TRANSCRIPT_MAX_BYTES; over its cap it rejects too_large (#161)', async (t) => {
+  const path = join(await tempDir(t, 'jsonl-'), 'a.jsonl');
+  await writeFile(path, 'one\ntwo\n');
+  const local = fakeMachine();
+  const caps: number[] = [];
+  const capped: Pick<Machine, 'fs'> = { fs: { ...local.fs, readLines: (file, { maxBytes }) => { caps.push(maxBytes); return local.fs.readLines(file, { maxBytes: 4 }); } } };
+  const isTooLarge = (err: unknown): boolean => err instanceof MachineError && err.code === MachineError.TOO_LARGE;
+  await assert.rejects(eachLine(capped, path, () => undefined), isTooLarge);
+  await assert.rejects(firstLine(capped, path), isTooLarge);
+  assert.deepEqual(caps, [TRANSCRIPT_MAX_BYTES, TRANSCRIPT_MAX_BYTES]);
 });

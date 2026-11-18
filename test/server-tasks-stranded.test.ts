@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine } from './fake-machine.js';
 import { activityOf } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -82,8 +83,8 @@ async function claudeConfigDir(t: TestContext): Promise<void> {
   t.after(() => { if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = previous; });
 }
 const transcriptAt = async (cwd: string): Promise<string> => {
-  await mkdir(transcriptDir(cwd), { recursive: true });
-  const file = join(transcriptDir(cwd), `${SESSION}.jsonl`);
+  await mkdir(transcriptDir(fakeMachine(), cwd), { recursive: true });
+  const file = join(transcriptDir(fakeMachine(), cwd), `${SESSION}.jsonl`);
   await writeFile(file, '{}\n');
   return file;
 };

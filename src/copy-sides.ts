@@ -2,6 +2,7 @@ import { activityOf, localWorkspaceOf, taskOfActivity } from './activities.js';
 import { keptTarget, liveTarget, UNKNOWN_ACTIVITY_MESSAGE } from './activity-routes.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { hasDirectory } from './local-sessions.js';
+import type { MachineFor } from './machine.js';
 import { openTask, workspaceOf, type Refusal } from './server-tasks.js';
 import { sameOwner } from './session-copy.js';
 import type { Session, Config, Exec, SessionRef, SessionTarget, Worker, State } from './types.js';
@@ -112,11 +113,13 @@ const workerCwd = (state: State, config: Pick<Config, 'comb'>, worker: Worker): 
 
 /** A saved state's copy marks (#587), each kept only when its dir is the transcript dir of its own worker's directory, where the route put the
  * temporary copy: a forged state.json never points the boot's removal at any other file. */
-export function trustedCopies(state: State, config: Pick<Config, 'comb'>): State {
+export function trustedCopies(state: State, config: Pick<Config, 'comb'>, machineFor: MachineFor): State {
   const trusted = (worker: Worker): Worker => {
+    // #161: the mark's dir is on the worker's own machine
+    const machine = machineFor(state.activities.find((a) => a.id === worker.activityId) ?? {});
     const cwd = worker.copyOf === undefined ? undefined : workerCwd(state, config, worker);
     // never the worker's own session: the mark names the source's id, so a from equal to it can only be forged
-    if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === runners[ranAgent(worker)].transcriptDir(cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
+    if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === runners[ranAgent(worker)].transcriptDir(machine, cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
     const { copyOf: _copyOf, ...unmarked } = worker;
     return unmarked;
   };

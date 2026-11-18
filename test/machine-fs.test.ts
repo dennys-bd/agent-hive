@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CopyOptions, RmOptions } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MachineError, type RunSpec } from '../src/machine.js';
+import { MachineError } from '../src/machine.js';
 import { fileFs, isLocal, MACHINE_REMOTE, moveFs, pathFs, REMOTE_REFUSAL, treeFs, withMachinePath } from '../src/machine-fs.js';
 import { fakeMachine, statsOf } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
@@ -64,12 +64,11 @@ test('withMachinePath sets PATH to the machine\'s; on win32 another spelling of 
   assert.deepEqual(withMachinePath({ Path: 'C:\\host', A: '1' }, { platform: 'win32', path: 'C:\\machine' }), { A: '1', PATH: 'C:\\machine' });
 });
 
-test('fakeMachine: its default exec refuses naming the call, a given one rejects as a MachineError, no pty, info merged over the local one\'s (#160)', async () => {
-  await assert.rejects(fakeMachine().exec('git', ['status']), (err: unknown) => err instanceof MachineError && /no exec for git status/.test(err.message));
+test('fakeMachine: its default exec answers nothing, a given one rejects as a MachineError, info merged over the local one\'s, the id overridable (#160)', async () => {
+  assert.deepEqual(await fakeMachine().exec('git', ['status']), { stdout: '' });
   const failing = fakeMachine({ exec: async () => { throw Object.assign(new Error('Command failed'), { code: 128, stderr: 'fatal: no' }); } });
   await assert.rejects(failing.exec('git', ['status']), (err: unknown) => err instanceof MachineError && err.code === 128 && err.stderr === 'fatal: no');
-  const spec: RunSpec = { ptyId: 'P1', slug: 's', cwd: '/repo' };
-  assert.throws(() => fakeMachine().pty.spawn(spec, { onExit: () => {}, onError: () => {} }), /no pty/);
+  assert.equal(fakeMachine({ id: 'AB:CD' }).id, 'AB:CD');
   const info = fakeMachine({ info: { platform: 'win32' } }).info();
   assert.deepEqual([info.platform, info.tmpdir], ['win32', fakeMachine().info().tmpdir]);
 });

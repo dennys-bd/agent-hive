@@ -1,44 +1,32 @@
-// One fake machine for unit and route tests (#160), and the only place a test names the machine's shape: the local machine's fs, run and
-// info by default, an exec that refuses until a test hands one (a missed call site fails loudly), and no pty.
+// The machine a test hands a function that takes one (#160, #161): the local machine over a fake exec and a pty host that launches nothing,
+// with any of its deps (env, platform...) given, and the fs, run, info or id a test overrides on top. An exec a test does not inject answers ''.
 import type { Stats } from 'node:fs';
-import { type Machine, MachineError, type MachineExec, type MachineFs, type MachineInfo, type MachinePty, type Machines } from '../src/machine.js';
-import { createLocalMachine, toMachineError } from '../src/machine-local.js';
-import { createPtyHost } from '../src/pty-host.js';
+import { type Machine, MachineError, type MachineFs, type MachineInfo, type Machines } from '../src/machine.js';
+import { createLocalMachine, type LocalMachineDeps } from '../src/machine-local.js';
+import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import type { LaunchPty, MachineId } from '../src/types.js';
-import { fakePtys } from './fakes.js';
 
-export interface FakeMachineOverrides { id?: MachineId; exec?: MachineExec; run?: Machine['run']; fs?: Partial<MachineFs>; info?: Partial<MachineInfo> }
+/** What a test overrides on the built machine, over the local one's. */
+export interface FakeMachineOverrides { id?: MachineId; run?: Machine['run']; fs?: Partial<MachineFs>; info?: Partial<MachineInfo> }
 
 const NO_LAUNCH: LaunchPty = () => ({ started: Promise.resolve(), kill: () => Promise.resolve() });
-// Built once: what the host's own machine answers for fs, run and info
-const LOCAL = createLocalMachine({
-  exec: async () => ({ stdout: '' }), launch: NO_LAUNCH, ptys: createPtyHost(fakePtys().spawnPty), home: '/hive-home', secret: 'fake-secret-160',
-  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 0, agents: [],
+
+export const localDeps = (over: Partial<LocalMachineDeps> = {}): LocalMachineDeps => ({
+  exec: async () => ({ stdout: '' }), launch: NO_LAUNCH, ptys: createPtyHost(NO_PTY), home: '/hive-home', secret: 'fake-secret-158',
+  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 4242, agents: [], ...over,
 });
 
-const noPty = (): never => {
-  throw new Error('fakeMachine: no pty');
-};
-const NO_PTY: MachinePty = { spawn: noPty, write: noPty, resize: noPty, subscribe: noPty, kill: noPty, pid: noPty, has: noPty, adopt: noPty, forget: noPty };
+/** The local machine over the given deps, with its id, fs, run and info overridden where given. Its env (process.env unless given) is what
+ *  info() reads CLAUDE_CONFIG_DIR, CODEX_HOME and PATH from, at its first call. */
+export function fakeMachine({ id, run, fs, info, ...deps }: Partial<LocalMachineDeps> & FakeMachineOverrides = {}): Machine {
+  const base = createLocalMachine(localDeps(deps)); // its exec rebuilds a test exec's rejection as a MachineError
+  const facts: MachineInfo | undefined = info === undefined ? undefined : { ...base.info(), ...info };
+  return { ...base, id: id ?? base.id, fs: { ...base.fs, ...fs }, run: run ?? base.run, info: facts === undefined ? base.info : () => facts };
+}
 
-const refusingExec: MachineExec = async (file, args) => {
-  throw new MachineError(`fakeMachine: no exec for ${[file, ...args].join(' ')}`);
-};
-// The test's own exec, its rejection rebuilt as the local machine rebuilds execFile's
-const asMachineExec = (exec: MachineExec): MachineExec => async (file, args, opts) => {
-  try {
-    return await exec(file, args, opts);
-  } catch (err) {
-    throw toMachineError(err);
-  }
-};
-
-export function fakeMachine(over: FakeMachineOverrides = {}): Machine {
-  const info: MachineInfo = { ...LOCAL.info(), ...over.info };
-  return {
-    id: over.id ?? LOCAL.id, fs: { ...LOCAL.fs, ...over.fs }, exec: over.exec === undefined ? refusingExec : asMachineExec(over.exec),
-    run: over.run ?? LOCAL.run, pty: NO_PTY, info: () => info,
-  };
+/** A machine whose info() answers `facts` over a local one with an empty env: an actor's home, never the developer's ~/.claude. */
+export function machineWith(facts: Partial<MachineInfo>, base: Machine = fakeMachine({ env: {} })): Machine {
+  return { ...base, info: () => ({ ...base.info(), ...facts }) };
 }
 
 /** `machine` for every activity: createServer({ machines }). */

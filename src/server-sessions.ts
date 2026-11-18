@@ -139,10 +139,11 @@ async function openLocal(deps: OpenDeps, current: LiveView, activityId: string, 
   if (!found) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_WORKSPACE_MESSAGE });
   const session = continuableLocal(current.state, name).find((s) => s.id === sessionId);
   if (!session) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
-  const dir = runners[session.agent].transcriptDir(found.path);
+  const machine = deps.machineFor(current.state.activities.find((a) => a.id === activityId) ?? {});
+  const dir = runners[session.agent].transcriptDir(machine, found.path);
   if (copyPending(current.state.workers, sessionId, dir)) return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
   // #931: no dir is an agent that keeps no transcript per cwd (Codex keeps its rollouts by date, #929): codex resume finds its own
-  if (dir !== undefined && (await findTranscript([found.path], sessionId, session.agent)) === undefined) return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
+  if (dir !== undefined && (await findTranscript(machine, [found.path], sessionId, session.agent)) === undefined) return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
   await answerOpen(deps, await deps.dispatch({ type: 'openLocalSession', activityId, sessionId }, size), res);
 }
 
@@ -155,16 +156,18 @@ async function openTaskSession(deps: OpenDeps, current: LiveView, record: Activi
   const { task, session } = checked;
   const workspace = taskWorkspace(current.runtime.config, task); // workspaceOf's rule (#179)
   if (!workspace) return refuse(res, { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) });
-  const dir = workDir(workspace.path, task, activityOf(current.state, task.item.itemId), record); // a kept session's transcript waits there until adopted (#208, #629)
-  if (copyPending(current.state.workers, resume, runners[session.agent].transcriptDir(session.repo ? workspace.path : dir))) {
+  const activity = activityOf(current.state, task.item.itemId);
+  const machine = deps.machineFor(activity ?? {});
+  const dir = workDir(workspace.path, task, activity, record); // a kept session's transcript waits there until adopted (#208, #629)
+  if (copyPending(current.state.workers, resume, runners[session.agent].transcriptDir(machine, session.repo ? workspace.path : dir))) {
     return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
   }
-  if (session.repo && !(await adoptTranscript(dir, workspace.path, resume, session.agent))) {
+  if (session.repo && !(await adoptTranscript(machine, dir, workspace.path, resume, session.agent))) {
     return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE }); // opening would start an empty conversation under that id
   }
   // #586: a worktree session with no transcript would open an empty conversation under its id too; an agent with no dir per cwd (Codex,
   // #931) finds its own, as openLocal skips it
-  if (!session.repo && runners[session.agent].transcriptDir(dir) !== undefined && (await findTranscript(await cwdsOf(dir), resume, session.agent)) === undefined) {
+  if (!session.repo && runners[session.agent].transcriptDir(machine, dir) !== undefined && (await findTranscript(machine, await cwdsOf(dir), resume, session.agent)) === undefined) {
     return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
   }
   await answerOpen(deps, await deps.dispatch({ type: 'openSession', activityId: record.id, continueId: resume }, size), res);

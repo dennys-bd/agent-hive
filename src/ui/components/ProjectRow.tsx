@@ -97,6 +97,10 @@ function SubIssueBadge({ count }: { count: SubIssueCount }) {
   );
 }
 
+const ALL_DIGITS = /^\d+$/;
+/** A GitHub issue number (#827): shown as #12 and sorted as a number; a Jira or hive key (PROJ-12, HIVE-3) is shown and sorted as itself. */
+export const isIssueNumber = (id: string): boolean => ALL_DIGITS.test(id);
+
 // The issue cell (handoff 01): the workspace square (the task's, else the issue's hint when the Comb has it), the tree mark, the number, the title
 // and, on a task, its session status in its colour; indented by its depth and, on a parent, followed by its sub-issue badge (#584)
 function IssueCell({ item, task, state, tree }: { item: ProjectItem; task?: Task; state: State; tree: RowTree }) {
@@ -107,7 +111,7 @@ function IssueCell({ item, task, state, tree }: { item: ProjectItem; task?: Task
     <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: tree.depth * TREE_INDENT }}>
       <WorkspaceSquare name={workspace} />
       <TreeMark tree={tree} />
-      <span className="shrink-0 font-medium">#{item.id}</span>
+      <span className="shrink-0 font-medium">{isIssueNumber(item.id) ? `#${item.id}` : item.id}</span>
       <span className="min-w-0 truncate">{item.title}</span>
       {tree.parent?.count && <SubIssueBadge count={tree.parent.count} />}
       {status !== 'empty' && <span className={`shrink-0 text-xs ${STATUS_TEXT[status]}`}>{statusText(status)}</span>}

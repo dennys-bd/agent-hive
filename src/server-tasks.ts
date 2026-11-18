@@ -70,7 +70,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
 export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
 
 export interface TaskRouteDeps {
-  machineFor: MachineFor; // #158; required since #160: the 7.3 routes read it
+  machineFor: MachineFor; // #158: the activity's machine; #160 and #161 read it
   reportRetry: ReportRetry; // #812: a create the source rate limited puts the source in backoff
   treeWatch: Pick<TreeWatch, 'lease' | 'release' | 'watchNested'>; // #502: the files sidebar's leases; the folder route registers the nested repositories it reads (#1)
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake
@@ -189,7 +189,7 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
     const sessions = sessionsOf(current.state, task.item.itemId);
     const workspace = stranded ? await strandedWorkspace(activity, task, deps.exec) : own;
     if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
-    else await strandedTranscripts(activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
+    else await strandedTranscripts(deps.machineFor(activity), activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
   } catch (err) {
     await deps.dispatch({ type: 'activityKept', activityId: activity.id });
     return { status: HTTP_CONFLICT, message: closeFailure(err, deps.log, task.item.id) };
@@ -429,7 +429,7 @@ function registerBaseRoute(app: Express, { exec, requireLive }: TaskRouteDeps): 
 }
 
 /** What deleteActivityOnDisk needs (#654): git, the log, and what opens the teardown's console run. */
-export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' | 'error' | 'info'> };
+export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' | 'error' | 'info'>; machineFor: MachineFor };
 
 /** What deleting a task's activity runs on disk (#236, #573, #654): git first, always the worktree and its branch, all or nothing as cleanWorktree
  * is, with the workspace's teardown between git's checks and the removal (a failing step refuses as git does), or the forced removeWorktree,
@@ -457,7 +457,7 @@ export async function deleteActivityOnDisk(
     await dropCheckpoints(repo, activity.slug ?? slugFor(task.item), exec); // #619: every checkpoint's restore point goes with the activity; none is nothing
   }
   if (!scope.transcripts) return;
-  await removeTranscripts(taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
+  await removeTranscripts(deps.machineFor(activity), taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
     .catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
@@ -493,7 +493,7 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
       const sessions = sessionsOf(current.state, task.item.itemId);
       const workspace = stranded && !nothing ? await strandedWorkspace(live, task, deps.exec) : own;
       if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
-      else if (stranded && !nothing) await strandedTranscripts(live, task, sessions, scope, log);
+      else if (stranded && !nothing) await strandedTranscripts(deps.machineFor(live), live, task, sessions, scope, log);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId: live.id });
       const label = `deleteActivity #${task.item.id}`;
