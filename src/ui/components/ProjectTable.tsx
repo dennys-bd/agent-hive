@@ -7,7 +7,7 @@ import { FlowHeader } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { ProjectColumnsMenu } from '@/components/ProjectColumnsMenu';
 import { ProjectGroupMenu, ProjectGroupRow } from '@/components/ProjectGroupMenu';
-import { ProjectRow, type RowTree } from '@/components/ProjectRow';
+import { isIssueNumber, ProjectRow, type RowTree } from '@/components/ProjectRow';
 import { type ProjectState, useProject } from '@/hooks/use-project';
 import { t } from '@/i18n';
 import { gridTemplate, withWidths } from '@/lib/column-widths';
@@ -19,10 +19,10 @@ import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectV
 const NOTHING_OPEN: ReadonlySet<string> = new Set();
 const SUBBAR ='flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
 
-// What a column sorts by: the number, the Status option's place, the first label or assignee, the first PR's number, an ISO date, a field's value, the first blocker's number (#61)
+// What a column sorts by: the number or the key, the Status option's place, the first label or assignee, the first PR's number, an ISO date, a field's value, the first blocker's number (#61)
 function sortValue(item: ProjectItem, key: string, view: ProjectView): string | number | undefined {
   switch (key) {
-    case 'issue': return Number(item.id);
+    case 'issue': return isIssueNumber(item.id) ? Number(item.id) : item.id; // a key as text: compare's numeric order puts PROJ-9 before PROJ-12
     case 'status': {
       const at = view.statuses.findIndex((s) => s.name === item.status);
       return at < 0 ? undefined : at;
@@ -58,7 +58,8 @@ function sortedRows(items: ProjectItem[], sort: ProjectSort | undefined, view: P
 }
 
 // The search (#756): the title or #number, case-insensitive
-const matches = (item: ProjectItem, term: string): boolean => term === '' || item.title.toLowerCase().includes(term) || `#${item.id}`.includes(term);
+// The search (#756, #827): the title, #<id> or the bare id, case-insensitive: proj-12 and 12 both find PROJ-12
+const matches = (item: ProjectItem, term: string): boolean => term === '' || item.title.toLowerCase().includes(term) || `#${item.id}`.toLowerCase().includes(term);
 
 // The task each row belongs to (#756): the task the poll listed from the issue, else the Hive task created from it (its origin). The listed
 // task wins: a copy made before the issue passed the filter stays a separate task, the Hive does not merge them

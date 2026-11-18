@@ -88,12 +88,12 @@ test('the hive table nests by the local parent; the badge counts the children of
   const onGoTo = vi.fn();
   resetViewState();
   render(<ProjectTable state={hiveState()} source="hive" onGoTo={onGoTo} onOpenIssue={vi.fn()} />);
-  expect(within(rowOf('#HIVE-1')).getByText('2 sub-issues · 1/2')).toBeInTheDocument();
-  expect(screen.queryByText('#HIVE-2')).not.toBeInTheDocument();
-  await user.click(within(rowOf('#HIVE-1')).getByRole('button', { name: 'expandir sub-issues' }));
+  expect(within(rowOf('HIVE-1')).getByText('2 sub-issues · 1/2')).toBeInTheDocument();
+  expect(screen.queryByText('HIVE-2')).not.toBeInTheDocument();
+  await user.click(within(rowOf('HIVE-1')).getByRole('button', { name: 'expandir sub-issues' }));
   expect(onGoTo).not.toHaveBeenCalled();
-  expect(childMark('#HIVE-2')).not.toBeNull();
-  expect(childMark('#HIVE-3')).not.toBeNull(); // in spec, yet under HIVE-1 in review (#696)
+  expect(childMark('HIVE-2')).not.toBeNull();
+  expect(childMark('HIVE-3')).not.toBeNull(); // in spec, yet under HIVE-1 in review (#696)
 });
 
 test('switching to another source and back folds every parent again: the table is not remounted between sources (#584 decision 4)', async () => {
