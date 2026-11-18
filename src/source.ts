@@ -14,7 +14,7 @@ import { parseAuth } from './config.js';
 import { isNetworkError } from './fork.js';
 import type { Logger } from './log.js';
 import type { ItemStore } from './read-model/items.js';
-import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, SourceItem, SourceItemRead } from './types.js';
+import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, RelationChange, SourceItem, SourceItemRead } from './types.js';
 import { flatten } from './flows.js';
 
 /** #820: what a test fakes of a jira source; each part defaults to the real one: jiraFetch, the stored login, the name rewrite. */
@@ -107,7 +107,7 @@ export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGra
     ...t, ...tree(t), ...(t.blockers ? { blockers: ids.shownBlockers(t.blockers) } : {}),
     itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shownPrefix}-${t.id}` } : {}),
   });
-  const { comments, project, fieldsOf, setField, create, relate, findBlockers, stored } = adapter;
+  const { comments, project, fieldsOf, setField, create, relate, findBlockers, setRelation, stored } = adapter;
   const shown = (list: SourceItem[]): SourceItem[] => list.map((c) => ({ ...c, item: item(c.item) })); // #191: listItems' and stored's one mapping
   // #756: the native view's rows under the same namespaced ids the listed tasks carry, so a row finds its task; the id stays the issue number
   const rows = (view: ProjectView): ProjectView => ({ ...view, items: view.items.map((i) => ({ ...i, itemId: `${prefix}${i.itemId}` })) });
@@ -135,6 +135,13 @@ export function namespaced(entry: SourceConfig, adapter: Source, grammar: RefGra
     ...(fieldsOf ? { fieldsOf: (itemId: string, options?: ReadOptions) => fieldsOf(own(itemId), options) } : {}),
     ...(setField ? { setField: async (itemId: string, field: string, value: FieldValue) => written(await setField(own(itemId), field, value)) } : {}),
     ...(relate ? { relate: shownRelate(relate, own, ids, item) } : {}),
+    // #829: the write under the listed ids. A relation's ref is a Jira key, which no grammar calls short, so refs pass both ways untouched
+    ...(setRelation ? {
+      setRelation: async (itemId: string, change: RelationChange) => {
+        const w = await setRelation(own(itemId), change);
+        return w.entry ? { ...w, entry: { ...w.entry, item: item(w.entry.item) } } : w;
+      },
+    } : {}),
     // #57: the search under the listed ids, so a found issue reads as the section's rows and tasks do
     ...(findBlockers ? { findBlockers: async (itemId: string, text: string) => (await findBlockers(own(itemId), text)).map(ids.shownRef) } : {}),
   };
