@@ -36,7 +36,8 @@ test('parseCopilotUser reads a paid plan\'s premium_interactions over chat (#879
 
 test('parseCopilotUser has no reading for an empty object, a missing quota_snapshots, an unlimited quota or a bad reset (#879)', () => {
   const unlimited = { ...FREE, quota_snapshots: { ...FREE.quota_snapshots, chat: { ...FREE.quota_snapshots.chat, unlimited: true } } };
-  const cases = [{}, null, 'x', { ...FREE, quota_snapshots: undefined }, unlimited, { ...FREE, quota_reset_date_utc: 'soon' }];
+  const unsaid = { ...FREE, quota_snapshots: { chat: { entitlement: 200, percent_remaining: 97.6 } } };
+  const cases = [{}, null, 'x', { ...FREE, quota_snapshots: undefined }, unlimited, unsaid, { ...FREE, quota_reset_date_utc: 'soon' }];
   for (const body of cases) assert.equal(parseCopilotUser(body, NOW), undefined, JSON.stringify(body));
 });
 

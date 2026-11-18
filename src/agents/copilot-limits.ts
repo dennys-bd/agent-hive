@@ -15,7 +15,8 @@ const HUNDREDTHS = 100; // 100 − 97.6 is 2.4000000000000057: kept to the hundr
 
 const execGh: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
 
-// A quota the CLI can spend: an entitlement, not unlimited, and its percent_remaining
+// A quota the CLI can spend: an entitlement, `unlimited: false` said outright (every snapshot of spike §7 has it: a shape without it is
+// unseen, so no reading rather than a guess), and its percent_remaining
 function usedPercent(raw: unknown): number | undefined {
   if (!isRecord(raw) || raw.unlimited !== false || typeof raw.entitlement !== 'number' || raw.entitlement <= 0) return undefined;
   if (!isPercent(raw.percent_remaining)) return undefined;
@@ -40,7 +41,7 @@ export async function readCopilotPlanLimits(deps: Pick<PlanLimitsDeps, 'exec' | 
   const exec = deps.exec ?? execGh;
   const env = childEnv(deps.env ?? process.env, cliEnv()); // gh's login, never an inherited GH_TOKEN (#180)
   const { stdout } = await exec('gh', GH_ARGS, { env, timeout: GH_TIMEOUT_MS }).catch(() => {
-    throw new Error('gh api /copilot_internal/user failed: run gh auth login');
+    throw new Error('gh api /copilot_internal/user failed: gh missing, logged out, or the account has no Copilot');
   });
   let body: unknown;
   try {
