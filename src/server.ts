@@ -310,8 +310,6 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The console's channels (#353), process state like the ptys: a Settings save reaches the next trim, a boot empties them. Before a config
   // nothing runs, so the default only types the read.
   const consoleStore = createConsoleStore(() => live?.runtime.config.consoleLines ?? CONSOLE_LINES_DEFAULT, notifyConsole);
-  // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
-  const lsp = createLspHost({ home, consoleStore, log, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const launch = deps.launchPty ?? launchInternalPty;
   const spawnOptions = { ptys, secretFile: resolve(home, SECRET_FILE), commandShims: commandShimDir(resolve(home)) };
   const ptyPool = createPtyPool((ptyLaunch, handlers) => launch(ptyLaunch, handlers, spawnOptions));
@@ -329,6 +327,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     },
   });
   const machineFor: MachineFor = (activity) => machines.for(activity);
+  // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
+  const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
