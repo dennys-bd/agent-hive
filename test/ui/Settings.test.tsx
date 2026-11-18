@@ -787,3 +787,85 @@ test('a model typed in the execução agentes card redraws fluxo\'s padrão befo
   await user.click(within(screen.getByRole('region', { name: t('settings.agents') })).getByRole('button', { name: t('settings.section.flow') }));
   expect(screen.getByRole('combobox', { name: t('newSession.model') })).toHaveTextContent('padrão · claude-opus-4-0');
 });
+
+const CONFIG = info.config as NonNullable<SettingsInfo['config']>;
+const JIRA_INFO: SettingsInfo = {
+  ...info,
+  config: {
+    ...CONFIG,
+    comb: {
+      ...CONFIG.comb,
+      sources: [...CONFIG.comb.sources, {
+        name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.atlassian.net', project: 'ABC', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] },
+        epics: 'show', epicFollows: 'behind', switchAt: 'fila', tree: { epics: true, subtasks: true }, blockingLinkTypes: ['Blocks'], issueType: 'Task', subtaskType: 'Subtask', doneStatus: 'Done',
+      }],
+      flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'], tickets: ['To Do'] } }], transitions: [] }],
+    },
+  },
+};
+// A Jira site's answers on top of the default handler (#822)
+const jiraFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = String(input);
+  if (url === '/settings/jira/sites') return jsonResponse([{ site: 'acme.atlassian.net', state: 'connected', name: 'Ana Lima' }]);
+  if (url.startsWith('/settings/jira/projects')) return jsonResponse([{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }]);
+  if (url.startsWith('/settings/jira/issue-types')) return jsonResponse([{ id: '1', name: 'Task', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Subtask', subtask: true, hierarchyLevel: -1 }]);
+  if (url.startsWith('/settings/jira/link-types')) return jsonResponse([{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]);
+  if (url.startsWith('/settings/source-columns?type=jira')) return jsonResponse(['To Do', 'Done']);
+  return defaultFetch(input, init);
+};
+
+test('a Jira source reads its projects, statuses, filter options, issue types and link types when Settings opens (#822)', async () => {
+  fetchMock.mockImplementation(jiraFetch);
+  render(<Settings info={JIRA_INFO} onSaved={vi.fn()} />);
+  const chosen = 'site=acme.atlassian.net&project=ABC';
+  for (const url of [
+    '/settings/jira/projects?site=acme.atlassian.net', '/settings/jira/link-types?site=acme.atlassian.net', `/settings/jira/issue-types?${chosen}`,
+    `/settings/source-columns?type=jira&${chosen}`, `/settings/filter-options?type=jira&${chosen}`,
+  ]) await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli')); // the GitHub row as today
+});
+
+test('picking another project of a Jira source rereads its statuses, filter options, issue types and link types, not its projects (#822)', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(jiraFetch);
+  render(<Settings info={JIRA_INFO} onSaved={vi.fn()} />);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/jira/projects?site=acme.atlassian.net'));
+  await openSource(user, 'tickets');
+  fetchMock.mockClear();
+  screen.getByLabelText(t('settings.source.jira.project')).focus();
+  await user.keyboard('{Enter}');
+  await user.click(await screen.findByRole('option', { name: 'XYZ · Zed' }));
+  const next = 'site=acme.atlassian.net&project=XYZ';
+  for (const url of [`/settings/jira/issue-types?${next}`, '/settings/jira/link-types?site=acme.atlassian.net', `/settings/source-columns?type=jira&${next}`, `/settings/filter-options?type=jira&${next}`]) {
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(url));
+  }
+  expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/^\/settings\/jira\/projects/));
+});
+
+test('a Jira project read a newer pick overtook lands no options and shows no error (#822)', async () => {
+  const user = userEvent.setup();
+  const late: Array<() => void> = [];
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.includes('project=XYZ') && (url.startsWith('/settings/source-columns') || url.startsWith('/settings/filter-options'))) {
+      await new Promise<void>((resolve) => { late.push(resolve); });
+      return new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } });
+    }
+    return jiraFetch(input, init);
+  });
+  render(<Settings info={JIRA_INFO} onSaved={vi.fn()} />);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/jira/projects?site=acme.atlassian.net'));
+  await openSource(user, 'tickets');
+  const pick = async (name: string): Promise<void> => {
+    screen.getByLabelText(t('settings.source.jira.project')).focus();
+    await user.keyboard('{Enter}');
+    await user.click(await screen.findByRole('option', { name }));
+  };
+  await pick('XYZ · Zed');
+  await waitFor(() => expect(late).toHaveLength(2));
+  await pick('ABC · Alpha');
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('project=ABC') && String(u).startsWith('/settings/source-columns')).length).toBeGreaterThan(1));
+  for (const release of late) release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});

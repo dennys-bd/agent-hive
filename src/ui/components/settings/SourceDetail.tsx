@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { JiraFields, JIRA_KEY_LABELS, JiraKeysGroup, JiraNotices } from '@/components/settings/JiraSourceDetail';
 import { FilterRules } from '@/components/settings/FilterRules';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { TaskDefaults } from '@/components/settings/TaskDefaults';
@@ -8,10 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { type JiraLoad, type JiraRowOptions, NO_JIRA_OPTIONS } from '@/hooks/use-jira-source-options';
 import { type MessageKey, t } from '@/i18n';
 import { TYPE_LABEL } from '@/lib/flow-sources';
 import { switchAtStage } from '@/lib/settings-epics';
-import type { FlowDraft, SourceDraft, StageDraft } from '@/lib/settings-form';
+import type { FlowDraft, JiraDraft, SourceDraft, StageDraft } from '@/lib/settings-form';
 import { contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import type { SourceTaskPropsDraft } from '@/lib/setup-source-task-props';
 import { EPIC_FOLLOWS, EPICS_MODES, type EpicFollows, type EpicsMode, type FilterOptions, type GithubAuth, type ProjectSummary } from '../../../types';
@@ -23,6 +25,9 @@ interface SourceDetailProps {
   onChange(patch: Partial<SourceDraft>): void; onRemove(): void; onLoadProjects(): void;
   /** Loads this row's columns; `number` when the project select passes its new value (the `source` prop still holds the one just left). */
   onLoadColumns(number?: string): void;
+  jira?: JiraRowOptions; // #822: a jira row's projects, issue and link types and inline errors; undefined until a read answers
+  columns?: string[]; // #822: the row's statuses, the done status select's choices
+  onLoadJira(jira: JiraDraft, load: JiraLoad): void; // #822: a site or project pick's reads, with the draft just picked
   /** Back to the sources list, its Connections group (#524): the field row's "change" link. */
   onOpenList(): void;
 }
@@ -99,26 +104,29 @@ function RepositoryRow({ id, source, linked, onChange }: { id: string; source: S
   );
 }
 
-type FieldsGroupProps = Pick<SourceDetailProps, 'source' | 'githubProjects' | 'needsToken' | 'auth' | 'filterOptions' | 'onChange' | 'onLoadProjects' | 'onLoadColumns' | 'onOpenList'> & { id: string };
+type FieldsGroupProps = Pick<SourceDetailProps, 'source' | 'githubProjects' | 'needsToken' | 'auth' | 'filterOptions' | 'onChange' | 'onLoadProjects' | 'onLoadColumns' | 'onLoadJira' | 'onOpenList'> & { id: string; options: JiraRowOptions };
 
 /** name, type, then the type's own fields, side by side in the design's one grid row (#524); GitHub ends on the connection line. */
-function FieldsGroup({ id, source, githubProjects, needsToken, auth, filterOptions, onChange, onLoadProjects, onLoadColumns, onOpenList }: FieldsGroupProps) {
-  const isGithub = source.type === 'github'; // #820: a jira row is read-only until its form lands
+function FieldsGroup({ id, source, options, githubProjects, needsToken, auth, filterOptions, onChange, onLoadProjects, onLoadColumns, onLoadJira, onOpenList }: FieldsGroupProps) {
+  const isGithub = source.type === 'github';
   return (
     <SettingsGroup title="settings.source.fields" anchor={settingAnchor('settings.source.fields', source.id)}>
       <div className="grid grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,1.4fr)_minmax(0,1fr)] items-end gap-3">
         <div id={settingAnchor('settings.sources.name', source.id)} className={FIELD}>
           <Label htmlFor={`${id}-name`}>{t('settings.sources.name')}</Label>
-          <Input id={`${id}-name`} disabled={!isGithub} defaultValue={source.name} onChange={(e) => onChange({ name: e.target.value })} />
+          <Input id={`${id}-name`} defaultValue={source.name} onChange={(e) => onChange({ name: e.target.value })} />
         </div>
         <div id={settingAnchor('settings.sourceType', source.id)} className={FIELD}>
           <Label htmlFor={`${id}-type`}>{t('settings.sourceType')}</Label>
           {/* read-only (#514): a source keeps the type it was added with */}
           <Input id={`${id}-type`} disabled value={t(TYPE_LABEL[source.type])} />
         </div>
-        {isGithub && <GithubFields id={id} source={source} githubProjects={githubProjects} needsToken={needsToken} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} />}
+        {isGithub
+          ? <GithubFields id={id} source={source} githubProjects={githubProjects} needsToken={needsToken} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} />
+          : <JiraFields id={id} source={source} options={options} onChange={onChange} onLoadJira={onLoadJira} />}
       </div>
-      {isGithub && <QualifyRow id={id} source={source} onChange={onChange} />}
+      {!isGithub && <JiraNotices options={options} onOpenList={onOpenList} />}
+      <QualifyRow id={id} source={source} onChange={onChange} />
       {source.type === 'github' && <RepositoryRow id={id} source={source} linked={filterOptions?.linkedRepositories ?? []} onChange={onChange} />}
       {source.type === 'github' && (
         <p className="border-t pt-3 text-muted-foreground text-xs">
@@ -195,19 +203,19 @@ function EpicsBlock({ id, source, stages, onChange }: EpicsProps) {
         <p className={HINT}>{t('settings.epics.hint')}</p>
       </div>
       <FollowsRow id={id} source={source} stages={stages} onChange={onChange} />
-      <DeleteActivityRow id={id} source={source} onChange={onChange} />
-      <p className="text-muted-foreground text-xs">{t('settings.source.epicsHint')}</p>
+      {source.type === 'github' && <DeleteActivityRow id={id} source={source} onChange={onChange} />}
+      <p className="text-muted-foreground text-xs">{t(source.type === 'github' ? 'settings.source.epicsHint' : 'settings.source.jira.epicsHint')}</p>
     </div>
   );
 }
 
 type FilterGroupProps = Pick<SourceDetailProps, 'source' | 'stages' | 'filterOptions' | 'onChange'> & { id: string };
 
-/** GitHub only: the task filter, then the source's epics block under it, as the design has it (#524, #30). */
+/** The task filter, then the source's epics block under it, as the design has it (#524, #30). */
 function FilterGroup({ id, source, stages, filterOptions, onChange }: FilterGroupProps) {
   return (
     <SettingsGroup title="settings.source.filter" hint="settings.source.filterHint" anchor={settingAnchor('settings.source.filter', source.id)}>
-      <FilterRules inSettings rules={source.filter} options={filterOptions} onChange={(filter) => onChange({ filter })} />
+      <FilterRules inSettings type={source.type} rules={source.filter} options={filterOptions} onChange={(filter) => onChange({ filter })} />
       <EpicsBlock id={id} source={source} stages={stages} onChange={onChange} />
     </SettingsGroup>
   );
@@ -230,17 +238,18 @@ function TaskPropsGroup({ id, source, flows, stages, workspaces, onChange }: Tas
   );
 }
 
-/** One source's detail page, Settings › fluxo › sources › <source> (#514, #524): its fields, its task filter and epics block (github only, #30), and its
- * task properties group (#688), each its own SettingsGroup. The page around it supplies the column and the breadcrumb, so this returns a fragment. */
-export function SourceDetail({ source, flows, stages, workspaces, githubProjects, needsToken, auth, filterOptions, onChange, onRemove, onLoadProjects, onLoadColumns, onOpenList }: SourceDetailProps) {
+/** One source's detail page, Settings › fluxo › sources › <source> (#514, #524): its fields, a Jira source's keys (#822), its task filter and epics
+ * block (#30), and its task properties group (#688), each its own SettingsGroup. The page around it supplies the column and the breadcrumb, so this
+ * returns a fragment. */
+export function SourceDetail({ source, flows, stages, workspaces, githubProjects, needsToken, auth, filterOptions, jira, columns, onChange, onRemove, onLoadProjects, onLoadColumns, onLoadJira, onOpenList }: SourceDetailProps) {
   const id = useId();
+  const options = jira ?? NO_JIRA_OPTIONS;
   return (
     <>
-      <FieldsGroup id={id} source={source} githubProjects={githubProjects} needsToken={needsToken} auth={auth} filterOptions={filterOptions} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} onOpenList={onOpenList} />
-      {source.type === 'github' && (
-        <FilterGroup id={id} source={source} stages={stages} filterOptions={filterOptions} onChange={onChange} />
-      )}
-      {source.type === 'github' && <TaskPropsGroup id={id} source={source} flows={flows} stages={stages} workspaces={workspaces} onChange={onChange} />}
+      <FieldsGroup id={id} source={source} options={options} githubProjects={githubProjects} needsToken={needsToken} auth={auth} filterOptions={filterOptions} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} onLoadJira={onLoadJira} onOpenList={onOpenList} />
+      {source.type === 'jira' && <JiraKeysGroup id={id} source={source} options={options} columns={columns ?? []} onChange={onChange} />}
+      <FilterGroup id={id} source={source} stages={stages} filterOptions={filterOptions} onChange={onChange} />
+      <TaskPropsGroup id={id} source={source} flows={flows} stages={stages} workspaces={workspaces} onChange={onChange} />
       <Button type="button" variant="outline" className="self-start text-destructive" onClick={onRemove}>{t('settings.sources.remove')}</Button>
     </>
   );
@@ -253,12 +262,14 @@ export function sourceEntries(source: SourceDraft): SettingEntry[] {
   const github = source.type === 'github';
   const labels: readonly MessageKey[] = [
     'settings.source.fields', 'settings.sources.name', 'settings.sourceType',
-    ...(github ? (['settings.owner', 'settings.project', 'settings.source.repository'] as const) : []),
-    ...(github ? (['settings.sources.qualifyId'] as const) : []),
-    ...(github && source.qualifyId ? (['settings.sources.prefix'] as const) : []),
-    ...(github ? (['settings.source.filter', 'settings.epics', 'settings.epicFollows', 'settings.epicDeleteActivity'] as const) : []),
-    ...(github && source.epicFollows === 'aheadThenBehind' ? (['settings.switchAt'] as const) : []),
-    ...(github ? (['settings.taskProps.title'] as const) : []),
+    ...(github ? (['settings.owner', 'settings.project', 'settings.source.repository'] as const) : (['settings.source.jira.site', 'settings.source.jira.project'] as const)),
+    'settings.sources.qualifyId',
+    ...(source.qualifyId ? (['settings.sources.prefix'] as const) : []),
+    ...(github ? [] : JIRA_KEY_LABELS),
+    'settings.source.filter', 'settings.epics', 'settings.epicFollows',
+    ...(github ? (['settings.epicDeleteActivity'] as const) : []),
+    ...(source.epicFollows === 'aheadThenBehind' ? (['settings.switchAt'] as const) : []),
+    'settings.taskProps.title',
   ];
   return [{ label: path[2], path: path.slice(0, 2), view, anchor: settingAnchor('settings.source.fields', source.id) }, ...contextEntries(labels, view, path, source.id)];
 }

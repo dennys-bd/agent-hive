@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import { emptyCommand, emptyEnvRow, emptyImpl, type EnvRowDraft } from '../src/ui/lib/settings-commands.js';
 import { sourceColumnsUrl, draftFrom, emptySource, emptyStage, emptyWorkspace, filterOptionsUrl, isMinutes, projectsUrl, type SourceDraft, type SettingsDraft, type StageDraft, toSettingsBody, validateSettings, withHost } from '../src/ui/lib/settings-form.js';
+import { EMPTY_JIRA, type JiraDraft } from '../src/ui/lib/settings-jira.js';
+import { parseConfig } from '../src/config.js';
 import { sourceTaskPropsProblem } from '../src/ui/lib/setup-source-task-props.js';
 import { withMemoryCap } from '../src/ui/lib/memory-cap.js';
 import { withEntry } from '../src/ui/lib/settings-stages.js';
@@ -68,7 +70,7 @@ const CONFIG: Config = {
   reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
 };
 const withSources = (sources: SourceConfig[]): Config => ({ ...CONFIG, comb: { ...CONFIG.comb, sources } });
-const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', epicDeleteActivity: false, switchAt: '' };
+const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', epicDeleteActivity: false, switchAt: '', jira: EMPTY_JIRA };
 const info = (config?: Config, configured = true): SettingsInfo => ({ configured, home: '/home', config, language: config?.language ?? 'en', agents: [{ agent: 'claude', available: true }] });
 // id is generated per row (React key material, never sent to the server): every literal comparison strips it out.
 // #877: a stage draft's judge row carries a React id of its own
@@ -790,12 +792,53 @@ test('a form with semaphores saves commandSemaphores and every line\'s semaphore
 
 const JIRA_SAVED: SourceConfig = { ...JIRA_ENTRY, switchAt: 'dev' };
 
-test('a jira source drafts with its saved entry whole and saves it back unchanged; no project is asked of it (#820)', () => {
-  const config = withSources([CONFIG.comb.sources[0], JIRA_SAVED]);
-  const draft = draftFrom(info(config));
-  assert.deepEqual([draft.sources[1].type, draft.sources[1].saved], ['jira', JIRA_SAVED]);
-  assert.deepEqual(toSettingsBody(draft).sources, config.comb.sources);
-  assert.notEqual(validateSettings(draft)?.message, t('settings.error.project'));
+// #822: a stage enters from the jira source too, so parseConfig takes the config whole
+const JIRA_CONFIG: Config = {
+  ...CONFIG,
+  comb: { ...CONFIG.comb, sources: [GITHUB_SOURCE, JIRA_SAVED], flows: mainFlows(STAGES.map((s) => (s.name === 'spec' ? { ...s, from: { ...s.from, tickets: ['To Do'] } } : s)), TRANSITIONS) },
+};
+
+test('a saved jira source drafts every key of its member, goes back through toSettingsBody unchanged, and parseConfig accepts the body (#822)', () => {
+  const draft = draftFrom(info(JIRA_CONFIG));
+  assert.deepEqual(draft.sources[1].jira, { site: 'acme.example', project: 'ABC', tree: { epics: false, subtasks: false }, blockingLinkTypes: ['Blocks'], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done' });
+  const body = toSettingsBody(draft);
+  assert.deepEqual(body.sources, JIRA_CONFIG.comb.sources);
+  assert.doesNotThrow(() => parseConfig({ ...JIRA_CONFIG, comb: { ...JIRA_CONFIG.comb, sources: body.sources } }));
+});
+
+test('an edited jira key reaches the body; a github row\'s body is unchanged and carries no jira key (#822)', () => {
+  const draft = draftFrom(info(JIRA_CONFIG));
+  const edited = { ...draft, sources: draft.sources.map((s) => (s.type === 'jira' ? { ...s, jira: { ...s.jira, project: 'XYZ', tree: { epics: true, subtasks: true }, blockingLinkTypes: [] } } : s)) };
+  const [github, jira] = toSettingsBody(edited).sources ?? [];
+  assert.deepEqual(github, GITHUB_SOURCE);
+  assert.deepEqual(jira, { ...JIRA_SAVED, project: 'XYZ', tree: { epics: true, subtasks: true }, blockingLinkTypes: [] });
+});
+
+test('validateSettings refuses a jira row with an empty site, project, issue type, sub-task type or done status, naming it (#822)', () => {
+  setLanguage('en');
+  const draft = { ...draftFrom(info(JIRA_CONFIG)), transitions: [] };
+  assert.equal(validateSettings(draft), undefined, 'a complete jira row passes');
+  const withJira = (patch: Partial<JiraDraft>): SettingsDraft => ({ ...draft, sources: draft.sources.map((s) => (s.type === 'jira' ? { ...s, jira: { ...s.jira, ...patch } } : s)) });
+  const cases: [Partial<JiraDraft>, string][] = [
+    [{ site: '' }, t('settings.error.jira.site', { source: 'tickets' })],
+    [{ project: '' }, t('settings.error.jira.project', { source: 'tickets' })],
+    [{ issueType: '' }, t('settings.error.jira.issueType', { source: 'tickets' })],
+    [{ subtaskType: '' }, t('settings.error.jira.subtaskType', { source: 'tickets', project: 'ABC' })],
+    [{ doneStatus: '' }, t('settings.error.jira.doneStatus', { source: 'tickets' })],
+  ];
+  for (const [patch, message] of cases) assert.deepEqual(validateSettings(withJira(patch)), { section: 'flow', message }, JSON.stringify(patch));
+  assert.match(t('settings.error.jira.subtaskType', { source: 'tickets', project: 'ABC' }), /ABC/, 'the refusal names the project with no sub-task type');
+});
+
+test('sourceColumnsUrl and filterOptionsUrl ask type=jira with the site and project of a jira row, and nothing until both are chosen (#822)', () => {
+  const draft = draftFrom(info(JIRA_CONFIG));
+  const row = draft.sources[1];
+  assert.equal(sourceColumnsUrl(draft, row), '/settings/source-columns?type=jira&site=acme.example&project=ABC');
+  assert.equal(filterOptionsUrl(draft, row), '/settings/filter-options?type=jira&site=acme.example&project=ABC');
+  for (const jira of [{ ...row.jira, site: '' }, { ...row.jira, project: '' }]) {
+    assert.equal(sourceColumnsUrl(draft, { ...row, jira }), undefined);
+    assert.equal(filterOptionsUrl(draft, { ...row, jira }), undefined);
+  }
 });
 
 test('a stage renamed in the same save carries into a jira source\'s switchAt (#820)', () => {

@@ -2,7 +2,8 @@ import { SourceDetail, sourceEntries } from '@/components/settings/SourceDetail'
 import { CombTab } from '@/components/settings/CombTab';
 import type { StageFocus, TransitionFocus } from '@/components/settings/StageEditor';
 import { stageEntries } from '@/components/settings/StageDetail';
-import { CONNECTIONS_ANCHOR } from '@/components/settings/ConnectionsGroup';
+import { scrollToConnections } from '@/components/settings/ConnectionsGroup';
+import type { JiraLoad, JiraRowOptions } from '@/hooks/use-jira-source-options';
 import { needsGithubToken, type NewSource } from '@/lib/flow-sources';
 import type { SourceDraft, SettingsDraft } from '@/lib/settings-form';
 import { cardEntries, type SettingEntry, settingEntry } from '@/lib/settings-search';
@@ -15,6 +16,7 @@ export interface FlowProps {
   stage?: StageFocus; // #689: the stage the Settings search opens
   options: Record<string, string[]>; githubProjects: Record<string, ProjectSummary[]>; github?: GithubAuthStatus; filterOptions: Record<string, FilterOptions>;
   onConnectGithub(): void; onLoadProjects(source: SourceDraft): void; onLoadColumns(source: SourceDraft): void;
+  jiraOptions: Record<string, JiraRowOptions>; onLoadJira(source: SourceDraft, load: JiraLoad): void; // #822
   onOpenSource(id?: string): void; onAddSource(added: NewSource): void; onOpenRules(): void;
 }
 interface FlowSectionProps { draft: SettingsDraft; source?: SourceDraft; flow: FlowProps; agents: readonly AgentAvailability[]; launchWorkspace?: string; onChange(patch: Partial<SettingsDraft>): void }
@@ -36,12 +38,13 @@ export function FlowSection({ draft, source, flow, agents, launchWorkspace, onCh
       auth={draft.auth} filterOptions={flow.filterOptions[source.id]}
       onChange={(patch) => onChange({ sources: draft.sources.map((b) => (b.id === source.id ? { ...b, ...patch } : b)) })}
       onRemove={() => { onChange({ sources: draft.sources.filter((b) => b.id !== source.id) }); flow.onOpenSource(undefined); }}
+      jira={flow.jiraOptions[source.id]} columns={flow.options[source.id]} onLoadJira={(jira, load) => flow.onLoadJira({ ...source, jira }, load)}
       onLoadProjects={() => flow.onLoadProjects(source)}
       onLoadColumns={(number) => flow.onLoadColumns(number === undefined ? source : { ...source, number })}
       onOpenList={() => {
         flow.onOpenSource(undefined);
         // the list renders on this click's commit, before the next frame: then the group exists to scroll to
-        requestAnimationFrame(() => document.getElementById(CONNECTIONS_ANCHOR)?.scrollIntoView({ block: 'start' }));
+        scrollToConnections();
       }}
     />
   );

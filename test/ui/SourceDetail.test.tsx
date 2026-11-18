@@ -1,14 +1,18 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { beforeEach, expect, test, vi } from 'vitest';
-import { SourceDetail } from '@/components/settings/SourceDetail';
-import { setLanguage, t } from '@/i18n';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { SourceDetail, sourceEntries } from '@/components/settings/SourceDetail';
+import type { JiraLoad, JiraRowOptions } from '@/hooks/use-jira-source-options';
+import { type MessageKey, setLanguage, t } from '@/i18n';
+import type { JiraDraft } from '@/lib/settings-jira';
+import { settingAnchor } from '@/lib/settings-search';
 import { type SourceDraft, type StageDraft, emptySource, emptyStage } from '@/lib/settings-form';
-import type { FilterOptions, GithubAuth, SourceConfig } from '../../src/types';
+import type { FilterOptions, GithubAuth } from '../../src/types';
 const FLOW = 'f';
 
 beforeEach(() => setLanguage('pt'));
+afterEach(() => vi.unstubAllGlobals());
 
 // The flow the block's switchAt picks from (#30): Build is the default, review the last stage
 const STAGES: StageDraft[] = [{ ...emptyStage(FLOW), name: 'fila' }, { ...emptyStage(FLOW), name: 'Build' }, { ...emptyStage(FLOW), name: 'review' }];
@@ -16,10 +20,11 @@ const work = (): SourceDraft => ({ ...emptySource('hive'), name: 'work', number:
 
 interface HarnessProps {
   source: SourceDraft; auth?: GithubAuth; filterOptions?: FilterOptions; stages?: StageDraft[]; onDraft(source: SourceDraft): void; onRemove(): void; onOpenList?(): void;
+  jira?: JiraRowOptions; columns?: string[]; onLoadJira?(jira: JiraDraft, load: JiraLoad): void;
 }
 
 // SourceDetail is controlled: the harness holds the draft as FlowSection does and reports every patched row (was BoardDetail's harness).
-function Harness({ source: initial, auth = 'cli', filterOptions, stages = STAGES, onDraft, onRemove, onOpenList = vi.fn() }: HarnessProps) {
+function Harness({ source: initial, auth = 'cli', filterOptions, stages = STAGES, onDraft, onRemove, onOpenList = vi.fn(), jira, columns, onLoadJira = vi.fn() }: HarnessProps) {
   const [source, setSource] = useState<SourceDraft>(initial);
   const change = (patch: Partial<SourceDraft>): void => {
     const next = { ...source, ...patch };
@@ -29,7 +34,7 @@ function Harness({ source: initial, auth = 'cli', filterOptions, stages = STAGES
   return (
     <SourceDetail
       source={source} flows={[{ id: FLOW, name: 'main' }]} stages={stages} workspaces={['hive', 'site']} githubProjects={[]} needsToken={false} auth={auth} filterOptions={filterOptions}
-      onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} onOpenList={onOpenList}
+      onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} jira={jira} columns={columns} onLoadJira={onLoadJira} onOpenList={onOpenList}
     />
   );
 }
@@ -184,15 +189,116 @@ test('the epic delete-activity switch: off on a new source, a click patches the 
   expect(screen.getByRole('switch', { name: t('settings.epicDeleteActivity') })).toBeDisabled();
 });
 
-const JIRA: Extract<SourceConfig, { type: 'jira' }> = {
-  name: 'tickets', qualifyId: false, type: 'jira', site: 'acme.example', project: 'ABC', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: null }, rules: [] },
-  epics: 'ignore', epicFollows: 'behind', switchAt: 'fila', tree: { epics: false, subtasks: false }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Done',
+const SITE = 'acme.atlassian.net';
+// JiraFields lists the connected sites from GET /settings/jira/sites
+const stubSites = (): void => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([{ site: SITE, state: 'connected' }, { site: 'beta.atlassian.net', state: 'connected' }]), { status: 200 })));
+};
+const JIRA_ROW: SourceDraft = {
+  ...emptySource('hive'), name: 'tickets', type: 'jira', epics: 'show',
+  jira: { site: SITE, project: 'ABC', tree: { epics: true, subtasks: false }, blockingLinkTypes: ['Blocks'], issueType: 'Task', subtaskType: 'Subtask', doneStatus: 'Done' },
+};
+const JIRA_OPTIONS: JiraRowOptions = {
+  projects: [{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }],
+  issueTypes: [{ id: '1', name: 'Task', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '3', name: 'Subtask', subtask: true, hierarchyLevel: -1 }],
+  linkTypes: [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, { name: 'Relates', inward: 'relates to', outward: 'relates to' }],
+  errors: {},
+};
+const choose = async (user: ReturnType<typeof userEvent.setup>, label: MessageKey, option: string): Promise<void> => {
+  screen.getByLabelText(t(label)).focus(); // a pointer click can leave a Radix Select closed in jsdom
+  await user.keyboard('{Enter}');
+  await user.click(await screen.findByRole('option', { name: option }));
 };
 
-test('a jira source shows its name and type, read-only, and no field to edit until its form lands (#820)', () => {
-  render(<Harness source={{ ...emptySource('hive'), name: 'tickets', type: 'jira', saved: JIRA }} onDraft={vi.fn()} onRemove={vi.fn()} />);
-  expect(screen.getByLabelText(t('settings.sources.name'))).toBeDisabled();
+test('a saved Jira source shows every key filled, and no GitHub field (#822)', () => {
+  stubSites();
+  render(<Harness source={JIRA_ROW} jira={JIRA_OPTIONS} columns={['To Do', 'Done']} onDraft={vi.fn()} onRemove={vi.fn()} />);
+  expect(screen.getByLabelText(t('settings.sources.name'))).toBeEnabled();
   expect(screen.getByLabelText(t('settings.sourceType'))).toHaveValue('Jira');
-  for (const label of ['settings.owner', 'settings.project', 'settings.sources.qualifyId'] as const) expect(screen.queryByLabelText(t(label))).not.toBeInTheDocument();
-  for (const name of [t('settings.source.filter'), t('settings.taskProps.title')]) expect(screen.queryByRole('heading', { level: 2, name })).not.toBeInTheDocument();
+  expect(screen.getByLabelText(t('settings.source.jira.site'))).toHaveTextContent(SITE);
+  expect(screen.getByLabelText(t('settings.source.jira.project'))).toHaveTextContent('ABC · Alpha');
+  expect(screen.getByRole('switch', { name: t('settings.source.jira.tree.epics') })).toBeChecked();
+  expect(screen.getByRole('switch', { name: t('settings.source.jira.tree.subtasks') })).not.toBeChecked();
+  expect(screen.getByRole('combobox', { name: t('settings.source.jira.blockingLinkTypes') })).toHaveTextContent('Blocks');
+  for (const [label, value] of [['settings.source.jira.issueType', 'Task'], ['settings.source.jira.subtaskType', 'Subtask'], ['settings.source.jira.doneStatus', 'Done']] as const) {
+    expect(screen.getByLabelText(t(label))).toHaveTextContent(value);
+  }
+  expect(screen.getByRole('switch', { name: t('settings.sources.qualifyId') })).toBeInTheDocument();
+  for (const label of ['settings.owner', 'settings.project', 'settings.source.repository'] as const) expect(screen.queryByLabelText(t(label))).not.toBeInTheDocument();
+  expect(screen.queryByText(t('settings.source.connection', { auth: t('settings.auth.cli') }), { exact: false })).not.toBeInTheDocument();
+});
+
+test('each Jira edit reaches onChange; a project pick asks for its reads, a site pick clears the project and asks for the projects (#822)', async () => {
+  stubSites();
+  const user = userEvent.setup();
+  const onDraft = vi.fn();
+  const onLoadJira = vi.fn();
+  render(<Harness source={JIRA_ROW} jira={JIRA_OPTIONS} columns={['To Do', 'Done']} onDraft={onDraft} onLoadJira={onLoadJira} onRemove={vi.fn()} />);
+  const lastJira = (): JiraDraft => onDraft.mock.lastCall?.[0].jira;
+
+  await choose(user, 'settings.source.jira.project', 'XYZ · Zed');
+  expect(lastJira()).toEqual({ ...JIRA_ROW.jira, project: 'XYZ' });
+  expect(onLoadJira).toHaveBeenLastCalledWith({ ...JIRA_ROW.jira, project: 'XYZ' }, 'project');
+  await choose(user, 'settings.source.jira.issueType', 'Story');
+  expect(lastJira().issueType).toBe('Story');
+  await choose(user, 'settings.source.jira.doneStatus', 'To Do');
+  expect(lastJira().doneStatus).toBe('To Do');
+  await user.click(screen.getByRole('switch', { name: t('settings.source.jira.tree.subtasks') }));
+  expect(lastJira().tree).toEqual({ epics: true, subtasks: true });
+  fireEvent.click(screen.getByRole('combobox', { name: t('settings.source.jira.blockingLinkTypes') }));
+  fireEvent.click(await screen.findByRole('option', { name: /Relates/ }));
+  expect(lastJira().blockingLinkTypes).toEqual(['Blocks', 'Relates']);
+  await choose(user, 'settings.source.jira.site', 'beta.atlassian.net');
+  expect(lastJira()).toEqual(expect.objectContaining({ site: 'beta.atlassian.net', project: '' }));
+  expect(onLoadJira).toHaveBeenLastCalledWith(expect.objectContaining({ site: 'beta.atlassian.net', project: '' }), 'site');
+});
+
+test('a Jira source has the filter, epics and task properties groups; the filter offers no milestone or repository, the epics block no delete activity row (#822)', async () => {
+  stubSites();
+  render(<Harness source={JIRA_ROW} jira={JIRA_OPTIONS} onDraft={vi.fn()} onRemove={vi.fn()} />);
+  for (const name of [t('settings.source.filter'), t('settings.taskProps.title'), t('settings.source.jira.keys')]) {
+    expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
+  }
+  expect(screen.getByLabelText(t('settings.epics'))).toBeInTheDocument();
+  expect(screen.queryByRole('switch', { name: t('settings.epicDeleteActivity') })).not.toBeInTheDocument();
+  expect(screen.getByText(t('settings.source.jira.epicsHint'))).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: t('settings.filter.add') }));
+  fireEvent.click(screen.getByRole('combobox', { name: t('settings.filter.field') }));
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent))
+    .toEqual([t('settings.filter.field.assignee'), t('settings.filter.field.label'), t('settings.filter.field.blocked')]);
+});
+
+test('a Jira read failure shows inline: not connected with its link to connections, a rate limit with its time, else the generic copy (#822)', () => {
+  stubSites();
+  const onOpenList = vi.fn();
+  const resetsAt = new Date(2026, 10, 17, 14, 5).toISOString(); // local 14:05, as clock reads it
+  const cases: [JiraRowOptions['errors'], string][] = [
+    [{ site: { kind: 'not-connected' } }, t('settings.source.jira.error.notConnected')],
+    [{ project: { kind: 'rate-limited', resetsAt } }, t('settings.source.jira.error.rateLimited', { time: '14:05' })],
+    [{ project: { kind: 'failed' } }, t('settings.source.jira.error.failed')],
+  ];
+  for (const [errors, text] of cases) {
+    const { unmount } = render(<Harness source={JIRA_ROW} jira={{ ...JIRA_OPTIONS, errors }} onDraft={vi.fn()} onRemove={vi.fn()} onOpenList={onOpenList} />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    if (errors.site !== undefined) {
+      fireEvent.click(screen.getByRole('button', { name: t('settings.source.jira.openConnections') }));
+      expect(onOpenList).toHaveBeenCalledTimes(1);
+    }
+    unmount();
+  }
+});
+
+test('a project with no sub-task type says so under its select (#822)', () => {
+  stubSites();
+  const options = { ...JIRA_OPTIONS, issueTypes: JIRA_OPTIONS.issueTypes.filter((type) => !type.subtask) };
+  render(<Harness source={{ ...JIRA_ROW, jira: { ...JIRA_ROW.jira, subtaskType: '' } }} jira={options} onDraft={vi.fn()} onRemove={vi.fn()} />);
+  expect(screen.getByText(t('settings.source.jira.noSubtaskTypeHint'))).toBeInTheDocument();
+});
+
+test("a Jira source's search entries name its site, project and keys, and no GitHub field (#822)", () => {
+  const anchors = sourceEntries(JIRA_ROW).map((e) => e.anchor);
+  for (const label of ['settings.source.jira.site', 'settings.source.jira.project', 'settings.source.jira.doneStatus', 'settings.source.filter'] as const) {
+    expect(anchors).toContain(settingAnchor(label, JIRA_ROW.id));
+  }
+  for (const label of ['settings.owner', 'settings.epicDeleteActivity'] as const) expect(anchors).not.toContain(settingAnchor(label, JIRA_ROW.id));
 });

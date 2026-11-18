@@ -9,6 +9,7 @@ import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, MEMORY_CAP_DEFAU
 import { timeoutMs } from '../../timeout.js';
 import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
+import { EMPTY_JIRA, type JiraDraft, isJiraChosen, jiraColumnsUrl, jiraDraft, jiraFilterOptionsUrl, jiraProblem } from './settings-jira.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
 import { type NestedRepoDraft, nestedPaths } from './settings-nested.js';
 import { nextWorkspaceColor } from './workspace-color.js';
@@ -36,6 +37,7 @@ export type { FlowDraft } from './settings-flows.js';
 // (#348) is edited in its card; setup and setupTimeout are its worktree setup (#299), teardown and teardownTimeout its worktree teardown (#654), the same way: as typed, an empty field sends no key. fork (#854) is the config's value as it is, edited by the repository section; baseBranch the workspace's own base, '' = the general one. memoryCap (#73) as typed, sent as a number. color (#78) as the config holds it, sent as is. nestedRepos (#653) one row per path, notNestedRepos as the config holds it. benchmarkPrIn (#477) as the config holds it, sent as is.
 export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string; color: string; nestedRepos: NestedRepoDraft[]; notNestedRepos: string[]; benchmarkPrIn: BenchmarkPrIn }
 /** A row of Settings › flow's sources list (#180); id is its React key and the key the stage drafts use, never sent. */
+export type { JiraDraft } from './settings-jira.js';
 export interface SourceDraft {
   id: string; name: string; qualifyId: boolean; prefix: string; type: SourceConfig['type'];
   savedName: string; // the name the row was loaded with, '' on a new row (#278): what toSettingsBody reads a rename from; never shown
@@ -45,7 +47,7 @@ export interface SourceDraft {
   taskProps: SourceTaskPropsDraft; // #688: the defaults and the rules as edited
   epics: EpicsMode; epicFollows: EpicFollows; // #30
   epicDeleteActivity: boolean; // #856
-  saved?: Extract<SourceConfig, { type: 'jira' }>; // #820: a jira source's entry whole; until 5.4 draws its form only switchAt and taskProps follow the row
+  jira: JiraDraft; // #822: a jira row's own keys as edited; a github row keeps EMPTY_JIRA and sends none of it
   switchAt: string; // #30: a stage draft's id, '' = the default (switchAtStage); sent by name
 }
 export interface SettingsDraft {
@@ -100,13 +102,13 @@ export function withHost(hosts: readonly string[], text: string): string[] | und
 // a new source's epics keys, switchAt on the default (#30).
 export const emptySource = (workspace = '', flowId = ''): SourceDraft => ({
   id: crypto.randomUUID(), name: '', savedName: '', qualifyId: false, prefix: '', type: 'github', owner: DEFAULT_OWNER, number: '', repository: '',
-  filter: [], taskProps: emptyTaskProps(workspace, flowId), ...NEW_SOURCE_EPICS, switchAt: '',
+  filter: [], jira: EMPTY_JIRA, taskProps: emptyTaskProps(workspace, flowId), ...NEW_SOURCE_EPICS, switchAt: '',
 });
 // switchAt is set by draftFrom once the stages are drafted (#30): their ids come from the rows; taskProps too, once the flows and stages are (#670)
 const sourceDraft = (b: SourceConfig): SourceDraft => ({
   ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type,
   filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
-  ...(b.type === 'github' ? { owner: b.owner, number: String(b.number), repository: b.repository ?? '', epicDeleteActivity: b.epicDeleteActivity } : { saved: b }),
+  ...(b.type === 'github' ? { owner: b.owner, number: String(b.number), repository: b.repository ?? '', epicDeleteActivity: b.epicDeleteActivity } : { jira: jiraDraft(b) }),
 });
 
 // #846: the saved name as its row's id; hive, or a name no row has, stays as written for createInDraftProblem to name
@@ -207,6 +209,8 @@ function sourcesProblem(sources: SourceDraft[]): SettingsProblem | undefined {
   if (twice !== undefined) return { section: 'flow', message: t('settings.error.sourceDuplicate', { name: twice }) };
   // #820: only a github row picks a project
   if (sources.some((b) => b.type === 'github' && b.number === '')) return { section: 'flow', message: t('settings.error.project') };
+  const jira = sources.map((b) => (b.type === 'jira' ? jiraProblem(b.name.trim(), b.jira) : undefined)).find((m) => m !== undefined);
+  if (jira !== undefined) return { section: 'flow', message: jira };
   return filterProblem(sources);
 }
 
@@ -286,13 +290,10 @@ export function validateSettings(draft: SettingsDraft): SettingsProblem | undefi
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
  * name it resolves to among `stages` (#30). */
 export function sourceFrom(row: SourceDraft, scope: FlowScope): SourceConfig {
-  // #820: the form edits no jira key yet; switchAt and taskProps follow the row so a rename in the same save carries, as on a github row
-  if (row.saved !== undefined) return { ...row.saved, switchAt: switchAtName(row.switchAt, scope.stages), taskProps: taskPropsFrom(row.taskProps, scope) };
   const key = { name: row.name.trim(), qualifyId: row.qualifyId, ...optional('prefix', row.prefix) };
-  return {
-    ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps, scope),
-    epics: row.epics, epicFollows: row.epicFollows, epicDeleteActivity: row.epicDeleteActivity, switchAt: switchAtName(row.switchAt, scope.stages),
-  };
+  const shared = { filter: row.filter, taskProps: taskPropsFrom(row.taskProps, scope), epics: row.epics, epicFollows: row.epicFollows, switchAt: switchAtName(row.switchAt, scope.stages) };
+  if (row.type === 'jira') return { ...key, type: 'jira', ...row.jira, ...shared }; // #822: every key of the member, none defaulted
+  return { ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), ...shared, epicDeleteActivity: row.epicDeleteActivity };
 }
 
 // Rows loaded under another name (#278): the server carries their tasks over. A new row (savedName '') renames nothing.
@@ -367,6 +368,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
 
 /** GET /settings/source-columns for one row (#180); undefined while it is not chosen (no owner or no project). */
 export function sourceColumnsUrl(draft: Pick<SettingsDraft, 'auth'>, row: SourceDraft): string | undefined {
+  if (row.type === 'jira') return isJiraChosen(row.jira) ? jiraColumnsUrl(row.jira) : undefined;
   const owner = row.owner.trim();
   if (owner === '' || row.number === '') return undefined;
   return `/settings/source-columns?${new URLSearchParams({ type: 'github', owner, number: row.number, auth: draft.auth })}`;
@@ -378,9 +380,10 @@ export function projectsUrl(auth: GithubAuth, row: Pick<SourceDraft, 'owner'>): 
   return owner === '' ? undefined : `/settings/projects?${new URLSearchParams({ owner, auth })}`;
 }
 
-/** GET /settings/filter-options for a github row (#245); undefined for a row of another type or one not chosen yet. */
+/** GET /settings/filter-options for a row (#245, #822); undefined while it is not chosen. */
 export function filterOptionsUrl(draft: Pick<SettingsDraft, 'auth'>, row: SourceDraft): string | undefined {
+  if (row.type === 'jira') return isJiraChosen(row.jira) ? jiraFilterOptionsUrl(row.jira) : undefined;
   const owner = row.owner.trim();
-  if (row.type !== 'github' || owner === '' || row.number === '') return undefined;
+  if (owner === '' || row.number === '') return undefined;
   return `/settings/filter-options?${new URLSearchParams({ owner, number: row.number, auth: draft.auth })}`;
 }

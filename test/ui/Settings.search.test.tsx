@@ -37,7 +37,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 function Page({ draft, view }: { draft: SettingsDraft; view: SettingsView }) {
   const flow = {
-    options: {}, githubProjects: {}, filterOptions: {}, stage: view.stage === undefined ? undefined : { id: view.stage, n: 1 },
+    options: {}, githubProjects: {}, filterOptions: {}, jiraOptions: {}, onLoadJira: vi.fn(), stage: view.stage === undefined ? undefined : { id: view.stage, n: 1 },
     onConnectGithub: vi.fn(), onLoadProjects: vi.fn(), onLoadColumns: vi.fn(), onOpenSource: vi.fn(), onAddSource: vi.fn(), onOpenRules: vi.fn(), flowTasks: () => 0,
   };
   return (
