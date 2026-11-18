@@ -71,17 +71,18 @@ export async function deleteActivityOnDisk(
 ): Promise<void> {
   const { workspace, activity, task, sessions, prs, branch, scope, force } = job;
   const { exec, log } = deps;
+  const machine = deps.machineFor(activity);
   const repo = workspace.path;
   if (!activity.local) {
-    const extras = await leftBehind(repo, activity, branch, exec); // a Restart's old branches (#283)
+    const extras = await leftBehind(machine, repo, activity, branch); // a Restart's old branches (#283)
     if (!force) for (const name of extras) await refuseUnmerged(repo, name, exec); // all or nothing, as cleanWorktree checks its own
     const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
     await removeInRun(deps, target, (before) => (force
       ? removeWorktree(repo, activity, branch, force.promptsDir, exec, workspace.nestedRepos)
       : cleanWorktree(repo, activity, branch, exec, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
-    await dropBranches(repo, extras, force !== undefined, exec);
-    await dropStageStart(repo, activity.slug ?? slugFor(task.item), exec); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
-    await dropCheckpoints(repo, activity.slug ?? slugFor(task.item), exec); // #619: every checkpoint's restore point goes with the activity; none is nothing
+    await dropBranches(machine, repo, extras, force !== undefined);
+    await dropStageStart(machine, repo, activity.slug ?? slugFor(task.item)); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
+    await dropCheckpoints(machine, repo, activity.slug ?? slugFor(task.item)); // #619: every checkpoint's restore point goes with the activity; none is nothing
   }
   if (!scope.transcripts) return;
   await removeTranscripts(taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)

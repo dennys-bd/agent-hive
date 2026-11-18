@@ -18,7 +18,7 @@ const RESTORE_REFUSED_MESSAGE = 'restauração indisponível: uma execução ou 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** What a capture needs (#619): git, the log, the dispatch, and the state as it is now, for the next number. */
-export type CheckpointDeps = Pick<TaskRouteDeps, 'exec' | 'log' | 'dispatch' | 'latest'>;
+export type CheckpointDeps = Pick<TaskRouteDeps, 'machineFor' | 'log' | 'dispatch' | 'latest'>;
 /** One capture (#619): the task's repo, its activity as the caller saw it, the stage the checkpoint ran in and how it ended. */
 export interface CheckpointJob { repo: string; activity: Activity; task: Task; stage: string; ended: CheckpointEnd }
 
@@ -37,7 +37,7 @@ export async function recordCheckpoint(deps: CheckpointDeps, { repo, activity, t
   if (!capturable(current)) return false;
   const n = nextCheckpoint(current.checkpoints);
   try {
-    const point = await captureCheckpoint(repo, taskDir(repo, current), current.slug ?? slugFor(task.item), n, deps.exec);
+    const point = await captureCheckpoint(deps.machineFor(current), repo, taskDir(repo, current), current.slug ?? slugFor(task.item), n);
     const checkpoint: Checkpoint = { n, stage, start: startOf(activity, stage, point.head), ...point, at: new Date().toISOString(), ended };
     await deps.dispatch({ type: 'checkpointCaptured', activityId: activity.id, checkpoint });
     return true;
@@ -66,13 +66,13 @@ function restoreTarget(current: LiveView, activityId: string, n: string): Restor
 }
 
 // The dialog's preview (#619): Restart's plan for the checkpoint's head; git's words as a 409
-async function restorePreview(req: Request, res: Response, { requireLive, exec }: TaskRouteDeps): Promise<void> {
+async function restorePreview(req: Request, res: Response, { requireLive, machineFor }: TaskRouteDeps): Promise<void> {
   const current = requireLive(res);
   if (!current) return;
   const target = restoreTarget(current, activityParam(req), String(req.params.n));
   if ('status' in target) return refuse(res, target);
   try {
-    res.json({ ...(await restartPlan(target.repo, target.branch, target.template, target.checkpoint.head, exec)), branch: target.branch });
+    res.json({ ...(await restartPlan(machineFor(target.activity), target.repo, target.branch, target.template, target.checkpoint.head)), branch: target.branch });
   } catch (err) {
     refuse(res, { status: HTTP_CONFLICT, message: errorMessage(err) });
   }
@@ -81,7 +81,7 @@ async function restorePreview(req: Request, res: Response, { requireLive, exec }
 // The restore (#619): marked before any git, as Restart's. A task another job already marks is refused before the mark, so this restore never
 // drops a mark that is not its own.
 async function restoreRun(req: Request, res: Response, deps: TaskRouteDeps): Promise<void> {
-  const { requireLive, dispatch, exec, log } = deps;
+  const { requireLive, dispatch, machineFor, log } = deps;
   const current = requireLive(res);
   if (!current) return;
   const target = restoreTarget(current, activityParam(req), String(req.params.n));
@@ -99,8 +99,9 @@ async function restoreRun(req: Request, res: Response, deps: TaskRouteDeps): Pro
     return refuse(res, { status: HTTP_SERVER_ERROR, message: CAPTURE_FAILED_MESSAGE });
   }
   try {
-    const plan = await restartPlan(target.repo, target.branch, target.template, target.checkpoint.head, exec);
-    await restoreWorktree(target.worktree, target.branch, target.checkpoint, plan, exec);
+    const machine = machineFor(target.activity);
+    const plan = await restartPlan(machine, target.repo, target.branch, target.template, target.checkpoint.head);
+    await restoreWorktree(machine, target.worktree, target.branch, target.checkpoint, plan);
     await dispatch({ type: 'restored', itemId, ...(plan.mode === 'branch' ? { branch: plan.newBranch } : {}) });
     res.json({ ok: true });
   } catch (err) {

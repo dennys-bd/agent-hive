@@ -151,15 +151,16 @@ function restartTarget(current: LiveView, activityId: string): RestartTarget | R
 // Restart (#283): GET is the confirmation's preview; POST marks the task, runs the git, then dispatches. The server runs the git, never the
 // worker; a failure is git's words as a 409, the mark goes and the task is left as it was. A restart the reducer ignores is a 409 too.
 function registerRestartRoutes(app: Express, deps: TaskRouteDeps): void {
-  const { requireLive, dispatch, exec } = deps;
+  const { requireLive, dispatch, machineFor } = deps;
   app.get('/activities/:id/restart', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const target = restartTarget(current, activityParam(req));
     if ('status' in target) return refuse(res, target);
     try {
-      const plan = await restartPlan(target.repo, target.branch, target.template, target.commit, exec);
-      res.json({ ...plan, branch: target.branch, ...(await discarded(target.worktree, target.branch, target.commit, plan, exec)) });
+      const machine = machineFor(target.activity);
+      const plan = await restartPlan(machine, target.repo, target.branch, target.template, target.commit);
+      res.json({ ...plan, branch: target.branch, ...(await discarded(machine, target.worktree, target.branch, target.commit, plan)) });
     } catch (err) {
       refuse(res, { status: HTTP_CONFLICT, message: errorMessage(err) });
     }
@@ -177,8 +178,9 @@ function registerRestartRoutes(app: Express, deps: TaskRouteDeps): void {
     await recordCheckpoint(deps, { repo: target.repo, activity: target.activity, task: target.task, stage: target.task.stage, ended: 'restart' });
     let plan: RestartPlan;
     try {
-      plan = await restartPlan(target.repo, target.branch, target.template, target.commit, exec);
-      await restartWorktree(target.worktree, target.branch, target.commit, plan, exec);
+      const machine = machineFor(target.activity);
+      plan = await restartPlan(machine, target.repo, target.branch, target.template, target.commit);
+      await restartWorktree(machine, target.worktree, target.branch, target.commit, plan);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId }); // only the mark goes
       return refuse(res, { status: HTTP_CONFLICT, message: errorMessage(err) });

@@ -1,14 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { checkpointRef, captureCheckpoint, dropCheckpoints, restoreWorktree } from '../src/checkpoints.js';
-import type { Checkpoint } from '../src/types.js';
+import type { Checkpoint, Exec } from '../src/types.js';
+import { fakeMachine } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 const run = promisify(execFile);
+const real: Exec = run;
+const machine = fakeMachine({ exec: real }); // the real git these tests ran through the default (#159)
 const BRANCH = 'hive/7-fix';
 const SLUG = 'hive-7-fix';
 
@@ -41,7 +44,7 @@ const checkpointOf = (n: number, point: { head: string; commit: string; branch: 
 test('captureCheckpoint on a clean worktree keeps HEAD itself as the point under refs/hive/<slug>/checkpoint/<n> (#619)', async (t) => {
   const repo = await repoOn(t);
   const head = await git(repo, 'rev-parse', 'HEAD');
-  assert.deepEqual(await captureCheckpoint(repo, repo, SLUG, 1), { head, commit: head, branch: BRANCH });
+  assert.deepEqual(await captureCheckpoint(machine, repo, repo, SLUG, 1), { head, commit: head, branch: BRANCH });
   assert.equal(await git(repo, 'rev-parse', checkpointRef(SLUG, 1)), head);
 });
 
@@ -55,7 +58,7 @@ test('captureCheckpoint on a dirty worktree commits a modified, a deleted and an
   await writeFile(join(repo, 'staged.txt'), 'staged');
   await git(repo, 'add', 'staged.txt');
   const index = await git(repo, 'diff', '--cached', '--name-only');
-  const point = await captureCheckpoint(repo, repo, SLUG, 2);
+  const point = await captureCheckpoint(machine, repo, repo, SLUG, 2);
   assert.notEqual(point.commit, head);
   assert.equal(await git(repo, 'rev-parse', `${point.commit}^`), head, 'the point\'s parent is HEAD');
   assert.deepEqual((await git(repo, 'ls-tree', '--name-only', point.commit)).split('\n').sort(), ['.gitignore', 'new.txt', 'staged.txt', 'tracked.txt']);
@@ -66,7 +69,7 @@ test('captureCheckpoint on a dirty worktree commits a modified, a deleted and an
 
 test('captureCheckpoint refuses when git prints no HEAD, writing no ref (#619)', async () => {
   const calls: string[][] = [];
-  await assert.rejects(captureCheckpoint('/repo', '/wt', SLUG, 1, async (_file, args) => { calls.push(args); return { stdout: '' }; }));
+  await assert.rejects(captureCheckpoint(fakeMachine({ exec: async (_file, args) => { calls.push(args); return { stdout: '' }; } }), '/repo', '/wt', SLUG, 1));
   assert.deepEqual(calls, [['-C', '/wt', 'rev-parse', 'HEAD']]);
 });
 
@@ -74,11 +77,11 @@ test('restoreWorktree in reset mode moves the branch back to the checkpoint\'s h
   const repo = await repoOn(t);
   await writeFile(join(repo, 'tracked.txt'), 'checkpoint work');
   await writeFile(join(repo, 'new.txt'), 'new');
-  const checkpoint = checkpointOf(1, await captureCheckpoint(repo, repo, SLUG, 1));
+  const checkpoint = checkpointOf(1, await captureCheckpoint(machine, repo, repo, SLUG, 1));
   await git(repo, 'checkout', '--', 'tracked.txt');
   await rm(join(repo, 'new.txt'));
   await commit(repo, 'later.txt');
-  await restoreWorktree(repo, BRANCH, checkpoint, { mode: 'reset' });
+  await restoreWorktree(machine, repo, BRANCH, checkpoint, { mode: 'reset' });
   assert.equal(await git(repo, 'rev-parse', 'HEAD'), checkpoint.head);
   assert.equal(await readFile(join(repo, 'tracked.txt'), 'utf8'), 'checkpoint work');
   assert.equal(await git(repo, 'diff', '--cached', '--name-only'), '', 'nothing staged');
@@ -89,11 +92,11 @@ test('restoreWorktree in reset mode moves the branch back to the checkpoint\'s h
 test('restoreWorktree in branch mode leaves the published branch at its commits and checks the new branch out at the checkpoint\'s head, its work unstaged (#619)', async (t) => {
   const repo = await repoOn(t);
   await writeFile(join(repo, 'tracked.txt'), 'checkpoint work');
-  const checkpoint = checkpointOf(1, await captureCheckpoint(repo, repo, SLUG, 1));
+  const checkpoint = checkpointOf(1, await captureCheckpoint(machine, repo, repo, SLUG, 1));
   await git(repo, 'checkout', '--', 'tracked.txt');
   await commit(repo, 'later.txt');
   const published = await git(repo, 'rev-parse', 'HEAD');
-  await restoreWorktree(repo, BRANCH, checkpoint, { mode: 'branch', newBranch: `${BRANCH}-r2` });
+  await restoreWorktree(machine, repo, BRANCH, checkpoint, { mode: 'branch', newBranch: `${BRANCH}-r2` });
   assert.equal(await git(repo, 'symbolic-ref', '--short', 'HEAD'), `${BRANCH}-r2`);
   assert.equal(await git(repo, 'rev-parse', 'HEAD'), checkpoint.head);
   assert.equal(await git(repo, 'rev-parse', BRANCH), published, 'the published branch keeps its commits');
@@ -102,11 +105,26 @@ test('restoreWorktree in branch mode leaves the published branch at its commits 
 
 test('dropCheckpoints deletes every checkpoint ref of the slug, leaves another slug\'s, and none is nothing to drop (#619)', async (t) => {
   const repo = await repoOn(t);
-  await dropCheckpoints(repo, SLUG);
-  await captureCheckpoint(repo, repo, SLUG, 1);
-  await captureCheckpoint(repo, repo, SLUG, 2);
-  await captureCheckpoint(repo, repo, 'hive-8-other', 1);
-  await dropCheckpoints(repo, SLUG);
+  await dropCheckpoints(machine, repo, SLUG);
+  await captureCheckpoint(machine, repo, repo, SLUG, 1);
+  await captureCheckpoint(machine, repo, repo, SLUG, 2);
+  await captureCheckpoint(machine, repo, repo, 'hive-8-other', 1);
+  await dropCheckpoints(machine, repo, SLUG);
   assert.equal(await git(repo, 'for-each-ref', `refs/hive/${SLUG}/`), '');
   assert.notEqual(await git(repo, 'for-each-ref', 'refs/hive/hive-8-other/'), '');
+});
+
+test('captureCheckpoint makes its temporary index under the machine\'s tmpdir and removes it after, through the machine (#159)', async (t) => {
+  const repo = await repoOn(t);
+  await writeFile(join(repo, 'tracked.txt'), 'changed'); // dirty: the point needs the temporary index
+  const tmp = await tempDir(t, 'machine-tmp-');
+  const indexes: string[] = [];
+  const exec: Exec = async (file, args, opts) => {
+    const index = opts?.env?.GIT_INDEX_FILE;
+    if (index !== undefined) indexes.push(index);
+    return real(file, args, opts);
+  };
+  await captureCheckpoint(fakeMachine({ exec, info: { tmpdir: tmp } }), repo, repo, SLUG, 3);
+  assert.ok(indexes.length > 0 && indexes.every((index) => index.startsWith(join(tmp, 'hive-checkpoint-'))), indexes.join('\n'));
+  assert.deepEqual(await readdir(tmp), [], 'the temp dir went with the capture');
 });

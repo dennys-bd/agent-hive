@@ -174,7 +174,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const workspace = taskWorkspace(runtime.config, task);
     if (!workspace) return;
     try {
-      const commit = await recordStageStart(workspace.path, taskDir(workspace.path, activity), workSlug(activity, task), exec);
+      const commit = await recordStageStart(machineFor(activity), workspace.path, taskDir(workspace.path, activity), workSlug(activity, task));
       if (commit) await dispatch({ type: 'stageStarted', activityId: activity.id, stage, commit });
     } catch (err) {
       log.error(`stage start #${task.item.id}: ${errorMessage(err)}`);

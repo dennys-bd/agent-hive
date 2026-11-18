@@ -645,7 +645,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged
         log.info(describeEffect(effect));
         const workspace = taskWorkspace(runtime.config, effect.task);
-        if (workspace) await recordCheckpoint({ exec, log, dispatch, latest: () => live?.state }, { repo: workspace.path, activity: effect.activity, task: effect.task, stage: effect.stage, ended: effect.ended });
+        if (workspace) await recordCheckpoint({ machineFor, log, dispatch, latest: () => live?.state }, { repo: workspace.path, activity: effect.activity, task: effect.task, stage: effect.stage, ended: effect.ended });
         return;
       }
       case 'continue': {
