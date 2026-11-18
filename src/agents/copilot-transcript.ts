@@ -90,9 +90,10 @@ export async function readTurn(machine: Machine, path: string, since?: number): 
   });
   const yaml = await workspaceOf(machine, dirname(path));
   const title = yaml !== undefined && yamlValue(yaml, 'user_named') === 'true' ? cleanTitle(yamlValue(yaml, 'name')) : undefined;
+  // before the early return: a total with no stage run must not carry Infinity into State.usage either
+  if (!Number.isFinite(tokens) || !finiteTokens(stage.tokens)) throw new Error(`${path}: token total is not finite`);
   const base = { tokens, ...(title === undefined ? {} : { title }) };
   if (since === undefined) return base;
-  if (!finiteTokens(stage.tokens) || !Number.isFinite(tokens)) throw new Error(`${path}: token total is not finite`);
   return { ...base, usage: turnUsage(stage) };
 }
 

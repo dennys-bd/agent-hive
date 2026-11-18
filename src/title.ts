@@ -11,4 +11,3 @@ export function cleanTitle(value: unknown): string | undefined {
   const text = Array.from(value.replace(CONTROL_CHARS, '').trim()).slice(0, TITLE_MAX).join('').trim();
   return text === '' ? undefined : text;
 }
-

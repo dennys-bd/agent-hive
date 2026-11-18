@@ -67,6 +67,13 @@ test('readTurn skips an unparsable line and an unknown event type, and rejects a
   await assert.rejects(readTurn(at(home), join(home, 'missing.jsonl')));
 });
 
+test('readTurn rejects a session total that overflows, with or without a stage run', async (t) => {
+  const huge = (id: string) => usage(id, '2026-11-18T13:10:05.000Z', 'm', { input: 1e308, output: 1e308 });
+  const { home, path } = await session(t, [huge('a'), huge('b')]);
+  await assert.rejects(readTurn(at(home), path), /not finite/);
+  await assert.rejects(readTurn(at(home), path, FIRST), /not finite/);
+});
+
 test('the title is workspace.yaml\'s name only when user_named is true; a missing file means no title', async (t) => {
   const named = await session(t, EVENTS, `cwd: ${CWD}\nname: "Secret Word"\nuser_named: true\n`);
   assert.equal((await readTurn(at(named.home), named.path)).title, 'Secret Word');

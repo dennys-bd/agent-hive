@@ -8,7 +8,6 @@ import { taskDir } from './worktree.js';
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 24 * HOUR_MS;
 
-
 export { cleanTitle } from './title.js';
 
 /** A stage run's own usage (#742): the tokens by type and the models of the turns at or after its start, its subagents' included;

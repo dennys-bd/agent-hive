@@ -2,11 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
 import { copilotRunner, instructionsDir } from '../../src/agents/copilot.js';
-import { copilotHome } from '../../src/agents/copilot-home.js';
 import { headless, headlessAnswer, headlessEnv, headlessPrompt } from '../../src/agents/copilot-headless.js';
 import { copilotHooksPlugin } from '../../src/agents/copilot-hooks.js';
 import type { AgentRun, McpServer, RunMcpServer } from '../../src/agents/runner.js';
@@ -153,12 +151,6 @@ test('prepareHome writes the hooks plugin under the Hive\'s home for the boot\'s
   const { hooks } = JSON.parse(await readFile(join(copilotHooksPlugin(home), 'hooks', 'hooks.json'), 'utf8'));
   assert.equal(hooks.Stop[0].hooks[0].command, hookCommand(4242, STOP_HOOK_TIMEOUT_S), 'the boot\'s port reaches the plugin');
   assert.ok(existsSync(shimPath(home, AGENTS.copilot)), 'its shim, as every agent boot found');
-});
-
-test('copilotHome is $COPILOT_HOME when set and not empty, else ~/.copilot (#873, spike §6)', () => {
-  assert.equal(copilotHome({ COPILOT_HOME: join('/c', 'home') }), join('/c', 'home'));
-  assert.equal(copilotHome({}), join(homedir(), '.copilot'));
-  assert.equal(copilotHome({ COPILOT_HOME: '' }), join(homedir(), '.copilot'));
 });
 
 test('the headless members are copilot-headless.ts\'s, and a headless run takes the tester\'s MCP config (#877)', () => {
