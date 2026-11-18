@@ -264,3 +264,18 @@ test('a SessionStart with source new and another uuid on a live copilot session 
   const cleared = sessionStart(same, CLEARED, 'new');
   assert.deepEqual([cleared.workers.at(-1)!.sessionId, localSessionsOf(cleared, 'hive').map((s) => [s.id, s.agent])], [CLEARED, [[CLEARED, 'copilot']]]);
 });
+
+test('a codex or copilot copy whose run ends before the fork\'s SessionStart leaves no entry, into a task and into local, even after a hook; one the fork named keeps it; a failed spawn leaves none (#875)', () => {
+  const forks = [[copilotHive, 'resume'], [codexHive, 'fork']] as const;
+  for (const [before, source] of forks) {
+    for (const to of [TASK_B, { activityId: localActivityId('hive') }]) {
+      const label = `${source} ${to.activityId}`;
+      const copied = copyTo(before(), to, { copied: undefined }).state;
+      const ptyId = copied.workers.at(-1)!.runId!;
+      const seen = reduce(copied, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit' } }).state; // seen: forgetUnopenedLocal alone keeps a local entry
+      assert.deepEqual(recordOf(reduce(seen, { type: 'exit', ptyId }).state, to.activityId)?.sessions, [], label);
+      assert.equal(recordOf(reduce(sessionStart(seen, FORK, source), { type: 'exit', ptyId }).state, to.activityId)?.sessions.length, 1, label);
+      assert.deepEqual(recordOf(reduce(copied, { type: 'spawnFailed', ptyId, message: 'pty: no' }).state, to.activityId)?.sessions, [], label);
+    }
+  }
+});

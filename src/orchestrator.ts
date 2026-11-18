@@ -21,7 +21,7 @@ import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, wit
 import { exitOf, transitionByKey } from './transitions.js';
 import { leaveFlow } from './leave-flow.js';
 import { beingDeleted, clearedError, deletingOf, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
-import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
+import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnforked, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
 import { clearSession, renameSession } from './session-clear.js';
 import { canContinue, continueIntoHeld, fill, gateOf, startHeldRun } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
@@ -145,7 +145,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
     case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
-    case 'exit': return releasedOnExit(state, event.ptyId, settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId)))))); // #586: forgotten before the fill, which must never continue it; #799: a held Stop is let go
+    case 'exit': return releasedOnExit(state, event.ptyId, settleCopy(state, event.ptyId, undefined, forgetUnforked(state, event.ptyId, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId))))))); // #586: forgotten before the fill, which must never continue it; #799: a held Stop is let go; #875: a copy that never forked leaves no entry
     case 'done': return done(state, event.ptyId, event.result, event.verdict, event.evidence); // no fill: nothing freed, nothing loosened
     case 'pr': return markPr(state, event.ptyId, event.url, event.slice); // no fill: a PR frees nothing
     case 'prStates': return prStates(state, event.states); // no fill: a merged PR frees no worker (#207)
