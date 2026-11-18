@@ -80,14 +80,14 @@ test('a jira row with no project yet reads as none in its summary (#822)', () =>
 const LINKS: JiraLinkType[] = [{ name: 'Relates', inward: 'relates to', outward: 'relates to' }, { name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }];
 
 test('jiraDefaults picks Done, Task, Subtask and Blocks when the project has them, both tree levels on (#822)', () => {
-  const types: JiraIssueType[] = [{ id: '1', name: 'Story', subtask: false }, { id: '2', name: 'Task', subtask: false }, { id: '3', name: 'Sub-task', subtask: true }, { id: '4', name: 'Subtask', subtask: true }];
+  const types: JiraIssueType[] = [{ id: '1', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Task', subtask: false, hierarchyLevel: 0 }, { id: '3', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }, { id: '4', name: 'Subtask', subtask: true, hierarchyLevel: -1 }];
   assert.deepEqual(jiraDefaults(['To Do', 'Done', 'Archived'], types, LINKS), {
     tree: { epics: true, subtasks: true }, blockingLinkTypes: ['Blocks'], issueType: 'Task', subtaskType: 'Subtask', doneStatus: 'Done',
   });
 });
 
 test('jiraDefaults falls back to the last status, the first type of each kind, an empty sub-task type and no blocking link type (#822)', () => {
-  const types: JiraIssueType[] = [{ id: '1', name: 'Story', subtask: false }, { id: '2', name: 'Bug', subtask: false }, { id: '3', name: 'Sub-task', subtask: true }];
+  const types: JiraIssueType[] = [{ id: '1', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Bug', subtask: false, hierarchyLevel: 0 }, { id: '3', name: 'Sub-task', subtask: true, hierarchyLevel: -1 }];
   assert.deepEqual(jiraDefaults(['Open', 'Closed'], types, LINKS.slice(0, 1)), {
     tree: { epics: true, subtasks: true }, blockingLinkTypes: [], issueType: 'Story', subtaskType: 'Sub-task', doneStatus: 'Closed',
   });

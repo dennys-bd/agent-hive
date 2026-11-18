@@ -126,7 +126,7 @@ const JIRA_ANSWERS: Record<string, unknown> = {
   '/settings/jira/sites': [{ site: SITE, state: 'connected', name: 'Ana Lima' }],
   [`/settings/jira/projects?site=${SITE}`]: [{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }],
   [`/settings/source-columns?type=jira&site=${SITE}&project=ABC`]: ['To Do', 'In Progress', 'Done'],
-  [`/settings/jira/issue-types?site=${SITE}&project=ABC`]: [{ id: '1', name: 'Story', subtask: false }, { id: '2', name: 'Task', subtask: false }, { id: '3', name: 'Subtask', subtask: true }],
+  [`/settings/jira/issue-types?site=${SITE}&project=ABC`]: [{ id: '1', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Task', subtask: false, hierarchyLevel: 0 }, { id: '3', name: 'Subtask', subtask: true, hierarchyLevel: -1 }],
   [`/settings/jira/link-types?site=${SITE}`]: [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }],
 };
 const jiraFetch = (answers: Record<string, unknown> = JIRA_ANSWERS) =>

@@ -20,7 +20,7 @@ test('a project read in flight when the site changes lands nothing (#822)', asyn
   act(() => { read = result.current.loadProject(row); });
   act(() => { void result.current.loadSite(row); });
   await act(async () => {
-    pending[0].respond(json([{ id: '1', name: 'Task', subtask: false }]));
+    pending[0].respond(json([{ id: '1', name: 'Task', subtask: false, hierarchyLevel: 0 }]));
     pending[1].respond(json([{ name: 'Blocks', inward: 'a', outward: 'b' }]));
     await read;
   });

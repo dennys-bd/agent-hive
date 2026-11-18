@@ -200,7 +200,7 @@ const JIRA_ROW: SourceDraft = {
 };
 const JIRA_OPTIONS: JiraRowOptions = {
   projects: [{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }],
-  issueTypes: [{ id: '1', name: 'Task', subtask: false }, { id: '2', name: 'Story', subtask: false }, { id: '3', name: 'Subtask', subtask: true }],
+  issueTypes: [{ id: '1', name: 'Task', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Story', subtask: false, hierarchyLevel: 0 }, { id: '3', name: 'Subtask', subtask: true, hierarchyLevel: -1 }],
   linkTypes: [{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }, { name: 'Relates', inward: 'relates to', outward: 'relates to' }],
   errors: {},
 };

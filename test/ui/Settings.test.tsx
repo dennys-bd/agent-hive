@@ -808,7 +808,7 @@ const jiraFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<
   const url = String(input);
   if (url === '/settings/jira/sites') return jsonResponse([{ site: 'acme.atlassian.net', state: 'connected', name: 'Ana Lima' }]);
   if (url.startsWith('/settings/jira/projects')) return jsonResponse([{ key: 'ABC', name: 'Alpha' }, { key: 'XYZ', name: 'Zed' }]);
-  if (url.startsWith('/settings/jira/issue-types')) return jsonResponse([{ id: '1', name: 'Task', subtask: false }, { id: '2', name: 'Subtask', subtask: true }]);
+  if (url.startsWith('/settings/jira/issue-types')) return jsonResponse([{ id: '1', name: 'Task', subtask: false, hierarchyLevel: 0 }, { id: '2', name: 'Subtask', subtask: true, hierarchyLevel: -1 }]);
   if (url.startsWith('/settings/jira/link-types')) return jsonResponse([{ name: 'Blocks', inward: 'is blocked by', outward: 'blocks' }]);
   if (url.startsWith('/settings/source-columns?type=jira')) return jsonResponse(['To Do', 'Done']);
   return defaultFetch(input, init);
