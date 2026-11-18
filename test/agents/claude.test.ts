@@ -190,6 +190,11 @@ test("headlessAnswer reads Claude's structured_output, else its result; an error
   assert.equal(answer('not json'), undefined);
 });
 
+test('a headless run\'s prompt goes to Claude as it is, the schema rides --json-schema; nothing is added to its env (#877)', () => {
+  assert.equal(runners.claude.headlessPrompt('the prompt', HEADLESS.schema), 'the prompt');
+  assert.deepEqual(runners.claude.headlessEnv(HEADLESS), {});
+});
+
 test('a headless run with an MCP config names it right after --strict-mcp-config and allows only the given tools; no built-in tool (#474)', () => {
   const tools = ['mcp__playwright__browser_click', 'mcp__playwright__browser_navigate'];
   const args = runners.claude.headless({ ...HEADLESS, cwd: '/r', mcpConfig: '/r/mcp.json', allowedTools: tools });

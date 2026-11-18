@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
 import { copilotRunner, instructionsDir } from '../../src/agents/copilot.js';
 import { copilotHome } from '../../src/agents/copilot-home.js';
+import { headlessEnv, headlessPrompt } from '../../src/agents/copilot-headless.js';
 import { copilotHooksPlugin } from '../../src/agents/copilot-hooks.js';
 import type { AgentRun, McpServer, RunMcpServer } from '../../src/agents/runner.js';
 import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
@@ -135,4 +136,9 @@ test('copilotHome is $COPILOT_HOME when set and not empty, else ~/.copilot (#873
   assert.equal(copilotHome({ COPILOT_HOME: join('/c', 'home') }), join('/c', 'home'));
   assert.equal(copilotHome({}), join(homedir(), '.copilot'));
   assert.equal(copilotHome({ COPILOT_HOME: '' }), join(homedir(), '.copilot'));
+});
+
+test('the headless members are copilot-headless.ts\'s (#877)', () => {
+  assert.equal(copilotRunner.headlessPrompt, headlessPrompt);
+  assert.equal(copilotRunner.headlessEnv, headlessEnv);
 });

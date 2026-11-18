@@ -8,7 +8,7 @@ import { posixShell } from '../posix-shell.js';
 import { runTmpDir } from '../run-tmp.js';
 import { SECRET_HEADER } from '../secret.js';
 import { installShim } from '../shim.js';
-import { HEADLESS_MCP, headless, headlessAnswer } from './copilot-headless.js';
+import { HEADLESS_MCP, headless, headlessAnswer, headlessEnv, headlessPrompt } from './copilot-headless.js';
 import { copilotHooksPlugin, hookPayload, writeCopilotHooksPlugin } from './copilot-hooks.js';
 import { readCopilotPlanLimits } from './copilot-limits.js';
 import { countMessages, ownsTranscript, readTurn, sessionFiles, transcriptDir } from './copilot-transcript.js';
@@ -84,6 +84,8 @@ export const copilotRunner: AgentRunner = {
   headlessMcp: HEADLESS_MCP,
   headless,
   headlessAnswer,
+  headlessPrompt,
+  headlessEnv,
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --additional-mcp-config path holds the pty id, as Claude's --mcp-config does
   runEnv: (_server, run) => copilotEnv(run), // the secret is in the 0600 MCP file, never in the env
   runFiles,
