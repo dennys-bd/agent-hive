@@ -19,7 +19,7 @@ const BASE = ['-s', '--no-custom-instructions', '--disable-builtin-mcps', '--no-
 
 test('a plain run: no instructions, no built-in MCP server, no question, one read tool; --model last when given; outsideRepo changes nothing (#877)', () => {
   assert.deepEqual(headless(HEADLESS), [...BASE, '--available-tools', 'view']);
-  assert.deepEqual(headless({ ...HEADLESS, model: 'claude-sonnet-4.5' }), [...BASE, '--available-tools', 'view', '--model', 'claude-sonnet-4.5']);
+  assert.deepEqual(headless({ ...HEADLESS, model: 'claude-sonnet-4.5' }), [...BASE, '--available-tools', 'view', '--model=claude-sonnet-4.5']);
   assert.deepEqual(headless({ ...HEADLESS, cwd: '/bundle', outsideRepo: true }), headless(HEADLESS));
 });
 
@@ -31,7 +31,12 @@ test('a tester run offers only its MCP tools as <server>-<tool>, loads its file,
   const run: HeadlessRun = { ...HEADLESS, cwd: '/r', mcpConfig: '/r/mcp.json', allowedTools: ['mcp__playwright__browser_click', 'Read', 'mcp__playwright__browser_navigate'], model: 'auto' };
   assert.deepEqual(headless(run), [
     ...BASE, '--available-tools', 'playwright-browser_click', 'playwright-browser_navigate',
-    '--additional-mcp-config', '@/r/mcp.json', '--allow-tool=playwright(browser_click)', '--allow-tool=playwright(browser_navigate)', '--model', 'auto',
+    '--additional-mcp-config', '@/r/mcp.json', '--allow-tool=playwright(browser_click)', '--allow-tool=playwright(browser_navigate)', '--model=auto',
+  ]);
+  // a server with one underscore, a tool with "__"; a name whose parts would reshape the rule is dropped
+  const odd: HeadlessRun = { ...HEADLESS, mcpConfig: '/r/mcp.json', allowedTools: ['mcp__my_server__a', 'mcp__pw__browser__click', 'mcp__srv__t)(shell', 'mcp__s v__t'] };
+  assert.deepEqual(headless(odd), [
+    ...BASE, '--available-tools', 'my_server-a', 'pw-browser__click', '--additional-mcp-config', '@/r/mcp.json', '--allow-tool=my_server(a)', '--allow-tool=pw(browser__click)',
   ]);
   // never a bare --available-tools, which offers every tool (probe F): with no MCP tool left, the run's built-in read tool
   assert.deepEqual(headless({ ...HEADLESS, mcpConfig: '/r/mcp.json', allowedTools: ['Read'] }), [...BASE, '--available-tools', 'view', '--additional-mcp-config', '@/r/mcp.json']);
@@ -43,6 +48,9 @@ test('headlessAnswer: stdout trimmed; one surrounding fence, ``` or ```json, str
   assert.equal(headlessAnswer(`${json}\n`), json);
   assert.equal(headlessAnswer(`\`\`\`json\n${json}\n\`\`\`\n`), json);
   assert.equal(headlessAnswer(`\`\`\`\n${json}\n\`\`\``), json);
+  assert.equal(headlessAnswer(`\`\`\`JSON\r\n${json}\r\n\`\`\`\r\n`), json);
+  // only a fence around the whole answer: prose around it stays, and the caller's parser fails the run (spec: one surrounding fence)
+  assert.equal(headlessAnswer(`Here it is:\n\`\`\`json\n${json}\n\`\`\``), `Here it is:\n\`\`\`json\n${json}\n\`\`\``);
   assert.equal(headlessAnswer(''), undefined); // probe E: exit 1 and an empty stdout (runCapped fails the run on the exit first)
   assert.equal(headlessAnswer(' \n\n'), undefined);
   assert.equal(headlessAnswer('```json\n\n```'), undefined);

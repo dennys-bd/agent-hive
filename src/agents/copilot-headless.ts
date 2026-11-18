@@ -14,8 +14,9 @@ const TOOLS_FLAG = '--available-tools'; // never bare: with no value it offers e
 const PLAIN_TOOLS: readonly string[] = ['view']; // one read tool, in the run's empty temp folder: no shell, no write
 const READ_TOOLS: readonly string[] = ['view', 'rg', 'glob']; // the issue's grep is rg in 1.0.112 (probe F); spike probe 10 saw no write with these
 const MODEL_FLAG = '--model';
-const MCP_TOOL = /^mcp__(.+?)__(.+)$/;
-const FENCE = /^```(?:json)?\r?\n([\s\S]*?)\r?\n?```$/;
+// Each part from a closed set, so a name can never reshape the Server(tool) rule it lands in; the server takes no "__", so it splits there
+const MCP_TOOL = /^mcp__([A-Za-z0-9.-]+(?:_[A-Za-z0-9.-]+)*)__([A-Za-z0-9_.-]+)$/;
+const FENCE = /^```(?:json)?\r?\n([\s\S]*?)\r?\n?```$/i;
 
 interface McpTool { server: string; tool: string }
 
@@ -40,7 +41,7 @@ const mcpWords = (run: HeadlessRun, tools: readonly McpTool[]): string[] => (run
 /** The argv after `copilot`; cwd is the process's own and outsideRepo needs no flag (Copilot runs in a plain folder). */
 export const headless = (run: HeadlessRun): string[] => {
   const tools = mcpTools(run);
-  return [...BASE_FLAGS, ...toolWords(run, tools), ...mcpWords(run, tools), ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])];
+  return [...BASE_FLAGS, ...toolWords(run, tools), ...mcpWords(run, tools), ...(run.model === undefined ? [] : [`${MODEL_FLAG}=${run.model}`])]; // one word: a model can never read as a flag
 };
 
 /** -s's stdout, trimmed, one surrounding fence stripped: models fence JSON despite the prompt, and the callers' parsers do not. */
