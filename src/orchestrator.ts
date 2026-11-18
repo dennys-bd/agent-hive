@@ -857,13 +857,13 @@ const namedFork = (worker: Worker, p: HookPayload): p is HookPayload & { session
   worker.forkOf !== undefined && (p.source === 'fork' || p.source === 'resume') && isUuid(p.session_id)
   && p.session_id !== worker.sessionId && p.session_id !== worker.forkOf;
 
-// The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's own new
+// The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655; Copilot's says source=new, #875): it is the run's own new
 // conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927), and so does a free run with none (#932).
 // Only a uuid can replace or record one: it reaches --resume / codex resume, and SESSION_ID admits a leading '-'.
 function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayload): State {
   const id = p.session_id;
   if (namedFork(worker, p)) return renameSession(state, worker, p.session_id);
-  if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
+  if ((p.source === 'clear' || p.source === 'new') && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id); // #875: Copilot's /clear says new
   if (worker.sessionId === undefined && isUuid(id)) {
     const named = patch(state, ptyId, { sessionId: id }).state;
     return worker.freeSession === true ? firstFreeSession(named, worker, id, p.cwd) : firstSession(named, worker, id);

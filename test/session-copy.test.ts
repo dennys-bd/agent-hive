@@ -251,3 +251,16 @@ test('a SessionStart with the source\'s id or the placeholder changes nothing; a
     assert.deepEqual([again.workers.at(-1)!.sessionId, entriesOf(again, 'local:2')], [FORK, entriesOf(forked, 'local:2')], source);
   }
 });
+
+// #875: Copilot's /clear starts the new session at the next prompt with source=new (spike §3); a run opened with --session-id gets "new" under
+// its own id first
+const CLEARED = 'c1ea4ed0-0000-4000-8000-000000000001';
+
+test('a SessionStart with source new and another uuid on a live copilot session moves its entry to that id; with the worker\'s own id it changes nothing (#875)', () => {
+  const opened = reduce(hive([]), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: 'copilot' }).state;
+  const own = opened.workers.at(-1)!.sessionId!;
+  const same = sessionStart(opened, own, 'new');
+  assert.deepEqual([same.workers.at(-1)!.sessionId, localSessionsOf(same, 'hive').map((s) => s.id)], [own, [own]]);
+  const cleared = sessionStart(same, CLEARED, 'new');
+  assert.deepEqual([cleared.workers.at(-1)!.sessionId, localSessionsOf(cleared, 'hive').map((s) => [s.id, s.agent])], [CLEARED, [[CLEARED, 'copilot']]]);
+});
