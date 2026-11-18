@@ -9,6 +9,7 @@ import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-proj
 import type { FieldValue, SourceConfig, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State, Task } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 import { flowed } from './fixtures/main-flow.js';
+import { adapter, fakeJira, issue, seeded, STATUSES } from './sources/jira-fakes.js';
 
 // Two stages let work's Ready and In review in; Todo is cited by none
 const STAGES: Stage[] = [{ name: 'dev', from: { work: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { work: ['In review'] }, prompt: 'y' }];
@@ -292,4 +293,21 @@ test('GET /sources/:name/create-options answers a jira source\'s statuses, label
   assert.deepEqual([res.status, await res.json()], [200, menus]);
   await fetch(optionsUrl(base, 'broken'));
   assert.deepEqual(lines, ['WARN create-options of broken: Jira refused the read: jira api: HTTP 500']);
+});
+
+test('GET /sources/:name/project answers a Jira source\'s view from its read model with the stage each status enters, and calls Jira only with fresh=1 (#827)', async (t) => {
+  const fake = fakeJira({
+    'POST /search/jql': [{ issues: [], isLast: true }, { issues: [{ id: '10001' }], isLast: true }],
+    'GET /field': [[], []], 'GET /project/ABC/statuses': [STATUSES, STATUSES],
+  });
+  const tickets = adapter({ call: fake.call, db: await seeded([issue(1, 'To Do')]) });
+  const stages = flowed([{ name: 'dev', from: { tickets: ['In Progress'] }, prompt: 'x' }]);
+  const base = routes(t, { tickets }, stages, [], false, { refreshOptions: async () => {} }, { tickets: 'jira' });
+  const res = await fetch(`${base}/sources/tickets/project`);
+  const view = (await res.json()) as ProjectView;
+  assert.deepEqual([res.status, view.statuses], [200, [{ name: 'To Do' }, { name: 'In Progress', stage: 'dev' }, { name: 'Done' }]]);
+  assert.deepEqual(view.items.map((i) => i.id), ['ABC-1']);
+  assert.deepEqual(fake.sent, []);
+  assert.equal((await fetch(`${base}/sources/tickets/project?fresh=1`)).status, 200);
+  assert.equal(fake.sent.filter((k) => k === 'POST /search/jql').length, 2);
 });

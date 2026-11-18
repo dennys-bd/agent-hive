@@ -8,7 +8,7 @@ import { forgetProjects } from '@/hooks/use-project';
 import { setLanguage } from '@/i18n';
 import { readView, resetViewState } from '@/lib/view-state';
 import { flatten } from '../../src/flows';
-import type { Flow, ProjectView, RepoSummary, SourceConfig, Stage, State, Task } from '../../src/types';
+import type { Flow, ProjectItem, ProjectView, RepoSummary, SourceConfig, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 
@@ -243,4 +243,17 @@ test('mostrar só esta in a source\'s ⋯ leaves only that source on: the header
   expect(bar().getByText('roadmap')).toBeInTheDocument(); // the legend: the one source on (#574 decision 10)
   expect(stageNode('dev')).not.toBeNull();
   expect(readView('flowView')).toMatchObject({ sourcesOff: ['hive'] });
+});
+
+test('a native view row with no repository goes to its task when it is one, else opens its url: a Jira row its browse page (#827)', () => {
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  const onSelect = vi.fn();
+  const { result } = renderHook(() => useTasksCenter(STATE, NAV, [SITE], onSelect));
+  const row: ProjectItem = { itemId: 'roadmap:10012', id: 'PROJ-12', title: 'Login', body: '', url: 'https://acme.example/browse/PROJ-12', labels: [], assignees: [], fields: {}, pullRequests: [] };
+  act(() => result.current.openProjectItem(row));
+  expect(open).toHaveBeenCalledWith('https://acme.example/browse/PROJ-12', '_blank', 'noreferrer');
+  act(() => result.current.openProjectItem(row, STATE.tasks[1]));
+  expect(onSelect).toHaveBeenLastCalledWith({ taskId: 'roadmap:PVTI_2' });
+  expect(open).toHaveBeenCalledOnce();
+  open.mockRestore();
 });

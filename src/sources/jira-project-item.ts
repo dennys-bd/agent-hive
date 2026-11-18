@@ -1,8 +1,9 @@
 import { STATUS } from '../field-values.js';
 import type { SourceItemValue, StoredSourceItem } from '../read-model/source-items.js';
-import type { ProjectItem } from '../types.js';
+import type { ProjectItem, SourceItem } from '../types.js';
 import { type JiraSourceConfig, taskOf } from './jira-listing.js';
 import { NO_CATEGORIES } from './jira-relations.js';
+import { isHidden } from './jira-tree.js';
 
 type Stored = Pick<StoredSourceItem, 'item' | 'values'>;
 
@@ -15,9 +16,14 @@ function fieldsOf(values: readonly SourceItemValue[]): Record<string, string | n
   }));
 }
 
-/** A stored Jira issue as a project row (#826), its parent named by the parent's key: the field write's `row` now, 6.2's view later. The id is the key; the itemId the adapter's own,
+/** Why the Hive does not take the issue (#827), in listItems' order: the filter's rules, then a parent `epics: hide` takes off. The task
+ * must carry its tree (withTree), or no parent has children. */
+export const outOf = (task: SourceItem, isFiltered: boolean, source: Pick<JiraSourceConfig, 'epics'>): ProjectItem['out'] =>
+  isFiltered ? 'filter' : isHidden(task, source) ? 'epic' : undefined;
+
+/** A stored Jira issue as a project row (#826), its parent named by the parent's key: the field write's `row` now, and 6.2's view (#827). The id is the key; the itemId the adapter's own,
  * namespaced by source.ts as every row is. No pull requests and no blockers: the row shows none, so no blocker's category is read (#828). */
-export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, 'site' | 'taskProps' | 'blockingLinkTypes'>, isOut: boolean): ProjectItem {
+export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, 'site' | 'taskProps' | 'blockingLinkTypes'>, out?: ProjectItem['out']): ProjectItem {
   const { item, column } = taskOf(stored, source, NO_CATEGORIES);
   const { labels, assignees } = item.facets ?? { labels: [], assignees: [] }; // taskOf always sets them
   return {
@@ -27,7 +33,7 @@ export function jiraProjectItem(stored: Stored, source: Pick<JiraSourceConfig, '
     labels, assignees,
     ...(item.workspaceHint === undefined ? {} : { workspaceHint: item.workspaceHint }),
     fields: fieldsOf(stored.values), pullRequests: [],
-    ...(isOut ? { out: 'filter' as const } : {}),
+    ...(out === undefined ? {} : { out }),
     ...(item.createdAt === undefined ? {} : { createdAt: item.createdAt }), updatedAt: stored.item.updatedAt,
   };
 }

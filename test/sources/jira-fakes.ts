@@ -27,11 +27,11 @@ export const issue = (n: number, status: string, fields: Record<string, unknown>
 export const read = (i: JiraIssue) => ({ ...i, names: NAMES, schema: SCHEMA }); // what readIssue reads from
 
 // The read model a 5.6 round would leave: the issues synced under ROWS, the listing in key order
-export async function seeded(issues: JiraIssue[]): Promise<ReadModel> {
+export async function seeded(issues: JiraIssue[], fields: unknown[] = []): Promise<ReadModel> {
   const { db } = await openReadModel(':memory:');
   const call: JiraCall = async (path) => {
     if (path === '/search/jql') return { issues, names: NAMES, schema: SCHEMA, isLast: true };
-    if (path === '/field') return [];
+    if (path === '/field') return fields;
     if (path === '/project/ABC/statuses') return STATUSES;
     throw new Error(`unexpected ${path}`);
   };
