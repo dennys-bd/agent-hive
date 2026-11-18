@@ -162,8 +162,9 @@ function resumeTarget(live: { state: State; runtime: Runtime }, terminalId: stri
   return ref;
 }
 
-// #876: the run's env as a spawn applies it (runEnv), for the shim to export; never Codex's MCP secret, which no response body carries: the
-// shim's codex case reads it from the secret file
+// #876: the run's env as a spawn applies it (runEnv), for the shim to export. Never the Hive's own MCP secret, which the shim's codex case
+// reads from the secret file; an external server's header token (Codex's HIVE_MCP_TOKEN_<i>) does ride this loopback, secret-gated reply, as
+// the spec decides, since the run needs it and the reply is never logged
 const replyEnv = (deps: TerminalRouteDeps, agent: AgentId, run: AgentRun): [string, string][] =>
   Object.entries(runners[agent].runEnv({ port: run.port, ptyId: run.ptyId, secret: deps.secret, withHive: run.withHive, external: run.external }, run))
     .filter(([name]) => name !== MCP_SECRET_ENV);
@@ -192,8 +193,11 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
-      await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
-      await deps.dropRunTmp(runId); // #876: whatever the write below got to
+      try {
+        await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
+      } finally {
+        await deps.dropRunTmp(runId); // #876: whatever the write below got to, even when the exit could not be dispatched
+      }
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
