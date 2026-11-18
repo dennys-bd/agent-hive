@@ -150,7 +150,7 @@ function formatted(located: Located, body: SaveBody, consoleStore: Store, editor
   const { workspace } = located;
   const isOn = editor.formatOnSave.enabled && workspace !== undefined && inScope(editor.formatOnSave.workspaces, workspace.name);
   if (!body.format || !isOn || workspace === undefined || isDrawio(located.file)) return Promise.resolve(undefined);
-  return formatForSave(editor, body.text, { cwd: located.folder, file: located.file, workspace, label: `${located.label} · ${body.path}`, consoleStore });
+  return formatForSave(editor, body.text, { machine: located.machine, cwd: located.folder, file: located.file, workspace, label: `${located.label} · ${body.path}`, consoleStore });
 }
 
 // The answer (#749): the formatted text only when it differs from what was sent; a failure's reason and its console run
