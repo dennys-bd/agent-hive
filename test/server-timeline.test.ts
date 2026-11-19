@@ -100,5 +100,5 @@ test('the route answers 503 with no store or the off store, and 500 with one hiv
   assert.deepEqual(lines, []);
   assert.deepEqual(await getTimeline(t, { usage: broken, log }, 'board:I1'), [500, { error: 'the timeline read failed' }]);
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /^ERROR timeline board:I1: the usage store read failed: database disk image is malformed$/);
+  assert.match(lines[0], /^ERROR timeline "board:I1": the usage store read failed: database disk image is malformed$/);
 });

@@ -40,7 +40,7 @@ const TIMELINE_FACTS: readonly FactName[] = [
 ];
 const TIMELINE_READ: readonly FactName[] = [...TIMELINE_FACTS, 'task.discovered'];
 // Served by records_by_task (task_id, ts): the filter and the order in one index
-const SELECT_TIMELINE = `SELECT data FROM records WHERE task_id = ? AND event IN (${TIMELINE_READ.map(() => '?').join(', ')}) ORDER BY ts`;
+const SELECT_TIMELINE = `SELECT data FROM records WHERE task_id = ? AND event IN (${TIMELINE_READ.map(() => '?').join(', ')}) ORDER BY ts, rowid`; // rowid: records of the same ts keep their write order
 
 export interface UsageStore {
   write(record: FactRecord): void;

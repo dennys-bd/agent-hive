@@ -70,7 +70,8 @@ export function registerTimelineRoute(app: Express, { usage, log }: TimelineRout
     try {
       records = usage?.timeline(itemId);
     } catch (err) {
-      log.error(`timeline ${itemId}: the usage store read failed: ${err instanceof Error ? err.message : String(err)}`);
+      // JSON.stringify: the id comes from the URL, and log.error echoes to stderr before the file write strips control characters
+      log.error(`timeline ${JSON.stringify(itemId)}: the usage store read failed: ${err instanceof Error ? err.message : String(err)}`);
       res.status(HTTP_SERVER_ERROR).json({ error: READ_FAILED_MESSAGE });
       return;
     }
