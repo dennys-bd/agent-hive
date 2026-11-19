@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FIXED_SHORTCUTS, fixedShortcut, SHORTCUT_MAP, SHORTCUT_SCOPES, SHORTCUTS, type ShortcutScope, shortcutDef } from '../src/shortcut-registry.js';
-import { bindingFromEvent, canonicalBinding, collisions, defaultBinding, displayBinding, displayKeys, effectiveBindings, FIXED_BINDINGS, isReserved, type KeyLike, matches, normalizeBinding, parseShortcuts, takesTerminalKey } from '../src/shortcuts.js';
+import { ariaKeyShortcut, bindingFromEvent, canonicalBinding, collisions, defaultBinding, displayBinding, displayKeys, effectiveBindings, FIXED_BINDINGS, isReserved, type KeyLike, matches, normalizeBinding, parseShortcuts, takesTerminalKey } from '../src/shortcuts.js';
 import type { OperationId } from '../src/types.js';
 
 // A keydown as the page sees it: no modifier and no code unless given.
@@ -327,4 +327,11 @@ test('askAgent is CmdOrCtrl+I on both platforms in the plugins scope, out of the
 test('isReserved: the Edit and app menus\' keys and the fixed Cmd+, and Shift+Enter, in their canonical form; no shortcut\'s default (#906)', () => {
   assert.deepEqual(['CmdOrCtrl+C', 'CmdOrCtrl+V', 'CmdOrCtrl+Z', 'CmdOrCtrl+Q', 'CmdOrCtrl+,', 'Shift+Enter'].map(isReserved), [true, true, true, true, true, true]);
   assert.deepEqual(['CmdOrCtrl+B', 'CmdOrCtrl+Shift+C', 'Ctrl+C'].map(isReserved), [false, false, false], 'Ctrl+C on macOS is the terminal\'s SIGINT, not a menu key');
+});
+
+test('ariaKeyShortcut writes a binding as aria-keyshortcuts names keys: Meta on macOS and Control elsewhere for CmdOrCtrl, Control for Ctrl, the arrows by key name (#921)', () => {
+  assert.deepEqual(
+    [ariaKeyShortcut('CmdOrCtrl+[', MAC), ariaKeyShortcut('CmdOrCtrl+[', OTHER), ariaKeyShortcut('Alt+Left', OTHER), ariaKeyShortcut('Ctrl+1', MAC), ariaKeyShortcut('Alt+Shift+B', OTHER)],
+    ['Meta+[', 'Control+[', 'Alt+ArrowLeft', 'Control+1', 'Alt+Shift+B'],
+  );
 });
