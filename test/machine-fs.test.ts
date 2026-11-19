@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CopyOptions, RmOptions } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MachineError } from '../src/machine.js';
+import { MachineError, type MachineFs } from '../src/machine.js';
 import { fileFs, isLocal, MACHINE_REMOTE, moveFs, pathFs, REMOTE_REFUSAL, treeFs, withMachinePath } from '../src/machine-fs.js';
 import { fakeMachine, statsOf } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
@@ -11,7 +11,7 @@ import { tempDir } from './temp-dir.js';
 test('pathFs asks the machine lstat, never stat, and its realpath (#160)', async () => {
   const asked: string[] = [];
   const machine = fakeMachine({ fs: {
-    lstat: async (path) => { asked.push(path); return statsOf('folder'); },
+    lstat: (async (path: string) => { asked.push(path); return statsOf('folder'); }) as MachineFs['lstat'], // pathFs never asks for bigint
     stat: async () => assert.fail('stat follows a symlink to its target'),
     realpath: async (path) => `/real${path}`,
   } });
@@ -33,6 +33,14 @@ test('treeFs: writeNew never overwrites, replace is the machine\'s writeAtomic, 
   assert.deepEqual([await readFile(join(dir, 'a', 'b', 'x.ts'), 'utf8'), replaced], ['three', [join(dir, 'a', 'b', 'x.ts')]]);
   await writeFile(join(dir, 'y.ts'), '');
   assert.deepEqual([await fs.sameFile(join(dir, 'y.ts'), join(dir, 'y.ts')), await fs.sameFile(join(dir, 'y.ts'), join(dir, 'a', 'b', 'x.ts')), await fs.sameFile(join(dir, 'y.ts'), join(dir, 'gone'))], [true, false, false]);
+});
+
+test('treeFs sameFile tells apart two files whose 64-bit ids round to one number, as NTFS and ReFS ids do (#908)', async () => {
+  const id = (path: string): bigint => 2n ** 60n + (path === '/a' ? 0n : 1n);
+  const lstat = (async (path: string, options?: { bigint?: boolean }) => options?.bigint === true
+    ? { dev: 1n, ino: id(path) }
+    : { dev: 1, ino: Number(id(path)) }) as unknown as MachineFs['lstat'];
+  assert.equal(await treeFs(fakeMachine({ fs: { lstat } })).sameFile('/a', '/b'), false);
 });
 
 test('moveFs copies recursively, keeping links and never over an existing path, and removes recursively (#160)', async () => {

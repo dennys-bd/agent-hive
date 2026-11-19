@@ -3,7 +3,7 @@
 // one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, which is why this file is on
 // biome.jsonc's host-only list.
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { CopyOptions, Dirent, MakeDirectoryOptions, Mode, RmOptions, Stats } from 'node:fs';
+import type { BigIntStats, CopyOptions, Dirent, MakeDirectoryOptions, Mode, RmOptions, Stats } from 'node:fs';
 import type { AgentRun } from './agents/runner.js';
 import type { PtyHost, PtyKeep } from './pty-host.js';
 import type { TerminalSize } from './terminal-wire.js';
@@ -48,6 +48,8 @@ export class MachineError extends Error {
 export interface MachineFs {
   stat(path: string): Promise<Stats>;
   lstat(path: string): Promise<Stats>;
+  // bigint: an NTFS or ReFS file id passes 2^53, and as a number two files can round to one inode (sameFile, #908)
+  lstat(path: string, options: { bigint: true }): Promise<BigIntStats>;
   realpath(path: string): Promise<string>;
   access(path: string, mode?: number): Promise<void>;
   readdir(path: string): Promise<string[]>;
