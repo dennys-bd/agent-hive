@@ -261,23 +261,23 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   expect(within(screen.getByRole('region', { name: 'tasks' })).getByRole('button', { name: 'GitHub' })).toHaveAttribute('title', 'open on GitHub');
 });
 
-test('in the tasks mode the display slot sits right after the sources legend; GitHub never shows there, even when passed (#571)', () => {
+test('in the tasks mode the display slot sits at the right, right before the search; GitHub never shows there, even when passed (#571, #911)', () => {
   render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} display={<button type="button">exibir</button>} github="https://github.com/acme" />);
   expect(within(header()).getByText('tarefas', { selector: 'span' })).toHaveClass('font-semibold');
-  expect(within(header()).getByText('todas as sources').nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
-  expect(within(header()).getByRole('textbox', { name: 'buscar tarefas' })).toBeInTheDocument();
+  expect(within(header()).getByText('todas as sources').nextElementSibling).toHaveClass('flex-1');
+  expect(within(header()).getByRole('button', { name: 'exibir' }).nextElementSibling).toBe(within(header()).getByRole('textbox', { name: 'buscar tarefas' }).closest('label'));
   expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
 });
 
 const legendOf = (): Element | null => within(header()).getByText('tarefas', { selector: 'span' }).nextElementSibling;
 
-test('the tasks legend reads what it is given, todas as sources without one, right before the display slot; no ↺ or ⑂ button is left (#574)', () => {
+test('the tasks legend reads what it is given, todas as sources without one, and ends the title; no ↺ or ⑂ button is left (#574, #911)', () => {
   const slot = <button type="button">exibir</button>;
   const { rerender } = render(<FlowHeader state={state(tasks)} display={slot} />);
   expect(legendOf()).toHaveTextContent('todas as sources');
   rerender(<FlowHeader state={state(tasks)} legend="hive · roadmap" display={slot} />);
   expect(legendOf()).toHaveTextContent('hive · roadmap');
-  expect(legendOf()?.nextElementSibling).toBe(within(header()).getByRole('button', { name: 'exibir' }));
+  expect(legendOf()?.nextElementSibling).toHaveClass('flex-1');
   expect(within(header()).queryByRole('button', { name: /^(↺ voltas|⑂ árvore)$/ })).not.toBeInTheDocument();
 });
 
