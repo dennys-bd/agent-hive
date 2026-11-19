@@ -41,7 +41,7 @@ interface McpServerRowProps { server: Row; workspaces: readonly string[]; onEdit
 export function McpServerRow({ server, workspaces, onEdit, onChange }: McpServerRowProps) {
   const look = STATE_LOOK[server.state];
   return (
-    <li className={`${COLUMNS} border-b px-3.5 py-2 text-[13px] last:border-b-0`}>
+    <li className={`${COLUMNS} border-b px-3.5 py-2 text-sm last:border-b-0`}>
       <button
         type="button" aria-label={t('plugins.mcp.edit', { name: server.name })} onClick={onEdit}
         className="col-span-2 grid grid-cols-subgrid items-center rounded-md py-0.5 text-left hover:bg-accent/60"

@@ -15,7 +15,7 @@ function Row({ item, items, onOpen }: { item: CatalogueItem; items: readonly Cat
   const look = STATE_LOOK[item.state];
   return (
     <li className="border-b last:border-b-0">
-      <button type="button" onClick={onOpen} className={`${COLUMNS} w-full px-3.5 py-2.5 text-left text-[13px] hover:bg-accent/60`}>
+      <button type="button" onClick={onOpen} className={`${COLUMNS} w-full px-3.5 py-2.5 text-left text-sm hover:bg-accent/60`}>
         <span className="truncate font-medium font-mono">{item.name}</span>
         <span className="truncate text-muted-foreground">{item.description}</span>
         <span className={`flex items-center gap-1.5 text-xs ${look.text}`}><StateDot state={item.state} isDecorative />{t(look.label)}</span>

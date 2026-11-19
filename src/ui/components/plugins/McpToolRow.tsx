@@ -43,7 +43,7 @@ function noteOf(tool: McpTool): string {
 export function McpToolRow({ tool, onSwitch }: { tool: McpTool; onSwitch(on: boolean): void }) {
   const reason = copyOf(LOCK_REASON, tool.name);
   return (
-    <li className={`${COLUMNS} border-b px-3.5 py-2.5 text-[13px] last:border-b-0`}>
+    <li className={`${COLUMNS} border-b px-3.5 py-2.5 text-sm last:border-b-0`}>
       <span className="truncate font-medium font-mono">{tool.name}</span>
       <span className="truncate text-muted-foreground">{copyOf(DESCRIPTION, tool.name)}</span>
       <span className="text-muted-foreground text-xs">{noteOf(tool)}</span>

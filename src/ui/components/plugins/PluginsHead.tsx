@@ -26,7 +26,7 @@ function Head({ title, isMono = false, version, chip, meta, children }: HeadProp
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-xs">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-2 font-semibold text-[13px]"><span className={isMono ? 'truncate font-mono' : 'truncate'}>{title}</span>{version}{chip}</span>
+        <span className="flex min-w-0 items-center gap-2 font-semibold text-sm"><span className={isMono ? 'truncate font-mono' : 'truncate'}>{title}</span>{version}{chip}</span>
         {meta && <span className="truncate text-muted-foreground">{meta}</span>}
       </div>
       {children}

@@ -33,4 +33,4 @@ export function OriginMark({ origin }: { origin: string }) {
 }
 
 /** A state chip's shape (#313): the head's chip and the version menu's rows draw it alike. */
-export const CHIP = 'rounded-full border px-1.5 font-normal text-[11px]';
+export const CHIP = 'rounded-full border px-1.5 font-normal text-xs';
