@@ -169,6 +169,10 @@ function TweakRow({ schema, values, onChange }: { schema: TweakSchema; values: V
   );
 }
 
+// No row for a valid block with no tweak: the skeleton ships one, and a row of only "More…" would say nothing (#241)
+export const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status: 'none' }> =>
+  block.status === 'invalid' || (block.status === 'ok' && block.schema.length > 0);
+
 export interface DesignTweaksProps { block: Exclude<TweakBlock, { status: 'none' }>; values: Values; onChange: OnChange }
 
 /** The tweaks row (#241): under the bar while the file has a block, valid or not. Invalid: its words, no control and no toast (m-11). */
