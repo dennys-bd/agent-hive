@@ -3,7 +3,7 @@ import { hiveProject } from '../../hive-project';
 import { HIVE_SOURCE } from '../../tasks';
 import type { Flow, ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
 import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
-import { FlowHeader } from '@/components/FlowHeader';
+import { type BackLink, FlowHeader } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { ProjectColumnsMenu } from '@/components/ProjectColumnsMenu';
 import { ProjectGroupMenu, ProjectGroupRow } from '@/components/ProjectGroupMenu';
@@ -189,13 +189,13 @@ function groupingOf(rows: ProjectItem[], view: ProjectView | undefined, options:
   return { groups: isHive ? hiveGroups(rows, view) : groupItems(rows, option, view), collapsed, onToggle };
 }
 
-export interface ProjectTableProps { state: State; source: SourceConfig | typeof HIVE_SOURCE; onGoTo(taskId: string): void; onOpenIssue(item: ProjectItem, task?: Task): void }
+export interface ProjectTableProps { state: State; source: SourceConfig | typeof HIVE_SOURCE; onGoTo(taskId: string): void; onOpenIssue(item: ProjectItem, task?: Task): void; back?: BackLink /* #921: the way back to the last flow */ }
 
 interface TableViewProps extends ProjectTableProps { project: ProjectState; onRefresh(): Promise<unknown>; replaceRow(row: ProjectItem): void }
 
 // The table under the source header (#756, #583): the view's rows in the shape saved for the source (hive included), the bar and the grid. The
 // hive's columns are fixed (decision 3): no columns menu, and its group menu offers status alone
-function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, replaceRow }: TableViewProps) {
+function TableView({ state, source, onGoTo, onOpenIssue, back, project, onRefresh, replaceRow }: TableViewProps) {
   const name = typeof source === 'string' ? source : source.name;
   const isHive = name === HIVE_SOURCE;
   const [search, setSearch] = useState('');
@@ -224,7 +224,7 @@ function TableView({ state, source, onGoTo, onOpenIssue, project, onRefresh, rep
   const { widths, onDrag, onResize } = useColumnWidths(prefs.widths, (next) => update({ widths: next }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} mode={{ kind: 'source', source }} search={search} onSearch={setSearch} isShown={isShown} onRefresh={onRefresh} />
+      <FlowHeader state={state} mode={{ kind: 'source', source }} search={search} onSearch={setSearch} isShown={isShown} onRefresh={onRefresh} back={back} />
       <Subbar project={project} linked={linked}>
         <ProjectGroupMenu options={options} groupBy={prefs.groupBy} onChange={(groupBy) => update({ groupBy })} />
         {!isHive && <ProjectColumnsMenu columns={columns} visible={prefs.columns} onChange={(next) => update({ columns: next })} />}

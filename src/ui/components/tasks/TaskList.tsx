@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { State } from '../../../types.js';
-import { FlowHeader } from '@/components/FlowHeader';
+import { type BackLink, FlowHeader } from '@/components/FlowHeader';
 import type { SourcesNav } from '@/components/FlowSources';
 import { useIsFlowShown } from '@/components/MainDock';
 import { displayProps } from '@/components/tasks/DisplayPopover';
@@ -14,11 +14,11 @@ import { hasTree } from '@/lib/tree-groups';
 
 const COLUMNS: readonly MessageKey[] = ['tasks.list.col.task', 'tasks.list.col.stage', 'tasks.list.col.status', 'tasks.list.col.source', 'tasks.list.col.action'];
 
-export interface TaskListProps { state: State; display: DisplayControls; sources?: SourcesNav; onOpen?(taskId: string): void }
+export interface TaskListProps { state: State; display: DisplayControls; sources?: SourcesNav; onOpen?(taskId: string): void; back?: BackLink /* #921: the way back to the last flow */ }
 
 /** todas em lista (#577, handoff §6): the tasks header with exibir minus its voltas rows and buscar tarefas, then one table with a group per
  * flow and sem fluxo. The search is session-only, as the flowchart's; the collapsed groups persist in flowView (decision 4). */
-export function TaskList({ state, display, sources, onOpen }: TaskListProps) {
+export function TaskList({ state, display, sources, onOpen, back }: TaskListProps) {
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState(() => readFlowView().listCollapsed);
   const isShown = useIsFlowShown();
@@ -26,7 +26,7 @@ export function TaskList({ state, display, sources, onOpen }: TaskListProps) {
   const groups = listGroups(state, display.options, search);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} search={search} onSearch={setSearch} isShown={isShown} {...displayProps({ display, sources, tasks: state.tasks, isTree, hasLoops: false })} />
+      <FlowHeader state={state} search={search} onSearch={setSearch} isShown={isShown} back={back} {...displayProps({ display, sources, tasks: state.tasks, isTree, hasLoops: false })} />
       <div className="m-3.5 flex min-h-0 flex-1 flex-col overflow-auto rounded-[10px] border">
         <table aria-label={t('tasks.sidebar.list')} className="block w-full">
           <thead className="sticky top-0 z-10 block">

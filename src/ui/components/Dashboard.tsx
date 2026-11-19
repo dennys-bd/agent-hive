@@ -76,21 +76,22 @@ interface CenterProps { state: State; selected?: Selection; nav: TasksNav; repos
 type RepoCenter = Extract<TasksCenter, { kind: 'repo' }>;
 
 // The center under a repository (#757, #758): its PR list or one PR's page under PRs, its issues or one issue's page under issues. A page keeps
-// the header; #911: only a page's header carries the way back; #69: a merge goes back as that button does, to the PR list (decision 3)
+// the header; a page's header goes back to its list, a list's to the last flow (#921); #69: a merge goes back to the PR list only while the
+// center is still that PR's page (#921 decision 12)
 function repoCenter(state: State, nav: TasksNav, repo: RepoSummary, center: RepoCenter): ReactNode {
   const onRepository = (name: string): void => nav.show(centerOfRepo(name));
   const mode: HeaderMode = { kind: 'repo', header: { summary: repo, tab: center.tab, onTab: nav.onRepoTab, onRepository } };
   const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} mode={mode} onRefresh={reload} back={nav.back} github={github} />;
   const { issue, pr } = center;
-  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={nav.back?.onBack} />;
+  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={() => nav.onMerged(pr)} />;
   if (issue) return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onOpenPr={nav.openPrUrl} />;
-  if (center.tab === 'prs') return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} onOpen={(row) => nav.openPr({ repository: repo.repository, number: row.number })} />;
-  return <RepoIssueTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} onOpen={(read) => nav.openIssue({ repository: repo.repository, number: read.number })} />;
+  if (center.tab === 'prs') return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} back={nav.back} onOpen={(row) => nav.openPr({ repository: repo.repository, number: row.number })} />;
+  return <RepoIssueTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} back={nav.back} onOpen={(read) => nav.openIssue({ repository: repo.repository, number: read.number })} />;
 }
 
 // A source's table (#756, handoff §5), or one of its issues' pages (#757) under the source header
 function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, repositories: RepoSummary[], issue?: IssueRef): ReactNode {
-  if (!issue) return <ProjectTable state={state} source={source} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} />;
+  if (!issue) return <ProjectTable state={state} source={source} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} back={nav.back} />;
   return (
     <IssuePage
       key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={source.name}
@@ -116,10 +117,10 @@ function TasksSoon({ state, display, sources }: { state: State; display: Display
 function Center({ state, selected, nav, repositories, onSelect, stageCaps, sources, display }: CenterProps) {
   const { center, repo, source } = nav;
   if (center.kind === 'repo' && repo) return repoCenter(state, nav, repo, center);
-  if (center.kind === 'source' && center.source === HIVE_SOURCE) return <ProjectTable state={state} source={HIVE_SOURCE} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} />; // #583
+  if (center.kind === 'source' && center.source === HIVE_SOURCE) return <ProjectTable state={state} source={HIVE_SOURCE} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} back={nav.back} />; // #583
   if (center.kind === 'source' && source) return sourceCenter(state, nav, source, repositories, center.issue);
   if (center.kind === 'tasks' && center.view === 'flow' && nav.flow) return <Flow state={state} flow={nav.flow} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} stageCaps={stageCaps} display={display} sources={sources} />;
-  if (center.kind === 'tasks' && center.view === 'list') return <TaskList state={state} display={display} sources={sources} onOpen={(taskId) => onSelect({ taskId })} />; // #577
+  if (center.kind === 'tasks' && center.view === 'list') return <TaskList state={state} display={display} sources={sources} back={nav.back} onOpen={(taskId) => onSelect({ taskId })} />; // #577
   if (center.kind === 'tasks' && center.view === 'outside') return <OutsideFlow state={state} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} display={display} sources={sources} />; // #578
   return <TasksSoon state={state} display={display} sources={sources} />;
 }

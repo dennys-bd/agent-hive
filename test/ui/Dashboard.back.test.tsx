@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -180,27 +180,109 @@ test("an issue opened from the Atividades view goes back to acme/site's issue li
   expect(bar().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
 });
 
-test('the flowchart, a repository\'s lists and the source table show no back button (#380)', async () => {
+const flowBack = (): HTMLElement | null => bar().queryByTitle(/^voltar ao último fluxo/); // a list's back to the last flow (#921)
+const flowchart = (): Element | null => document.querySelector('[aria-label="fluxograma"]');
+
+test('a repository\'s lists, the source table and todas em lista go back to the last flow: ‹ main and its key, by the button and Alt+←; the flowchart and sem fluxo show none (#921)', async () => {
   const user = userEvent.setup();
   render(<Home />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
   await main().findByText('Fix the pager');
-  expect(backButton()).toBeNull();
+  const back = bar().getByRole('button', { name: 'main' });
+  expect(back).toHaveAttribute('title', 'voltar ao último fluxo · Alt+← ou o botão voltar do mouse');
+  expect(back).toHaveTextContent('‹mainAlt+←');
   await user.click(bar().getByRole('tab', { name: 'issues 3' }));
   await main().findByText('Issue 12');
+  await user.click(bar().getByRole('button', { name: 'main' }));
+  expect(flowchart()).not.toBeNull();
+  expect(flowBack()).toBeNull();
   expect(backButton()).toBeNull();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   await main().findByText('2 itens · 0 tarefas');
-  expect(backButton()).toBeNull();
-  await user.click(automation().getByRole('button', { name: /^main/ }));
-  expect(backButton()).toBeNull(); // the flowchart
+  expect(fireEvent.keyDown(window, BACK_KEY)).toBe(false);
+  expect(flowchart()).not.toBeNull();
+  await user.click(automation().getByRole('button', { name: /^todas em lista/ }));
+  expect(flowBack()).not.toBeNull();
+  await user.click(automation().getByRole('button', { name: /^sem fluxo/ }));
+  expect(flowBack()).toBeNull();
 });
 
 // The PR page's merge button (#69): PR_PAGE allows squash alone
 const merge = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
   await user.click(await main().findByRole('button', { name: 'squash e merge' }));
 };
+
+// A merge GitHub accepts only when the test lets it land (#921); extra: the answers of a second repository
+function deferMerge(extra: Record<string, unknown> = {}): () => Promise<void> {
+  let land = (): void => undefined;
+  fetchMock.mockImplementation(async (input, init) => {
+    if (init?.method === 'POST' && String(input).endsWith('/merge')) return new Promise<Response>((resolve) => { land = () => resolve(jsonRes({ ok: true })); });
+    return Object.hasOwn(extra, String(input)) ? jsonRes(extra[String(input)]) : answer(input, init);
+  });
+  return async () => { await act(async () => land()); };
+}
+const openPr = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+  await user.click(await automation().findByRole('button', { name: /^site/ }));
+  await user.click(await main().findByText('Fix the pager'));
+  await main().findByRole('heading', { name: 'Fix the pager' });
+};
+const DOCS: RepoSummary = { ...SITE, repository: 'acme/docs', url: 'https://github.com/acme/docs', openPrs: 0 };
+const NO_PRS: RepoPrs = { ...PRS, counts: { open: 0, merged: 0, closed: 0 }, rows: [] };
+
+test('a merge that lands after the user left the PR page for the flowchart leaves the flowchart (#921)', async () => {
+  const user = userEvent.setup();
+  const land = deferMerge();
+  render(<Home />);
+  showFlow();
+  await openPr(user);
+  await merge(user);
+  await user.click(automation().getByRole('button', { name: /^main/ }));
+  await land();
+  expect(flowchart()).not.toBeNull();
+  expect(bar().queryByRole('tab', { name: 'PRs 2' })).not.toBeInTheDocument();
+});
+
+test('a merge that lands after the user opened another page leaves that page (#921)', async () => {
+  const user = userEvent.setup();
+  const land = deferMerge();
+  render(<Home />);
+  showFlow();
+  await openPr(user);
+  await merge(user);
+  await user.click(bar().getByRole('tab', { name: 'issues 3' }));
+  await user.click(await main().findByText('Issue 12'));
+  expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+  await land();
+  expect(main().getByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+});
+
+test('a merge that lands after the user went to another repository leaves that repository (#921)', async () => {
+  const user = userEvent.setup();
+  const land = deferMerge({ '/repositories': [SITE, DOCS], '/repositories/acme/docs/pulls?state=open': NO_PRS });
+  render(<Home />);
+  showFlow();
+  await openPr(user);
+  await merge(user);
+  await user.click(automation().getByRole('button', { name: /^docs/ }));
+  expect(await bar().findByRole('tab', { name: 'PRs 0' })).toHaveAttribute('aria-selected', 'true');
+  await land();
+  expect(bar().getByRole('tab', { name: 'PRs 0' })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('a merge that lands while Atividades shows, the center still on that PR, goes back to its list unseen (#921)', async () => {
+  const user = userEvent.setup();
+  const land = deferMerge();
+  render(<Home />);
+  showFlow();
+  await openPr(user);
+  await merge(user);
+  showActivities();
+  await land();
+  showFlow();
+  expect(await bar().findByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
+});
 
 test('a PR opened from the GitHub Project (the task details\' PR link) and merged with the Hive\'s button goes back to the PR list (#69, #380, #571)', async () => {
   const user = userEvent.setup();

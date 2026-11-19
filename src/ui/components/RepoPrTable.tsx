@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { PrRow, PrState, RepoPrs, RepoSummary, State } from '../../types';
 import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
 import { ForkEmpty } from '@/components/ForkEmpty';
-import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
+import { type BackLink, FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoPrRow } from '@/components/RepoPrRow';
 import { Syncing } from '@/components/ui/spinner';
@@ -87,12 +87,12 @@ function PrGrid({ repository, prs, state, onOpen, isOriginal }: { repository: st
   );
 }
 
-export interface RepoPrTableProps { state: State; summary: RepoSummary; onTab(tab: RepoTab): void; onOpen?(row: PrRow): void; onRepository?(repository: string): void }
+export interface RepoPrTableProps { state: State; summary: RepoSummary; onTab(tab: RepoTab): void; onOpen?(row: PrRow): void; onRepository?(repository: string): void; back?: BackLink /* #921: the way back to the last flow */ }
 
 /** A repository's PRs (#758, handoff 03) under the repository header's PRs tab: open, merged or closed, newest update first. Read on opening,
  * on a segment change, on atualizar, which reads the sidebar's list again too, and on its repository's readModel events of issues or pulls
  * (#186); never polled. */
-export function RepoPrTable({ state, summary, onTab, onOpen, onRepository }: RepoPrTableProps) {
+export function RepoPrTable({ state, summary, onTab, onOpen, onRepository, back }: RepoPrTableProps) {
   const [prState, setPrState] = useState<PrState>('open');
   const { data, isLoading, reload } = useRepoRead<RepoPrs>(`${repoPath(summary.repository)}/pulls?state=${prState}`);
   useReadModelReload(summary.repository, LIST_KINDS, reload);
@@ -103,7 +103,7 @@ export function RepoPrTable({ state, summary, onTab, onOpen, onRepository }: Rep
   const isElsewhere = summary.role === 'fork' && summary.pr === 'original'; // #854: this workspace's PRs go to the original
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} isShown={isShown} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab, onRepository } }} onRefresh={refresh} github={`${summary.url}/pulls`} />
+      <FlowHeader state={state} isShown={isShown} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab, onRepository } }} onRefresh={refresh} back={back} github={`${summary.url}/pulls`} />
       {isElsewhere ? <ForkEmpty text={t('repos.fork.noPrs', { fork: summary.repository })} original={summary.fork?.parent} onRepository={onRepository} /> : (
         <>
           <Subbar value={prState} open={data?.counts.open ?? summary.openPrs} isSyncing={data?.syncedAt === null} isLoading={isLoading && data === undefined} onChange={setPrState} />
