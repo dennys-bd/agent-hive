@@ -30,6 +30,8 @@ const TYPING_GUARDS: readonly Modifier[] = ['CmdOrCtrl', 'Ctrl', 'Alt'];
 // (#644), but the text fields still handle Ctrl+C / V / X / Z / A natively, so no shortcut may take them there either. And the fixed keys a
 // binding could hold (#481): a shortcut on Cmd+, or Shift+Enter would fire with it. Escape needs no entry, since no binding can be Escape.
 const RESERVED: readonly string[] = ['CmdOrCtrl+C', 'CmdOrCtrl+V', 'CmdOrCtrl+X', 'CmdOrCtrl+Z', 'CmdOrCtrl+Shift+Z', 'CmdOrCtrl+A', 'CmdOrCtrl+Q', 'CmdOrCtrl+H', 'CmdOrCtrl+Alt+H', 'CmdOrCtrl+M', FIXED_BINDINGS.settings, FIXED_BINDINGS.newline];
+/** Whether a canonical binding is a key the menus keep (#906): frame-keys.ts leaves it to a frame, as collisions refuses it to a shortcut. */
+export const isReserved = (binding: string): boolean => RESERVED.includes(binding);
 // What a terminal's program reads (#585): the editing and moving keys, alone or with Shift, and F1–F12. Ctrl+letter and Ctrl+punctuation
 // are checked apart, since Ctrl is a different modifier on and off macOS; Ctrl+Shift+letter sends the same byte, so the program loses nothing.
 // Taking one warns, never blocks.

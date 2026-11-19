@@ -5,7 +5,7 @@
 // terminal's program, and Chromium handles those keys in a text field on its own. Close has no role (#358): the close role would close the
 // window before a main window could close the terminal tab its focus is in, so the item carries the close shortcut itself and onClose
 // decides. Settings… carries the fixed Cmd+, (#481) and Close its shortcut's binding (#449). Full screen and close window carry their
-// shortcuts' bindings too (#585). Electron is imported for its types only, so node:test covers it; main.ts builds and sets it.
+// shortcuts' bindings too (#585). menuKeys is the one list the menu and frame-keys.ts read (#906). Electron is imported for its types only, so node:test covers it; main.ts builds and sets it.
 import type { BaseWindow, MenuItemConstructorOptions } from 'electron';
 import { type Bindings, FIXED_BINDINGS } from './shortcuts.js';
 import { type MessageKey, t } from './ui/i18n.js';
@@ -30,17 +30,25 @@ function fullScreenItem(binding: string | null): MenuItemConstructorOptions {
   return { label, click: (_item, win) => win?.setFullScreen(!win.isFullScreen()) };
 }
 
+/** The keys the menu's own items carry (#906): Settings… on the fixed key, full screen, Close and Close Window on their bindings (null while
+ *  off). The role items' Electron keys (⌘Q, ⌘H, ⌘M, the Edit keys) are RESERVED in shortcuts.ts. frame-keys.ts leaves every one of them to
+ *  the frame, where the menu already handles it. */
+export interface MenuKeys { settings: string; fullScreen: string | null; close: string | null; closeWindow: string | null }
+export const menuKeys = (bindings: Bindings): MenuKeys =>
+  ({ settings: FIXED_BINDINGS.settings, fullScreen: bindings.fullScreen, close: bindings.close, closeWindow: bindings.closeWindow });
+
 /** The app menu, Edit and Window, labelled in the current language. Settings… has no role: onSettings opens the settings form, as the menu
  *  bar's Settings… does. Quit's role emits before-quit, which goes through quitHive like Cmd+Q. Close gets the window the click names (the
  *  focused one for Cmd+W, undefined with none) and hands it to onClose. The app menu has no label: macOS titles it with the app's name.
  *  isMac: whether Edit's keys are registered (#644), and whether the app menu carries its macOS-only roles (#648). */
 export function appMenuTemplate(onSettings: () => void, onClose: (win: BaseWindow | undefined) => void, bindings: Bindings, isMac: boolean): MenuItemConstructorOptions[] {
+  const keys = menuKeys(bindings);
   return [
     {
       role: 'appMenu',
       submenu: [
         ...macOnly(isMac, [item('about', 'main.menu.about'), SEPARATOR]),
-        { label: t('main.settings'), accelerator: FIXED_BINDINGS.settings, click: onSettings }, SEPARATOR,
+        { label: t('main.settings'), accelerator: keys.settings, click: onSettings }, SEPARATOR,
         ...macOnly(isMac, [item('hide', 'main.menu.hide'), item('hideOthers', 'main.menu.hideOthers'), item('unhide', 'main.menu.showAll'), SEPARATOR]),
         item('quit', 'main.quit'),
       ],
@@ -58,10 +66,10 @@ export function appMenuTemplate(onSettings: () => void, onClose: (win: BaseWindo
       role: 'windowMenu',
       label: t('main.menu.window'),
       submenu: [
-        item('minimize', 'main.menu.minimize'), item('zoom', 'main.menu.zoom'), fullScreenItem(bindings.fullScreen), SEPARATOR,
-        { label: t('main.menu.close'), ...accelerator(bindings.close), click: (_item, win) => onClose(win) },
+        item('minimize', 'main.menu.minimize'), item('zoom', 'main.menu.zoom'), fullScreenItem(keys.fullScreen), SEPARATOR,
+        { label: t('main.menu.close'), ...accelerator(keys.close), click: (_item, win) => onClose(win) },
         // #585: the focused window closes at once, as window:closeWindow closes it; the app and the daemon keep running (its close handler, #513)
-        { label: t('main.menu.closeWindow'), ...accelerator(bindings.closeWindow), click: (_item, win) => win?.close() }, SEPARATOR,
+        { label: t('main.menu.closeWindow'), ...accelerator(keys.closeWindow), click: (_item, win) => win?.close() }, SEPARATOR,
         item('front', 'main.menu.front'),
       ],
     },
