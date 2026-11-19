@@ -285,6 +285,7 @@ const en = {
   'detail.menu.autoStart': 'start on its own',
   'detail.menu.deleteActivity': 'delete activity',
   'detail.copied': 'copied',
+  'detail.description': 'description', // #958: the description's heading row
   'detail.copy': 'copy', // #283: the description's two copy buttons
   'detail.copyRaw': 'copy raw',
   'detail.copyFailed': 'Unexpected error',
@@ -3673,6 +3674,7 @@ const pt: Record<MessageKey, string> = {
   'detail.menu.autoStart': 'começar sozinho',
   'detail.menu.deleteActivity': 'excluir atividade',
   'detail.copied': 'copiado',
+  'detail.description': 'descrição',
   'detail.copy': 'copiar',
   'detail.copyRaw': 'copiar markdown',
   'detail.copyFailed': 'Erro inesperado',

@@ -54,12 +54,13 @@ interface BodyProps {
   task: Task; state: State; comments: CommentsState; files: TaskFile[]; locale: string; isActivity: boolean; onOpenTask?(itemId: string): void; page?: PageMode;
 }
 
-// Hidden on a source without comments; a failure stays here and never blanks the task data above it.
+// A plain block (#958): the heading, then author · date and body per comment. Hidden on a source without comments; a failure stays here and
+// never blanks the task data above it.
 function Comments({ comments, locale }: { comments: CommentsState; locale: string }) {
   if (comments.kind === 'unsupported') return null;
   return (
-    <section aria-label={t('detail.comments')} className="flex flex-col gap-2 border-t pt-2">
-      <h4 className="font-medium text-xs">{t('detail.comments')}</h4>
+    <section aria-label={t('detail.comments')} className="flex flex-col gap-2 border-t pt-3 text-xs">
+      <h3 className="font-medium text-xs">{t('detail.comments')}</h3>
       {comments.kind === 'loading' && <p className={MUTED}>{t('detail.loading')}</p>}
       {comments.kind === 'error' && <p className="text-destructive text-xs">{t('detail.commentsError', { message: comments.message })}</p>}
       {comments.kind === 'list' && comments.comments.length === 0 && <p className={MUTED}>{t('detail.noComments')}</p>}

@@ -163,6 +163,7 @@ test('comments: loading, then each one headed by author and local date linking t
   comments = { kind: 'list', comments: [] };
   rerender(panel());
   expect(section()).toHaveTextContent('sem comentários');
+  expect(within(section()).getByRole('heading', { name: 'comentários', level: 3 })).toBeInTheDocument();
   comments = { kind: 'error', message: 'github api: HTTP 502' };
   rerender(panel());
   expect(section()).toHaveTextContent('não deu pra carregar os comentários: github api: HTTP 502');

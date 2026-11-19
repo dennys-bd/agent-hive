@@ -29,23 +29,26 @@ function CopyButton({ label, icon, onClick }: { label: MessageKey; icon: ReactNo
   );
 }
 
-/** The task's description in the Detalhes panel (#283): copiar puts the rendered text on the clipboard, copiar markdown the issue's own
- * source. With no description there is nothing to copy, so no buttons. */
+/** The task's description in the Detalhes panel (#283, #958): a heading row, descrição then copiar (the rendered text) and copiar markdown
+ * (the issue's own source) on its right; with no description there is nothing to copy, so no buttons. */
 export function TaskDescription({ body }: { body: string }) {
   const rendered = useRef<HTMLDivElement>(null);
-  if (body.trim() === '') return <p className="text-muted-foreground">{t('detail.noBody')}</p>;
+  const isEmpty = body.trim() === '';
   const copyRich = (): void => { if (rendered.current) copied(copyRendered(rendered.current)); };
   return (
     <div className="flex flex-col gap-1">
-      {/* Radix keeps a tooltip open while the pointer crosses toward it; with two adjacent buttons that path runs over the neighbour, so
-          moving from one to the other could leave the first's label showing */}
-      <TooltipProvider disableHoverableContent>
-        <div className="flex justify-end gap-0.5">
-          <CopyButton label="detail.copy" icon={<Copy />} onClick={copyRich} />
-          <CopyButton label="detail.copyRaw" icon={<FileCode />} onClick={() => copied(navigator.clipboard.writeText(body))} />
-        </div>
-      </TooltipProvider>
-      <div ref={rendered}><IssueMarkdown text={body} /></div>
+      <div className="flex items-center gap-0.5">
+        <h3 className="flex-1 font-medium text-xs">{t('detail.description')}</h3>
+        {/* Radix keeps a tooltip open while the pointer crosses toward it; with two adjacent buttons that path runs over the neighbour, so
+            moving from one to the other could leave the first's label showing */}
+        {!isEmpty && (
+          <TooltipProvider disableHoverableContent>
+            <CopyButton label="detail.copy" icon={<Copy />} onClick={copyRich} />
+            <CopyButton label="detail.copyRaw" icon={<FileCode />} onClick={() => copied(navigator.clipboard.writeText(body))} />
+          </TooltipProvider>
+        )}
+      </div>
+      {isEmpty ? <p className="text-muted-foreground">{t('detail.noBody')}</p> : <div ref={rendered}><IssueMarkdown text={body} /></div>}
     </div>
   );
 }
