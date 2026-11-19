@@ -130,8 +130,8 @@ async function killProbe() {
   const pids = await new Promise((r) => c.stdout.once('data', (d) => r(String(d).trim())));
   c.kill(); await new Promise((r) => c.once('exit', r)); await sleep(1500);
   log('2.kill wsl.exe child (sh pid, grandchild pid)', { pids, after: inD(`for p in ${pids}; do kill -0 $p 2>/dev/null && echo $p alive || echo $p gone; done`).stdout });
-  const c2 = spawn('wsl.exe', ['-d', D, '--exec', 'setsid', 'sh', '-c', 'sleep 302 & echo $$ $!; wait']);
-  const p2 = await new Promise((r) => c2.stdout.once('data', (d) => r(String(d).trim())));
+  const c2 = spawn('wsl.exe', ['-d', D, '--exec', 'setsid', '-w', 'sh', '-c', 'sleep 302 & echo $$ $!; wait']);
+  const p2 = await Promise.race([new Promise((r) => c2.stdout.once('data', (d) => r(String(d).trim()))), sleep(8000).then(() => '0 0')]);
   const [lead] = p2.split(' ');
   log('2.group kill from a second wsl.exe', { p2, kill: inD(`kill -TERM -${lead}; sleep 1; for p in ${p2}; do kill -0 $p 2>/dev/null && echo $p alive || echo $p gone; done`).stdout });
   c2.kill();
@@ -184,7 +184,48 @@ async function section3() {
     ['gateway -> 127-bound', `http://${gw}:${p1}/`], ['gateway -> 0.0.0.0-bound', `http://${gw}:${p2}/`], ['127.0.0.1 -> 0.0.0.0-bound', `http://127.0.0.1:${p2}/`]]) {
     log(`3.curl ${k}`, await runAsync('wsl.exe', ['-d', D, '--exec', 'curl', '-s', '-S', '-m', '4', '--noproxy', '*', u]));
   }
+  const u = `http://127.0.0.1:${p1}/`;
+  log('3.interop curl.exe -> 127-bound', await runAsync('wsl.exe', ['-d', D, '--exec', '/mnt/c/Windows/System32/curl.exe', '-s', '-S', '-m', '4', '--noproxy', '*', u]));
+  log('3.interop curl.exe, stdin body', await runAsync('wsl.exe', ['-d', D, '--exec', 'sh', '-c', `echo '{"a":1}' | /mnt/c/Windows/System32/curl.exe -s -S -m 4 -X POST -d @- ${u}`]));
+  const node = process.execPath.replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`).replace(/\\/g, '/');
+  log('3.interop node.exe fetch -> 127-bound', await runAsync('wsl.exe', ['-d', D, '--exec', node, '-e', `fetch('${u}').then(r=>r.text()).then(console.log,e=>console.log(String(e)))`]));
+  const t = performance.now(); for (let i = 0; i < 5; i++) await runAsync('wsl.exe', ['-d', D, '--exec', '/mnt/c/Windows/System32/curl.exe', '-s', '-m', '4', u]);
+  log('3.interop curl.exe avg ms (incl. outer wsl.exe)', ms(t) / 5);
   s1.close(); s2.close();
+}
+
+async function section1b() {
+  inD('rm -rf /root/w2; mkdir -p /root/w2/sub && echo a > /root/w2/f.txt && echo B > /root/w2/F.TXT');
+  const dir = `${UNC}\\root\\w2`;
+  for (const n of ['f.txt', 'F.TXT', 'sub']) await tryLog(`1b.lstat-bigint ${n}`, () => { const s = fs.lstatSync(`${dir}\\${n}`, { bigint: true }); return { dev: String(s.dev), ino: String(s.ino), mode: s.mode.toString(8), mtimeMs: String(s.mtimeMs) }; });
+  log('1b.distro stat', inD('cd /root/w2 && stat -c "%n %d %i" f.txt F.TXT sub').stdout);
+  await tryLog('1b.realpath plain file', () => fs.promises.realpath(`${dir}\\f.txt`));
+  await tryLog('1b.realpath dir', () => fs.promises.realpath(`${dir}\\sub`));
+  await tryLog('1b.realpath.native dir', () => fs.realpathSync.native(`${dir}\\sub`));
+  await tryLog('1b.realpath distro root', () => fs.promises.realpath(`${UNC}\\`));
+  await tryLog('1b.readdir withFileTypes probe/', () => fs.readdirSync(`${UNC}\\root\\probe`, { withFileTypes: true }).map((d) => `${d.name}:${d.isSymbolicLink() ? 'link' : d.isDirectory() ? 'dir' : d.isFile() ? 'file' : 'other'}`));
+  await tryLog('1b.stat (follow) symlink l', () => fs.statSync(`${UNC}\\root\\probe\\l`).size);
+  await tryLog('1b.readFile through symlink l', () => fs.readFileSync(`${UNC}\\root\\probe\\l`, 'utf8'));
+  await tryLog('1b.chmod then lstat mode', () => { fs.chmodSync(`${dir}\\f.txt`, 0o755); return fs.lstatSync(`${dir}\\f.txt`).mode.toString(8); });
+  await tryLog('1b.writeFile wx on existing', () => { fs.writeFileSync(`${dir}\\f.txt`, 'x', { flag: 'wx' }); return 'no error'; });
+  await tryLog('1b.open F.TXT vs f.txt content', () => [fs.readFileSync(`${dir}\\f.txt`, 'utf8'), fs.readFileSync(`${dir}\\F.TXT`, 'utf8')]);
+  for (const [k, target] of [['dir no links', dir], ['subdir', `${dir}\\sub`], ['repo root', `${UNC}\\root\\repo`]]) {
+    for (const recursive of [false, true]) {
+      const events = []; const t0 = performance.now(); let w;
+      try { w = fs.watch(target, { recursive }, (e, f) => events.push({ e, f, at: ms(t0) })); w.on('error', (e) => events.push({ error: e.message })); } catch (e) { log(`1b.watch ${k} recursive=${recursive}`, { error: e.message }); continue; }
+      await sleep(400); const marks = {};
+      marks.win = ms(t0); fs.writeFileSync(`${target}\\win-${recursive}.txt`, 'w'); await sleep(1500);
+      const linux = inD(`wslpath -u '${target}'`).stdout.trim();
+      marks.distro = ms(t0); inD(`echo d > '${linux}/distro-${recursive}.txt'`); await sleep(1500);
+      marks.distroDeep = ms(t0); inD(`mkdir -p '${linux}/deep' && echo d > '${linux}/deep/x-${recursive}.txt'`); await sleep(1500);
+      w.close();
+      log(`1b.watch ${k} recursive=${recursive}`, { marks, events: events.slice(0, 20), count: events.length });
+    }
+  }
+  const polled = []; const t0 = performance.now();
+  fs.watchFile(`${dir}\\f.txt`, { interval: 250 }, (cur) => polled.push({ at: ms(t0), size: cur.size }));
+  await sleep(600); const mark = ms(t0); inD('echo more >> /root/w2/f.txt'); await sleep(2000); fs.unwatchFile(`${dir}\\f.txt`);
+  log('1b.watchFile polling 250ms', { mark, polled });
 }
 
 async function section4() {
@@ -203,4 +244,6 @@ async function section4() {
 }
 
 if (mode === 'net') await section3();
+else if (mode === 'round2') { await section1b(); await section2(); await section3(); await section4(); }
 else { await section1(); await section2(); await section3(); await section4(); }
+setTimeout(() => process.exit(0), 1000).unref();

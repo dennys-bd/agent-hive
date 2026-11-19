@@ -45,16 +45,35 @@ jobs:
         continue-on-error: true
         env:
           PROBE_TOKEN: ${{ github.token }}
-        run: node probe/wsl.mjs all
+        run: node probe/wsl.mjs round2
+        timeout-minutes: 12
       - name: switch to mirrored networking
         if: matrix.wsl == 2
         continue-on-error: true
         run: |
+          $env:WSL_UTF8 = '1'
           Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nnetworkingMode=mirrored"
           wsl.exe --shutdown
           Start-Sleep -Seconds 10
-          wsl.exe -d Debian --exec sh -c "wslinfo --networking-mode; ip -4 addr | grep inet"
+          wsl.exe -d Debian-13 --exec sh -c "wslinfo --networking-mode; ip -4 addr | grep inet; ip route"
+          wsl.exe --status
       - name: probe net (mirrored)
         if: matrix.wsl == 2
         continue-on-error: true
+        timeout-minutes: 5
         run: node probe/wsl.mjs net
+      - name: mirrored + hostAddressLoopback
+        if: matrix.wsl == 2
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          $env:WSL_UTF8 = '1'
+          Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nnetworkingMode=mirrored`n[experimental]`nhostAddressLoopback=true"
+          wsl.exe --shutdown
+          Start-Sleep -Seconds 10
+          wsl.exe -d Debian-13 --exec sh -c "wslinfo --networking-mode"
+          node probe/wsl.mjs net
+      - name: wsl logs on mirrored
+        if: matrix.wsl == 2
+        continue-on-error: true
+        run: Get-WinEvent -LogName Microsoft-Windows-Hyper-V-Compute-Admin -MaxEvents 5 -ErrorAction SilentlyContinue | Format-List TimeCreated,Message
