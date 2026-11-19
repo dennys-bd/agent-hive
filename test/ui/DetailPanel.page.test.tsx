@@ -58,7 +58,7 @@ test('on an issue page with a task the panel draws that task, not the selection:
   renderPanel({ kind: 'issue', url: URL1, task: TASK });
   const order = [
     screen.getByRole('heading', { name: '#1 Task 1' }), screen.getByText('site · roadmap'), screen.getByRole('region', { name: 'parada' }),
-    within(aside()).getByText('BLOCK'), screen.getByRole('region', { name: 'bloqueios' }), screen.getByText('branch', { selector: 'dt' }),
+    within(aside()).getByText('BLOCK'), screen.getByRole('group', { name: 'relacionamentos' }), screen.getByText('branch', { selector: 'dt' }),
     screen.getByRole('region', { name: 'sessões' }), footer() as HTMLElement,
   ];
   expect(order.slice(1).map((el, i) => before(order[i], el))).toEqual([true, true, true, true, true, true, true]);

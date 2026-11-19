@@ -2,12 +2,12 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { BlockersSection } from '@/components/BlockersSection';
+import { BlockersSection, blockersSummary } from '@/components/BlockersSection';
 import { setLanguage } from '@/i18n';
 import { editBlocker } from '@/lib/blockers-api';
 import { CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
 import { initialState } from '../../src/orchestrator';
-import type { ItemBlockers, SourceConfig, State, Task } from '../../src/types';
+import type { BlockerRef, ItemBlockers, SourceConfig, State, Task } from '../../src/types';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@/lib/blockers-api', () => ({ editBlocker: vi.fn(), findBlockerCandidates: vi.fn(async () => []) }));
@@ -33,10 +33,10 @@ const gh = (id: string, stage: string, blockers?: ItemBlockers): Task => ({
 const HIVE_TASK: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Local', body: '', url: '' }, stage: 'dev', boardColumn: '', created: true, auto: false };
 const TASK = gh('12', 'dev', RELATIONS);
 const stateOf = (...tasks: Task[]): State => ({ ...initialState(0), tasks });
-const section = (): HTMLElement => screen.getByRole('region', { name: 'bloqueios' });
+const section = (): HTMLElement => screen.getByRole('group', { name: 'relacionamentos' });
 const cells = (): string[][] =>
   [...section().querySelectorAll('[data-slot="blocker-row"]')].map((row) => [...row.querySelectorAll('span')].map((s) => s.textContent ?? ''));
-const NOTE = 'são as dependências da issue no GitHub. a tarefa bloqueada não inicia até o bloqueio fechar.';
+const NOTE = 'são as dependências da tarefa na source (GitHub, Jira). a tarefa bloqueada não inicia até o bloqueio fechar.';
 
 beforeEach(() => {
   setLanguage('pt');
@@ -54,7 +54,7 @@ test('one row per relation, blocked-by first: the kind, the id, the title and fe
     ['bloqueia', 'other/lib#98', 'Distribution', 'aberta'],
   ]);
   expect(screen.getByTitle('Dock layout primitives')).toHaveClass('truncate');
-  expect(within(section()).getByText(NOTE)).toBeInTheDocument();
+  expect(within(section()).getByText(NOTE)).toHaveClass('sr-only');
 });
 
 test('× removes the relation through the API with its row\'s kind and id (#57)', async () => {
@@ -71,8 +71,8 @@ test('× removes the relation through the API with its row\'s kind and id (#57)'
 test('no relations: only the header, + adicionar and the note (#57)', () => {
   show(gh('12', 'dev', NONE), stateOf());
   expect(cells()).toEqual([]);
-  expect(within(section()).getByRole('heading', { name: 'bloqueios' })).toBeInTheDocument();
-  expect(within(section()).getAllByRole('button').map((b) => b.textContent)).toEqual(['+ adicionar']);
+  expect(section().querySelector('summary')).toHaveTextContent('relacionamentos');
+  expect(within(section()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['sobre esta seção', '+ adicionar']);
   expect(within(section()).getByText(NOTE)).toBeInTheDocument();
 });
 
@@ -82,7 +82,7 @@ test('a GitHub item and a hive task show the section; a source item with no rela
   hive.unmount();
   const bare = gh('12', 'dev');
   show(bare, stateOf(bare));
-  expect(screen.queryByRole('region', { name: 'bloqueios' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'relacionamentos' })).not.toBeInTheDocument();
 });
 
 test('a refusal shows the code\'s copy inline and no toast; any other failure reads Erro inesperado; the next edit clears it (#57)', async () => {
@@ -138,4 +138,28 @@ test('a 400 badRequest names the forms of the task\'s own source type, and a tas
   show(local, stateOf(local));
   await user.click(screen.getByRole('button', { name: 'remover HIVE-2' }));
   expect(await within(section()).findByRole('alert')).toHaveTextContent(/^escreva o id de uma tarefa$/);
+});
+
+const ref = (id: string, state: BlockerRef['state'] = 'open'): BlockerRef => ({ id, title: `T${id}`, state });
+
+test('the closed line counts open refs only: the open blocked-by and every inherited one, or não está bloqueada, then the open blocks (#958)', () => {
+  expect(blockersSummary({})).toBe('não está bloqueada');
+  expect(blockersSummary({ blockers: NONE })).toBe('não está bloqueada');
+  expect(blockersSummary({ blockers: { blockedBy: [ref('1', 'closed')], blocking: [ref('2', 'closed')] } })).toBe('não está bloqueada');
+  expect(blockersSummary({ blockers: RELATIONS })).toBe('bloqueada por #503 · bloqueia other/lib#98');
+  expect(blockersSummary({ blockers: { blockedBy: [ref('158')], blocking: [] }, inheritedBlockedBy: [{ id: '12', via: '7' }] })).toBe('bloqueada por #158, #12 (via #7)');
+  expect(blockersSummary({ blockers: NONE, inheritedBlockedBy: [{ id: '12', via: '7' }] })).toBe('bloqueada por #12 (via #7)');
+  expect(blockersSummary({ blockers: { blockedBy: [], blocking: [ref('171'), ref('169')] } })).toBe('não está bloqueada · bloqueia #171, #169');
+  setLanguage('en');
+  expect(blockersSummary({ blockers: RELATIONS })).toBe('blocked by #503 · blocks other/lib#98');
+  expect(blockersSummary({ blockers: NONE })).toBe('not blocked');
+});
+
+test('relacionamentos is a details closed by default; its summary reads the line and is described by the note (#958)', () => {
+  show(TASK, stateOf(TASK));
+  const details = section() as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  const summary = details.querySelector('summary')!;
+  expect(summary).toHaveTextContent('bloqueada por #503 · bloqueia other/lib#98');
+  expect(document.getElementById(summary.getAttribute('aria-describedby')!)).toHaveTextContent(NOTE);
 });

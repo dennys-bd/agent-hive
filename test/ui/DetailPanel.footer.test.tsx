@@ -142,7 +142,7 @@ test('the blockers section sits right before the metadata; Escape in its add row
   const user = userEvent.setup();
   const onClose = vi.fn();
   render(<DetailPanel state={state} selected={{ taskId: 'I1' }} locale="pt-BR" isShown onClose={onClose} />);
-  const blockers = screen.getByRole('region', { name: 'bloqueios' });
+  const blockers = screen.getByRole('group', { name: 'relacionamentos' });
   expect(blockers.nextElementSibling).toBe(screen.getByText('início', { selector: 'dt' }).closest('dl'));
   expect(screen.getByRole('heading', { level: 2 }).parentElement).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto', 'scrollbar-none', 'py-3.5');
   await user.click(within(blockers).getByRole('button', { name: '+ adicionar' }));
