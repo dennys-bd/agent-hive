@@ -353,7 +353,7 @@ test('the server hands its usage store every record its event log writes, and cl
   const { home, repo } = await tempHive(t, 1);
   const kept: FactRecord[] = [];
   let closed = 0;
-  const usage = { write: (record: FactRecord): void => { kept.push(record); }, close: (): void => { closed += 1; } };
+  const usage = { write: (record: FactRecord): void => { kept.push(record); }, timeline: () => undefined, close: (): void => { closed += 1; } };
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, usage, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
