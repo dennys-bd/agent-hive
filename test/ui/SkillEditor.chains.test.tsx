@@ -134,7 +134,8 @@ test("the operators follow the variable's kind and the value field follows the o
   const ifBlock = block(card, 'if');
   const optionsOf = async (label: string): Promise<string[]> => {
     await user.click(within(ifBlock).getByRole('combobox', { name: label }));
-    const names = (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');
+    // an operator's Liquid symbol (#492) is its option's code, beside the name
+    const names = (await screen.findAllByRole('option')).map((o) => (o.textContent ?? '').replace(o.querySelector('code')?.textContent ?? '', ''));
     await user.keyboard('{Escape}'); // closes the list, not the card
     return names;
   };
@@ -161,11 +162,11 @@ test("\"with today's values\" names under each conditional block the workspaces 
   await open();
   await user.click(chip('só quando delivery = pr'));
   const dialog = await screen.findByRole('dialog');
-  const reachOf = (name: string): string => within(block(dialog, name)).getByText(/com os valores de hoje/).textContent ?? '';
+  const reachOf = (name: string): string => within(block(dialog, name)).getByText('com os valores de hoje').nextElementSibling?.textContent ?? '';
   const reach = (): string[] => ['if', 'else if', 'else'].map(reachOf);
-  expect(reach()).toEqual(['com os valores de hoje: agent-hive', 'com os valores de hoje: hive-site', 'com os valores de hoje: nenhum workspace']);
+  expect(reach()).toEqual(['agent-hive · entra', 'hive-site · entra', 'nenhum workspace']);
   await choose(user, block(dialog, 'if'), 'valor', 'x');
-  expect(reach()).toEqual(['com os valores de hoje: nenhum workspace', 'com os valores de hoje: hive-site', 'com os valores de hoje: agent-hive']);
+  expect(reach()).toEqual(['nenhum workspace', 'hive-site · entra', 'agent-hive · senão']);
   expect(view().model.getValue()).toBe(CHAIN_TEXT);
 }, SLOW_MS);
 
@@ -216,4 +217,14 @@ test('Esc closes the card and the popover without writing; another "+" discards 
   await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
   expect(within(nav()).queryAllByRole('button', { name: PLUS })).toEqual([]);
+}, SLOW_MS);
+
+test("the popover's else line moves the editor to the else and closes the popover (#492)", async () => {
+  const user = userEvent.setup();
+  await open();
+  await user.click(chip('só quando delivery = pr'));
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(dialog).getByRole('button', { name: 'else · linha 15' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(view().position?.lineNumber).toBe(16); // the else's marker line is hidden, so the reveal lands on its first line, as a map click does
 }, SLOW_MS);

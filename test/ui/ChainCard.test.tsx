@@ -35,3 +35,12 @@ test('insert waits for a complete if, then sends its chain; a refusal shows its 
   fireEvent.keyDown(card, { key: 'Escape' });
   expect(onClose).toHaveBeenCalledTimes(1);
 });
+
+test('the card shows its title, insert before cancel, and no "+ e / ou": a new block starts with one term (#492)', () => {
+  render(<ChainCard variables={VARIABLES} onInsert={() => REFUSED} onClose={() => undefined} />);
+  const card = screen.getByRole('region', { name: 'novo bloco condicional' });
+  expect(within(card).getByText('novo bloco condicional')).toBeInTheDocument();
+  expect(card).toHaveClass('border-dashed', 'border-faint', 'bg-card');
+  expect(within(card).getAllByRole('button').map((b) => b.textContent).filter((name) => name === 'inserir' || name === 'cancelar')).toEqual(['inserir', 'cancelar']);
+  expect(within(card).queryByRole('button', { name: '+ e / ou' })).not.toBeInTheDocument();
+});

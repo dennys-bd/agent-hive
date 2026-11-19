@@ -83,7 +83,7 @@ function useChainForms({ editor, parsed, map, workspaces, isReadOnly, reveal }: 
   const content = (
     <ConditionPopover
       key={chain.line} chain={chain} parsed={parsed} variables={variables} workspaces={workspaces}
-      onOk={(spec) => editor.replaceChain(chain.line, spec)} onRemove={() => editor.removeChain(chain.line)} onClose={close}
+      onOk={(spec) => editor.replaceChain(chain.line, spec)} onRemove={() => editor.removeChain(chain.line)} onClose={close} onReveal={reveal}
     />
   );
   return { ...forms, popover: { line: open.chip, content, onClose: close } };
