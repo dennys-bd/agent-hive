@@ -16,6 +16,7 @@ const COPY: Record<LintCheck, { title: MessageKey; body: MessageKey }> = {
   reference: { title: 'plugins.annotations.reference.title', body: 'plugins.annotations.reference.body' },
   callRequired: { title: 'plugins.annotations.callRequired.title', body: 'plugins.annotations.callRequired.body' },
   heading: { title: 'plugins.annotations.heading.title', body: 'plugins.annotations.heading.body' },
+  taskCondition: { title: 'plugins.annotations.taskCondition.title', body: 'plugins.annotations.taskCondition.body' },
 };
 // Yellow and red are status colours (design-system.md): the severity is the one colour a card carries, in its border and a note's text (#492)
 const EDGE: Record<Severity, string> = {

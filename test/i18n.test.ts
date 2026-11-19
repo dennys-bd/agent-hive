@@ -623,6 +623,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'plugins.update.conflict', 'plugins.update.lines', 'plugins.update.edited', 'plugins.update.hiveSide',
     'plugins.reviewer.next',
     'plugins.update.version',
+    'plugins.annotations.taskCondition.title', 'plugins.annotations.taskCondition.body',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
     'based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}', 'map · generated from the text',
@@ -634,6 +635,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'conflict', 'lines {start}–{end}', 'edited {date}', 'hive {version}',
     'next annotation',
     'version: {name}',
+    'condition on a task variable', '{variable} comes from the task: the preview cannot tell which branch the run takes.',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
     'baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}', 'mapa · gerado do texto',
@@ -645,6 +647,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'conflito', 'linhas {start}–{end}', 'editada em {date}', 'hive {version}',
     'próxima anotação',
     'versão: {name}',
+    'condição sobre uma variável da tarefa', '{variable} vem da tarefa: o preview não sabe qual bloco a execução toma.',
   ]);
 });
 

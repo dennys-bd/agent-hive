@@ -2550,6 +2550,8 @@ const en = {
   'plugins.annotations.callRequired.body': '{ref} requires {variable}, which has no value for {workspaces}.',
   'plugins.annotations.heading.title': 'skipped heading level',
   'plugins.annotations.heading.body': 'the map nests this heading as an h{level}; the fix writes it so.',
+  'plugins.annotations.taskCondition.title': 'condition on a task variable',
+  'plugins.annotations.taskCondition.body': '{variable} comes from the task: the preview cannot tell which branch the run takes.',
   // #331: ask the agent in the editor
   'plugins.assist.placeholder': 'ask the agent… select a passage to change only that',
   'plugins.assist.running': 'the agent is working…',
@@ -5963,6 +5965,8 @@ const pt: Record<MessageKey, string> = {
   'plugins.annotations.callRequired.body': '{ref} exige {variable}, que não tem valor em {workspaces}.',
   'plugins.annotations.heading.title': 'nível de título pulado',
   'plugins.annotations.heading.body': 'o mapa aninha este título como h{level}; a correção o escreve assim.',
+  'plugins.annotations.taskCondition.title': 'condição sobre uma variável da tarefa',
+  'plugins.annotations.taskCondition.body': '{variable} vem da tarefa: o preview não sabe qual bloco a execução toma.',
   // #331: ask the agent in the editor
   'plugins.assist.placeholder': 'pedir ao agente… selecione um trecho para mudar só ele',
   'plugins.assist.running': 'o agente está trabalhando…',
