@@ -33,6 +33,10 @@ vi.mock('overlayscrollbars-react', async () => {
   };
 });
 
+// The timeline section (#961) reads on mount in every details panel: that GET would shift the fetch counts and mockImplementationOnce chains of
+// the panel's other tests. Every file gets an empty timeline that reads nothing; use-timeline's and TimelineSection's own tests take the real one
+vi.mock('@/hooks/use-timeline', () => ({ useTimeline: () => ({ read: { kind: 'list', timeline: { events: [] } }, retry: () => {} }) }));
+
 class ResizeObserverStub {
   observe(): void {}
   unobserve(): void {}
