@@ -16,16 +16,25 @@ const VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
 const partsOf = (version: string): number[] | undefined => VERSION.exec(version)?.slice(1).map(Number);
 const compare = (a: readonly number[], b: readonly number[]): number => a.reduce((found, part, i) => found || part - (b[i] ?? 0), 0);
 
+const firstLine = (err: unknown): string => (err instanceof Error ? err.message.split('\n')[0] ?? '' : String(err));
+const codeOf = (err: unknown): unknown => (err instanceof Error && 'code' in err ? err.code : undefined);
+
+// The log names the file alone: the plugin source sits under the user's home, and no home path goes into a log line
 export async function readChangelog(pluginSource: string, log: Pick<Logger, 'warn'>): Promise<Changelog> {
-  const path = join(pluginSource, CHANGELOG_FILE);
-  const text = await readFile(path, 'utf8').catch(() => undefined);
-  if (text === undefined) return {}; // no changelog: the rows show their counts, as before #492
+  let text: string;
+  try {
+    text = await readFile(join(pluginSource, CHANGELOG_FILE), 'utf8');
+  } catch (err) {
+    // no changelog: the rows show their counts, as before #492; any other failure is worth a line
+    if (codeOf(err) !== 'ENOENT') log.warn(`plugin changelog: ${CHANGELOG_FILE}: ${codeOf(err) ?? firstLine(err)}`);
+    return {};
+  }
   try {
     const checked = SCHEMA.safeParse(parse(text) ?? {});
     if (checked.success) return checked.data;
-    log.warn(`plugin changelog: ${path}: ${checked.error.issues[0]?.path.join('.') || 'root'}: ${checked.error.issues[0]?.message ?? 'invalid'}`);
+    log.warn(`plugin changelog: ${CHANGELOG_FILE}: ${checked.error.issues[0]?.path.join('.') || 'root'}: ${checked.error.issues[0]?.message ?? 'invalid'}`);
   } catch (err) {
-    log.warn(`plugin changelog: ${path}: ${err instanceof Error ? err.message.split('\n')[0] : String(err)}`);
+    log.warn(`plugin changelog: ${CHANGELOG_FILE}: ${firstLine(err)}`);
   }
   return {};
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CHANGELOG_FILE, type Changelog, noteFor, readChangelog } from '../src/plugin-changelog.js';
 import { fakeLog } from './fakes.js';
@@ -39,7 +39,8 @@ test('readChangelog reads the file, answers {} for a missing one silently, and l
     await writeFile(join(dir, CHANGELOG_FILE), bad);
     assert.deepEqual(await readChangelog(dir, noisy.log), {});
     assert.equal(noisy.lines.length, 1, noisy.lines.join('\n'));
-    assert.match(noisy.lines[0] ?? '', /^WARN plugin changelog: .*changelog\.yaml/);
+    assert.match(noisy.lines[0] ?? '', /^WARN plugin changelog: changelog\.yaml: /);
+    assert.ok(!(noisy.lines[0] ?? '').includes(dir), noisy.lines[0]);
   }
 });
 
@@ -48,4 +49,14 @@ test('noteFor never answers an inherited property: a heading or item named like 
     assert.equal(noteFor(LOG, 'hive:new-spec', name, '0.1.0', '0.11.0'), undefined, `heading ${name}`);
     assert.equal(noteFor(LOG, name, '## Input', '0.1.0', '0.11.0'), undefined, `item ${name}`);
   }
+});
+
+test('readChangelog is silent only on a missing file: another read error logs once, naming the file and never the absolute path (#492)', async (t) => {
+  const dir = await tempDir(t, 'changelog-');
+  await mkdir(join(dir, CHANGELOG_FILE)); // a directory: EISDIR on read
+  const noisy = fakeLog();
+  assert.deepEqual(await readChangelog(dir, noisy.log), {});
+  assert.equal(noisy.lines.length, 1, noisy.lines.join('\n'));
+  assert.match(noisy.lines[0] ?? '', /^WARN plugin changelog: changelog\.yaml: /);
+  assert.ok(!(noisy.lines[0] ?? '').includes(dir), noisy.lines[0]);
 });
