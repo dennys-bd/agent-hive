@@ -5,11 +5,11 @@ import { DesignComposer, saveComment } from '@/components/DesignComposer';
 import { composerStyle, DesignPins } from '@/components/DesignPins';
 import { DesignBar } from '@/components/DesignBar';
 import { DesignComments } from '@/components/DesignComments';
-import { DesignTweaks } from '@/components/DesignTweaks';
+import { DesignTweaks, hasTweaksRow } from '@/components/DesignTweaks';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
 import { anchorsOf, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
-import { type DesignTweaks as DesignTweaksModel, type TweakBlock, useDesignTweaks } from '@/hooks/use-design-tweaks';
+import { type DesignTweaks as DesignTweaksModel, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { inScreenFolder, useFrameParts } from '@/hooks/use-design-parts';
 import { DesignCanvas, designFrameRoute, FRAME_ASPECT, FULL, frameWidthOf, type Mint, pageTheme, postTheme, type Reloads, switchOf, useFrameMessages, useFrameZoom, useMint, useReloads } from '@/components/design-frame';
 import { type DesignZoom, useDesignZoom } from '@/hooks/use-design-zoom';
@@ -135,10 +135,6 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments: De
     selectComment,
   };
 }
-
-// No row for a valid block with no tweak: the skeleton ships one, and a row of only "More…" would say nothing (#241)
-const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status: 'none' }> =>
-  block.status === 'invalid' || (block.status === 'ok' && block.schema.length > 0);
 
 // The pane itself (#109, #113): every activity's has its comments, a local one's in its workspace's review (#345)
 function DesignView({ comments, ...props }: DesignPaneProps & { comments: DesignCommentsModel }) {

@@ -2,20 +2,22 @@ import { type RefObject, useEffect, useRef, useState, useSyncExternalStore } fro
 import type { ChangesBase, DesignViewport } from '../../types';
 import { TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
 import { ViewportSwitch, ZoomControl } from '@/components/DesignBar';
+import { DesignTweaks, hasTweaksRow } from '@/components/DesignTweaks';
 import {
   DesignCanvas, designFrameRoute, FRAME_ASPECT, type FrameSize, frameWidthOf, type Mint, pageTheme, postTheme, switchOf, useFrameMessages, useFrameZoom, useMint,
   useReloads,
 } from '@/components/design-frame';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useFrameParts } from '@/hooks/use-design-parts';
-import { useDesignTweaks } from '@/hooks/use-design-tweaks';
+import { type DesignTweaks as DesignTweaksModel, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { type DesignZoom, useDesignZoom } from '@/hooks/use-design-zoom';
 import { t } from '@/i18n';
 import type { Activity } from '@/lib/activities';
 import * as fileBase from '@/lib/file-base';
 
 // The changes pane's rendered view of a Hive design (#675): the base's screen beside the disk's, each in the design pane's canvas, sharing one
-// viewport and one zoom, their scrolling kept on the same pixels. No comments, pins or tweaks: the design pane keeps them.
+// viewport and one zoom, their scrolling kept on the same pixels. No comments or pins: the design pane keeps them. Each half has its own
+// tweaks (#909), read from its own frame's block and never shared, so a tweak only one side declares shows on that side alone.
 
 export type ChangesMode = 'rendered' | 'text';
 
@@ -56,7 +58,7 @@ export function useSyncedScroll(left: RefObject<HTMLElement | null>, right: RefO
 
 export interface CompareHalf {
   canvas: RefObject<HTMLDivElement | null>; box: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
-  mint: Mint; size: FrameSize; forgetWidth(): void;
+  mint: Mint; size: FrameSize; tweaks: DesignTweaksModel; forgetWidth(): void;
 }
 
 export interface CompareView {
@@ -66,14 +68,18 @@ export interface CompareView {
 
 interface CompareProps { activity: Activity; path: string; isDesign: boolean; isShown: boolean }
 
-// One half: its refs, its mint, and its frame's size; the frame gets the Hive's theme on every load, as the design pane posts it
+// One half: its refs, its mint, its frame's size and tweaks; the frame forgets the theme and the tweaks on every load, so both go again
 function useHalf(route: string | undefined, key: string): CompareHalf {
   const canvas = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const mint = useMint(route, key);
-  const [size, forgetWidth] = useFrameMessages(frame, () => postTheme(frame.current, pageTheme()));
-  return { canvas, box, frame, mint, size, forgetWidth };
+  const tweaks = useDesignTweaks(frame);
+  const [size, forgetWidth] = useFrameMessages(frame, () => {
+    postTheme(frame.current, pageTheme());
+    tweaks.repost();
+  });
+  return { canvas, box, frame, mint, size, tweaks, forgetWidth };
 }
 
 /** Both halves (#675): the before frame minted for the pane's base and again when its blob changes, the after frame reloaded on a new version
@@ -87,7 +93,6 @@ export function useDesignCompare({ activity, path, isDesign, isShown }: CompareP
   const before = useHalf(isDesign ? designFrameBaseRoute(activityId, path, against) : undefined, base?.oid ?? '');
   const after = useHalf(isDesign ? designFrameRoute(activityId, path) : undefined, '');
   const reloads = useReloads(activityId, path, useFrameParts(after.frame), isDesign && isShown);
-  const declared = useDesignTweaks(after.frame).viewports; // the screen's viewports only: the comparison sets no tweak
   const [viewport, setViewport] = useState<DesignViewport>('natural');
   const width = frameWidthOf(viewport, after.size);
   const zoom = useDesignZoom(after.canvas, after.box, width, isDesign && isShown);
@@ -99,17 +104,21 @@ export function useDesignCompare({ activity, path, isDesign, isShown }: CompareP
     after.forgetWidth();
   };
   const label = base?.label ?? t(against === 'task' ? 'changes.base.task' : 'changes.base.head');
-  return { root, before, after, label, reloads: reloads.count, viewport, viewports: switchOf(declared, viewport), width, zoom, pickViewport };
+  return { root, before, after, label, reloads: reloads.count, viewport, viewports: switchOf(after.tweaks.viewports, viewport), width, zoom, pickViewport };
 }
 
-interface HalfProps { caption: string; half: CompareHalf; name: string; width: number; zoom: DesignZoom; reloads?: number }
+interface HalfProps { caption: string; half: CompareHalf; name: string; width: number; zoom: DesignZoom; reloads?: number; hasRow: boolean }
 
-// The canvas always renders, so its scroll stays synced and the layout stays side by side; an error or the base's absence shows inside it
-function Half({ caption, half, name, width, zoom, reloads = 0 }: HalfProps) {
-  const { mint } = half;
+// The canvas always renders, so its scroll stays synced and the layout stays side by side; an error or the base's absence shows inside it.
+// The tweaks row sits between caption and canvas, as under the design pane's bar; an empty one holds its place while the other half has one
+function Half({ caption, half, name, width, zoom, reloads = 0, hasRow }: HalfProps) {
+  const { mint, tweaks } = half;
   return (
     <div className="flex min-h-0 min-w-0 flex-col bg-background">
       <span title={caption} className="shrink-0 truncate border-b px-2.5 py-1 font-mono text-muted-foreground text-xs">{caption}</span>
+      {hasTweaksRow(tweaks.block)
+        ? <DesignTweaks block={tweaks.block} values={tweaks.values} onChange={tweaks.set} />
+        : hasRow && <div data-tweak-spacer className="h-[30px] shrink-0 border-b" />}
       <DesignCanvas
         canvas={half.canvas} box={half.box} frame={half.frame} url={mint.status === 'ready' ? mint.url : undefined} name={`${caption} · ${name}`}
         width={width} height={half.size.height ?? width * FRAME_ASPECT} zoom={zoom} reloads={reloads} isCommenting={false}
@@ -124,10 +133,12 @@ function Half({ caption, half, name, width, zoom, reloads = 0 }: HalfProps) {
 /** The two halves (#675), base left, disk right. Its root takes ⌘0 and Space as the design pane's section does. */
 export function DesignCompare({ view, name, hidden = false }: { view: CompareView; name: string; hidden?: boolean }) {
   const { zoom, width } = view;
+  // a half without a row keeps its height, so both canvases start on the same line and the synced scroll matches the same spot
+  const hasRow = hasTweaksRow(view.before.tweaks.block) || hasTweaksRow(view.after.tweaks.block);
   return (
     <section ref={view.root} aria-label={name} tabIndex={-1} hidden={hidden} onKeyDown={zoom.onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} className="grid min-h-0 flex-1 grid-cols-2 gap-px bg-border outline-none">
-      <Half caption={view.label} half={view.before} name={name} width={width} zoom={zoom} />
-      <Half caption={t('changes.workingTree')} half={view.after} name={name} width={width} zoom={zoom} reloads={view.reloads} />
+      <Half caption={view.label} half={view.before} name={name} width={width} zoom={zoom} hasRow={hasRow} />
+      <Half caption={t('changes.workingTree')} half={view.after} name={name} width={width} zoom={zoom} reloads={view.reloads} hasRow={hasRow} />
     </section>
   );
 }

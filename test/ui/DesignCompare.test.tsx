@@ -81,3 +81,46 @@ test('picking the task base mints the before frame again against it (#675)', asy
   act(() => fileBase.choose('a-I1', PATH, 'task'));
   await waitFor(() => expect(asked()).toContain('/activities/a-I1/design-frame-base?path=design%2Fhome.hv.html&against=task'));
 });
+
+// #909: each half reads its own frame's hv-tweaks block and keeps its own values
+const BEFORE_FRAME = 'HEAD · home.hv.html';
+const AFTER_FRAME = 'Árvore de trabalho · home.hv.html';
+const frameOf = (title: string): HTMLIFrameElement => screen.getByTitle(title) as HTMLIFrameElement;
+function fromFrame(title: string, data: Record<string, unknown>): void {
+  const source = frameOf(title).contentWindow;
+  act(() => { window.dispatchEvent(new MessageEvent('message', { data: { hive: 'design', ...data }, source })); });
+}
+function tweakPosts(title: string): () => unknown[] {
+  const target = frameOf(title).contentWindow;
+  if (target === null) throw new Error('the frame has no window');
+  const spy = vi.spyOn(target, 'postMessage').mockImplementation(() => undefined);
+  return () => spy.mock.calls.map(([data]) => data).filter((data) => (data as { type?: string }).type === 'tweak');
+}
+const rows = (): HTMLElement[] => screen.queryAllByRole('toolbar', { name: 'tweaks' });
+
+test('no tweaks row on a half whose frame declares no block, only a spacer while the other half has one (#909)', async () => {
+  render(<Compare />);
+  await screen.findByTitle(BEFORE_FRAME);
+  await screen.findByTitle(AFTER_FRAME);
+  expect(rows()).toHaveLength(0);
+  fromFrame(AFTER_FRAME, { type: 'tweaks', schema: { sync: { type: 'boolean', default: false } } });
+  expect(rows()).toHaveLength(1);
+  expect(screen.getByRole('switch', { name: 'sync' })).toBeInTheDocument();
+  expect(document.querySelectorAll('[data-tweak-spacer]')).toHaveLength(1); // the before half holds the row's place, so both canvases line up
+});
+
+test('each half shows its own block, and a pick on one half reaches only that half\'s frame (#909)', async () => {
+  render(<Compare />);
+  await screen.findByTitle(BEFORE_FRAME);
+  await screen.findByTitle(AFTER_FRAME);
+  const [left, right] = [tweakPosts(BEFORE_FRAME), tweakPosts(AFTER_FRAME)];
+  fromFrame(BEFORE_FRAME, { type: 'tweaks', schema: { sync: { type: 'boolean', default: false } } });
+  fromFrame(AFTER_FRAME, { type: 'tweaks', schema: { sync: { type: 'boolean', default: false }, dense: { type: 'boolean', default: true } } });
+  expect(rows()).toHaveLength(2);
+  expect(screen.getAllByRole('switch', { name: 'sync' })).toHaveLength(2);
+  expect(screen.getAllByRole('switch', { name: 'dense' })).toHaveLength(1); // only the after declares it
+  fireEvent.click(screen.getAllByRole('switch', { name: 'sync' })[1]);
+  expect(right().at(-1)).toEqual({ hive: 'design', type: 'tweak', name: 'sync', value: true });
+  expect(left()).toEqual([{ hive: 'design', type: 'tweak', name: 'sync', value: false }]); // only its own defaults, sent on its block
+  expect(screen.getAllByRole('switch', { name: 'sync' })[0]).not.toBeChecked();
+});
