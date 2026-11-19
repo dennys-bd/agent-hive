@@ -82,3 +82,9 @@ test('a row with two origins names both after one arrow, and its tooltip has a l
   expect(cells[4]?.querySelector('svg')).toBeInTheDocument();
   expect(cells[4]).toHaveAttribute('title', 'baseada em superpowers:executing-plans · obra/superpowers · MIT\nbaseada em ecc:planner · affaan-m/ECC · MIT');
 });
+
+test('the hive group reads the plugin version when the catalogue read has one (#492)', async () => {
+  stubFetch(undefined, undefined, '0.2.0');
+  render(<List />);
+  expect(await within((await screen.findAllByRole('group'))[0] as HTMLElement).findByText('plugin hive 0.2.0')).toBeInTheDocument();
+});

@@ -26,8 +26,14 @@ function Row({ item, items, onOpen }: { item: CatalogueItem; items: readonly Cat
   );
 }
 
-function ListGroup({ group, kind, items, onOpen }: { group: ItemGroup; kind: ItemKind; items: readonly CatalogueItem[]; onOpen(id: string): void }) {
-  const path = group.origin === HIVE_ORIGIN ? t('plugins.list.hivePath') : KIND_PATH[kind];
+interface ListGroupProps { group: ItemGroup; kind: ItemKind; items: readonly CatalogueItem[]; pluginVersion?: string; onOpen(id: string): void }
+
+function hivePath(version?: string): string {
+  return version === undefined ? t('plugins.list.hivePath') : t('plugins.list.hivePathVersion', { version });
+}
+
+function ListGroup({ group, kind, items, pluginVersion, onOpen }: ListGroupProps) {
+  const path = group.origin === HIVE_ORIGIN ? hivePath(pluginVersion) : KIND_PATH[kind];
   return (
     <fieldset aria-label={group.origin} className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -49,7 +55,7 @@ export function ListScreen({ plugins, section, workspaces }: { plugins: Plugins;
         <NewItemField kind={kind} workspaces={workspaces} initialOrigin={plugins.filter ?? HIVE_ORIGIN} onCreate={plugins.create} onCancel={() => plugins.setCreating(false)} />
       )}
       {groupsOf(items, kind, workspaces, plugins.query, plugins.filter).map((group) => (
-        <ListGroup key={group.origin} group={group} kind={kind} items={items} onOpen={(id) => plugins.open({ kind: 'item', id })} />
+        <ListGroup key={group.origin} group={group} kind={kind} items={items} pluginVersion={plugins.pluginVersion} onOpen={(id) => plugins.open({ kind: 'item', id })} />
       ))}
     </section>
   );
