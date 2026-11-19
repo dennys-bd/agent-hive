@@ -68,7 +68,7 @@ function Exchange({ assist, agent }: { assist: Assist; agent: AgentId }) {
   return (
     <div className="flex flex-col gap-1">
       <p className="truncate font-mono">❯ {assist.request}</p>
-      {answer !== undefined && <p role="status" className="flex items-center gap-1.5 text-muted-foreground"><AgentIcon agent={agent} />{answer}</p>}
+      {answer !== undefined && <p role="status" className="flex items-center gap-1.5 text-muted-foreground"><Mark agent={agent} />{answer}</p>}
       {assist.status === 'proposed' && (
         <div className="flex items-center gap-2">
           <Button type="button" size="xs" onClick={assist.accept}>{t('plugins.assist.accept')}</Button>

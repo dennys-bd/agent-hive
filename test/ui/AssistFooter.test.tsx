@@ -82,3 +82,8 @@ test('a request nothing sent keeps the draft in the field (#331)', () => {
   fireEvent.keyDown(field(), { key: 'Enter' });
   expect(field().value).toBe('two sentences');
 });
+
+test('the answer line paints the agent mark in that agent\'s own colour (#492, design system: agent colour)', () => {
+  render(footer(assistOf({ status: 'running', request: 'two sentences' }), { pick: { agent: 'codex', model: '' } }));
+  expect(screen.getByRole('status').querySelector('svg')).toHaveClass('text-agent-codex');
+});
