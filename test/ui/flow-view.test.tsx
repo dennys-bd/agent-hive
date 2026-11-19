@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useDisplayOptions, useFlowView } from '@/hooks/use-flow-view';
-import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, shownOf, toggleListGroup, toggleOutline, withDisplay, withShown, writeFlowView } from '@/lib/flow-view';
+import { CANVAS_DEFAULTS, DISPLAY_DEFAULTS, EMPTY_STAGES, FLOW_VIEW_DEFAULTS, type FlowView, canvasOf, readFlowView, shownOf, toggleListGroup, toggleOutline, withDisplay, withShown, writeFlowView } from '@/lib/flow-view';
 import { readView, resetViewState } from '@/lib/view-state';
 
 const readStored = (value: unknown) => {
@@ -15,7 +15,7 @@ afterEach(() => resetViewState()); // also drops writeFlowView's pending post
 test('writeFlowView puts the whole value under flowView and readFlowView round-trips the display fields and a canvas per flow (#909, #571, #574)', () => {
   resetViewState();
   const view = {
-    sourcesOff: ['roadmap'], loops: 'inner', labels: 'outer', tree: true, epics: 'middle', outline: ['I1'], listCollapsed: ['', 'build'],
+    sourcesOff: ['roadmap'], loops: 'inner', labels: 'outer', tree: true, epics: 'middle', emptyStages: 'collapse', outline: ['I1'], listCollapsed: ['', 'build'],
     canvas: { build: GOOD, ship: { zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [] } },
   };
   writeFlowView(view as FlowView);
@@ -156,4 +156,14 @@ test('a display change and a zoom keep listCollapsed, and the display options ne
   const chart = renderHook(() => useFlowView(false, 'main'));
   act(() => chart.result.current.zoomTo(1.2));
   expect(readFlowView().listCollapsed).toEqual(['bug']);
+});
+
+test('emptyStages reads recolher e juntar by default, a stored value back, and an unknown one as the default alone (#914)', () => {
+  resetViewState();
+  expect(readFlowView().emptyStages).toBe('merge');
+  expect(DISPLAY_DEFAULTS.emptyStages).toBe('merge');
+  expect(EMPTY_STAGES).toEqual(['open', 'collapse', 'merge']);
+  for (const value of EMPTY_STAGES) expect(readStored({ ...SHARED, emptyStages: value }).emptyStages).toBe(value);
+  expect(readStored({ ...SHARED, emptyStages: 'fold', loops: 'inner' })).toMatchObject({ emptyStages: 'merge', loops: 'inner' });
+  expect(readStored({ ...SHARED, emptyStages: true }).emptyStages).toBe('merge');
 });

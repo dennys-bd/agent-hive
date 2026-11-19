@@ -1,4 +1,4 @@
-// The flowchart's view (#909, #571): the display options of #574 (a boolean loops stored before reads as all / none), the tree toggle (#34)
+// The flowchart's view (#909, #571): the display options of #574 and #914's empty stages (a boolean loops stored before reads as all / none), the tree toggle (#34)
 // the details' collapsed outline parents (#36), the list's collapsed groups (#577), one value each and shared by every flowchart, and per flow, by name, its canvas: the zoom
 // and pan #910 applies and the collapsed groups of #34. Per-viewer UI state kept in the view state (#484), never a setting. Each field is read on its own, so an unreadable zoom never resets the toggle. A value
 // stored before #571 (zoom, pan, collapsed at the top) keeps its shared fields and starts every flow at the defaults: no migration, one user.
@@ -10,8 +10,9 @@ export interface FlowCanvas { zoom: number; pan: { x: number; y: number }; colla
 export type Loops = 'all' | 'inner' | 'none';
 export type LoopLabels = 'all' | 'outer' | 'none';
 export type HiddenEpics = 'none' | 'middle' | 'all';
+export type EmptyStages = 'open' | 'collapse' | 'merge'; // #914: an empty stage as a node, a strip of its own, or one strip per run of them
 /** ui.tasks.display (#574): shared by every task view. `tree` (#34) is unset until the first click, read as "a tree exists" meanwhile. */
-export interface DisplayOptions { sourcesOff: string[]; loops: Loops; labels: LoopLabels; tree?: boolean; epics: HiddenEpics }
+export interface DisplayOptions { sourcesOff: string[]; loops: Loops; labels: LoopLabels; tree?: boolean; epics: HiddenEpics; emptyStages: EmptyStages }
 export interface FlowView extends DisplayOptions {
   outline: string[]; // #36: the details' collapsed outline parents; only toggleOutline writes it
   listCollapsed: string[]; // #577: the list's collapsed groups, by flow name, '' for sem fluxo; only toggleListGroup writes it
@@ -24,7 +25,8 @@ export const CANVAS_DEFAULTS: FlowCanvas = { zoom: 1, pan: { x: 0, y: 0 }, colla
 export const LOOPS: readonly Loops[] = ['all', 'inner', 'none'];
 export const LOOP_LABELS: readonly LoopLabels[] = ['all', 'outer', 'none'];
 export const HIDDEN_EPICS: readonly HiddenEpics[] = ['none', 'middle', 'all'];
-export const DISPLAY_DEFAULTS: DisplayOptions = { sourcesOff: [], loops: 'all', labels: 'all', epics: 'none' };
+export const EMPTY_STAGES: readonly EmptyStages[] = ['open', 'collapse', 'merge'];
+export const DISPLAY_DEFAULTS: DisplayOptions = { sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', emptyStages: 'merge' };
 export const FLOW_VIEW_DEFAULTS: FlowView = { ...DISPLAY_DEFAULTS, outline: [], listCollapsed: [], canvas: {} };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -59,6 +61,7 @@ function readDisplay(stored: Record<string, unknown>): DisplayOptions {
     labels: oneOf(LOOP_LABELS, stored.labels, DISPLAY_DEFAULTS.labels),
     ...(typeof stored.tree === 'boolean' ? { tree: stored.tree } : {}), // #34: absent, not undefined, until the first click
     epics: oneOf(HIDDEN_EPICS, stored.epics, DISPLAY_DEFAULTS.epics),
+    emptyStages: oneOf(EMPTY_STAGES, stored.emptyStages, DISPLAY_DEFAULTS.emptyStages),
   };
 }
 
