@@ -2465,7 +2465,7 @@ const en = {
   'plugins.version.renameFailed': 'could not rename the version',
   'plugins.version.useFailed': 'could not change the version in use',
   // #320: the based-on link and its card
-  'plugins.origin.link': 'based on {name} ↗',
+  'plugins.origin.link': 'based on {name}',
   'plugins.origin.title': 'based on',
   'plugins.origin.open': 'open on github ↗',
   'plugins.origin.repository': 'repository',
@@ -5856,7 +5856,7 @@ const pt: Record<MessageKey, string> = {
   'plugins.version.renameFailed': 'não foi possível renomear a versão',
   'plugins.version.useFailed': 'não foi possível trocar a versão em uso',
   // #320: the based-on link and its card
-  'plugins.origin.link': 'baseada em {name} ↗',
+  'plugins.origin.link': 'baseada em {name}',
   'plugins.origin.title': 'baseada em',
   'plugins.origin.open': 'abrir no github ↗',
   'plugins.origin.repository': 'repositório',

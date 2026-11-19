@@ -1,3 +1,4 @@
+import { ArrowUpRightIcon } from 'lucide-react';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CatalogueItem, ItemKind } from '../../../types';
 import { displayBinding } from '../../../shortcuts.js';
@@ -30,7 +31,11 @@ function ItemRow({ item, isOpen, onOpen }: { item: CatalogueItem; isOpen: boolea
   return (
     <button type="button" aria-current={isOpen || undefined} onClick={onOpen} className={`${ROW} py-1 text-[13px] ${isOpen ? 'bg-accent' : 'hover:bg-accent/60'}`}>
       <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.name}</span>
-      {mark !== '' && <span title={basedOnTitle(item)} className="text-[11px] text-muted-foreground">{mark}</span>}
+      {(mark !== '' || item.basedOn) && (
+        <span title={basedOnTitle(item)} className="flex items-center gap-0.5 text-[11px] text-muted-foreground">
+          {mark}{item.basedOn && <ArrowUpRightIcon aria-hidden="true" className="size-3 text-faint" />}
+        </span>
+      )}
       <StateDot state={item.state} />
     </button>
   );
@@ -70,7 +75,7 @@ function SectionBlock({ section, plugins, workspaces, isActive }: SectionProps) 
 function Legend() {
   return (
     <ul aria-label={t('plugins.legend')} className="flex flex-col gap-1 px-2 text-[11px] text-muted-foreground">
-      {LEGEND.map((state) => <li key={state} className="flex items-center gap-1.5"><StateDot state={state} isDecorative />{t(STATE_LOOK[state].label)}</li>)}
+      {LEGEND.map((state) => <li key={state} className="flex items-center gap-1.5"><StateDot state={state} isDecorative isLegend />{t(STATE_LOOK[state].label)}</li>)}
     </ul>
   );
 }

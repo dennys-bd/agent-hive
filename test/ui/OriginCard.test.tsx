@@ -18,7 +18,7 @@ afterEach(() => vi.unstubAllGlobals());
 test("hovering based on opens the 340px card: the name, the item's description, then repository, version, license and link; leaving closes it (#320, decisions 15–17)", async () => {
   const user = userEvent.setup();
   render(<OriginCard basedOn={BASED_ON} description="builds the plan" />);
-  const link = screen.getByRole('link', { name: 'baseada em superpowers:executing-plans ↗' });
+  const link = screen.getByRole('link', { name: 'baseada em superpowers:executing-plans' });
   expect([link.getAttribute('href'), link.getAttribute('target')]).toEqual([BASED_ON.url, '_blank']);
   await user.hover(link);
   const card = await screen.findByRole('dialog');
@@ -46,8 +46,8 @@ test('the head shows based on after the meta only for an item that has it (#320,
   render(<PluginsWindow />);
   fireEvent.click(await within(await screen.findByRole('region', { name: 'skills' })).findByRole('button', { name: /^new-build/ }));
   const head = screen.getByTestId('head');
-  expect(await within(head).findByRole('link', { name: 'baseada em superpowers:executing-plans ↗' })).toBeInTheDocument();
-  expect(head).toHaveTextContent('skills · baseada em superpowers:executing-plans ↗');
+  expect(await within(head).findByRole('link', { name: 'baseada em superpowers:executing-plans' })).toBeInTheDocument();
+  expect(head).toHaveTextContent('skills · baseada em superpowers:executing-plans');
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Plugins' })).getByRole('button', { name: /^new-spec/ }));
   await waitFor(() => expect(within(head).getByText('new-spec')).toBeInTheDocument());
   expect(within(head).queryByRole('link')).not.toBeInTheDocument();
@@ -58,7 +58,7 @@ test('a click on based on asks before opening an untrusted host, as a terminal l
   const open = vi.fn();
   vi.stubGlobal('open', open);
   render(<OriginCard basedOn={BASED_ON} description="" />);
-  await user.click(screen.getByRole('link', { name: 'baseada em superpowers:executing-plans ↗' }));
+  await user.click(screen.getByRole('link', { name: 'baseada em superpowers:executing-plans' }));
   expect(await screen.findByRole('alertdialog')).toHaveTextContent(BASED_ON.url);
   expect(open).not.toHaveBeenCalled();
 });
@@ -70,9 +70,9 @@ test('two origins give two based on links after the meta, joined by ·, each ope
   render(<PluginsWindow />);
   fireEvent.click(await within(await screen.findByRole('region', { name: 'skills' })).findByRole('button', { name: /^new-build/ }));
   const head = screen.getByTestId('head');
-  const second = await within(head).findByRole('link', { name: 'baseada em ecc:planner ↗' });
-  expect(within(head).getByRole('link', { name: 'baseada em superpowers:executing-plans ↗' })).toBeInTheDocument();
-  expect(head).toHaveTextContent('skills · baseada em superpowers:executing-plans ↗ · baseada em ecc:planner ↗');
+  const second = await within(head).findByRole('link', { name: 'baseada em ecc:planner' });
+  expect(within(head).getByRole('link', { name: 'baseada em superpowers:executing-plans' })).toBeInTheDocument();
+  expect(head).toHaveTextContent('skills · baseada em superpowers:executing-plans · baseada em ecc:planner');
   await user.hover(second);
   const card = await screen.findByRole('dialog');
   expect(within(card).getAllByRole('term').map((term) => term.nextElementSibling?.textContent).slice(0, 3)).toEqual(['affaan-m/ECC', 'v2.2.1', 'MIT']);

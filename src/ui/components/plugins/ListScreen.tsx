@@ -1,3 +1,4 @@
+import { ArrowUpRightIcon } from 'lucide-react';
 import type { CatalogueItem, ItemKind } from '../../../types';
 import { OriginMark, STATE_LOOK, StateDot } from '@/components/plugins/marks';
 import { NewItemField } from '@/components/plugins/NewItemField';
@@ -19,7 +20,7 @@ function Row({ item, items, onOpen }: { item: CatalogueItem; items: readonly Cat
         <span className="truncate text-muted-foreground">{item.description}</span>
         <span className={`flex items-center gap-1.5 text-xs ${look.text}`}><StateDot state={item.state} isDecorative />{t(look.label)}</span>
         <span className="text-muted-foreground text-xs">{usageText(item, items)}</span>
-        <span title={basedOnTitle(item)} className="truncate text-muted-foreground text-xs">{item.basedOn ? `↗ ${item.basedOn.map((origin) => origin.name).join(', ')}` : ''}</span>
+        <span title={basedOnTitle(item)} className="truncate text-muted-foreground text-xs">{item.basedOn && <><ArrowUpRightIcon aria-hidden="true" className="mr-1 inline size-3" />{item.basedOn.map((origin) => origin.name).join(', ')}</>}</span>
       </button>
     </li>
   );

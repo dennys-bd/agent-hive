@@ -85,8 +85,8 @@ test('the screen heads the item with the versions, titles and sums the update, l
   expect(screen.getByRole('heading', { name: 'the hive updated new-plan: 0.14 → 0.15' })).toBeInTheDocument();
   expect(screen.getByText(/^what changed between the old and new original, applied on top of your version\. 2 changes apply cleanly; 1 passage was edited by you and by the hive\.$/)).toBeInTheDocument();
   const [input, routing, index] = rows(list);
-  expect(input).toHaveTextContent(/^✓## InputSKILL\.md\+1 −1applied cleanly$/);
-  expect(routing).toHaveTextContent(/^✓## Model routingSKILL\.md\+2 −1applied cleanly$/);
+  expect(input).toHaveTextContent(/^## InputSKILL\.md\+1 −1applied cleanly$/);
+  expect(routing).toHaveTextContent(/^## Model routingSKILL\.md\+2 −1applied cleanly$/);
   expect(index).toHaveTextContent(/^!## Indexreference\/index\.md\+1 −1choose below$/);
   expect(screen.getByRole('region', { name: 'your version' })).toHaveTextContent('| # | slice | owner |');
   expect(screen.getByRole('region', { name: HIVE })).toHaveTextContent('| # | slice | tests |');

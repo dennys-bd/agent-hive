@@ -5,19 +5,21 @@ import { HIVE_ORIGIN } from '@/lib/plugins';
 
 interface StateLook { label: MessageKey; dot: string; text: string; chip: string }
 
-/** Each state's copy and colour (#313, the handoff's "Estados e regras"): update available yellow and customized blue are status colours, the
- * hive original a hollow dot, a workspace's item grey. */
+/** Each state's copy and colour (#313, the handoff's "Estados e regras"): update available yellow and customized blue are status colours, a
+ * workspace's item faint. Only the legend draws the hive original's hollow ring: a row of the original needs no mark (#492). */
 export const STATE_LOOK: Record<ItemState, StateLook> = {
   'update available': { label: 'plugins.state.updateAvailable', dot: 'bg-waiting', text: 'text-foreground', chip: 'border-waiting text-waiting' },
   customized: { label: 'plugins.state.customized', dot: 'bg-review', text: 'text-foreground', chip: 'border-review text-review' },
-  original: { label: 'plugins.state.original', dot: 'border border-muted-foreground', text: 'text-muted-foreground', chip: 'border-border text-muted-foreground' },
-  workspace: { label: 'plugins.state.workspace', dot: 'bg-muted-foreground', text: 'text-muted-foreground', chip: 'border-border text-muted-foreground' },
+  original: { label: 'plugins.state.original', dot: 'border border-faint', text: 'text-muted-foreground', chip: 'border-border text-muted-foreground' },
+  workspace: { label: 'plugins.state.workspace', dot: 'bg-faint', text: 'text-muted-foreground', chip: 'border-border text-muted-foreground' },
 };
 /** The legend's order, the handoff's. */
 export const LEGEND: readonly ItemState[] = ['original', 'customized', 'update available', 'workspace'];
 
 /** An item's state dot: named for a screen reader where it is the only sign of the state, decorative next to the state's label. */
-export function StateDot({ state, isDecorative = false }: { state: ItemState; isDecorative?: boolean }) {
+export function StateDot({ state, isDecorative = false, isLegend = false }: { state: ItemState; isDecorative?: boolean; isLegend?: boolean }) {
+  // The screen hides the original's dot but keeps its room, so the state words of a list still line up
+  if (state === 'original' && !isLegend) return <span aria-hidden="true" className="invisible size-1.5 shrink-0" />;
   const label = t(STATE_LOOK[state].label);
   const look = `size-1.5 shrink-0 rounded-full ${STATE_LOOK[state].dot}`;
   if (isDecorative) return <span aria-hidden="true" data-state={state} className={look} />;

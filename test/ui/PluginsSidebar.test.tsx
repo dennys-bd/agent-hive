@@ -36,7 +36,7 @@ test('the four sections with their counts: skills and specialists count the cata
   expect(screen.getByRole('button', { name: 'protocolo' })).toHaveTextContent(/^protocolo$/);
 });
 
-test("the open section's items by origin: hive first, then each workspace with its colour square; each with its state's dot, and 2 ↗ for two versions and an external origin (#313)", async () => {
+test("the open section's items by origin: hive first, then each workspace with its colour square; each with its state's dot, and the version count (#313, #492)", async () => {
   stubFetch();
   render(<Colors><Sidebar /></Colors>);
   openItem();
@@ -44,13 +44,24 @@ test("the open section's items by origin: hive first, then each workspace with i
   const groups = screen.getAllByRole('group');
   expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['hive', 'agent-hive', 'hive-site']);
   expect(groups[1]?.querySelector('span[style]')).toHaveStyle({ backgroundColor: '#112233' });
-  expect(row('new-build')).toHaveTextContent('new-build2 ↗');
-  expect(within(row('new-build')).getByText('2 ↗')).toHaveAttribute('title', 'baseada em superpowers:executing-plans · obra/superpowers · MIT');
+  expect(row('new-build')).toHaveTextContent(/^new-build2$/);
   const dot = (name: string): Element | null => row(name).querySelector('[data-state]');
-  expect(dot('new-spec')).toHaveClass('border'); // hollow: the hive original
   expect(dot('new-build')).toHaveClass('bg-review');
   expect(dot('new-plan')).toHaveClass('bg-waiting');
-  expect(dot('deploy')).toHaveClass('bg-muted-foreground');
+  expect(dot('deploy')).toHaveClass('bg-faint');
+});
+
+test('an original row has no dot, the legend draws the original\'s ring in faint, a workspace item\'s dot is faint, a based-on row shows the arrow icon with its title (#492)', async () => {
+  stubFetch();
+  render(<Sidebar />);
+  openItem();
+  await screen.findByRole('button', { name: /^new-build/ });
+  expect(row('new-spec').querySelector('[data-state="original"]')).toBeNull();
+  expect(screen.getByRole('list', { name: 'estados' }).querySelector('[data-state="original"]')).toHaveClass('border-faint');
+  expect(row('deploy').querySelector('[data-state]')).toHaveClass('bg-faint');
+  const origin = row('new-build').querySelector('[title]');
+  expect(origin).toHaveAttribute('title', 'baseada em superpowers:executing-plans · obra/superpowers · MIT');
+  expect(origin?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
 });
 
 test('on the list screen the side shows the four sections only, as the handoff draws 11a: the list itself holds the items (#313)', async () => {

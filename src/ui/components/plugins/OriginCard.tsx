@@ -1,3 +1,4 @@
+import { ArrowUpRightIcon } from 'lucide-react';
 import { Fragment, type MouseEvent, useEffect, useRef, useState } from 'react';
 import type { BasedOn } from '../../../template';
 import { LinkConfirm } from '@/components/LinkConfirm';
@@ -9,6 +10,7 @@ export interface OriginCardProps { basedOn: BasedOn; description: string; classN
 
 // ponytail: a fixed beat lets the pointer cross from the link to the card; a setting if it reads wrong
 const CLOSE_DELAY_MS = 120;
+const ARROW = <ArrowUpRightIcon aria-hidden="true" className="inline size-3" />;
 
 // The url is the item author's header text: only an http(s) one becomes a link the window hands to the browser
 const linkOf = (url: string): string | undefined => (webHost(url) === undefined ? undefined : url);
@@ -39,7 +41,7 @@ function Rows({ basedOn }: { basedOn: BasedOn }) {
   );
 }
 
-/** The meta line's "based on <name> ↗" and its 340px card (#320, handoff 11i): the external item, its description (the item's own: BasedOn
+/** The meta line's "based on <name>" with its arrow and its 340px card (#320, handoff 11i): the external item, its description (the item's own: BasedOn
  * has none), its repository, version, license and the credit-only link. A click opens the url in the browser. */
 export function OriginCard({ basedOn, description, className = '' }: OriginCardProps) {
   const hover = useHover();
@@ -55,8 +57,8 @@ export function OriginCard({ basedOn, description, className = '' }: OriginCardP
       <Popover open={hover.isOpen} onOpenChange={hover.setOpen}>
         <PopoverAnchor asChild>
           {href === undefined
-            ? <button type="button" {...handlers} className={look}>{label}</button>
-            : <a href={href} target="_blank" rel="noreferrer" onClick={open} {...handlers} className={look}>{label}</a>}
+            ? <button type="button" {...handlers} className={look}>{label}{ARROW}</button>
+            : <a href={href} target="_blank" rel="noreferrer" onClick={open} {...handlers} className={look}>{label}{ARROW}</a>}
         </PopoverAnchor>
         <PopoverContent
           align="start" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}

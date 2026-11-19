@@ -604,13 +604,19 @@ test("the based-on card's copy reads as the handoff writes it, in both languages
   setLanguage('pt');
   assert.deepEqual(
     [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.open'), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
-    ['baseada em x ↗', 'abrir no github ↗', 'vínculo', 'só crédito · a hive não acompanha mudanças'],
+    ['baseada em x', 'abrir no github ↗', 'vínculo', 'só crédito · a hive não acompanha mudanças'],
   );
   setLanguage('en');
   assert.deepEqual(
     [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.open'), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
-    ['based on x ↗', 'open on github ↗', 'link', 'credit only · the hive does not track changes'],
+    ['based on x', 'open on github ↗', 'link', 'credit only · the hive does not track changes'],
   );
+});
+
+test('the plugins design pass copy (#492): both languages', () => {
+  const keys = ['plugins.origin.link'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['based on {name}']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['baseada em {name}']);
 });
 
 test('an evaluation\'s card copy reads as the spec writes it, in both languages, and never says rodar (#877)', () => {

@@ -19,8 +19,8 @@ test('the search matches a name or a description, case-insensitive; a blank one 
   expect(names('  ')).toHaveLength(5);
 });
 
-test('markOf counts two versions or more and adds ↗ for an external origin; countOf counts a kind; basedOnTitle names the origin (#313)', () => {
-  expect(CATALOGUE.map(markOf)).toEqual(['', '2 ↗', '', '', '', '']);
+test('markOf counts two versions or more (no glyph, #492); countOf counts a kind; basedOnTitle names the origin (#313)', () => {
+  expect(CATALOGUE.map(markOf)).toEqual(['', '2', '', '', '', '']);
   expect([countOf(CATALOGUE, 'skill'), countOf(CATALOGUE, 'specialist')]).toEqual([5, 1]);
   expect(basedOnTitle(CATALOGUE[1] ?? CATALOGUE[0])).toBe('based on superpowers:executing-plans · obra/superpowers · MIT');
   expect(basedOnTitle(CATALOGUE[0] ?? CATALOGUE[1])).toBeUndefined();
@@ -106,8 +106,8 @@ test("use in…: a Hive item's every workspace, a workspace item's own; the vers
   expect([originalName(item), originalName(itemOf('hive-site:deploy'))]).toEqual(["hive's original", 'repository file']);
 });
 
-test('two origins: basedOnTitle gives one line each in header order, and markOf still one ↗ (#338, decision 12)', () => {
+test('two origins: basedOnTitle gives one line each in header order, and markOf no glyph (#338, #492)', () => {
   const both = itemOf('hive:planner', { kind: 'specialist', basedOn: [BASED_ON, SECOND_ORIGIN] });
   expect(basedOnTitle(both)).toBe('based on superpowers:executing-plans · obra/superpowers · MIT\nbased on ecc:planner · affaan-m/ECC · MIT');
-  expect(markOf(both)).toBe('↗');
+  expect(markOf(both)).toBe(''); // the arrow is the sidebar's icon (#492)
 });

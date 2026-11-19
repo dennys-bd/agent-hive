@@ -1,3 +1,4 @@
+import { CheckIcon } from 'lucide-react';
 import { useCallback } from 'react';
 import type { CatalogueItem, UpdateChoice, UpdateConflict, UpdatePreview } from '../../../types';
 import { HeaderSlot } from '@/components/HeaderSlot';
@@ -42,7 +43,7 @@ function ChangeRow({ change, choice, hasFiles }: { change: Change; choice?: Upda
   const conflict = isConflict(change);
   return (
     <li className={`${COLUMNS} border-b px-3.5 py-2 text-[13px] last:border-b-0`}>
-      <span aria-hidden="true" className={conflict ? 'text-destructive' : 'text-working'}>{conflict ? '!' : '✓'}</span>
+      <span aria-hidden="true" className={conflict ? 'text-destructive' : 'text-working'}>{conflict ? '!' : <CheckIcon className="size-3" />}</span>
       <span className="truncate font-mono text-xs">{change.heading}</span>
       <span className="truncate font-mono text-muted-foreground text-xs">{hasFiles ? change.file : ''}</span>
       <span className="font-mono text-muted-foreground text-xs">{countsOf(change)}</span>

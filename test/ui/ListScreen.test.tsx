@@ -28,7 +28,8 @@ test('each row shows the five columns: name, description, state, usage and the e
   render(<List />);
   const row = await screen.findByRole('button', { name: /^new-build/ });
   const cells = Array.from(row.children);
-  expect(cells.map((c) => c.textContent)).toEqual(['new-build', 'builds the plan', 'customizada', 'etapa build, chamada por new-spec', '↗ superpowers:executing-plans']);
+  expect(cells.map((c) => c.textContent)).toEqual(['new-build', 'builds the plan', 'customizada', 'etapa build, chamada por new-spec', 'superpowers:executing-plans']);
+  expect(cells[4]?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   expect(cells[4]).toHaveAttribute('title', 'baseada em superpowers:executing-plans · obra/superpowers · MIT');
   expect(Array.from(screen.getByRole('button', { name: /^deploy/ }).children)[3]).toHaveTextContent('—');
   expect(groups()).toEqual(['hive', 'agent-hive', 'hive-site']);
@@ -73,10 +74,11 @@ test('new: Enter creates under the chosen group and opens the item, a refusal sh
   expect(posts).toHaveLength(3);
 });
 
-test('a row with two origins names both after one ↗, and its tooltip has a line per origin (#338, decision 12)', async () => {
+test('a row with two origins names both after one arrow, and its tooltip has a line per origin (#338, decision 12)', async () => {
   stubFetch(undefined, () => [itemOf('hive:planner', { description: 'plans', basedOn: [BASED_ON, SECOND_ORIGIN] })]);
   render(<List />);
   const cells = Array.from((await screen.findByRole('button', { name: /^planner/ })).children);
-  expect(cells[4]).toHaveTextContent('↗ superpowers:executing-plans, ecc:planner');
+  expect(cells[4]).toHaveTextContent(/^superpowers:executing-plans, ecc:planner$/);
+  expect(cells[4]?.querySelector('svg')).toBeInTheDocument();
   expect(cells[4]).toHaveAttribute('title', 'baseada em superpowers:executing-plans · obra/superpowers · MIT\nbaseada em ecc:planner · affaan-m/ECC · MIT');
 });
