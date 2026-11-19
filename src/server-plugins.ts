@@ -51,7 +51,7 @@ export interface PluginRouteDeps {
   store: CustomStore;
   home: string;
   pluginSource: string;
-  log: Pick<Logger, 'error'>;
+  log: Pick<Logger, 'error' | 'warn'>;
 }
 type Handle = (req: Request, res: Response, sources: ItemSources, stages: readonly StageRef[]) => Promise<void>;
 
@@ -164,7 +164,7 @@ function registerVersionRoutes(app: Express, deps: PluginRouteDeps): void {
 // The update of one version (#324): GET previews it and writes nothing; POST applies it and answers the version read, as every write does
 function registerUpdateRoutes(app: Express, deps: PluginRouteDeps): void {
   app.get('/api/items/:id/versions/:version/update', route(deps, async (req, res, s) => {
-    const preview = await previewUpdate(s, idOf(req), String(req.params.version));
+    const preview = await previewUpdate(s, idOf(req), String(req.params.version), deps.log);
     if (isRefusal(preview)) return refuse(res, preview);
     res.json(preview);
   }));

@@ -11,6 +11,8 @@ import { BASE_DIR, FILES_DIR, isRefusal, mainFiles, parseVersionJson, refusal, t
 import { isInside } from './ide.js';
 import { childFolders, customRoot, type FileSet, HIVE_ORIGIN, type ItemSources, listFiles, originFiles, pluginVersion, versionDir, versionFiles } from './item-sources.js';
 import { findItem } from './items-catalogue.js';
+import type { Logger } from './log.js';
+import { type Changelog, noteFor, readChangelog } from './plugin-changelog.js';
 import type { CatalogueItem, ItemVersion, UpdateChange, UpdateChoice, UpdateConflict, UpdatePreview } from './types.js';
 
 const WHOLE = 'file'; // the id suffix of a whole-file conflict
@@ -179,7 +181,9 @@ function conflictsOf(file: string, segments: readonly Segment[], kept: readonly 
       at += 1;
       return [];
     }
-    const placed: Placed = { at, change: { kind: 'conflict', id: `${file}#${n}`, file, heading: headingOf(kept, at, file), mine: bare(segment.mine), hive: bare(segment.hive), base: bare(segment.base) } };
+    // #492: the header's "lines a–b", in the text with every conflict kept as mine, which `at` walks
+    const lines = segment.mine.length === 0 ? {} : { lines: { start: at + 1, end: at + segment.mine.length } };
+    const placed: Placed = { at, change: { kind: 'conflict', id: `${file}#${n}`, file, heading: headingOf(kept, at, file), mine: bare(segment.mine), hive: bare(segment.hive), base: bare(segment.base), ...lines } };
     at += segment.mine.length;
     n += 1;
     return [placed];
@@ -200,8 +204,19 @@ async function changesOf(dir: string, merge: FileMerge): Promise<Change[]> {
   return [...placed].sort((a, b) => a.at - b.at).map((p) => p.change);
 }
 
-/** What applying a version's update would change: clean changes and conflicts, ordered by file, then by position. Writes nothing. */
-export function previewUpdate(s: ItemSources, id: string, version: string): Promise<UpdatePreview | StoreRefusal> {
+// #492: a Hive item's update between two known versions reads the author's changelog; a workspace item's has none
+async function notesOf(s: ItemSources, item: CatalogueItem, from: string | undefined, to: string | undefined, log: Pick<Logger, 'warn'>): Promise<(change: Change) => Change> {
+  if (from === undefined || to === undefined) return (change) => change;
+  const changelog: Changelog = await readChangelog(s.pluginSource, log);
+  return (change) => {
+    const note = noteFor(changelog, item.id, change.heading, from, to);
+    return note === undefined ? change : { ...change, note };
+  };
+}
+
+/** What applying a version's update would change: clean changes and conflicts, ordered by file, then by position, each with its note from the
+ * plugin's changelog (#492). Writes nothing. */
+export function previewUpdate(s: ItemSources, id: string, version: string, log: Pick<Logger, 'warn'>): Promise<UpdatePreview | StoreRefusal> {
   return withTempDir(async (dir) => {
     const update = await loadUpdate(s, id, version, dir);
     if (isRefusal(update)) return update;
@@ -209,7 +224,8 @@ export function previewUpdate(s: ItemSources, id: string, version: string): Prom
     for (const merge of update.merges) changes.push(...(await changesOf(dir, merge)));
     const from = update.version.hiveVersion;
     const to = update.item.origin === HIVE_ORIGIN ? await pluginVersion(s.pluginSource) : undefined;
-    return { version, ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), token: update.token, changes };
+    const noted = await notesOf(s, update.item, from, to, log);
+    return { version, ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), token: update.token, changes: changes.map(noted) };
   });
 }
 

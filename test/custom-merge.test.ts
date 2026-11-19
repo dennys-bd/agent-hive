@@ -31,7 +31,7 @@ async function customized(t: AfterHost, text = MINE, extra: Record<string, strin
 }
 
 async function preview(f: Fixture, version = 'mine', id = BUILD): Promise<UpdatePreview> {
-  const answer = await previewUpdate(f, id, version);
+  const answer = await previewUpdate(f, id, version, fakeLog().log);
   if (isRefusal(answer)) return assert.fail(`${answer.code}: ${answer.message}`);
   return answer;
 }
@@ -91,7 +91,7 @@ test('an overlapping change previews one conflict with mine, hive and base, and 
   await store.createVersion(BUILD, 'other', 'original');
   await store.saveFile(BUILD, 'other', 'SKILL.md', skillDoc('Take the issue id.', 'A PR.'));
   await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue URL.', 'A PR.') });
-  const conflict = (mine: string) => ({ kind: 'conflict', id: 'SKILL.md#0', file: 'SKILL.md', heading: '## Input', mine: [mine], hive: ['Take the issue URL.'], base: ['Take the issue.'] });
+  const conflict = (mine: string) => ({ kind: 'conflict', id: 'SKILL.md#0', file: 'SKILL.md', heading: '## Input', mine: [mine], hive: ['Take the issue URL.'], base: ['Take the issue.'], lines: { start: 9, end: 9 } });
   assert.deepEqual((await preview(f, 'mine')).changes, [conflict('Take the issue number.')]);
   assert.deepEqual((await preview(f, 'other')).changes, [conflict('Take the issue id.')]);
 });
@@ -122,11 +122,11 @@ test("a workspace item's version previews its repository's change, with no Hive 
 
 test('a version with no update, an unknown item or version, and an item the Hive no longer ships are refused (#324)', async (t) => {
   const { f } = await customized(t);
-  assert.equal(codeOf(await previewUpdate(f, BUILD, 'mine')), 'no_update');
-  assert.equal(codeOf(await previewUpdate(f, 'hive:nope', 'mine')), 'unknown_item');
-  assert.equal(codeOf(await previewUpdate(f, BUILD, 'ghost')), 'unknown_version');
+  assert.equal(codeOf(await previewUpdate(f, BUILD, 'mine', fakeLog().log)), 'no_update');
+  assert.equal(codeOf(await previewUpdate(f, 'hive:nope', 'mine', fakeLog().log)), 'unknown_item');
+  assert.equal(codeOf(await previewUpdate(f, BUILD, 'ghost', fakeLog().log)), 'unknown_version');
   await rm(join(f.pluginSource, 'skills/new-build'), { recursive: true });
-  const gone = await previewUpdate(f, BUILD, 'mine');
+  const gone = await previewUpdate(f, BUILD, 'mine', fakeLog().log);
   assert.equal(codeOf(gone), 'no_update');
   assert.match((gone as StoreRefusal).message, /the Hive no longer ships new-build/);
 });
@@ -235,4 +235,29 @@ test('a file with a NUL byte changed on both sides is a whole-file conflict, not
   await ship(f, { 'skills/new-build/data.bin': 'a\0hive\n' });
   const conflicts = (await preview(f)).changes.filter((c) => c.kind === 'conflict');
   assert.deepEqual(conflicts.map((c) => c.kind === 'conflict' && c.id), ['data.bin#file']);
+});
+
+const CHANGELOG = [
+  '0.1.0:', '  hive:new-build:', '    "## Output": too old',
+  '0.1.5:', '  hive:new-build:', '    "## Output": older', '    "## Input": takes the url',
+  '0.2.0:', '  hive:new-build:', '    "## Output": says pull request',
+  '0.3.0:', '  hive:new-build:', '    "## Input": too new', '',
+].join('\n');
+
+test('a change and a conflict carry the newest changelog note in (from, to] for their heading; a conflict its lines (#492)', async (t) => {
+  const { f } = await customized(t);
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue URL.', 'A pull request.'), 'changelog.yaml': CHANGELOG });
+  const changes = (await preview(f)).changes;
+  assert.deepEqual(changes.map((c) => [c.kind, c.heading, c.note]), [['conflict', '## Input', 'takes the url'], ['clean', '## Output', 'says pull request']]);
+  assert.deepEqual(changes[0]?.kind === 'conflict' ? changes[0].lines : undefined, { start: 9, end: 9 });
+});
+
+test('without a note, or with a malformed changelog, the changes carry no note and the preview still answers; the bad file logs once (#492)', async (t) => {
+  const { f } = await customized(t);
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.', 'A pull request.'), 'changelog.yaml': '0.2.0: [not, a, map]\n' });
+  const { log, lines } = fakeLog();
+  const answer = await previewUpdate(f, BUILD, 'mine', log);
+  if (isRefusal(answer)) return assert.fail(answer.message);
+  assert.deepEqual(answer.changes.map((c) => c.note), [undefined]);
+  assert.equal(lines.filter((line) => line.startsWith('WARN plugin changelog:')).length, 1);
 });
