@@ -24,9 +24,9 @@ const types = (effects: Effect[]): string[] => effects.map((e) => e.type);
 // Task 1 running spec in the only worker, green
 const running = (stages: LegacyStage[] = [SPEC, PLAN]): State =>
   reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(stages) }, { type: 'poll', source: 'board', items: [listed] }).state;
-// hive_done (with its result) then the Stop: what ends a stage
-// The stage run's session limpa'd in the panel (#304)
+// The stage run's session cleared in the panel (#304)
 const cleared = (state: State): State => reduce(state, { type: 'clearSessions', activityId: workId(state, ID), sessionId: task(state).sessionId! }).state;
+// hive_done (with its result) then the Stop: what ends a stage
 const stageEnd = (state: State, result?: Record<string, unknown>) => {
   const ptyId = state.workers[0].runId!;
   return reduce(reduce(state, { type: 'done', ptyId, ...(result ? { result } : {}) }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });

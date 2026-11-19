@@ -233,6 +233,22 @@ test('the session stays on a feedback loop to the stage, a halt, a stage without
   assert.deepEqual(kept(pure(clearing({ sessionId: FREE }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done' })).state), [[RUN, FREE], FREE], 'the activity names a session that never ran spec');
 });
 
+test('a free session ending a clearSession stage is what the next continue stage resumes: the stage run\'s session is forgotten on the way out (#720, #494)', () => {
+  const resuming: Stage = { ...PLAN, session: 'continue' };
+  const out = pure(clearing(undefined, { stages: [SPEC, resuming] }), (s) => take(s, s.tasks[0], OUT, { trigger: 'done', sessionId: FREE }));
+  assert.deepEqual([out.state.tasks[0].stage, listed(out.state), activityOf(out.state, ID)?.sessionId], ['plan', [FREE], FREE]);
+  const spawn = reduce(out.state, { type: 'start', itemId: ID }).effects.find((e) => e.type === 'spawn');
+  assert.ok(spawn?.type === 'spawn' && spawn.stage.name === 'plan' && spawn.session === 'continue' && spawn.activity.sessionId === FREE, JSON.stringify(spawn));
+});
+
+test('a free session ending a stage while a stage run still holds the activity leaves the activity\'s session to that run (#720)', () => {
+  const { clearSession: _clear, ...keeping } = SPEC;
+  const task: Task = { item, stage: 'spec', boardColumn: '', auto: true, workspace: 'hive' };
+  const held = deepFreeze(withWork({ ...initialState(0), workspaces: ['hive'], ...flowed([keeping, PLAN], [OUT]), tasks: [task] }, ID, { sessionId: RUN, workerId: 'w1' }, { sessions: [ran(FREE, [], true)] }));
+  const out = pure(held, (s) => take(s, s.tasks[0], OUT, { trigger: 'done', sessionId: FREE }));
+  assert.deepEqual([out.state.tasks[0].stage, activityOf(out.state, ID)?.sessionId], ['plan', RUN], 'its session never ran spec, yet the run holds it');
+});
+
 test('a missing verdict is refused, naming the stage\'s, when the stage has no done exit or the result holds a verdict key; accepted otherwise (#493)', () => {
   const judge: Stage = { name: 'route', from: {}, prompt: '/route', verdicts: ['leaf', 'split'] };
   const named = 'verdict is missing: pass one of this stage\'s: leaf, split';

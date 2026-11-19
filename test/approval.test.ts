@@ -263,7 +263,7 @@ test('hive_done in a free session in an approval stage parks the task awaiting a
 });
 
 // The user's own session opened on the task after its stage run stopped: the stage's latest session. Its hive_done parks the task (#283, #268)
-// The stage run stopped, then a new free session's hive_done awaiting approval; `cleared`: the stage run's session limpa'd first (#304, #720)
+// The stage run stopped, then a new free session's hive_done awaiting approval; `cleared`: the stage run's session cleared first (#304, #720)
 function sessionAwaiting(cleared = false, stages = UNCHAINED): { state: State; ptyId: string; stageRun: string } {
   const first = running(stages);
   const worker = first.workers[0].runId!;

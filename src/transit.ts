@@ -71,7 +71,8 @@ function moveOn(state: State, task: Task, transition: Transition, end: EndOf | u
 
 // #720: a free session that ended a stage whose own run left no session is what the destination's plain `continue` resumes (occupy reads the
 // activity's sessionId), over an earlier stage's id left there. A session that ran the origin, a stage run holding the activity and a gate's
-// own feedback (its handover names the session) keep the activity as it is
+// own feedback (its handover names the session) keep the activity as it is. Written whatever the destination resumes (a new session, a
+// commands, evaluate or gate stage): the free session is the task's latest conversation, so a later continue stage should resume it
 function resumesFree(state: State, task: Task, transition: Transition, end: EndOf | undefined): State {
   const live = activityOf(state, taskId(task));
   if (live === undefined || live.workerId !== undefined || end?.sessionId === undefined || ownGateFeedback(state, transition)) return state;
