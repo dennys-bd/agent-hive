@@ -7,7 +7,7 @@ import express from 'express';
 import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
-import type { CatalogueItem, ItemRead, LintInputRead, Stage, UpdatePreview } from '../src/types.js';
+import type { CatalogueItem, CatalogueRead, ItemRead, LintInputRead, Stage, UpdatePreview } from '../src/types.js';
 import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -45,8 +45,8 @@ const at = (id: string): string => `/api/items/${encodeURIComponent(id)}`;
 test('the routes list, read and write the items, each write answering what the screen shows next (#315)', async (t) => {
   const f = await fixture(t);
   const { base } = await serve(t, f);
-  const [status, items] = await call(base, 'GET', '/api/items');
-  assert.deepEqual([status, (items as CatalogueItem[]).map((i) => i.id)], [200, [ARCHITECT, BUILD, DEPLOY, HELPER]]);
+  const [status, read] = await call(base, 'GET', '/api/items');
+  assert.deepEqual([status, (read as CatalogueRead).items.map((i) => i.id), (read as CatalogueRead).pluginVersion], [200, [ARCHITECT, BUILD, DEPLOY, HELPER], '0.1.0']);
   const saved = (await call(base, 'PUT', `${at(BUILD)}/files`, { version: null, path: 'SKILL.md', text: 'mine text' }))[1] as ItemRead;
   const [file] = saved.files;
   assert.deepEqual([saved.version, saved.item.state, file?.path, file?.text, typeof file?.savedAt], ['mine', 'customized', 'SKILL.md', 'mine text', 'string']);
@@ -111,7 +111,7 @@ test('the daemon serves /api/items, and a PATCH without x-hive-ui is refused by 
 test("GET /api/items answers each item's usage from the config's stages (#313)", async (t) => {
   const f = await fixture(t);
   const { base } = await serve(t, f, [{ name: 'build', from: {}, prompt: '/hive:new-build {url}' }]);
-  const items = (await call(base, 'GET', '/api/items'))[1] as CatalogueItem[];
+  const items = ((await call(base, 'GET', '/api/items'))[1] as CatalogueRead).items;
   assert.deepEqual(items.find((i) => i.id === BUILD)?.usage, [{ kind: 'stage', stage: 'build' }]);
   assert.deepEqual(items.find((i) => i.id === DEPLOY)?.usage, []);
 });

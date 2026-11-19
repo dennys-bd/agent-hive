@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CatalogueItem, ItemKind } from '../../types';
+import type { CatalogueItem, CatalogueRead, ItemKind } from '../../types';
 import type { MessageKey } from '@/i18n';
 import { getJson, postJson } from '@/lib/api';
 import { HIVE_ORIGIN, type PluginScreen } from '@/lib/plugins';
@@ -8,6 +8,7 @@ export interface NewItem { kind: ItemKind; name: string; origin: string } // ori
 export interface Plugins {
   items?: CatalogueItem[]; // undefined until the first read answers
   hasFailed: boolean;
+  pluginVersion?: string; // #492: the hive group's path
   screen: PluginScreen; open(screen: PluginScreen): void;
   query: string; setQuery(query: string): void;
   filter?: string; setFilter(workspace: string | undefined): void; // the list's; never kept (decision 12)
@@ -17,6 +18,8 @@ export interface Plugins {
 }
 
 const LIST: PluginScreen = { kind: 'list', section: 'skills' };
+const isCatalogueRead = (read: unknown): read is CatalogueRead =>
+  typeof read === 'object' && read !== null && Array.isArray((read as { items?: unknown }).items);
 // A refusal's HTTP status as the copy the field shows (decision 22): the server's own words never reach the screen
 const REFUSAL: Readonly<Record<number, MessageKey>> = { 400: 'plugins.new.badName', 404: 'plugins.new.unknownWorkspace', 409: 'plugins.new.taken' };
 export const statusOf = (err: unknown): number => (err instanceof Error && 'status' in err && typeof err.status === 'number' ? err.status : 0);
@@ -26,6 +29,7 @@ export const statusOf = (err: unknown): number => (err instanceof Error && 'stat
 export function usePlugins(isShown: boolean): Plugins {
   const [items, setItems] = useState<CatalogueItem[]>();
   const [hasFailed, setFailed] = useState(false);
+  const [pluginVersion, setPluginVersion] = useState<string>();
   const [screen, setScreen] = useState<PluginScreen>(LIST);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<string>();
@@ -38,14 +42,17 @@ export function usePlugins(isShown: boolean): Plugins {
     if (next.kind !== screen.kind) setCreating(false);
     setScreen(next);
   }, [screen]);
-  // The server logs a failed read's detail (ITEMS_ERROR_MESSAGE); anything but a list is a failure too
+  // The server logs a failed read's detail (ITEMS_ERROR_MESSAGE); anything but a catalogue read is a failure too, a bare list included (#492)
   // A read that answers after a newer one would put back an older catalogue: only the latest read lands
   const load = useCallback(async (): Promise<void> => {
     const n = ++reads.current;
     const read = await getJson<unknown>('/api/items').catch(() => undefined);
     if (n !== reads.current) return;
-    if (Array.isArray(read)) setItems(read as CatalogueItem[]);
-    setFailed(!Array.isArray(read));
+    if (isCatalogueRead(read)) {
+      setItems(read.items);
+      setPluginVersion(read.pluginVersion);
+    }
+    setFailed(!isCatalogueRead(read));
   }, []);
   useEffect(() => {
     if (isShown) void load();
@@ -63,5 +70,5 @@ export function usePlugins(isShown: boolean): Plugins {
       return REFUSAL[statusOf(err)] ?? 'plugins.new.failed';
     }
   }, [load, open]);
-  return { items, hasFailed, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create, reload: load };
+  return { items, hasFailed, pluginVersion, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create, reload: load };
 }

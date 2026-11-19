@@ -3,12 +3,12 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BASE_DIR, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE } from './custom-versions.js';
-import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, listFiles, originDir, originFiles, originNames, parseItemId, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
+import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, listFiles, originDir, originFiles, originNames, parseItemId, pluginVersion, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
 import { agentPrompt } from './stage-agent.js';
 import { parseTemplate } from './template.js';
 import type { LintItem } from './template-lint.js';
 import { templateRefs } from './template-refs.js';
-import type { CatalogueItem, ItemRead, ItemState, ItemUsage, ItemVersion, LintInputRead, Stage } from './types.js';
+import type { CatalogueItem, CatalogueRead, ItemRead, ItemState, ItemUsage, ItemVersion, LintInputRead, Stage } from './types.js';
 
 type Header = Pick<CatalogueItem, 'description' | 'basedOn' | 'error'>;
 const NAME_TAKEN_MESSAGE = 'name taken by a skill';
@@ -188,6 +188,12 @@ export async function readCatalogue(sources: ItemSources, stages: readonly Stage
   const entries = (await Promise.all(originsOf(sources).map((origin) => originItems(sources, origin)))).flat();
   const usage = usageOf(entries.map((e) => e.item), entries.map((e) => e.text), stages);
   return entries.map((e, i) => ({ ...e.item, usage: usage[i] ?? [] }));
+}
+
+/** GET /api/items (#492): every item, and the shipped plugin's version, which the list's hive group shows; left out when plugin.json does not read. */
+export async function readCatalogueRead(sources: ItemSources, stages: readonly StageRef[] = []): Promise<CatalogueRead> {
+  const [items, version] = await Promise.all([readCatalogue(sources, stages), pluginVersion(sources.pluginSource)]);
+  return version === undefined ? { items } : { items, pluginVersion: version };
 }
 
 /** One item by id, its usage [] (only the whole catalogue knows who names it); undefined for a malformed id, an origin the config does not

@@ -37,7 +37,7 @@ export function stubProtocol({
       return answer instanceof Response ? answer : json(answer);
     }
     if (method === 'GET' && url.pathname === '/api/protocol/render') return render(url.searchParams.get('workspace') ?? '');
-    if (method === 'GET') return json(url.pathname === '/api/items' ? CATALOGUE : { ok: true });
+    if (method === 'GET') return json(url.pathname === '/api/items' ? { items: CATALOGUE } : { ok: true });
     const call: ProtocolCall = init?.body === undefined ? { method, path } : { method, path, body: JSON.parse(String(init.body)) };
     calls.push(call);
     return write(call);

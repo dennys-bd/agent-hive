@@ -30,7 +30,7 @@ export function stubMcp(read: () => McpRead = () => MCP_READ, write: (call: McpC
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const method = init?.method ?? 'GET';
     if (method === 'GET' && path === '/api/mcp') return json(read());
-    if (method === 'GET') return json(path === '/api/items' ? CATALOGUE : { ok: true });
+    if (method === 'GET') return json(path === '/api/items' ? { items: CATALOGUE } : { ok: true });
     const call: McpCall = init?.body === undefined ? { method, path } : { method, path, body: JSON.parse(String(init.body)) };
     calls.push(call);
     return write(call);

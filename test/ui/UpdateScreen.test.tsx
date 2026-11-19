@@ -34,7 +34,7 @@ interface Answers { catalogue?: CatalogueItem[]; preview?: () => Response; apply
 function stubUpdate({ catalogue = [PLAN], preview = () => json(PREVIEW), apply = () => json({}) }: Answers = {}) {
   let items = catalogue;
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
-    if (path === '/api/items') return json(items);
+    if (path === '/api/items') return json({ items });
     if (!path.endsWith('/update')) return json({ error: 'not stubbed' }, 404); // the editor's read of the item it returns to (#319)
     if (init?.method !== 'POST') return preview();
     const answer = apply();
