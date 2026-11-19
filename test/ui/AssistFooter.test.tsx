@@ -39,7 +39,7 @@ test('⌘I focuses the field; Enter sends the trimmed request and empties the fi
 test('while the agent works the field is disabled, under the request line and "the agent is working…" (#331)', () => {
   render(footer(assistOf({ status: 'running', request: 'two sentences' })));
   expect(field()).toBeDisabled();
-  expect(screen.getByText('❯ two sentences')).toBeInTheDocument();
+  expect(screen.getByText('two sentences')).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('o agente está trabalhando…');
 });
 
@@ -64,8 +64,7 @@ test('an idle footer keeps the answer line it was left with; a read-only text di
 test('the chip names the pick; its list holds only the available agents, and another agent goes back to its default model (#331)', async () => {
   const onPick = vi.fn();
   const { unmount } = render(footer(assistOf(), { pick: { agent: 'claude', model: 'opus' }, onPick }));
-  expect(chip()).toHaveTextContent('claude');
-  expect(chip()).toHaveTextContent('opus');
+  expect(chip()).toHaveTextContent(/^claude · opus$/);
   fireEvent.click(chip());
   fireEvent.click(within(await screen.findByRole('group', { name: 'agente' })).getByRole('button', { name: /codex/ }));
   expect(onPick).toHaveBeenCalledWith({ agent: 'codex', model: '' });
@@ -86,4 +85,19 @@ test('a request nothing sent keeps the draft in the field (#331)', () => {
 test('the answer line paints the agent mark in that agent\'s own colour (#492, design system: agent colour)', () => {
   render(footer(assistOf({ status: 'running', request: 'two sentences' }), { pick: { agent: 'codex', model: '' } }));
   expect(screen.getByRole('status').querySelector('svg')).toHaveClass('text-agent-codex');
+});
+
+test('the request line is in sans after a chevron icon; the chip, the field and the key share one bordered field (#492)', () => {
+  render(footer(assistOf({ status: 'running', request: 'two sentences' })));
+  const request = screen.getByText('two sentences').parentElement as HTMLElement;
+  expect(request).not.toHaveClass('font-mono');
+  expect(request.firstElementChild?.tagName.toLowerCase()).toBe('svg');
+  const box = field().parentElement as HTMLElement;
+  expect(box).toHaveClass('border');
+  expect([box.contains(chip()), box.querySelector('kbd') !== null]).toEqual([true, true]);
+});
+
+test('the chip without a model reads the agent alone (#492)', () => {
+  render(footer(assistOf()));
+  expect(chip()).toHaveTextContent(/^claude$/);
 });

@@ -86,7 +86,7 @@ test('a request over selected lines posts them; the proposal marks old and new l
   fireEvent.click(screen.getByRole('button', { name: 'aceitar' }));
   await waitFor(() => expect(saves.map((s) => s.text)).toEqual([ANSWER.text]));
   await waitFor(() => expect(fileTab('SKILL.md.liquid')).toHaveAttribute('data-dirty', 'false'));
-  expect([view().model.getValue(), view().readOnly, screen.queryByText('❯ two sentences')]).toEqual([ANSWER.text, false, null]);
+  expect([view().model.getValue(), view().readOnly, screen.queryByText('two sentences')]).toEqual([ANSWER.text, false, null]);
 });
 
 test("discard puts the file's text back and writes nothing; both swaps set the value, so ⌘Z cannot bring the proposal back (#331)", async () => {
