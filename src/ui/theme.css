@@ -23,6 +23,10 @@
   --ring: #3b82f6;
   --empty: #3a4250;
   --template-branch: #151a20; /* #319: a conditional block's lines in the skill editor (handoff 11b) */
+  /* #492: text fainter than muted (a legend's ring, a "+" line), softer than foreground (a card's body), a sunken panel; the plugins handoff's */
+  --faint: #5b6472;
+  --soft: #c3cad5;
+  --sunken: #151a20;
   --working: #2e9e5b;
   --waiting: #e0b52a;
   --review: #3b82f6;
@@ -68,6 +72,9 @@
   --ring: #2563eb;
   --empty: #c3c9d3;
   --template-branch: #eceff3;
+  --faint: #7a8391;
+  --soft: #3d4552;
+  --sunken: #eceff3;
   --working: #1a7f45;
   --waiting: #9a6700;
   --review: #2563eb;

@@ -109,3 +109,11 @@ test('--agent-copilot is declared in both themes, apart from green, yellow, red,
     assert.ok(ratio >= UI_MIN, `${name}: --agent-copilot on --background is ${ratio.toFixed(2)}:1`);
   }
 });
+
+test('faint, soft and sunken take the design files\' values in both themes and are Tailwind colours (#492)', () => {
+  assert.deepEqual(['--faint', '--soft', '--sunken'].map((name) => DARK.get(name)), ['#5b6472', '#c3cad5', '#151a20']);
+  assert.deepEqual(['--faint', '--soft', '--sunken'].map((name) => LIGHT.get(name)), ['#7a8391', '#3d4552', '#eceff3']);
+  for (const name of ['faint', 'soft', 'sunken']) assert.ok(INDEX.includes(`--color-${name}: var(--${name});`), name);
+  assert.match(INDEX, /\.template-proposal-old \{[^}]*var\(--diff-del\)[^}]*inset 3px 0 0 var\(--destructive\)/);
+  assert.match(INDEX, /\.template-proposal-new \{[^}]*var\(--diff-add\)[^}]*inset 3px 0 0 var\(--working\)/);
+});
