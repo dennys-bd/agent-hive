@@ -263,18 +263,21 @@ test('hive_done in a free session in an approval stage parks the task awaiting a
 });
 
 // The user's own session opened on the task after its stage run stopped: the stage's latest session. Its hive_done parks the task (#283, #268)
-function sessionAwaiting(): { state: State; ptyId: string } {
-  const first = running(UNCHAINED);
+// The stage run stopped, then a new free session's hive_done awaiting approval; `cleared`: the stage run's session cleared first (#304, #720)
+function sessionAwaiting(cleared = false, stages = UNCHAINED): { state: State; ptyId: string; stageRun: string } {
+  const first = running(stages);
   const worker = first.workers[0].runId!;
   const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
   const idle = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
-  const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
+  const stageRun = activityOf(idle, ID)!.sessionId!;
+  const left = cleared ? reduce(idle, { type: 'clearSessions', activityId: workId(idle, ID), sessionId: stageRun }).state : idle;
+  const opened = reduce(left, { type: 'openSession', activityId: workId(left, ID) }).state;
   const ptyId = opened.workers.find((s) => s.freeSession)!.runId!;
-  return { state: reduce(opened, { type: 'done', ptyId }).state, ptyId };
+  return { state: reduce(opened, { type: 'done', ptyId }).state, ptyId, stageRun };
 }
 
 test('feedback on a task awaiting approval whose stage session is open in the user\'s own session is typed into it, started or not: one input with the lead, approval dropped, nothing queued, no spawn (#483)', () => {
-  const { state: parked, ptyId } = sessionAwaiting();
+  const { state: parked, ptyId } = sessionAwaiting(true); // #720: the stage run's session gone, feedback resumes the free one
   for (const start of [true, false]) {
     const { state, effects } = reduce(parked, { type: 'feedback', activityId: workId(parked, ID), text: 'split the spec in two', start });
     assert.deepEqual(effects, [{ type: 'input', ptyId, text: `${LEAD}\n\nsplit the spec in two` }], `start: ${start}`);
@@ -293,21 +296,33 @@ test('feedback on a task whose open session is another conversation than the one
   assert.ok(spawn?.type === 'spawn' && spawn.run === 'continue' && spawn.prompt === led('rename the flag'), JSON.stringify(started.effects));
 });
 
-test('hive_done in a new free session in an approval stage names that session on the approval; once it is closed, feedback resumes it as the stage\'s feedback run, which gives it the stage and keeps it free (#812)', () => {
-  const first = running(UNCHAINED);
-  const worker = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
-  const idle = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
-  const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state; // a new session: no stage run's
-  const own = opened.workers.find((s) => s.freeSession)!;
-  const parked = reduce(opened, { type: 'done', ptyId: own.runId! }).state;
+test('hive_done in a new free session in an approval stage names that session on the approval; with the stage run\'s session cleared, feedback once it is closed resumes the free one as the stage\'s feedback run, which gives it the stage and keeps it free (#812, #720)', () => {
+  const { state: parked, ptyId } = sessionAwaiting(true);
+  const own = parked.workers.find((s) => s.runId === ptyId)!;
   assert.equal(task(parked)?.approval?.sessionId, own.sessionId);
-  const closed = reduce(parked, { type: 'exit', ptyId: own.runId! }).state;
+  const closed = reduce(parked, { type: 'exit', ptyId }).state;
   const { state, effects } = reduce(closed, { type: 'feedback', activityId: workId(closed, ID), text: 'split it', start: true });
   const spawn = effects.find((e) => e.type === 'spawn');
   assert.ok(spawn?.type === 'spawn' && spawn.run === 'continue' && spawn.activity.sessionId === own.sessionId && spawn.prompt === led('split it'), JSON.stringify(effects));
   const resumed = sessionsOf(state, ID).find((s) => s.id === own.sessionId);
   assert.deepEqual([resumed?.stages, resumed?.free], [['spec'], true]);
+});
+
+test('feedback after a free session\'s hive_done in an approval stage resumes the stage run\'s session while it is there, not the free one (#720)', () => {
+  const { state: parked, ptyId, stageRun } = sessionAwaiting();
+  const closed = reduce(parked, { type: 'exit', ptyId }).state;
+  const spawn = reduce(closed, { type: 'feedback', activityId: workId(closed, ID), text: 'split it', start: true }).effects.find((e) => e.type === 'spawn');
+  assert.ok(spawn?.type === 'spawn' && spawn.run === 'continue' && spawn.activity.sessionId === stageRun, JSON.stringify(spawn));
+});
+
+test('an Approve after a free session\'s hive_done resumes, in a continue stage, the stage run\'s session while it is there, else the free one (#720)', () => {
+  for (const cleared of [false, true]) {
+    const { state: parked, ptyId, stageRun } = sessionAwaiting(cleared, STAGES);
+    const free = parked.workers.find((s) => s.runId === ptyId)!.sessionId;
+    const closed = reduce(parked, { type: 'exit', ptyId }).state;
+    const spawn = reduce(closed, { type: 'approve', activityId: workId(closed, ID) }).effects.find((e) => e.type === 'spawn');
+    assert.ok(spawn?.type === 'spawn' && spawn.stage.name === 'dev' && spawn.session === 'continue' && spawn.activity.sessionId === (cleared ? free : stageRun), `cleared: ${cleared}: ${JSON.stringify(spawn)}`);
+  }
 });
 
 test('with a held worker and an open session on the same session, the held worker answers: continue, no input (#483)', () => {

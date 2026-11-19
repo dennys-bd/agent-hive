@@ -36,10 +36,11 @@ function approvalSession(task: Task, state: Pick<State, 'activities' | 'activity
   return id === undefined ? undefined : sessionsOf(state, taskId(task)).find((s) => s.id === id);
 }
 
-/** The session feedback resumes (#268, HIVE-2, #685): the free session that ended the stage when the approval names one (#812); in a manual gate
- * gateSession's, otherwise the stage's own latest. `stage` defaults to the task's: a spawn names the stage it runs. */
+/** The session feedback resumes (#268, HIVE-2, #685): in a manual gate gateSession's, otherwise the stage's own latest; only without one the
+ * free session that ended the stage, when the approval names one (#812, #720). `stage` defaults to the task's: a spawn names the stage it runs. */
 export function feedbackSession(task: Task, state: Pick<State, 'stages' | 'activities' | 'activityRecords'>, stage: string | undefined = task.stage): Session | undefined {
-  return approvalSession(task, state) ?? (isGate(stageOf(state.stages, stage)) ? gateSession(task, state) : stage === undefined ? undefined : stageSession(task, state, stage));
+  const own = isGate(stageOf(state.stages, stage)) ? gateSession(task, state) : stage === undefined ? undefined : stageSession(task, state, stage);
+  return own ?? approvalSession(task, state);
 }
 
 /** The user's own session open on the conversation feedback would resume (#483): a live free session on the task whose session is

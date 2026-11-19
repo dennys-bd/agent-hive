@@ -288,14 +288,16 @@ test('a free session is never the stage\'s session: alone it leaves start; besid
   assert.equal(startMode(task('dev', { sessions: [free('f-session-0001')] }), state), 'start', 'any session is context for a continue stage (#350)');
 });
 
-test('feedback goes to the free session whose hive_done ended the stage, which the approval names; without one, or once that session is cleared, to the stage run\'s (#812, #483)', () => {
+test('feedback goes to the stage run\'s session while there, even when a free session\'s hive_done ended the stage; without one, or once it is cleared, to the free session the approval names (#720, #812, #483)', () => {
   const sessions = [session('a-session-0001', ['spec']), free('f-session-0002')];
   const parked = task('spec', { sessions, approval: { since: AT, sessionId: 'f-session-0002' } });
-  assert.equal(feedbackSession(parked, stages)?.id, 'f-session-0002');
-  const onFree: Worker = { id: 's', status: 'working', runId: 'w1', activityId: 'a-1', sessionId: 'f-session-0002', freeSession: true };
-  assert.equal(openFeedbackSession(parked, { stages, workers: [onFree] })?.runId, 'w1', 'open: typed into it (#483)');
+  assert.equal(feedbackSession(parked, stages)?.id, 'a-session-0001');
   assert.equal(feedbackSession(task('spec', { sessions, approval: { since: AT } }), stages)?.id, 'a-session-0001');
-  assert.equal(feedbackSession(task('spec', { sessions: [sessions[0]], approval: { since: AT, sessionId: 'f-session-0002' } }), stages)?.id, 'a-session-0001', 'cleared');
+  const cleared = task('spec', { sessions: [sessions[1]], approval: { since: AT, sessionId: 'f-session-0002' } });
+  assert.equal(feedbackSession(cleared, stages)?.id, 'f-session-0002', 'cleared');
+  const onFree: Worker = { id: 's', status: 'working', runId: 'w1', activityId: 'a-1', sessionId: 'f-session-0002', freeSession: true };
+  assert.equal(openFeedbackSession(cleared, { stages, workers: [onFree] })?.runId, 'w1', 'open: typed into it (#483)');
+  assert.equal(openFeedbackSession(parked, { stages, workers: [onFree] }), undefined, 'the stage run\'s session is another conversation');
 });
 
 test('after a free run in the task\'s stage startMode offers no continue: start and restart with a start recorded there, a free session\'s own included; else start; while the hand resume of the stage\'s session runs, continue focuses it; a mark of another stage changes nothing (#812)', () => {

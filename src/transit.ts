@@ -64,22 +64,31 @@ function moveOn(state: State, task: Task, transition: Transition, end: EndOf | u
   if (next === undefined) return { ...held(state, task, effects), transition };
   // #670: a transition conducted the task, so its source's entry never pulls it back, even with no activity (a stage action on a new task)
   const moved = next.name === task.stage ? task : { ...enter(task, next), placedByHand: true as const };
-  const entered = settleEntries(state.tasks, withTask(state, moved));
+  const entered = resumesFree(settleEntries(state.tasks, withTask(state, moved)), moved, transition, end);
   const handover = end === undefined ? undefined : handoverOf(entered, moved, transition, next, end);
   return { state: handover === undefined ? entered : withHandover(entered, moved, handover), moved, next, effects, transition, ...(handover === undefined ? {} : { handover }) };
+}
+
+// #720: a free session that ended a stage whose own run left no session is what the destination's plain `continue` resumes (occupy reads the
+// activity's sessionId), over an earlier stage's id left there. A session that ran the origin, a stage run holding the activity and a gate's
+// own feedback (its handover names the session) keep the activity as it is. Written whatever the destination resumes (a new session, a
+// commands, evaluate or gate stage): the free session is the task's latest conversation, so a later continue stage should resume it
+function resumesFree(state: State, task: Task, transition: Transition, end: EndOf | undefined): State {
+  const live = activityOf(state, taskId(task));
+  if (live === undefined || live.workerId !== undefined || end?.sessionId === undefined || ownGateFeedback(state, transition)) return state;
+  return stageSession(task, state, transition.from) === undefined ? withActivity(state, { ...live, sessionId: end.sessionId }) : state;
 }
 
 // #757: a gate's own feedback, which keeps the task in the gate: its run is the only one a gate ever has
 const ownGateFeedback = (state: State, transition: Transition): boolean =>
   transition.when === 'feedback' && transition.to === transition.from && isGate(stageOf(state.stages, transition.to));
 
-// The run that just ended, as `previous` resumes it (#134): the free session whose hive_done ended the stage when one did (#812, #483: it ran
-// no stage, so stageSession never finds it); in a gate taking its own feedback, the session the feedback box names (#757: the gate ran
-// nothing); else the latest session that ran the origin, else the activity's
+// The run that just ended, as `previous` resumes it (#134): in a gate taking its own feedback, the session the feedback box names (#757: the
+// gate ran nothing); else the latest session that ran the origin; else the free session whose hive_done ended the stage (#812, #720: it ran
+// no stage, so stageSession never finds it, and only the origin's own run beats it); else the activity's
 function endedRun(state: State, task: Task, transition: Transition, end?: EndOf): Pick<Activity, 'sessionId'> {
-  if (end?.sessionId !== undefined) return { sessionId: end.sessionId };
-  if (ownGateFeedback(state, transition)) return { sessionId: feedbackSession(task, state, transition.to)?.id };
-  return { sessionId: stageSession(task, state, transition.from)?.id ?? activityOf(state, taskId(task))?.sessionId };
+  if (ownGateFeedback(state, transition)) return { sessionId: feedbackSession(task, state, transition.to)?.id ?? end?.sessionId };
+  return { sessionId: stageSession(task, state, transition.from)?.id ?? end?.sessionId ?? activityOf(state, taskId(task))?.sessionId };
 }
 
 // What the destination's next run is told (#134), only when the transition says more than its stage would: its own prompt, a feedback, a
