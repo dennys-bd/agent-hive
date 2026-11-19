@@ -19,7 +19,11 @@ export const MARGIN = 24;
 export const NODE_MIN = 160; // the least a node is given, however little room the viewport leaves
 const CORNER = 8;
 
-export interface LayoutNode { id: string; height: number }
+/** A segment's header line (#914): its top, in `count` equal segments of a box `height` tall, plus FORWARD_Y, from the box's top. */
+export const segmentLine = (height: number, count: number, index: number): number => (index * height) / count + FORWARD_Y;
+
+/** exit: the y offset from the node's top where its forward arrow leaves (#914); absent reads FORWARD_Y. */
+export interface LayoutNode { id: string; width: number; height: number; exit?: number }
 /** #914: the two segments of one strip an arrow joins, and how many segments the strip has. */
 export interface Segments { from: number; to: number; count: number }
 // unlabelled: carries no pill (#480); feedback: never inner by isInner (#576); inner: drawnEdgesOf's mark (#914), inner whatever isInner says;
@@ -32,7 +36,7 @@ export interface Routed { id: string; kind: EdgeKind; path: string; label: { x: 
 export interface Layout { nodes: Box[]; end?: Box; edges: Routed[]; width: number; height: number; levels: number; top: number }
 
 interface Span extends LayoutEdge { i: number; j: number }
-interface Placed extends Span { a: Box; b: Box }
+interface Placed extends Span { a: Box; b: Box; exit: number }
 
 const bottom = (b: Box): number => b.y + b.height;
 const centre = (b: Box): number => b.x + b.width / 2;
@@ -44,19 +48,23 @@ const range = (e: Span): [number, number] => [Math.min(e.i, e.j), Math.max(e.i, 
 // The end circle sits after the row, centred on the neighbour arrows' line
 const endBox = (x: number, top: number): Box => ({ id: END, x, y: top + FORWARD_Y - END_SIZE / 2, width: END_SIZE, height: END_SIZE });
 
-// The room after each node (#480): GAP_BARE with the loops hidden; GAP_ARROW when the arrows to the next one all go without a pill, so the
-// default path packs tight; GAP when one carries a pill or none says, as in Settings, where every arrow has one
+// The room before each slot, the end circle's last (#480): none before the first; GAP_BARE with the loops hidden; GAP_ARROW when the arrows
+// into the slot from the one before all go without a pill, so the default path packs tight; GAP when one carries a pill or none says, as in
+// Settings, where every arrow has one
 function gapsOf(count: number, spans: readonly Span[], bare: boolean): number[] {
-  return Array.from({ length: count }, (_, k) => {
+  return Array.from({ length: count + 1 }, (_, k) => {
+    if (k === 0) return 0;
     if (bare) return GAP_BARE;
-    const next = spans.filter((e) => e.i === k && e.j === k + 1);
-    return next.length > 0 && next.every((e) => e.unlabelled === true) ? GAP_ARROW : GAP;
+    const into = spans.filter((e) => e.i === k - 1 && e.j === k);
+    return into.length > 0 && into.every((e) => e.unlabelled === true) ? GAP_ARROW : GAP;
   });
 }
 
-// Each slot's x, the end circle's last: every node and the gap after it, in order
-const xsOf = (count: number, width: number, gaps: readonly number[]): number[] =>
-  Array.from({ length: count + 1 }, (_, i) => MARGIN + i * width + gaps.slice(0, i).reduce((a, g) => a + g, 0));
+const sum = (values: readonly number[]): number => values.reduce((a, v) => a + v, 0);
+
+// Each slot's x, the end circle's last: the widths before it and the gaps up to it (#914: every node its own width)
+const xsOf = (widths: readonly number[], gaps: readonly number[]): number[] =>
+  gaps.map((_, i) => MARGIN + sum(widths.slice(0, i)) + sum(gaps.slice(0, i + 1)));
 
 // Each edge's node indices, the end circle's after the row. An edge naming an unknown node, or the end without its circle, is left out
 function spansOf(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], hasEnd: boolean): Span[] {
@@ -92,10 +100,14 @@ function offsetsOf(above: readonly Placed[]): Map<string, number> {
   }));
 }
 
+// Straight on the header's line; from a source whose exit sits lower (a merged strip's last segment, #914), out at the exit and up the gap's
+// middle to the target's line, the pill on the rise
 function forward(e: Placed, dashed: boolean, top: number): Routed {
-  const y = top + FORWARD_Y;
-  const from = e.a.x + e.a.width;
-  return { id: e.id, kind: 'forward', path: `M ${from} ${y} L ${e.b.x} ${y}`, label: { x: (from + e.b.x) / 2, y }, dashed };
+  const [x1, x2, y1, y2] = [e.a.x + e.a.width, e.b.x, top + e.exit, top + FORWARD_Y];
+  if (y1 === y2) return { id: e.id, kind: 'forward', path: `M ${x1} ${y2} L ${x2} ${y2}`, label: { x: (x1 + x2) / 2, y: y2 }, dashed };
+  const xm = (x1 + x2) / 2;
+  const path = `M ${x1} ${y1} L ${xm - CORNER} ${y1} Q ${xm} ${y1} ${xm} ${y1 - CORNER} L ${xm} ${y2 + CORNER} Q ${xm} ${y2} ${xm + CORNER} ${y2} L ${x2} ${y2}`;
+  return { id: e.id, kind: 'forward', path, label: { x: xm, y: (y1 + y2) / 2 }, dashed };
 }
 
 function loop(e: Placed, dashed: boolean, top: number): Routed {
@@ -111,11 +123,11 @@ function over(e: Placed, xa: number, xb: number, level: number, dashed: boolean)
   return { id: e.id, kind: 'above', path, label: { x: (xa + xb) / 2, y: level }, dashed };
 }
 
-/** The chart (#134, #908): `nodes` in the stages' order, each `nodeWidth` wide and as tall as given; `edges` between their ids or to END, which
+/** The chart (#134, #908): `nodes` in the stages' order, each as wide and as tall as given (a node's `exit` moves its forward arrow down, #914); `edges` between their ids or to END, which
  * only `{ end: true }` draws. An edge naming an unknown node is left out. Dashed: an automatic arrow that goes back. With `{ loops: 'none' }`
  * (#909, #480) no arrow is drawn, so the row starts at the margin and the nodes sit GAP_BARE apart, with no pill to make room for; with them
  * on, two nodes whose arrows all go `unlabelled` sit GAP_ARROW apart. With { loops: 'inner' } only isInner's arrows are drawn (#576). */
-export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], nodeWidth: number, options: LayoutOptions = {}): Layout {
+export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], options: LayoutOptions = {}): Layout {
   const hasEnd = options.end === true && edges.some((e) => e.to === END);
   const all = spansOf(nodes, edges, hasEnd);
   const loops = options.loops ?? 'all';
@@ -124,15 +136,15 @@ export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutE
   // last node, which isInner alone would call a neighbour, and decision 1 calls an arrow to end outer
   const drawn = loops === 'inner' ? all.filter((e) => e.to !== END && isInner(e.i, e.j, e.feedback === true)) : all;
   const spans = bare ? [] : drawn;
-  const xs = xsOf(nodes.length, nodeWidth, gapsOf(nodes.length, drawn, bare));
+  const xs = xsOf(nodes.map((n) => n.width), gapsOf(nodes.length, drawn, bare));
   const levels = levelsOf(spans.filter((e) => kindOf(e.i, e.j) === 'above'));
   const count = Math.max(0, ...levels.values());
   // The room above the row holds the levels, the outermost at MARGIN, and a loop's arc and pill (#887): with neither the row starts at the margin
   const top = Math.max(count * DEPTH + MARGIN, spans.some((e) => e.i === e.j) ? TOP_LOOPS : MARGIN);
-  const placed = nodes.map((n, i): Box => ({ id: n.id, x: xs[i], y: top, width: nodeWidth, height: n.height }));
+  const placed = nodes.map((n, i): Box => ({ id: n.id, x: xs[i], y: top, width: n.width, height: n.height }));
   const end = hasEnd ? endBox(xs[nodes.length], top) : undefined;
   const boxes = end === undefined ? placed : [...placed, end];
-  const known = spans.map((e): Placed => ({ ...e, a: boxes[e.i], b: boxes[e.j] }));
+  const known = spans.map((e): Placed => ({ ...e, a: boxes[e.i], b: boxes[e.j], exit: nodes.at(e.i)?.exit ?? FORWARD_Y }));
   const offsets = offsetsOf(known.filter((e) => kindOf(e.i, e.j) === 'above'));
   const routed = known.map((e): Routed => {
     const dashed = e.automatic && e.j < e.i;
