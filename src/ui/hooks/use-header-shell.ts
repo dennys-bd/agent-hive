@@ -16,11 +16,11 @@ export interface HeaderShell {
   rightShown: boolean;
   bar?: ReactNode; // the activity's bar content, absent with no activity
   panes: { active?: RightPane; enabled: Record<RightPane, boolean>; pick(pane: RightPane): void };
-  canOpenRight: boolean; // false on the home
+  canOpenRight: boolean; // false on the home and beside a plugins list, update or mcp screen (#492)
 }
 
 interface ShellArgs {
-  center: CenterMode; current?: Activity; layout: ViewLayout; isHome: boolean; bar?: ReactNode; sideTab: SidePane;
+  center: CenterMode; current?: Activity; layout: ViewLayout; isRightHidden: boolean; bar?: ReactNode; sideTab: SidePane;
   setSideTab(tab: SidePane): void; activateTab(id: PanelId): void; close(side: Side): void;
 }
 
@@ -43,7 +43,7 @@ function activePane(center: CenterMode, current: Activity | undefined, sideTab: 
 
 /** The header's shell (#221), from what MainDock already holds. The active icon closes the right side, as the group's × does; another opens it
  * on its pane. The pick survives under the flow but its bar does not: the flow and the home have none, so the center column stays empty. */
-export function useHeaderShell({ center, current, layout, isHome, bar, sideTab, setSideTab, activateTab, close }: ShellArgs): HeaderShell {
+export function useHeaderShell({ center, current, layout, isRightHidden, bar, sideTab, setSideTab, activateTab, close }: ShellArgs): HeaderShell {
   const isActivities = center === 'activities';
   const active = activePane(center, current, sideTab);
   const pick = (pane: RightPane): void => {
@@ -56,7 +56,7 @@ export function useHeaderShell({ center, current, layout, isHome, bar, sideTab, 
   };
   const enabled = { files: isActivities && current !== undefined, details: center === 'automation' || (isActivities && current?.kind === 'task'), variables: center === 'plugins' };
   return {
-    center, layout, bar: isActivities ? bar : undefined, canOpenRight: !isHome, // nothing to open on the home
+    center, layout, bar: isActivities ? bar : undefined, canOpenRight: !isRightHidden, // nothing to open on the home, nor beside a plugins list, update or mcp screen (#492)
     rightShown: layout.open.right, // Detalhes is always the right group (#295)
     panes: { active, enabled, pick },
   };

@@ -330,8 +330,8 @@ export function MainDock(props: MainDockProps) {
   const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
   // The home has no worktree to show files or details of (redesign 08), nor a plugins list, update or mcp screen anything for it (#492): the
   // right side is hidden, not closed, so the saved layout keeps it. A local activity shows its checkout there (#633)
-  const isHome = selection.center === 'activities' && current === undefined;
-  const frameLayout = isHome || (selection.center === 'plugins' && plugins.isRightHidden) ? { ...layout, open: { ...layout.open, right: false } } : layout;
+  const isRightHidden = (selection.center === 'activities' && current === undefined) || (selection.center === 'plugins' && plugins.isRightHidden);
+  const frameLayout = isRightHidden ? { ...layout, open: { ...layout.open, right: false } } : layout;
   const shown = shownBySide(frameLayout, dock.active);
   const isLive = (taskId: string): boolean => activities.some((activity) => activity.kind === 'task' && activity.task.item.itemId === taskId);
   // The home's recents resume a stopped task's last session: an activity with only its worktree left has nothing to show yet
@@ -371,7 +371,7 @@ export function MainDock(props: MainDockProps) {
   ];
   // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
   const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;
-  const shell = useHeaderShell({ center: selection.center, current, layout: frameLayout, isHome, bar, sideTab, setSideTab, activateTab, close });
+  const shell = useHeaderShell({ center: selection.center, current, layout: frameLayout, isRightHidden, bar, sideTab, setSideTab, activateTab, close });
   const content = (
     <>
       {header?.(shell)}
