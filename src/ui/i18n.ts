@@ -264,7 +264,7 @@ const en = {
   'detail.issue': 'issue',
   'detail.parent': 'parent', // #36: the properties grid's row of the parent task
   'detail.branch': 'branch',
-  'detail.totalLabel': 'total',
+  'detail.totalLabel': 'worked', // #958: the worked time, the waiting left out
   'detail.tree': 'tree', // #36: the details' tree section
   'detail.tree.count': '{n} tasks · {done}/{n} done',
   'detail.tree.hint': 'click a row to open its details · hover marks it in the flow',
@@ -3652,7 +3652,7 @@ const pt: Record<MessageKey, string> = {
   'detail.issue': 'issue',
   'detail.parent': 'pai',
   'detail.branch': 'branch',
-  'detail.totalLabel': 'total',
+  'detail.totalLabel': 'trabalhou',
   'detail.tree': 'árvore',
   'detail.tree.count': '{n} tarefas · {done}/{n} done',
   'detail.tree.hint': 'clicar numa linha abre os detalhes dela · passar o mouse marca no grafo',

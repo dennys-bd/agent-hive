@@ -24,6 +24,15 @@ const state = { workers: [], activities: [], activityRecords: [record], tasks: [
 const lines = (): (string | null)[] => screen.queryAllByRole('listitem').map((li) => li.textContent);
 beforeEach(() => setLanguage('pt'));
 
+test('the totals row reads trabalhou in Portuguese and worked in English, with the same value (#958)', () => {
+  const view = render(<MetaGrid task={task} state={state} isActivity />);
+  expect(screen.getByText('trabalhou', { selector: 'dt' }).nextElementSibling).toHaveTextContent('1h35m · 1.7k tokens');
+  view.unmount();
+  setLanguage('en');
+  render(<MetaGrid task={task} state={state} isActivity />);
+  expect(screen.getByText('worked', { selector: 'dt' }).nextElementSibling).toHaveTextContent('1h35m · 1.7k tokens');
+});
+
 test('the total is a button, collapsed by default: one line, no parts (#617)', () => {
   render(<MetaGrid task={task} state={state} isActivity />);
   const total = screen.getByRole('button', { name: '1h35m · 1.7k tokens' });

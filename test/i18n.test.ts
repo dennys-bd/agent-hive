@@ -755,13 +755,13 @@ test('the relations section\'s copy (#829): both languages, relação in Portugu
 });
 
 test('the details panel sections\' copy (#958): both languages', () => {
-  const keys = ['detail.section.info', 'blockers.title', 'blockers.note', 'blockers.notBlocked', 'checkpoints.summary.one', 'checkpoints.summary.other'] as const;
+  const keys = ['detail.section.info', 'blockers.title', 'blockers.note', 'blockers.notBlocked', 'checkpoints.summary.one', 'checkpoints.summary.other', 'detail.totalLabel'] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
     'about this section', 'relations', 'these are the task\'s dependencies in its source (GitHub, Jira). a blocked task does not start until the blocker closes.', 'not blocked',
-    '{n} checkpoint · last {ago} · {stage}', '{n} checkpoints · last {ago} · {stage}',
+    '{n} checkpoint · last {ago} · {stage}', '{n} checkpoints · last {ago} · {stage}', 'worked',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
     'sobre esta seção', 'relacionamentos', 'são as dependências da tarefa na source (GitHub, Jira). a tarefa bloqueada não inicia até o bloqueio fechar.', 'não está bloqueada',
-    '{n} ponto · último {ago} · {stage}', '{n} pontos · último {ago} · {stage}',
+    '{n} ponto · último {ago} · {stage}', '{n} pontos · último {ago} · {stage}', 'trabalhou',
   ]);
 });
