@@ -214,7 +214,7 @@ export function onFixedKey(id: FixedShortcutId, act: (index: number) => void): (
   return () => window.removeEventListener('keydown', listener, true);
 }
 
-/** The keys main took from a focused subframe (#906), dispatched as a keydown on the focused <iframe> (window with no focus), so every
+/** The keys main took from a focused subframe (#906), dispatched as a keydown on the focused iframe element (window with no focus), so every
  *  capture listener on window acts as for a key of the page itself: fixed keys, accepts, isSettingsClosed and isRecording included. In the
  *  page's world, not the preload's, so the listeners get a plain event. App and DetachedWindow subscribe; a plain browser has no bridge. */
 export function listenFrameKeys(): () => void {

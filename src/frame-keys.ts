@@ -1,4 +1,4 @@
-// The keys main takes from a focused subframe for the page (#906): a key pressed in an <iframe> (the design pane, draw.io) fires in that
+// The keys main takes from a focused subframe for the page (#906): a key pressed in an iframe (the design pane, draw.io) fires in that
 // frame's document and never reaches the window's capture listeners. before-input-event sees every key of every frame first, so main
 // forwards the page's global keys from there. Electron is imported for its types only, so node:test covers the rule.
 import type { Input } from 'electron';

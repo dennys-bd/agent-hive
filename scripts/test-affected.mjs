@@ -12,7 +12,7 @@ const CORES_PER_WORKER = 4;
 const EDGES = [/\bfrom\s+['"](\.{1,2}\/[^'"]+)['"]/g, /\bimport\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g, /new URL\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*,\s*import\.meta\.url/g];
 const COMPILED = /\.(c|m)?ts$/;
 // Guards that read the whole tree (readdir of src/ or test/) instead of importing it: any change could be the one they catch
-const TREE_GUARDS = Object.freeze(['test/blocker-refs.test.js', 'test/temp-dir.test.js', 'test/tree-spawns.test.js']);
+const TREE_GUARDS = Object.freeze(['test/blocker-refs.test.js', 'test/key-surfaces.test.js', 'test/temp-dir.test.js', 'test/tree-spawns.test.js']);
 
 export const workers = (cores) => Math.max(1, Math.floor(cores / CORES_PER_WORKER));
 
