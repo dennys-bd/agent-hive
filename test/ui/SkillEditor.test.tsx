@@ -91,8 +91,7 @@ test('view as a workspace: read-only, the edit controls gone, the false branch d
   stubItems(serverOf());
   render(<PluginsWindow />);
   await open('new-build');
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
   expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^SKILL\.md$/);
   act(() => view().setPosition({ lineNumber: 12, column: 1 }));

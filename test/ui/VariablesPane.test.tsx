@@ -40,8 +40,10 @@ test("the open file's variables, each with its origin and a value per workspace:
   expect([value('delivery', 'agent-hive').textContent, value('delivery', 'hive-site').textContent]).toEqual(['single', 'stacked']);
   expect(value('delivery', 'agent-hive')).toHaveClass('text-muted-foreground');
   expect(value('delivery', 'hive-site')).toHaveClass('text-foreground');
-  expect(value('e2eCommand', 'agent-hive')).toHaveTextContent('faltando');
+  expect(value('e2eCommand', 'agent-hive')).toHaveTextContent('—');
   expect(value('e2eCommand', 'agent-hive')).toHaveClass('text-destructive');
+  expect(row('e2eCommand')).toHaveClass('border-destructive/30');
+  expect(row('delivery')).not.toHaveClass('border-destructive/30');
   expect(value('testCommand', 'agent-hive')).toHaveTextContent('null');
   expect(within(row('e2eCommand')).getByText('old-site · x').parentElement).toHaveClass('opacity-50');
   expect([within(row('e2eCommand')).getByText('sua'), within(row('testCommand')).getByText('da hive')]).toHaveLength(2);
@@ -62,12 +64,15 @@ test('view as a workspace switches the editor to its preview and "template" swit
   stubItems(serverOf());
   render(<PluginsWindow />);
   await open('new-build');
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  expect(screen.getByText('escolha um workspace para ver o texto como ele recebe.')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
   expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^SKILL\.md$/);
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'template' }));
+  expect(screen.getByRole('radio', { name: 'hive-site' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByText(/^variáveis resolvidas .* é o que hive-site recebe\.$/)).toBeInTheDocument();
+  expect(value('delivery', 'agent-hive').parentElement).toHaveClass('opacity-40');
+  expect(value('delivery', 'hive-site').parentElement).not.toHaveClass('opacity-40');
+  await user.click(screen.getByRole('radio', { name: 'template' }));
   await waitFor(() => expect(view().readOnly).toBe(false));
   expect(view().model.getValue()).toBe(VARS_TEXT);
   expect(row('delivery')).toBeInTheDocument();
@@ -101,9 +106,9 @@ test('a used "yours" variable goes after a confirmation naming its lines, an unu
   stubItems(serverOf({ save: saving([]) }));
   render(<PluginsWindow />);
   await open('new-build');
-  expect(within(row('testCommand')).queryByRole('button', { name: 'remover' })).not.toBeInTheDocument();
-  expect(within(row('delivery')).queryByRole('button', { name: 'remover' })).not.toBeInTheDocument();
-  await user.click(within(row('e2eCommand')).getByRole('button', { name: 'remover' }));
+  expect(within(row('testCommand')).queryByRole('button', { name: 'remover testCommand' })).not.toBeInTheDocument();
+  expect(within(row('delivery')).queryByRole('button', { name: 'remover delivery' })).not.toBeInTheDocument();
+  await user.click(within(row('e2eCommand')).getByRole('button', { name: 'remover e2eCommand' }));
   const dialog = await screen.findByRole('alertdialog');
   expect(dialog).toHaveTextContent('e2eCommand nas linhas 11');
   await user.click(within(dialog).getByRole('button', { name: 'remover' }));
@@ -112,7 +117,7 @@ test('a used "yours" variable goes after a confirmation naming its lines, an unu
   await waitFor(() => expect(view().model.getValue()).toBe(removed.text));
   expect(within(pane()).queryByRole('listitem', { name: 'e2eCommand' })).not.toBeInTheDocument();
 
-  await user.click(within(row('reviewDepth')).getByRole('button', { name: 'remover' }));
+  await user.click(within(row('reviewDepth')).getByRole('button', { name: 'remover reviewDepth' }));
   const unused = removeVariable(removed.text, 'reviewDepth');
   if (!unused.ok) throw new Error(unused.error.message);
   await waitFor(() => expect(view().model.getValue()).toBe(unused.text));

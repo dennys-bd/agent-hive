@@ -169,16 +169,14 @@ test('ver como a workspace shows its stage text read-only with no cards and the 
   render(<PluginsWindow />);
   const centre = await openProtocol(user);
   await within(centre).findByRole('article', { name: 'p1' });
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   expect(await within(centre).findByLabelText('protocolo de hive-site')).toHaveTextContent('stage of hive-site mine');
   expect(within(centre).queryAllByRole('article')).toEqual([]);
   expect(within(centre).getByText('p1 fora: boom')).toHaveClass('text-destructive');
   isGone = true;
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'agent-hive' }));
+  await user.click(screen.getByRole('radio', { name: 'agent-hive' }));
   expect(await within(centre).findByRole('article', { name: 'p1' })).toBeInTheDocument();
-  expect(screen.getByRole('combobox', { name: 'ver como' })).toHaveTextContent('template');
+  expect(screen.getByRole('radio', { name: 'template' })).toHaveAttribute('aria-checked', 'true');
 });
 
 test("the right pane lists the selected passage's variables; a value set there changes the draft, not the server, until salvar (#337)", async () => {

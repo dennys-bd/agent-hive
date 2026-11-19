@@ -213,8 +213,7 @@ test('Esc closes the card and the popover without writing; another "+" discards 
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(view().model.getValue()).toBe(CHAIN_TEXT);
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
   expect(within(nav()).queryAllByRole('button', { name: PLUS })).toEqual([]);
 }, SLOW_MS);

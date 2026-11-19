@@ -40,8 +40,7 @@ test("the meta names the section and the open file's saved time, the preview lin
   expect([testButton, revertButton()].map((button) => button?.classList.contains('h-6'))).toEqual([true, true]); // the head's controls are xs (#492)
   expect(testButton.parentElement).toHaveAttribute('title', 'em breve');
   expect(within(head()).getByRole('button', { name: /^revisor · / })).toBeInTheDocument();
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   expect(within(head()).getByRole('button', { name: 'testar no workspace hive-site' })).toBeDisabled();
   expect(head()).toHaveTextContent('preview · hive-site · só leitura'); // #492: the preview line in place of the section and saved time
   expect(head()).not.toHaveTextContent('salvo 14:31');

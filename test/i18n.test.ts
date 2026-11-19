@@ -617,14 +617,22 @@ test('the plugins design pass copy (#492): both languages', () => {
   const keys = [
     'plugins.origin.link', 'plugins.preview.label', 'plugins.list.hivePathVersion', 'plugins.map.header',
     'plugins.chain.onlyWhen', 'plugins.chain.and', 'plugins.chain.or', 'plugins.chain.otherwise',
+    'plugins.viewAs.hintEdit', 'plugins.viewAs.hintPreview', 'plugins.variables.fromTask', 'plugins.variables.removeNamed',
+    'plugins.variables.form.origin', 'plugins.variables.form.byWorkspace', 'plugins.variables.form.taskNote',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
     'based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}', 'map · generated from the text',
     'only when {condition}', 'and', 'or', 'otherwise',
+    'pick a workspace to see the text as it receives it.',
+    "resolved variables (the task's stay as {result.name}, read when the skill runs), and conditional blocks that do not apply dimmed: what {workspace} receives.",
+    'from task', 'remove {name}', 'origin', 'per workspace', "no value here: the skill reads the task's value when it runs. written to the header, under variables:.",
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
     'baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}', 'mapa · gerado do texto',
     'só quando {condition}', 'e', 'ou', 'senão',
+    'escolha um workspace para ver o texto como ele recebe.',
+    'variáveis resolvidas (as da tarefa ficam como {result.nome}, lidas quando a skill roda) e blocos condicionais que não valem esmaecidos. é o que {workspace} recebe.',
+    'da tarefa', 'remover {name}', 'origem', 'por workspace', 'sem valor aqui: a skill lê o valor da tarefa quando roda. grava no cabeçalho, em variables:.',
   ]);
 });
 

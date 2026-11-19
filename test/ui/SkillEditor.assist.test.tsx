@@ -46,11 +46,9 @@ test('a selection made before the text stopped being writable is not sent once i
   render(<PluginsWindow />);
   await open('new-build');
   act(() => view().select({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 26 }));
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }, { timeout: 3000 }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'template' }, { timeout: 3000 }));
+  await user.click(screen.getByRole('radio', { name: 'template' }));
   await waitFor(() => expect(view().readOnly).toBe(false));
   ask('shorter');
   await waitFor(() => expect(bodies).toHaveLength(1));
