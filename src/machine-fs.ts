@@ -40,7 +40,7 @@ export function treeFs(machine: Pick<Machine, 'fs'>): TreeFs {
     rename: (from, to) => fs.rename(from, to),
     // one inode: a case-insensitive volume resolves `A.ts` to `a.ts`, a case-sensitive one does not
     sameFile: async (a, b) => {
-      const [first, second] = await Promise.all([fs.lstat(a), fs.lstat(b)]).catch(() => []);
+      const [first, second] = await Promise.all([fs.lstat(a, { bigint: true }), fs.lstat(b, { bigint: true })]).catch(() => []);
       return first !== undefined && second !== undefined && first.dev === second.dev && first.ino === second.ino;
     },
   };
