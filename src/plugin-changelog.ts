@@ -40,6 +40,11 @@ export function noteFor(changelog: Changelog, itemId: string, heading: string, f
       return parts !== undefined && compare(parts, low) > 0 && compare(parts, high) <= 0 ? [[parts, version]] : [];
     })
     .sort(([a], [b]) => compare(b, a))
-    .map(([, version]) => changelog[version]?.[itemId]?.[heading])
+    .map(([, version]) => ownOf(ownOf(changelog[version], itemId), heading))
     .find((note) => note !== undefined);
+}
+
+// A heading or item id is the author's text: `constructor` or `toString` must miss, not answer Object's own function
+function ownOf<T>(record: Readonly<Record<string, T>> | undefined, key: string): T | undefined {
+  return record !== undefined && Object.hasOwn(record, key) ? record[key] : undefined;
 }

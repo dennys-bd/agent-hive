@@ -42,3 +42,10 @@ test('readChangelog reads the file, answers {} for a missing one silently, and l
     assert.match(noisy.lines[0] ?? '', /^WARN plugin changelog: .*changelog\.yaml/);
   }
 });
+
+test('noteFor never answers an inherited property: a heading or item named like an Object method is a miss (#492)', () => {
+  for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.equal(noteFor(LOG, 'hive:new-spec', name, '0.1.0', '0.11.0'), undefined, `heading ${name}`);
+    assert.equal(noteFor(LOG, name, '## Input', '0.1.0', '0.11.0'), undefined, `item ${name}`);
+  }
+});
