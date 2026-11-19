@@ -4,7 +4,7 @@ import type { RepoIssue, RepoIssues, RepoSummary, State } from '../../types';
 import type { RowTree } from '@/components/ProjectRow';
 import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
 import { ForkEmpty } from '@/components/ForkEmpty';
-import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
+import { type BackLink, FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoIssueRow } from '@/components/RepoIssueRow';
 import { Syncing } from '@/components/ui/spinner';
@@ -112,11 +112,11 @@ function IssueGrid({ repository, rows, total, state, isSyncing, tree, onOpen }: 
   );
 }
 
-export interface RepoIssueTableProps { state: State; summary: RepoSummary; onTab(tab: RepoTab): void; onOpen?(issue: RepoIssue): void; onRepository?(repository: string): void }
+export interface RepoIssueTableProps { state: State; summary: RepoSummary; onTab(tab: RepoTab): void; onOpen?(issue: RepoIssue): void; onRepository?(repository: string): void; back?: BackLink /* #921: the way back to the last flow */ }
 
 /** A repository's issues (#757, handoff 02) under the repository header: open or closed, newest update first, searched on the page, each issue nested under its parent in the same list (#585). Read
  * on opening, on a state change and on atualizar, which reads the sidebar's list again too; never polled. */
-export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository }: RepoIssueTableProps) {
+export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository, back }: RepoIssueTableProps) {
   const [issueState, setIssueState] = useState<IssueState>('open');
   const { issues, isLoading, reload } = useRepoIssues(summary.repository, issueState);
   // #585 decision 4: the unfolded parents belong to one repository's one state tab and fold again when either changes; React's
@@ -136,7 +136,7 @@ export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository }: 
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} search={search} onSearch={setSearch} isShown={isShown} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab, onRepository } }} onRefresh={refresh} github={`${summary.url}/issues`} />
+      <FlowHeader state={state} search={search} onSearch={setSearch} isShown={isShown} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab, onRepository } }} onRefresh={refresh} back={back} github={`${summary.url}/issues`} />
       {summary.role === 'fork' && summary.issuesEnabled === false ? ( // #854: GitHub turns a fork's issues off by default
         <ForkEmpty text={t('repos.fork.noIssues', { fork: summary.repository })} original={summary.fork?.parent} onRepository={onRepository} />
       ) : (

@@ -1,7 +1,7 @@
 import { ExternalLinkIcon, SearchIcon } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
-import { displayBinding } from '../../shortcuts';
+import { ariaKeyShortcut, displayBinding } from '../../shortcuts';
 import type { HIVE_SOURCE } from '../../tasks';
 import type { RepoSummary, SourceConfig, SourceSync, State } from '../../types';
 import { act } from '@/components/actions';
@@ -33,27 +33,32 @@ export function lastPolled(syncs: Record<string, SourceSync>, source?: string): 
 }
 
 /** A page's way back (#911, #380): the last flow's label and what shows it again. */
-export interface BackLink { label: string; onBack(): void }
+export interface BackLink { label: string; onBack(): void; toFlow?: true } // toFlow: the last flow (#921), else a list (#911)
 
-// voltar · ⌘[ (#911): the key as bound now, so a rebound one shows; the words alone while it is off
-function backTitle(): string {
-  const keys = binding('goBack');
-  return keys === null ? t('shortcuts.goBack') : t('back.title', { key: displayBinding(keys, isMac()) });
+// voltar · ⌘[ (#911), or voltar ao último fluxo · ⌘[ ou o botão voltar do mouse (#921): the key as bound now, so a rebound one shows; the
+// words alone while it is off
+function backTitle(back: BackLink, keys: string | null): string {
+  if (keys === null) return t('shortcuts.goBack');
+  return t(back.toFlow ? 'back.flowTitle' : 'back.title', { key: displayBinding(keys, isMac()) });
 }
 
-// The back button (#911, handoff §7): ‹ and the last flow's label (#380), then a divider before the name. ⌘[ and the mouse's back button do the
-// same, but only while the flow shows: the header stays mounted under Atividades (#596), where the button is out of sight
+// The back button (#911, handoff §7): ‹, the label (a list's voltar or the last flow's name, #921) and the key as bound (#921), then a
+// divider before the name. ⌘[ and the mouse's back button do the same, but only while the flow shows: the header stays mounted under
+// Atividades (#596), where the button is out of sight
 function BackButton({ back }: { back: BackLink }) {
   const isShown = useIsFlowShown();
   useBackKeys(isShown ? back.onBack : undefined);
+  const keys = binding('goBack');
   return (
     <>
       <button
-        type="button" title={backTitle()} onClick={back.onBack}
+        type="button" title={backTitle(back, keys)} aria-keyshortcuts={keys === null ? undefined : ariaKeyShortcut(keys, isMac())} onClick={back.onBack}
         className="flex max-w-[220px] shrink-0 items-center gap-1 rounded-[6px] border bg-background py-[3px] pr-2 pl-1.5 font-medium text-foreground text-xs hover:bg-muted"
       >
         <span aria-hidden="true" className="text-muted-foreground">‹</span>
         <span className="truncate">{back.label}</span>
+        {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: the kbd sits inside the button but is not itself focusable; the button announces the key through aria-keyshortcuts */}
+        {keys !== null && <kbd aria-hidden="true" className="shrink-0 font-normal font-sans text-muted-foreground text-xs tracking-widest">{displayBinding(keys, isMac())}</kbd>}
       </button>
       <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
     </>
@@ -180,7 +185,7 @@ interface FlowHeaderProps {
   mode?: HeaderMode; // #571: tasks (default), a source (#756) or a repository (#757)
   legend?: string; // #574: the tasks mode's sources legend; absent: todas as sources
   display?: ReactNode; // #571: the tasks mode's display control (exibir, #574), at the right, just before the search (#911)
-  back?: BackLink; // #911, #380: the way back to the last flow; only the issue and PR pages pass it
+  back?: BackLink; // #911, #380: the way back; a page's to its list, the list's, a source table's and a repository list's to the last flow (#921)
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
 }
 

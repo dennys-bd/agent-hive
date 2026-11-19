@@ -17,24 +17,24 @@ const pressed = (): string[] => screen.getAllByRole('button').filter((b) => b.ge
 
 test('the tasks rows: todas em lista, one per flow in the state\'s order, sem fluxo, each with ● N in yellow when some wait for you, then its total (#572)', () => {
   render(<TasksEntries state={SIDEBAR_STATE} center={FIRST_CENTER} show={vi.fn()} />);
-  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista● 35', 'build● 11', 'ship● 12', 'sem fluxo● 12']);
+  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista● 35Alt+1', 'build● 11Alt+2', 'ship● 12Alt+3', 'sem fluxo● 12Alt+4']);
   expect(within(row(/^build/)).getByText('● 1')).toHaveClass('text-signal-yellow');
 });
 
 test('● N is hidden when none of the row\'s tasks waits for you (#572)', () => {
   render(<TasksEntries state={{ ...SIDEBAR_STATE, workers: [], activities: [] }} center={FIRST_CENTER} show={vi.fn()} />);
-  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista5', 'build1', 'ship2', 'sem fluxo2']);
+  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista5Alt+1', 'build1Alt+2', 'ship2Alt+3', 'sem fluxo2Alt+4']);
 });
 
 test('the row of the shown center is selected (the first flow\'s for a flow center with no flow), none under a source; a click shows its center (#572)', async () => {
   const user = userEvent.setup();
   const show = vi.fn();
   const { rerender } = render(<TasksEntries state={SIDEBAR_STATE} center={FIRST_CENTER} show={show} />);
-  expect(pressed()).toEqual(['build● 11']);
+  expect(pressed()).toEqual(['build● 11Alt+2']);
   rerender(<TasksEntries state={SIDEBAR_STATE} center={{ kind: 'tasks', view: 'flow', flow: 'ship' }} show={show} />);
-  expect(pressed()).toEqual(['ship● 12']);
+  expect(pressed()).toEqual(['ship● 12Alt+3']);
   rerender(<TasksEntries state={SIDEBAR_STATE} center={{ kind: 'tasks', view: 'outside' }} show={show} />);
-  expect(pressed()).toEqual(['sem fluxo● 12']);
+  expect(pressed()).toEqual(['sem fluxo● 12Alt+4']);
   rerender(<TasksEntries state={SIDEBAR_STATE} center={{ kind: 'source', source: 'roadmap' }} show={show} />);
   expect(pressed()).toEqual([]);
   await user.click(row(/^todas em lista/));
@@ -53,7 +53,7 @@ beforeEach(() => {
   resetViewState();
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => json(String(input) === '/repositories' ? listed : { ok: true })));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 function renderSidebar(over: Partial<TasksSidebarProps> = {}) {
   const props: TasksSidebarProps = {
@@ -121,16 +121,18 @@ test('a reload restores the closed flags and the heights (#572)', () => {
 });
 
 test('a source row: icon, name and count over owner · type; the hive row first on one line; the tooltip names the key; no key caps (#572)', () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'); // pickSource's ⌥n is macOS's (#921)
   renderSidebar();
   const rows = within(section('sources')).getAllByRole('button', { name: /^(hive|roadmap|notes)/ });
   expect(rows.map((r) => r.textContent)).toEqual(['hive1', 'roadmap3acme · github project', 'notes1acme · github project']);
-  expect(rows.map((r) => r.title)).toEqual(['hive · Alt+1', 'roadmap · acme · Alt+2', 'notes · acme · Alt+3']);
+  expect(rows.map((r) => r.title)).toEqual(['hive · ⌥1', 'roadmap · acme · ⌥2', 'notes · acme · ⌥3']);
   expect(within(rows[1]).getByText('acme · github project')).toHaveClass('pl-6');
   expect(document.querySelector('[data-key-hint]')).toBeNull();
   expect(within(section('sources')).queryByRole('button', { name: /^todas/ })).not.toBeInTheDocument();
 });
 
 test('a source row\'s click and ⌥n open its table, hive on ⌥1; ⌥0 opens todas em lista; a closed sources section still answers (#572)', async () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'); // pickSource's ⌥n is macOS's (#921)
   const user = userEvent.setup();
   const { props } = renderSidebar();
   await user.click(screen.getByText('roadmap'));

@@ -83,6 +83,7 @@ const en = {
   'flow.zoom.reset': 'back to 100%',
   'flow.zoom.fit': 'fit',
   'back.title': 'back · {key}', // #911: the page header's back button
+  'back.flowTitle': 'back to the last flow · {key} or the mouse back button', // #921: a list's back to the last flow
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -2046,6 +2047,15 @@ const en = {
   'shortcuts.sleepSession': 'sleep the focused session',
   'shortcuts.refreshFlow': 'refresh the flow',
   'shortcuts.goBack': 'go back', // #911
+  'shortcuts.flowEntry1': 'tasks entry 1', // #921
+  'shortcuts.flowEntry2': 'tasks entry 2',
+  'shortcuts.flowEntry3': 'tasks entry 3',
+  'shortcuts.flowEntry4': 'tasks entry 4',
+  'shortcuts.flowEntry5': 'tasks entry 5',
+  'shortcuts.flowEntry6': 'tasks entry 6',
+  'shortcuts.flowEntry7': 'tasks entry 7',
+  'shortcuts.flowEntry8': 'tasks entry 8',
+  'shortcuts.flowEntry9': 'tasks entry 9',
   'shortcuts.zoomOut': 'zoom the flow out', // #910
   'shortcuts.zoomIn': 'zoom the flow in',
   'shortcuts.zoomReset': 'the flow at 100%',
@@ -3333,6 +3343,7 @@ const en = {
   'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
   'tasks.sidebar.list': 'all as a list', // #572: the tasks section's rows (handoff §4b)
   'tasks.sidebar.outside': 'no flow',
+  'tasks.sidebar.entryTitle': '{name} · {key}', // #921: an entry's tooltip
   'tasks.sidebar.automation': 'automation', // #572: the sidebar's section titles (handoff §4)
   'tasks.sidebar.tasks': 'tasks',
   'tasks.sidebar.sources': 'sources',
@@ -3472,6 +3483,7 @@ const pt: Record<MessageKey, string> = {
   'flow.zoom.reset': 'voltar a 100%',
   'flow.zoom.fit': 'ajustar',
   'back.title': 'voltar · {key}',
+  'back.flowTitle': 'voltar ao último fluxo · {key} ou o botão voltar do mouse',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',
@@ -5427,6 +5439,15 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.sleepSession': 'dormir a sessão em foco',
   'shortcuts.refreshFlow': 'atualizar o fluxo',
   'shortcuts.goBack': 'voltar',
+  'shortcuts.flowEntry1': 'entrada de tarefas 1',
+  'shortcuts.flowEntry2': 'entrada de tarefas 2',
+  'shortcuts.flowEntry3': 'entrada de tarefas 3',
+  'shortcuts.flowEntry4': 'entrada de tarefas 4',
+  'shortcuts.flowEntry5': 'entrada de tarefas 5',
+  'shortcuts.flowEntry6': 'entrada de tarefas 6',
+  'shortcuts.flowEntry7': 'entrada de tarefas 7',
+  'shortcuts.flowEntry8': 'entrada de tarefas 8',
+  'shortcuts.flowEntry9': 'entrada de tarefas 9',
   'shortcuts.zoomOut': 'afastar o fluxo',
   'shortcuts.zoomIn': 'aproximar o fluxo',
   'shortcuts.zoomReset': 'fluxo em 100%',
@@ -6713,6 +6734,7 @@ const pt: Record<MessageKey, string> = {
   'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
   'tasks.sidebar.list': 'todas em lista',
   'tasks.sidebar.outside': 'sem fluxo',
+  'tasks.sidebar.entryTitle': '{name} · {key}',
   'tasks.sidebar.automation': 'automação',
   'tasks.sidebar.tasks': 'tarefas',
   'tasks.sidebar.sources': 'sources',

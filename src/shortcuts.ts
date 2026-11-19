@@ -173,6 +173,18 @@ export function displayBinding(binding: string, isMac: boolean): string {
   return [...mods.map((m) => (m === 'CmdOrCtrl' ? 'Ctrl' : m)), key].join('+');
 }
 
+// aria-keyshortcuts names keys as KeyboardEvent.key does and modifiers as Control, Meta, Alt and Shift, so the accelerator form is no value there (#921)
+const ARIA_KEY: Readonly<Record<string, string>> = { Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight' };
+
+/** A binding as aria-keyshortcuts writes it (#921): CmdOrCtrl is Meta on macOS and Control elsewhere, Ctrl is Control. */
+export function ariaKeyShortcut(binding: string, isMac: boolean): string {
+  return binding.split('+').map((part) => {
+    if (part === 'CmdOrCtrl') return isMac ? 'Meta' : 'Control';
+    if (part === 'Ctrl') return 'Control';
+    return Object.hasOwn(ARIA_KEY, part) ? ARIA_KEY[part] : part;
+  }).join('+');
+}
+
 const DIGIT_KEY = /^(.*?)(\d)$/;
 
 /** A fixed row's keys as the user reads them (#585): a digit range as one key (⌘⌥1–3), anything else each key, space-separated. */
