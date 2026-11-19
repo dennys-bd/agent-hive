@@ -12,7 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { DisplayControls } from '@/hooks/use-flow-view';
 import { type MessageKey, t } from '@/i18n';
 import { sourceOwner } from '@/lib/flow-sources';
-import { type DisplayOptions, HIDDEN_EPICS, LOOP_LABELS, LOOPS } from '@/lib/flow-view';
+import { type DisplayOptions, EMPTY_STAGES, HIDDEN_EPICS, LOOP_LABELS, LOOPS } from '@/lib/flow-view';
 
 type Patch = (patch: Partial<DisplayOptions>) => void;
 
@@ -106,9 +106,23 @@ function TreeSection({ options, isTree, onChange }: { options: DisplayOptions; i
   );
 }
 
+// #914: how the flowchart draws a stage with no shown task; the last section, since it reads what the sections above let through
+function EmptyStagesSection({ options, onChange }: { options: DisplayOptions; onChange: Patch }) {
+  return (
+    <div className="flex flex-col gap-2.5 border-t px-3 py-2.5">
+      <Row label={t('tasks.display.emptyStages')} hint={t(`tasks.display.emptyStages.hint.${options.emptyStages}` as MessageKey)}>
+        <Segmented
+          label={t('tasks.display.emptyStages')} values={EMPTY_STAGES} value={options.emptyStages}
+          labelOf={(v) => t(`tasks.display.emptyStages.${v}` as MessageKey)} onChange={(emptyStages) => onChange({ emptyStages })}
+        />
+      </Row>
+    </div>
+  );
+}
+
 interface DisplayPopoverProps { options: DisplayOptions; onChange: Patch; sources: DisplaySource[]; isTree: boolean; hasLoops: boolean }
 
-/** exibir (#574, handoff §3): the button and its 300px popover; `hasLoops` false (the list, the grid) drops the voltas and rótulos rows. */
+/** exibir (#574, handoff §3): the button and its 300px popover; `hasLoops` false (the list, the grid) drops the voltas and rótulos rows, and etapas vazias (#914). */
 export function DisplayPopover({ options, onChange, sources, isTree, hasLoops }: DisplayPopoverProps) {
   return (
     <Popover>
@@ -121,6 +135,7 @@ export function DisplayPopover({ options, onChange, sources, isTree, hasLoops }:
         <SourcesSection sources={sources} sourcesOff={options.sourcesOff} onChange={onChange} />
         {hasLoops && <LoopsSection options={options} onChange={onChange} />}
         <TreeSection options={options} isTree={isTree} onChange={onChange} />
+        {hasLoops && <EmptyStagesSection options={options} onChange={onChange} />}
       </PopoverContent>
     </Popover>
   );

@@ -3345,6 +3345,13 @@ const en = {
   'tasks.display.epics.hint.none': 'epics show as cards in the stages.',
   'tasks.display.epics.hint.middle': 'only the root epic stays. the middle ones leave the view and stay in the flow.',
   'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
+  'tasks.display.emptyStages': 'empty stages', // #914
+  'tasks.display.emptyStages.open': "don't collapse",
+  'tasks.display.emptyStages.collapse': 'collapse',
+  'tasks.display.emptyStages.merge': 'collapse and merge',
+  'tasks.display.emptyStages.hint.open': 'they stay open, as wide as the other stages.',
+  'tasks.display.emptyStages.hint.collapse': 'each empty stage becomes a narrow strip.',
+  'tasks.display.emptyStages.hint.merge': 'they collapse, and neighbouring ones become a single strip.',
   'tasks.sidebar.list': 'all as a list', // #572: the tasks section's rows (handoff §4b)
   'tasks.sidebar.outside': 'no flow',
   'tasks.sidebar.entryTitle': '{name} · {key}', // #921: an entry's tooltip
@@ -6739,6 +6746,13 @@ const pt: Record<MessageKey, string> = {
   'tasks.display.epics.hint.none': 'epics aparecem como cards nas etapas.',
   'tasks.display.epics.hint.middle': 'fica só o epic raiz. os do meio somem da vista e continuam no fluxo.',
   'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
+  'tasks.display.emptyStages': 'etapas vazias',
+  'tasks.display.emptyStages.open': 'não recolher',
+  'tasks.display.emptyStages.collapse': 'recolher',
+  'tasks.display.emptyStages.merge': 'recolher e juntar',
+  'tasks.display.emptyStages.hint.open': 'ficam abertas, do tamanho das outras etapas.',
+  'tasks.display.emptyStages.hint.collapse': 'cada etapa vazia vira uma faixa estreita.',
+  'tasks.display.emptyStages.hint.merge': 'recolhem, e as vizinhas viram uma faixa só.',
   'tasks.sidebar.list': 'todas em lista',
   'tasks.sidebar.outside': 'sem fluxo',
   'tasks.sidebar.entryTitle': '{name} · {key}',

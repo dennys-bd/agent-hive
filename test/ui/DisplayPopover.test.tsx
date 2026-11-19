@@ -157,3 +157,40 @@ test('a jira source\'s row names its site and its type (#820)', () => {
   setLanguage('en');
   expect(displaySources({ sources: [JIRA], auth: 'cli', hiveSource: false }, [])).toEqual([{ name: 'tickets', detail: 'acme.example · jira project', count: 0 }]);
 });
+
+test('etapas vazias is the last section: three choices, recolher e juntar by default, a hint each; a choice is written and survives a reload (#914)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(<Harness />);
+  let pop = await open(user);
+  expect(pop.getAllByRole('radiogroup').map((g) => g.getAttribute('aria-label')).at(-1)).toBe('etapas vazias');
+  expect(names(pop, 'etapas vazias')).toEqual(['não recolher', 'recolher', 'recolher e juntar']);
+  expect(choice(pop, 'etapas vazias', 'recolher e juntar')).toHaveAttribute('aria-checked', 'true');
+  expect(pop.getByText('recolhem, e as vizinhas viram uma faixa só.')).toBeInTheDocument();
+  await user.click(choice(pop, 'etapas vazias', 'recolher'));
+  expect(pop.getByText('cada etapa vazia vira uma faixa estreita.')).toBeInTheDocument();
+  await user.click(choice(pop, 'etapas vazias', 'não recolher'));
+  expect(pop.getByText('ficam abertas, do tamanho das outras etapas.')).toBeInTheDocument();
+  expect(readFlowView().emptyStages).toBe('open');
+  unmount();
+  render(<Harness />);
+  pop = await open(user);
+  expect(choice(pop, 'etapas vazias', 'não recolher')).toHaveAttribute('aria-checked', 'true');
+});
+
+test('without hasLoops (the list, the grid) there is no etapas vazias; the tree toggle is a switch with aria-checked (#914)', async () => {
+  const user = userEvent.setup();
+  render(<Harness hasLoops={false} />);
+  const pop = await open(user);
+  expect(pop.queryByRole('radiogroup', { name: 'etapas vazias' })).not.toBeInTheDocument();
+  // the shadcn Switch (Radix) renders the role the mock's markup lacked
+  expect(pop.getByRole('switch', { name: '⑂ agrupar a árvore na etapa' })).toHaveAttribute('aria-checked', 'false');
+});
+
+test('in English: empty stages and its three choices (#914)', async () => {
+  setLanguage('en');
+  const user = userEvent.setup();
+  render(<Harness />);
+  const pop = await open(user, 'display');
+  expect(names(pop, 'empty stages')).toEqual(['don\'t collapse', 'collapse', 'collapse and merge']);
+  expect(pop.getByText('they collapse, and neighbouring ones become a single strip.')).toBeInTheDocument();
+});
