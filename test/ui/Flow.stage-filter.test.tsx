@@ -96,7 +96,7 @@ test('a stage whose every task fails its filter says so instead of vazia; the ke
   save({ dev: [LABEL_X] });
   render(<Flow state={state([task('1', 'dev'), task('2', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev')], [worker('s1')]))} />);
   expect(screen.getByText('Nenhuma tarefa passa no filtro')).toBeInTheDocument();
-  expect(screen.getAllByText('vazia')).toHaveLength(1); // review really is empty
+  expect(screen.getAllByText('nenhuma tarefa')).toHaveLength(1); // review really is empty
   await openStageMenu(user, 1); // review: no rule
   expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['restaurar ordem da source', 'Filtrar…']);
   await user.keyboard('{Escape}');

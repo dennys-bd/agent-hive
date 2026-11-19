@@ -1561,7 +1561,7 @@ const en = {
   'settings.error.approvalMinutes': 'the approval window must be a whole number of minutes from 1 to 120',
   'settings.error.rateLimitWait': 'the plan limit wait must be a whole number of minutes from 1 to 10080',
   'settings.error.consoleLines': 'the console lines per channel must be a whole number from 100 to 100000',
-  'stage.empty': 'empty',
+  'stage.empty': 'no tasks', // #914: an empty node's body
   'task.blockedBy': 'blocked by {ids}',
   'task.blockedVia': '{id} (via {via})', // #424: an inherited blocker and the ancestor that holds it
   'task.start': 'start',
@@ -4958,7 +4958,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.approvalMinutes': 'a janela de aprovação precisa ser um número inteiro de minutos de 1 a 120',
   'settings.error.rateLimitWait': 'a espera pelo limite do plano precisa ser um número inteiro de minutos de 1 a 10080',
   'settings.error.consoleLines': 'as linhas do console por canal precisam ser um número inteiro de 100 a 100000',
-  'stage.empty': 'vazia',
+  'stage.empty': 'nenhuma tarefa',
   'task.blockedBy': 'bloqueada por {ids}',
   'task.blockedVia': '{id} (via {via})', // #424
   'task.start': 'iniciar',
