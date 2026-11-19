@@ -15,6 +15,7 @@ export interface VariableDeclaration {
   default?: VariableValue;
   required?: boolean;
   workspaces?: Record<string, VariableValue>;
+  from?: 'task'; // #492: the value is the task's, so the declaration holds no other value
 }
 
 /** A declaration without its name: what updateVariable rewrites, the name staying (#321, decision 7). */
@@ -266,7 +267,8 @@ export function updateVariable(text: string, name: string, fields: VariableField
     const existing = source.parsed.variables.find((variable) => variable.name === name);
     if (existing === undefined) return notDeclared(name);
     const { workspaces: given = {}, ...rest } = fields;
-    const kept = Object.entries(existing.workspaces).filter(([workspace]) => !Object.hasOwn(given, workspace));
+    // #492: a variable from the task takes no workspace value, so none is kept; a configured one is otherwise never lost (decision 11)
+    const kept = fields.from === 'task' ? [] : Object.entries(existing.workspaces).filter(([workspace]) => !Object.hasOwn(given, workspace));
     const workspaces = { ...given, ...Object.fromEntries(kept) };
     const declaration = Object.keys(workspaces).length === 0 ? rest : { ...rest, workspaces };
     // setIn on an existing key replaces its value where it stands: the declaration keeps its line and the comment above it

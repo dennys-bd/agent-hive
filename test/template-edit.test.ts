@@ -289,3 +289,15 @@ test('setHeadingLevel turns an h4 under an h2 into an h3, keeping the rest of th
   assert.match(refused(setHeadingLevel(text, 2, 3)).message, /line 2 is not a heading/);
   assert.match(refused(setHeadingLevel(text, 5, 7)).message, /1 to 6/);
 });
+
+test('updateVariable sets from: task in place, dropping the values a task variable cannot keep, and an update without it clears it (#492)', () => {
+  const doc = '---\nname: x\nvariables:\n  planPath: { default: a, workspaces: { hive: b } }\n---\n{{ planPath }}\n';
+  const tasked = updateVariable(doc, 'planPath', { from: 'task' });
+  if (!tasked.ok) return assert.fail(tasked.error.message);
+  assert.equal(tasked.text, '---\nname: x\nvariables:\n  planPath: { from: task }\n---\n{{ planPath }}\n');
+  assert.equal(tasked.parsed.variables[0]?.from, 'task');
+  const back = updateVariable(tasked.text, 'planPath', { default: null });
+  if (!back.ok) return assert.fail(back.error.message);
+  assert.equal(back.text, '---\nname: x\nvariables:\n  planPath: { default: null }\n---\n{{ planPath }}\n');
+  assert.equal(back.parsed.variables[0]?.from, undefined);
+});
