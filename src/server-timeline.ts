@@ -1,4 +1,7 @@
+import type { Express, Request, Response } from 'express';
 import type { MoveBy, StageOutcome } from './facts.js';
+import type { Logger } from './log.js';
+import type { UsageStore } from './usage-store.js';
 
 export type TimelineEvent =
   | { kind: 'stage'; ts: string; stage?: string; attempt: number; outcome?: StageOutcome; durationMs: number; waitedMs: number }
@@ -50,4 +53,31 @@ export function timelineOf(records: readonly Fields[]): TaskTimeline {
   });
   const since = dated.at(0)?.ts;
   return since === undefined || dated.some(({ record }) => record.event === 'task.discovered') ? { events } : { since, events };
+}
+
+export interface TimelineRouteDeps { usage: UsageStore | undefined; log: Pick<Logger, 'error'> } // undefined: a server with no store, as every server test but one
+export const USAGE_OFF_MESSAGE = 'the usage store is off';
+const HTTP_SERVER_ERROR = 500;
+const HTTP_UNAVAILABLE = 503;
+const READ_FAILED_MESSAGE = 'the timeline read failed'; // sqlite's words go to hive.log only
+
+/** GET /tasks/:id/timeline (#960, api.task-timeline): the task's timeline by item id, read from usage.sqlite on demand, never through State, so a
+ * task that left the Hive still has one. A failed read is a 500 with one hive.log line; the store stays on. */
+export function registerTimelineRoute(app: Express, { usage, log }: TimelineRouteDeps): void {
+  app.get('/tasks/:id/timeline', (req: Request, res: Response) => {
+    const itemId = String(req.params.id);
+    let records: readonly Record<string, unknown>[] | undefined;
+    try {
+      records = usage?.timeline(itemId);
+    } catch (err) {
+      log.error(`timeline ${itemId}: the usage store read failed: ${err instanceof Error ? err.message : String(err)}`);
+      res.status(HTTP_SERVER_ERROR).json({ error: READ_FAILED_MESSAGE });
+      return;
+    }
+    if (records === undefined) {
+      res.status(HTTP_UNAVAILABLE).json({ error: USAGE_OFF_MESSAGE });
+      return;
+    }
+    res.json(timelineOf(records));
+  });
 }

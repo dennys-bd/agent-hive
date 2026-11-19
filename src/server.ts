@@ -59,6 +59,7 @@ import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-reque
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { readUnlisted, unlistedStarted } from './poll-reads.js';
 import { registerTaskRoutes } from './server-tasks.js';
+import { registerTimelineRoute } from './server-timeline.js';
 import { deleteActivityOnDisk } from './activity-delete.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
@@ -1345,6 +1346,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerWorktreeRoutes(app, { log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
   registerHoldingsRoute(app, { exec, log, requireLive }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog
   registerTaskRoutes(app, taskDeps);
+  registerTimelineRoute(app, { usage: deps.usage, log }); // GET /tasks/:id/timeline (#960): from usage.sqlite by item id; 503 with no store
   registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec, machineFor }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since
   // throws (EBADF, as the input effect meets it): that delivery failed, the others go on.
