@@ -83,6 +83,7 @@ const en = {
   'flow.zoom.reset': 'back to 100%',
   'flow.zoom.fit': 'fit',
   'back.title': 'back · {key}', // #911: the page header's back button
+  'back.flowTitle': 'back to the last flow · {key} or the mouse back button', // #921: a list's back to the last flow
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -3482,6 +3483,7 @@ const pt: Record<MessageKey, string> = {
   'flow.zoom.reset': 'voltar a 100%',
   'flow.zoom.fit': 'ajustar',
   'back.title': 'voltar · {key}',
+  'back.flowTitle': 'voltar ao último fluxo · {key} ou o botão voltar do mouse',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',

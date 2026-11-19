@@ -176,6 +176,9 @@ test('a back entry starts the header with ‹ and its label, then a 1×14px divi
   const back = within(header()).getByRole('button', { name: 'issue #458' }); // ‹ is aria-hidden: the name is the label
   expect(header().firstElementChild).toBe(back);
   expect(back).toHaveTextContent('‹issue #458');
+  expect(back).toHaveTextContent('‹issue #458Alt+←');
+  expect(back.querySelector('kbd')).toHaveAttribute('aria-hidden', 'true');
+  expect(back).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowLeft');
   expect(back).toHaveClass('max-w-[220px]', 'rounded-[6px]', 'text-xs', 'font-medium');
   expect(back).toHaveAttribute('title', 'voltar · Alt+←');
   expect(back.nextElementSibling).toHaveClass('h-3.5', 'w-px', 'bg-border');
@@ -186,6 +189,8 @@ test('a back entry starts the header with ‹ and its label, then a 1×14px divi
   onTestFinished(() => setShortcuts({}));
   rerender(page({ label: 'issue #458', onBack }));
   expect(back).toHaveAttribute('title', 'voltar · Alt+['); // a rebound key shows
+  expect(back.querySelector('kbd')).toHaveTextContent('Alt+[');
+  expect(back).toHaveAttribute('aria-keyshortcuts', 'Alt+[');
 });
 
 const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS
@@ -335,4 +340,33 @@ test('no + criar tarefa on a GitHub source with no repository for new issues, on
   rerender(<FlowHeader state={state(tasks)} mode={{ kind: 'source', source: 'hive' }} search="" onSearch={vi.fn()} />);
   expect(createButton()).toBeNull();
   expect(open).not.toHaveBeenCalled();
+});
+
+test('a back to the last flow is titled for it, by the key as bound now; with goBack off neither kind shows a kbd or aria-keyshortcuts and the title is voltar (#921)', () => {
+  const page = (back: BackLink) => <FlowHeader state={state(tasks)} back={back} />;
+  const { rerender } = render(page({ label: 'build', onBack: vi.fn(), toFlow: true }));
+  const back = within(header()).getByRole('button', { name: 'build' });
+  expect(back).toHaveAttribute('title', 'voltar ao último fluxo · Alt+← ou o botão voltar do mouse');
+  expect(back).toHaveTextContent('‹buildAlt+←');
+  setShortcuts({ goBack: null });
+  onTestFinished(() => setShortcuts({}));
+  rerender(page({ label: 'build', onBack: vi.fn(), toFlow: true }));
+  expect(back).toHaveAttribute('title', 'voltar');
+  expect(back.querySelector('kbd')).toBeNull();
+  expect(back).not.toHaveAttribute('aria-keyshortcuts');
+  rerender(page({ label: 'voltar', onBack: vi.fn() }));
+  expect(within(header()).getByRole('button', { name: 'voltar' })).toHaveAttribute('title', 'voltar');
+  setLanguage('en');
+  setShortcuts({});
+  rerender(page({ label: 'build', onBack: vi.fn(), toFlow: true }));
+  expect(within(screen.getByRole('region', { name: 'tasks' })).getByRole('button', { name: 'build' })).toHaveAttribute('title', 'back to the last flow · Alt+← or the mouse back button');
+});
+
+test('the tasks header (todas em lista) and a repository list start with the back when given (#921)', () => {
+  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
+  const back: BackLink = { label: 'build', onBack: vi.fn(), toFlow: true };
+  const { rerender } = render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} back={back} />);
+  expect(header().firstElementChild).toBe(within(header()).getByRole('button', { name: 'build' }));
+  rerender(<FlowHeader state={state(tasks)} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab: vi.fn() } }} back={back} />);
+  expect(header().firstElementChild).toBe(within(header()).getByRole('button', { name: 'build' }));
 });
