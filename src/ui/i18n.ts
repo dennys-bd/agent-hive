@@ -2456,6 +2456,8 @@ const en = {
   'plugins.mode.text': 'text',
   // #320: the version menu
   'plugins.version.menu': 'versions',
+  'plugins.version.header': 'versions of {name}',
+  'plugins.version.footer': 'each workspace uses one version. editing here changes only the open version.',
   'plugins.version.edited': 'edited {date}',
   'plugins.version.fromOriginal': 'from original {version}',
   'plugins.version.fromOriginalBare': 'from original',
@@ -2479,7 +2481,7 @@ const en = {
   // #320: the based-on link and its card
   'plugins.origin.link': 'based on {name}',
   'plugins.origin.title': 'based on',
-  'plugins.origin.open': 'open on github ↗',
+  'plugins.origin.openOn': 'open on {host}',
   'plugins.origin.repository': 'repository',
   'plugins.origin.version': 'version',
   'plugins.origin.license': 'license',
@@ -5863,6 +5865,8 @@ const pt: Record<MessageKey, string> = {
   'plugins.mode.text': 'texto',
   // #320: the version menu
   'plugins.version.menu': 'versões',
+  'plugins.version.header': 'versões de {name}',
+  'plugins.version.footer': 'cada workspace usa uma versão. editar aqui muda só a versão aberta.',
   'plugins.version.edited': 'editada {date}',
   'plugins.version.fromOriginal': 'da original {version}',
   'plugins.version.fromOriginalBare': 'da original',
@@ -5886,7 +5890,7 @@ const pt: Record<MessageKey, string> = {
   // #320: the based-on link and its card
   'plugins.origin.link': 'baseada em {name}',
   'plugins.origin.title': 'baseada em',
-  'plugins.origin.open': 'abrir no github ↗',
+  'plugins.origin.openOn': 'abrir em {host}',
   'plugins.origin.repository': 'repositório',
   'plugins.origin.version': 'versão',
   'plugins.origin.license': 'licença',

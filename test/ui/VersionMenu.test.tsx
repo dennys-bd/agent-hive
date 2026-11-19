@@ -21,8 +21,12 @@ test('the selector names the open version between the name and the chip; its men
   render(<PluginsWindow />);
   await open('new-build');
   expect([selector('mine').previousElementSibling?.textContent, selector('mine').nextElementSibling?.textContent]).toEqual(['new-build', 'customizada']);
+  expect(selector('mine')).not.toHaveClass('font-mono');
   await user.click(selector('mine'));
   const menu = await screen.findByRole('menu');
+  // #492: the header names the item, the note under the actions says what a version is per workspace
+  expect(menu.firstElementChild).toHaveTextContent('versões de new-build');
+  expect(menu.lastElementChild).toHaveTextContent('cada workspace usa uma versão. editar aqui muda só a versão aberta.');
   expect(rowsOf(menu).map((row) => [row.textContent, row.getAttribute('aria-checked')])).toEqual([
     ['minecustomizadaagent-hiveeditada 14:31 · da original 0.15', 'true'],
     ['tdd-firstcustomizadahive-siteeditada 09:00 · a partir de mine', 'false'],

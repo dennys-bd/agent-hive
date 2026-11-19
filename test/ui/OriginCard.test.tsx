@@ -23,8 +23,8 @@ test("hovering based on opens the 340px card: the name, the item's description, 
   await user.hover(link);
   const card = await screen.findByRole('dialog');
   expect(card).toHaveClass('w-[340px]');
-  expect(within(card).getByRole('link', { name: 'abrir no github ↗' })).toHaveAttribute('href', BASED_ON.url);
-  expect(card).toHaveTextContent(/^baseada emabrir no github ↗superpowers:executing-plansbuilds the plan/);
+  expect(within(card).getByRole('link', { name: 'abrir em example.com' })).toHaveAttribute('href', BASED_ON.url);
+  expect(card).toHaveTextContent(/^baseada emabrir em example.comsuperpowers:executing-plansbuilds the plan/);
   expect(within(card).getAllByRole('term').map((term) => [term.textContent, term.nextElementSibling?.textContent])).toEqual([
     ['repositório', 'obra/superpowers'], ['versão', 'v4.3.0'], ['licença', 'MIT'], ['vínculo', 'só crédito · a hive não acompanha mudanças'],
   ]);

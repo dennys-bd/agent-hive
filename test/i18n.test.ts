@@ -603,13 +603,13 @@ test("the version menu's copy reads as the handoff writes it, in both languages;
 test("the based-on card's copy reads as the handoff writes it, in both languages (#320)", () => {
   setLanguage('pt');
   assert.deepEqual(
-    [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.open'), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
-    ['baseada em x', 'abrir no github ↗', 'vínculo', 'só crédito · a hive não acompanha mudanças'],
+    [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.openOn', { host: 'github.com' }), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
+    ['baseada em x', 'abrir em github.com', 'vínculo', 'só crédito · a hive não acompanha mudanças'],
   );
   setLanguage('en');
   assert.deepEqual(
-    [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.open'), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
-    ['based on x', 'open on github ↗', 'link', 'credit only · the hive does not track changes'],
+    [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.openOn', { host: 'github.com' }), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
+    ['based on x', 'open on github.com', 'link', 'credit only · the hive does not track changes'],
   );
 });
 
@@ -619,7 +619,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'plugins.chain.onlyWhen', 'plugins.chain.and', 'plugins.chain.or', 'plugins.chain.otherwise',
     'plugins.viewAs.hintEdit', 'plugins.viewAs.hintPreview', 'plugins.variables.fromTask', 'plugins.variables.removeNamed',
     'plugins.variables.form.origin', 'plugins.variables.form.byWorkspace', 'plugins.variables.form.taskNote',
-    'plugins.chain.enters', 'plugins.chain.textKept', 'plugins.chain.elseLine',
+    'plugins.chain.enters', 'plugins.chain.textKept', 'plugins.chain.elseLine', 'plugins.version.header', 'plugins.version.footer', 'plugins.origin.openOn',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
     'based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}', 'map · generated from the text',
@@ -627,7 +627,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'pick a workspace to see the text as it receives it.',
     "resolved variables (the task's stay as {result.name}, read when the skill runs), and conditional blocks that do not apply dimmed: what {workspace} receives.",
     'from task', 'remove {name}', 'origin', 'per workspace', "no value here: the skill reads the task's value when it runs. written to the header, under variables:.",
-    'applies', 'text kept', 'else · line {line}',
+    'applies', 'text kept', 'else · line {line}', 'versions of {name}', 'each workspace uses one version. editing here changes only the open version.', 'open on {host}',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
     'baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}', 'mapa · gerado do texto',
@@ -635,7 +635,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'escolha um workspace para ver o texto como ele recebe.',
     'variáveis resolvidas (as da tarefa ficam como {result.nome}, lidas quando a skill roda) e blocos condicionais que não valem esmaecidos. é o que {workspace} recebe.',
     'da tarefa', 'remover {name}', 'origem', 'por workspace', 'sem valor aqui: a skill lê o valor da tarefa quando roda. grava no cabeçalho, em variables:.',
-    'entra', 'texto mantido', 'else · linha {line}',
+    'entra', 'texto mantido', 'else · linha {line}', 'versões de {name}', 'cada workspace usa uma versão. editar aqui muda só a versão aberta.', 'abrir em {host}',
   ]);
 });
 
