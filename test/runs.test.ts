@@ -269,6 +269,21 @@ test('a free session ending a stage whose run left no session is what a handover
   assert.ok(spawn?.type === 'spawn' && spawn.session === 'continue' && spawn.activity.sessionId === free && spawn.prompt?.startsWith('go on'), JSON.stringify(spawn));
 });
 
+// #720: task 1 in plan, which never ran; the activity still resumes spec's run, and dev goes on in the session
+const inPlan = (transitions: Transition[]): State => withWork({
+  ...initialState(1), signal: 'red', workspaces: ['hive'],
+  ...flowed([{ name: 'spec', from: {}, prompt: 'x' }, { name: 'plan', from: {}, prompt: 'x' }, { name: 'dev', from: {}, prompt: 'x', session: 'continue' }], transitions),
+  tasks: [{ item: ITEM, stage: 'plan', boardColumn: 'Ready', auto: true }],
+}, ITEM.itemId, { slug: 'hive-1-t', worktree: WORKTREE, sessionId: STAGE_RUN }, { sessions: [SPEC_RUN] });
+
+test('a free session ending a stage that never ran beats an earlier stage\'s session the activity still names: dev continues the free one, plain or with a handover (#720)', () => {
+  for (const transitions of [[{ from: 'plan', to: 'dev', when: 'done' }], [{ from: 'plan', to: 'dev', when: 'done', session: 'previous', prompt: 'go on' }]] as Transition[][]) {
+    const { spawn, free, done } = freeEnds(inPlan(transitions));
+    assert.equal(activityOf(done, ITEM.itemId)?.sessionId, free, JSON.stringify(transitions));
+    assert.ok(spawn?.type === 'spawn' && spawn.stage.name === 'dev' && spawn.session === 'continue' && spawn.activity.sessionId === free, JSON.stringify(spawn));
+  }
+});
+
 test('with the stage run\'s session there, a free session ending the stage hands the stage run\'s session, plain or with a handover; the activity keeps it (#720)', () => {
   for (const transitions of [PLAIN, PREVIOUS]) {
     const { spawn, done } = freeEnds(continuing([SPEC_RUN], STAGE_RUN, transitions));
