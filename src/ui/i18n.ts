@@ -3342,6 +3342,7 @@ const en = {
   'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
   'tasks.sidebar.list': 'all as a list', // #572: the tasks section's rows (handoff §4b)
   'tasks.sidebar.outside': 'no flow',
+  'tasks.sidebar.entryTitle': '{name} · {key}', // #921: an entry's tooltip
   'tasks.sidebar.automation': 'automation', // #572: the sidebar's section titles (handoff §4)
   'tasks.sidebar.tasks': 'tasks',
   'tasks.sidebar.sources': 'sources',
@@ -6731,6 +6732,7 @@ const pt: Record<MessageKey, string> = {
   'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
   'tasks.sidebar.list': 'todas em lista',
   'tasks.sidebar.outside': 'sem fluxo',
+  'tasks.sidebar.entryTitle': '{name} · {key}',
   'tasks.sidebar.automation': 'automação',
   'tasks.sidebar.tasks': 'tarefas',
   'tasks.sidebar.sources': 'sources',

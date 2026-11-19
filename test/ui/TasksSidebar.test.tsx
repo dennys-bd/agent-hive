@@ -17,24 +17,24 @@ const pressed = (): string[] => screen.getAllByRole('button').filter((b) => b.ge
 
 test('the tasks rows: todas em lista, one per flow in the state\'s order, sem fluxo, each with ● N in yellow when some wait for you, then its total (#572)', () => {
   render(<TasksEntries state={SIDEBAR_STATE} center={FIRST_CENTER} show={vi.fn()} />);
-  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista● 35', 'build● 11', 'ship● 12', 'sem fluxo● 12']);
+  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista● 35Alt+1', 'build● 11Alt+2', 'ship● 12Alt+3', 'sem fluxo● 12Alt+4']);
   expect(within(row(/^build/)).getByText('● 1')).toHaveClass('text-signal-yellow');
 });
 
 test('● N is hidden when none of the row\'s tasks waits for you (#572)', () => {
   render(<TasksEntries state={{ ...SIDEBAR_STATE, workers: [], activities: [] }} center={FIRST_CENTER} show={vi.fn()} />);
-  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista5', 'build1', 'ship2', 'sem fluxo2']);
+  expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['todas em lista5Alt+1', 'build1Alt+2', 'ship2Alt+3', 'sem fluxo2Alt+4']);
 });
 
 test('the row of the shown center is selected (the first flow\'s for a flow center with no flow), none under a source; a click shows its center (#572)', async () => {
   const user = userEvent.setup();
   const show = vi.fn();
   const { rerender } = render(<TasksEntries state={SIDEBAR_STATE} center={FIRST_CENTER} show={show} />);
-  expect(pressed()).toEqual(['build● 11']);
+  expect(pressed()).toEqual(['build● 11Alt+2']);
   rerender(<TasksEntries state={SIDEBAR_STATE} center={{ kind: 'tasks', view: 'flow', flow: 'ship' }} show={show} />);
-  expect(pressed()).toEqual(['ship● 12']);
+  expect(pressed()).toEqual(['ship● 12Alt+3']);
   rerender(<TasksEntries state={SIDEBAR_STATE} center={{ kind: 'tasks', view: 'outside' }} show={show} />);
-  expect(pressed()).toEqual(['sem fluxo● 12']);
+  expect(pressed()).toEqual(['sem fluxo● 12Alt+4']);
   rerender(<TasksEntries state={SIDEBAR_STATE} center={{ kind: 'source', source: 'roadmap' }} show={show} />);
   expect(pressed()).toEqual([]);
   await user.click(row(/^todas em lista/));
