@@ -213,3 +213,14 @@ export function onFixedKey(id: FixedShortcutId, act: (index: number) => void): (
   window.addEventListener('keydown', listener, true);
   return () => window.removeEventListener('keydown', listener, true);
 }
+
+/** The keys main took from a focused subframe (#906), dispatched as a keydown on the focused iframe element (window with no focus), so every
+ *  capture listener on window acts as for a key of the page itself: fixed keys, accepts, isSettingsClosed and isRecording included. In the
+ *  page's world, not the preload's, so the listeners get a plain event. App and DetachedWindow subscribe; a plain browser has no bridge. */
+export function listenFrameKeys(): () => void {
+  const off = window.hive?.onFrameKey(({ key, code, metaKey, ctrlKey, altKey, shiftKey, repeat }) => {
+    const target: EventTarget = document.activeElement ?? window;
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, code, metaKey, ctrlKey, altKey, shiftKey, repeat, bubbles: true, cancelable: true }));
+  });
+  return off ?? (() => undefined);
+}

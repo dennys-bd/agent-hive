@@ -5,6 +5,7 @@ import { appMenuTemplate } from './app-menu.js';
 import { loadConfigIfPresent } from './config.js';
 import { activeWorkers, configuredTheme, type DaemonAddress, type DaemonStatus, daemonStatus, ensureDaemon, menuLabel, ourDaemon, livePtys, setSignal, stopDaemon } from './daemon.js';
 import { type DetachedWindows, registerDetachIpc } from './detach-ipc.js';
+import { type FrameKeySettings, forwardFrameKeys } from './frame-keys.js';
 import { createDetachedWindowsFor, externalLinksToBrowser, WINDOW_PRELOAD } from './detached-window.js';
 import { windowChromeOptions } from './window-options.js';
 import type { ResolvedTheme } from './ui/lib/theme.js';
@@ -123,7 +124,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   });
   if (process.platform === 'win32') win.setMenuBarVisibility(false); // #648: hidden, not auto-hidden, so Alt cannot bring it back; its accelerators stay
   if (maximized && !fullScreen) win.maximize();
-  const detached = createDetachedWindowsFor({ port: () => port, boundsFile: join(app.getPath('userData'), DETACHED_BOUNDS_FILE), theme: windowTheme, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), log });
+  const detached = createDetachedWindowsFor({ port: () => port, boundsFile: join(app.getPath('userData'), DETACHED_BOUNDS_FILE), theme: windowTheme, frameKeys: frameKeySettings, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), log });
   mainWindows.set(port, { win, detached });
   showDock();
   // With onClose quit (#513) the last main window's close goes through before-quit like Cmd+Q: the settings decide whether the Hive stops,
@@ -153,6 +154,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   win.on('leave-full-screen', () => win.webContents.send('window:fullScreen', false));
   guardUnsavedEdits(win);
   externalLinksToBrowser(win, origin, log);
+  forwardFrameKeys(win.webContents, frameKeySettings); // #906: the design and diagram panes' keys
   return win;
 }
 
@@ -255,6 +257,10 @@ let settings: ViewerSettings = { ...VIEWER_DEFAULTS, language: 'en' };
 // The user's shortcut changes (#449), read with the settings: Close takes its accelerator from them (Settings… carries the fixed Cmd+,,
 // #481). {} (every default) while no config parses. Kept apart from ViewerSettings, which the settings form shares, since only the menu reads it.
 let shortcuts: Shortcuts = {};
+// #906: what forwardFrameKeys reads at each key of a focused frame, the main window's and its detached windows'
+function frameKeySettings(): FrameKeySettings {
+  return { shortcuts, isMac: process.platform === 'darwin' };
+}
 
 // The effective language (#242): the config's, else the system's as macOS reports it for the app, with or without LANG. The daemon the
 // viewer starts gets that same locale (ensureDaemon), so the main window and the menus agree.

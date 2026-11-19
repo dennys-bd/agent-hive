@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { BrowserWindow, shell } from 'electron';
 import { type BuildDetached, createDetachedWindows, type DetachedEvents, type DetachedWindow, type DetachedWindows, type DockTarget } from './detach-ipc.js';
+import { type FrameKeySettings, forwardFrameKeys } from './frame-keys.js';
 import { isOpenableExternal } from './external-url.js';
 import type { Logger } from './log.js';
 import { guardUnsavedEdits } from './main-window-guards.js';
@@ -14,6 +15,7 @@ export const WINDOW_PRELOAD = fileURLToPath(new URL('./window-preload.cjs', impo
 
 /** A main window's detached windows' deps. DockTarget: onDock sends a docked tab back to this main window's page (detach-ipc.ts's mainWindowDeps). */
 export interface DetachedWindowDeps extends DockTarget {
+  frameKeys(): FrameKeySettings; // #906: main's cached shortcuts and the platform, read at each key a frame of this window gets
   port: () => number; // the main window's port, where the page is served; read at open time
   boundsFile: string; // <userData>/detached-window-bounds.json
   theme(): ResolvedTheme; // the saved theme resolved (#296, #648), read as each window opens: its background and, on Windows, its caption buttons
@@ -96,6 +98,7 @@ function detachedWindows(deps: DetachedWindowDeps): BuildDetached {
     if (process.platform === 'win32') win.setMenuBarVisibility(false); // #648: a detached window never shows the menu either
     const origin = `http://127.0.0.1:${deps.port()}`;
     externalLinksToBrowser(win, origin, deps.log);
+    forwardFrameKeys(win.webContents, deps.frameKeys);
     wire(win, on, deps);
     const handle = handleOf(win, deps);
     on.created(handle); // before the load: a main window going for another port destroys it now (#467)

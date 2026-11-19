@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { BaseWindow, MenuItemConstructorOptions } from 'electron';
-import { appMenuTemplate } from '../src/app-menu.js';
+import { appMenuTemplate, menuKeys } from '../src/app-menu.js';
 import { type Bindings, effectiveBindings } from '../src/shortcuts.js';
 import type { Shortcuts } from '../src/types.js';
 import { setLanguage, t } from '../src/ui/i18n.js';
@@ -112,4 +112,10 @@ test('appMenuTemplate off macOS: the app menu drops about, hide, hide others and
   const keyOf = (key: 'main.menu.close' | 'main.menu.closeWindow') => window.find((item) => item.label === t(key))?.accelerator;
   assert.deepEqual([keyOf('main.menu.close'), keyOf('main.menu.closeWindow')], [bindings.close, bindings.closeWindow]);
   assert.deepEqual(items(appMenuTemplate(() => {}, () => {}, DEFAULTS, true)[0]).map((item) => item.role ?? item.accelerator), ['about', SETTINGS_KEY, 'hide', 'hideOthers', 'unhide', 'quit']);
+});
+
+test('menuKeys: what the menu\'s own items carry, Settings… on its fixed key and full screen, Close and Close Window on their bindings, null while off (#906)', () => {
+  assert.deepEqual(menuKeys(DEFAULTS), { settings: SETTINGS_KEY, fullScreen: 'CmdOrCtrl+Shift+F', close: CLOSE_KEY, closeWindow: 'CmdOrCtrl+Shift+W' });
+  assert.deepEqual(menuKeys(effectiveBindings({}, false)), { settings: SETTINGS_KEY, fullScreen: 'F11', close: 'CmdOrCtrl+Shift+W', closeWindow: 'CmdOrCtrl+Alt+Shift+W' });
+  assert.deepEqual(menuKeys(effectiveBindings({ close: null, fullScreen: null }, true)), { settings: SETTINGS_KEY, fullScreen: null, close: null, closeWindow: 'CmdOrCtrl+Shift+W' });
 });

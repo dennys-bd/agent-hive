@@ -13,6 +13,7 @@ import { useHiveState } from '@/hooks/use-hive-state';
 import { useSettingsInfo } from '@/hooks/use-settings-info';
 import { LOCALE } from '@/i18n';
 import type { SettingsView } from '@/lib/settings-sections';
+import { listenFrameKeys } from '@/lib/dock-layout';
 import { terminalFontStack } from '@/lib/xterm-setup';
 import { REVIEWER_DEFAULTS, type LanguageId } from '../types';
 import { HIVE_SOURCE } from '../tasks';
@@ -57,6 +58,7 @@ export function App() {
       setPending(selection);
     });
   }, []);
+  useEffect(() => listenFrameKeys(), []); // #906: a global key pressed inside the design or diagram frame
   useEffect(() => {
     if (!pending || !state) return;
     if (state.tasks.some((c) => c.item.itemId === pending.taskId)) setSelected(pending);
