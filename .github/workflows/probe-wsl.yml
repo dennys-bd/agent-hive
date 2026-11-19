@@ -1,0 +1,60 @@
+name: probe-wsl (#869, throwaway)
+
+on:
+  push:
+    branches: [probe/869-wsl]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        wsl: [1, 2]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: setup-wsl
+        uses: Vampire/setup-wsl@4c48163d9f981914dd8caa0fc335fe19cca5bff4 # v7.2.0
+        with:
+          distribution: Debian-13
+          wsl-version: ${{ matrix.wsl }}
+          additional-packages: git curl ca-certificates procps iproute2
+      - name: node-pty
+        continue-on-error: true
+        run: |
+          mkdir ptydeps
+          cd ptydeps
+          npm init -y > $null
+          npm i node-pty@1.1.0
+      - name: facts
+        continue-on-error: true
+        run: |
+          [System.Environment]::OSVersion.VersionString
+          wsl.exe --status
+          wsl.exe -l -v
+      - name: probe all
+        continue-on-error: true
+        env:
+          PROBE_TOKEN: ${{ github.token }}
+        run: node probe/wsl.mjs all
+      - name: switch to mirrored networking
+        if: matrix.wsl == 2
+        continue-on-error: true
+        run: |
+          Set-Content -Path "$env:USERPROFILE\.wslconfig" -Value "[wsl2]`nnetworkingMode=mirrored"
+          wsl.exe --shutdown
+          Start-Sleep -Seconds 10
+          wsl.exe -d Debian --exec sh -c "wslinfo --networking-mode; ip -4 addr | grep inet"
+      - name: probe net (mirrored)
+        if: matrix.wsl == 2
+        continue-on-error: true
+        run: node probe/wsl.mjs net
