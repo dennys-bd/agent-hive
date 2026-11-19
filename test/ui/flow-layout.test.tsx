@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { DEPTH, END_SIZE, FORWARD_Y, GAP, GAP_ARROW, GAP_BARE, hiddenBelow, isInner, isInnerEdge, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, segmentLine, SIDE_STEP, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
+import { DEPTH, END_SIZE, FORWARD_Y, GAP, GAP_ARROW, GAP_BARE, hiddenBelow, isInner, isInnerEdge, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, segmentLine, SIDE_SPARE, SIDE_STEP, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
 import type { Loops } from '@/lib/flow-view';
 
 // The flowchart's geometry (#134, #887, #908), with no DOM.
@@ -226,4 +226,13 @@ test('no pill sits on a strip: the forward, above, loop and side pills around it
   const isOn = ({ x, y }: { x: number; y: number }): boolean => x >= strip.x && x <= strip.x + strip.width && y >= strip.y && y <= strip.y + strip.height;
   expect(layout.edges).toHaveLength(6);
   expect(layout.edges.filter((e) => isOn(e.label)).map((e) => e.id)).toEqual([]);
+});
+
+test('the gap before a strip grows to hold its deepest side arc with SIDE_SPARE to spare, so no arc reaches the node before (#914 review)', () => {
+  const arcs = [side('a', 0, 1, 5), side('b', 1, 2, 5), side('c', 2, 3, 5), side('d', 3, 4, 5), side('e', 0, 4, 5)].map((e) => ({ ...e, unlabelled: true }));
+  const layout = layoutFlow(MIXED, arcs);
+  const [before, strip] = layout.nodes;
+  const deepest = Math.max(...layout.edges.map((e) => (strip.x - Number(e.path.split(' ')[4])) / SIDE_STEP));
+  expect(deepest).toBeGreaterThan(GAP_ARROW / SIDE_STEP);
+  expect(strip.x - (before.x + before.width)).toBe(deepest * SIDE_STEP + SIDE_SPARE);
 });

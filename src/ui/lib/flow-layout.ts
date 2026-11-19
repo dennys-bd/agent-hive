@@ -32,6 +32,7 @@ export interface LayoutEdge { id: string; from: string; to: string; automatic: b
 export interface LayoutOptions { end?: boolean; loops?: Loops } // end: the end circle, Settings only (#908); loops (#576): absent reads 'all'; 'none' draws no arrow (#909, #480)
 export interface Box { id: string; x: number; y: number; width: number; height: number }
 export const SIDE_STEP = 12; // #914: one nesting level of a strip's side arcs, into the gap before it
+export const SIDE_SPARE = 8; // #914 review: what the deepest side arc leaves before the node ahead; two levels still fit GAP_ARROW
 export type EdgeKind = 'forward' | 'above' | 'loop' | 'side';
 export interface Routed { id: string; kind: EdgeKind; path: string; label: { x: number; y: number }; dashed: boolean }
 export interface Layout { nodes: Box[]; end?: Box; edges: Routed[]; width: number; height: number; levels: number; top: number }
@@ -102,6 +103,10 @@ function levelsOf(spans: readonly Span[], rangeOf: RangeOf = range): Map<string,
 const sideLevelsOf = (sides: readonly Span[]): Map<string, number> =>
   new Map([...new Set(sides.map((e) => e.i))].flatMap((i) => [...levelsOf(sides.filter((e) => e.i === i), segmentRange)]));
 
+// A strip's deepest side arc must fit the gap before it, with SIDE_SPARE to spare, or it reaches the node before (#914 review)
+const roomForSides = (gaps: readonly number[], spans: readonly Span[], depths: ReadonlyMap<string, number>): number[] =>
+  gaps.map((gap, k) => Math.max(gap, ...spans.filter((e) => e.i === k && depths.has(e.id)).map((e) => (depths.get(e.id) ?? 0) * SIDE_STEP + SIDE_SPARE)));
+
 // Where each arrow leaves or meets a node's top: SPREAD apart around its centre, in the edges' order
 function offsetsOf(above: readonly Placed[]): Map<string, number> {
   const ends = above.flatMap((e) => [{ node: e.a.id, end: `${e.id}|from` }, { node: e.b.id, end: `${e.id}|to` }]);
@@ -166,7 +171,8 @@ export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutE
   // last node, which isInner alone would call a neighbour, and decision 1 calls an arrow to end outer
   const drawn = loops === 'inner' ? all.filter((e) => e.to !== END && isInnerEdge(e, e.i, e.j)) : all;
   const spans = bare ? [] : drawn;
-  const xs = xsOf(nodes.map((n) => n.width), gapsOf(nodes.length, drawn, bare));
+  const sideDepths = sideLevelsOf(spans.filter((e) => kindOf(e) === 'side'));
+  const xs = xsOf(nodes.map((n) => n.width), roomForSides(gapsOf(nodes.length, drawn, bare), spans, sideDepths));
   const levels = levelsOf(spans.filter((e) => kindOf(e) === 'above'));
   const count = Math.max(0, ...levels.values());
   // The room above the row holds the levels, the outermost at MARGIN, and a loop's arc and pill (#887): with neither the row starts at the margin
@@ -176,7 +182,7 @@ export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutE
   const boxes = end === undefined ? placed : [...placed, end];
   const known = spans.map((e): Placed => ({ ...e, a: boxes[e.i], b: boxes[e.j], exit: nodes.at(e.i)?.exit ?? FORWARD_Y }));
   const offsets = offsetsOf(known.filter((e) => kindOf(e) === 'above'));
-  const depths = new Map([...levels, ...sideLevelsOf(spans.filter((e) => kindOf(e) === 'side'))]);
+  const depths = new Map([...levels, ...sideDepths]);
   const routed = known.map((e) => route(e, top, depths, offsets));
   const right = boxes.at(-1);
   return {
