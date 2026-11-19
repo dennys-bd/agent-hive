@@ -236,3 +236,10 @@ test('each finding names what a fix or a card needs: the variable, the reference
     [9, 'heading', undefined, undefined, 3],
   ]);
 });
+
+test('a variable from the task is never required nor callRequired, and is still unused when the body never names it (#492)', () => {
+  const tasked: LintItem = { origin: 'hive', kind: 'skill', name: 'stacked-branch', variables: parseTemplate('---\nvariables:\n  planPath: { from: task }\n---\n{{ planPath }}\n').variables };
+  const header = ['variables:', '  planPath: { from: task }'];
+  assert.deepEqual(brief(lintTemplate(template(header, ['Read {{ planPath }}, then /hive:stacked-branch.']), { ...INPUT, catalogue: [tasked] })), []);
+  assert.deepEqual(lint(header, ['nothing']), ['4 yellow unused unused variable planPath']);
+});
