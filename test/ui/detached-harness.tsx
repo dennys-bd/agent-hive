@@ -37,21 +37,23 @@ export const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestI
 
 export interface Bridge {
   dock: Mock<(tab: MovedTab) => Promise<void>>; closeWindow: Mock<() => Promise<void>>; tabsChanged: Mock; openTask: Mock<(taskId: string) => Promise<void>>;
+  onFrameKey: Mock; offFrameKey: Mock;
   open(tab: unknown): void; closing(): void; closeKey(): void;
 }
 
 // window.hive as the preload exposes it to a detached window (#552): the test delivers window:open, window:closing and ⌘W
 export function stubBridge(): Bridge {
   const on = { open: (_tab: unknown): void => undefined, closing: (): void => undefined, closeKey: (): void => undefined };
+  const offFrameKey = vi.fn();
   const fake = {
     dock: vi.fn(async (_tab: MovedTab) => undefined), closeWindow: vi.fn(async () => undefined), tabsChanged: vi.fn(), openTask: vi.fn(async (_taskId: string) => undefined),
     onOpen: (callback: (tab: unknown) => void) => { on.open = callback; },
     onClosing: (callback: () => void) => { on.closing = callback; },
     onCloseKey: (callback: () => void) => { on.closeKey = callback; return () => undefined; },
-    focusTab: vi.fn(async () => false), themeResolved: vi.fn(), onFullScreen: () => () => undefined, isFullScreen: async () => false, saveDialog: vi.fn(async () => undefined),
+    focusTab: vi.fn(async () => false), themeResolved: vi.fn(), onFullScreen: () => () => undefined, onFrameKey: vi.fn(() => offFrameKey), isFullScreen: async () => false, saveDialog: vi.fn(async () => undefined),
   };
   vi.stubGlobal('hive', fake);
-  return { ...fake, open: (tab) => on.open(tab), closing: () => on.closing(), closeKey: () => on.closeKey() };
+  return { ...fake, offFrameKey, open: (tab) => on.open(tab), closing: () => on.closing(), closeKey: () => on.closeKey() };
 }
 
 /** Every file's beforeEach: Portuguese, main.tsx's write gate, fresh fakes, the task's State; pair it with resetDetachedTest after each. */

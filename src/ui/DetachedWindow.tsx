@@ -20,6 +20,7 @@ import { type ConsoleChannels, ConsoleChannelsContext, consoleRunsOf, type OpenC
 import { type DetachedLayout, useDetachedLayout } from '@/hooks/use-detached-layout';
 import { type Activity, activitiesOf, activityKey, localKey } from '@/lib/activities';
 import { type CenterTabRef, consoleRef, sharesBuffer, shownTab } from '@/lib/center-layout';
+import { listenFrameKeys } from '@/lib/dock-layout';
 import { terminalFontStack } from '@/lib/xterm-setup';
 import type { State } from '../types';
 
@@ -106,6 +107,7 @@ export function DetachedWindow({ activity }: { activity: string }) {
   const { state, connected } = useHiveState();
   const setup = useAppSetup({ info, reload, state, connected }); // no openLanguage: no Settings here (spec decision 18)
   const isFullScreen = useFullScreen(); // the strip's inset, through index.css's data-fullscreen (#295)
+  useEffect(() => listenFrameKeys(), []); // #906: its iframes, when it has some, as the main window's
   if (error) return <p className="p-4 pt-11 text-destructive">{error}</p>;
   if (!info || !setup.language) return null;
   return (

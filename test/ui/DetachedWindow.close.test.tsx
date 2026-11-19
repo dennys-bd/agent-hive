@@ -64,3 +64,10 @@ test('a State that no longer lists the activity closes the window without dockin
   await waitFor(() => expect(bridge.closeWindow).toHaveBeenCalledTimes(1));
   expect(bridge.dock).not.toHaveBeenCalled();
 });
+
+test('a detached window subscribes to the keys main takes from a focused frame and unsubscribes on unmount (#906)', () => {
+  const { unmount } = mount();
+  expect(bridge.onFrameKey).toHaveBeenCalledTimes(1);
+  unmount();
+  expect(bridge.offFrameKey).toHaveBeenCalledTimes(1);
+});

@@ -55,11 +55,23 @@ const worker = (taskId?: string): Worker => ({ id: 's1', status: taskId ? 'worki
 const state = (tasks: WithWork[], s: Worker): State => withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [s], ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 
 // window.hive as the preload exposes it (#192): the returned function delivers what main's window:select carries, inside act
+let offFrameKey = vi.fn();
 function stubBridge(): (selection: unknown) => void {
+  offFrameKey = vi.fn();
   let listener: (selection: unknown) => void = () => {};
-  vi.stubGlobal('hive', { chooseFolder: vi.fn(), focusTab: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn(), themeResolved: vi.fn(), settingsChanged: vi.fn(async () => {}), onSelect: (callback: (selection: unknown) => void) => { listener = callback; } });
+  vi.stubGlobal('hive', { chooseFolder: vi.fn(), focusTab: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn(), themeResolved: vi.fn(), settingsChanged: vi.fn(async () => {}), onSelect: (callback: (selection: unknown) => void) => { listener = callback; }, onFrameKey: vi.fn(() => offFrameKey) });
   return (selection) => { act(() => listener(selection)); };
 }
+
+test('App subscribes to the keys main takes from a focused frame and unsubscribes on unmount (#906)', () => {
+  stubBridge();
+  currentState = state([], worker());
+  const { unmount } = render(<App />);
+  expect(window.hive?.onFrameKey).toHaveBeenCalledTimes(1);
+  expect(offFrameKey).not.toHaveBeenCalled();
+  unmount();
+  expect(offFrameKey).toHaveBeenCalledTimes(1);
+});
 
 // A task with no worker shows its content bare (#209): no tab bar of its own inside the task, and no tabpanel left without a tab. Scoped to
 // the aside itself (#342): the dock group around it always shows its own tablist, one tab per docked panel, even alone.
