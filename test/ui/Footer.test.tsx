@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Footer } from '@/components/Footer';
+import { AgentsContext } from '@/components/NewRunButton';
 import { workersLine } from '@/components/HeaderBrand';
 import { setLanguage, t } from '@/i18n';
 import type { AgentId } from '../../src/types';
@@ -170,4 +171,23 @@ test('the shutdown confirm\'s context is the effective signal\'s pill and the he
   const dialog = await screen.findByRole('alertdialog', { name: 'Desligar ao terminar' });
   expect(within(dialog).getByText(FIRED.signal, { selector: '[data-signal]' })).toHaveAttribute('data-signal', FIRED.signal);
   expect(dialog).toHaveTextContent(workersLine(STATE, FIRED));
+});
+
+describe('the enabled agents only (#949)', () => {
+  const offering = (agents: readonly AgentId[]) => agents.map((agent) => ({ agent, available: true }));
+
+  test('an agent Settings turns off has no chip and no row in the usage panel', async () => {
+    render(<AgentsContext.Provider value={offering(['claude', 'copilot'])}><Footer state={STATE} effective={NONE} locale="pt-BR" /></AgentsContext.Provider>);
+    const usage = row().firstElementChild as HTMLElement;
+    expect(within(usage).getByTitle(/^claude · /)).toBeInTheDocument();
+    expect(within(usage).queryByTitle(/^codex · /)).not.toBeInTheDocument();
+    await userEvent.click(within(usage).getAllByRole('button')[0]!);
+    expect(footer()).not.toHaveTextContent('codex');
+  });
+
+  test('no enabled agent with plan limits: no usage group and no separator, the row starts at the rules button', () => {
+    render(<AgentsContext.Provider value={offering([])}><Footer state={STATE} effective={NONE} locale="pt-BR" /></AgentsContext.Provider>);
+    expect(footer().querySelector('[data-usage-group]')).toBeNull();
+    expect(row().firstElementChild).toHaveTextContent('regras nenhuma ativa');
+  });
 });
