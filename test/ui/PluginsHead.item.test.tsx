@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test("the meta names the section and the open file's saved time; test on workspace is disabled, coming soon, on the view-as workspace else the first (#319, decisions 10, 11)", async () => {
+test("the meta names the section and the open file's saved time, the preview line under view as; test on workspace is disabled, coming soon, on the view-as workspace else the first; the controls are xs (#319, decisions 10, 11, #492)", async () => {
   const user = userEvent.setup();
   stubItems({ catalogue: CATALOGUE, reads: READS });
   render(<PluginsWindow />);
@@ -37,11 +37,14 @@ test("the meta names the section and the open file's saved time; test on workspa
   await waitFor(() => expect(head()).toHaveTextContent('skills · salvo 14:31'));
   const testButton = within(head()).getByRole('button', { name: 'testar no workspace agent-hive' });
   expect(testButton).toBeDisabled();
+  expect([testButton, revertButton()].map((button) => button?.classList.contains('h-6'))).toEqual([true, true]); // the head's controls are xs (#492)
   expect(testButton.parentElement).toHaveAttribute('title', 'em breve');
   expect(within(head()).getByRole('button', { name: /^revisor · / })).toBeInTheDocument();
   await user.click(screen.getByRole('combobox', { name: 'ver como' }));
   await user.click(await screen.findByRole('option', { name: 'hive-site' }));
   expect(within(head()).getByRole('button', { name: 'testar no workspace hive-site' })).toBeDisabled();
+  expect(head()).toHaveTextContent('preview · hive-site · só leitura'); // #492: the preview line in place of the section and saved time
+  expect(head()).not.toHaveTextContent('salvo 14:31');
   expect(within(head()).queryByRole('button', { name: /^revisor · / })).not.toBeInTheDocument(); // not drawn under "view as" (#327)
   expect(revertButton()).not.toBeInTheDocument(); // the preview hides it (decision 26)
 });

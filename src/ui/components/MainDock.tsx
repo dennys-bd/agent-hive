@@ -327,10 +327,11 @@ export function MainDock(props: MainDockProps) {
     },
   };
   const quick = useQuickActions({ workspaces, current, openRun: openUserRun, newActivity: openNewActivity, hasKeys: hasHeader, search: searchHost });
-  // The home has no worktree to show files or details of (redesign 08): its right side is hidden, not closed, so the saved layout keeps it
-  // A local activity shows its checkout there (#633)
+  const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
+  // The home has no worktree to show files or details of (redesign 08), nor a plugins list, update or mcp screen anything for it (#492): the
+  // right side is hidden, not closed, so the saved layout keeps it. A local activity shows its checkout there (#633)
   const isHome = selection.center === 'activities' && current === undefined;
-  const frameLayout = isHome ? { ...layout, open: { ...layout.open, right: false } } : layout;
+  const frameLayout = isHome || (selection.center === 'plugins' && plugins.isRightHidden) ? { ...layout, open: { ...layout.open, right: false } } : layout;
   const shown = shownBySide(frameLayout, dock.active);
   const isLive = (taskId: string): boolean => activities.some((activity) => activity.kind === 'task' && activity.task.item.itemId === taskId);
   // The home's recents resume a stopped task's last session: an activity with only its worktree left has nothing to show yet
@@ -359,7 +360,6 @@ export function MainDock(props: MainDockProps) {
   const automationPanel: DockPanel[] = automation === undefined ? [] : [{
     id: 'automation', title: t('dock.automation'), ownHeader: true, body: <FlowShownContext.Provider value={isFlow}>{automation(open)}</FlowShownContext.Provider>,
   }];
-  const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
   const benchmark = useBenchmarkDock({ isShown: selection.center === 'benchmark', experiments: props.experiments ?? NO_EXPERIMENTS, workspaces, activate, rateLimits: props.rateLimits, slots: { openFlowSettings: props.openFlowSettings } }); // #461: the fourth view
   const viewRight = selection.center === 'plugins' ? plugins.right : selection.center === 'benchmark' ? benchmark.right : undefined;
   const panels: DockPanel[] = [

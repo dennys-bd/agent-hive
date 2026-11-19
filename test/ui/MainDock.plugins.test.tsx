@@ -100,6 +100,7 @@ test("an item opens its empty screen under its head: the mono name, the state ch
 });
 
 test("in plugins arquivos and detalhes are off and the right group holds the empty variables pane, not the task's details; Ctrl+1 and Ctrl+2 still switch away, the head leaving with the view (#313)", async () => {
+  const user = userEvent.setup();
   stubFetch();
   render(<Window />);
   key('3');
@@ -107,6 +108,7 @@ test("in plugins arquivos and detalhes are off and the right group holds the emp
   expect(screen.getByRole('button', { name: 'pane files' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'pane details' })).toBeDisabled();
   fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true, altKey: true }); // toggleRight off macOS
+  await user.click(within(screen.getByRole('region', { name: 'skills' })).getByRole('button', { name: /^deploy/ })); // a workspace item: no variables (#492: none beside the list)
   expect(screen.getByRole('region', { name: 'variáveis' })).toBeEmptyDOMElement();
   expect(screen.queryByText('detalhes')).not.toBeInTheDocument();
   key('2');
@@ -114,4 +116,19 @@ test("in plugins arquivos and detalhes are off and the right group holds the emp
   expect(screen.getByRole('main')).toHaveTextContent('fluxo');
   key('1');
   expect(screen.getByRole('button', { name: 'pane variables' })).toBeDisabled();
+});
+
+test('the right side is hidden on the plugins list, update and mcp screens and shown on an item (#492)', async () => {
+  const user = userEvent.setup();
+  const variables = (): HTMLElement => screen.getByRole('region', { name: 'variáveis', hidden: true });
+  stubFetch();
+  render(<Window />);
+  key('3');
+  await waitFor(() => expect(within(head()).getByText('skills')).toBeInTheDocument());
+  fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true, altKey: true }); // the saved layout opens the right side
+  expect(variables()).not.toBeVisible(); // hidden, not closed: the saved layout keeps it open
+  await user.click(within(screen.getByRole('region', { name: 'skills' })).getByRole('button', { name: /^new-build/ }));
+  expect(variables()).toBeVisible();
+  await user.click(within(sidebar()).getByRole('button', { name: 'mcp' }));
+  expect(variables()).not.toBeVisible(); // hidden, not closed: the saved layout keeps it open
 });
