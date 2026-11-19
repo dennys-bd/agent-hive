@@ -33,11 +33,25 @@ const MIGRATIONS: readonly string[] = [
 const COLUMNS = ['task_id', 'task', 'activity_id', 'stage', 'session_id', 'attempt', 'run_kind', 'agent'] as const;
 const INSERT = `INSERT INTO records (ts, event, ${COLUMNS.join(', ')}, data) VALUES ($ts, $event, ${COLUMNS.map((c) => `$${c}`).join(', ')}, $data)`;
 
-export interface UsageStore { write(record: FactRecord): void; close(): void }
+// The facts the task timeline shows (#960); approval.extended and the other kept facts stay out. task.discovered is read beside them only
+// so the route can tell whether the store saw the task arrive (since)
+const TIMELINE_FACTS: readonly FactName[] = [
+  'stage.ended', 'question.answered', 'run.restarted', 'approval.granted', 'approval.rejected', 'approval.expired', 'task.moved', 'pr.opened',
+];
+const TIMELINE_READ: readonly FactName[] = [...TIMELINE_FACTS, 'task.discovered'];
+// Served by records_by_task (task_id, ts): the filter and the order in one index
+const SELECT_TIMELINE = `SELECT data FROM records WHERE task_id = ? AND event IN (${TIMELINE_READ.map(() => '?').join(', ')}) ORDER BY ts, rowid`; // rowid: records of the same ts keep their write order
+
+export interface UsageStore {
+  write(record: FactRecord): void;
+  /** #960: a task's timeline records, whole, oldest first; undefined when the store is off. Throws when the query does: the caller answers it */
+  timeline(taskId: string): readonly Record<string, unknown>[] | undefined;
+  close(): void;
+}
 type ErrorLog = Pick<Logger, 'error'>;
 type Cell = string | number | null;
 
-const OFF: UsageStore = { write: () => undefined, close: () => undefined };
+const OFF: UsageStore = { write: () => undefined, timeline: () => undefined, close: () => undefined };
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const isKept = (event: unknown): boolean => KEPT_FACTS.some((name) => name === event);
 // A column's value: a string or a number as it is, anything else NULL (absent, or an imported line's odd field), so no row fails on its type
@@ -79,6 +93,7 @@ function importLogs(home: string, insert: StatementSync): void {
 // write never throws: the first failure turns the store off with one line, the file left as it is; close closes the handle once
 function storeOf(db: DatabaseSync, log: ErrorLog): UsageStore {
   const insert = db.prepare(INSERT);
+  const select = db.prepare(SELECT_TIMELINE);
   let isOn = true;
   let isClosed = false;
   return {
@@ -91,6 +106,11 @@ function storeOf(db: DatabaseSync, log: ErrorLog): UsageStore {
         log.error(`usage store: off after a failed write, nothing more is kept: ${errorText(err)}`);
       }
     },
+    // Not gated on isOn: a store whose writes stopped still holds its rows and answers from them
+    timeline: (taskId) => select.all(taskId, ...TIMELINE_READ).flatMap((row): Record<string, unknown>[] => {
+      const value = typeof row.data === 'string' ? parsed(row.data) : undefined;
+      return isRecord(value) ? [value] : []; // a row edited by hand: skipped, as keptLines skips its line
+    }),
     close: () => {
       if (isClosed) return;
       isClosed = true;

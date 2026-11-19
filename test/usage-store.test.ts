@@ -126,3 +126,36 @@ test('a write that fails turns the store off with one error line; it never throw
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^ERROR usage store: off after a failed write/);
 });
+
+const DISCOVERED: FactRecord = { schema_version: SCHEMA_VERSION, ts: '2026-10-20T11:58:00.000Z', event: 'task.discovered', level: 'info', task_id: 'board:I1', source: 'board' };
+const SPAWNED: FactRecord = { schema_version: SCHEMA_VERSION, ts: '2026-10-20T11:59:00.000Z', event: 'run.spawned', level: 'info', task_id: 'board:I1', worker: 1 };
+const OTHER_TASK: FactRecord = { ...ENDED, task_id: 'board:I2', task: '2', activity_id: 'a-board:I2' };
+
+test('timeline answers the task\'s timeline records and its task.discovered in ts order, never another task\'s nor a kept fact outside the timeline (#960)', async (t) => {
+  const home = await tempDir(t, 'usage-');
+  const store = await openUsageStore(home, fakeLog().log);
+  for (const record of [MOVED, OTHER_TASK, ENDED, SPAWNED, DISCOVERED]) store.write(record); // written out of order
+  const timeline = store.timeline('board:I1');
+  store.close();
+  assert.deepEqual(timeline, [DISCOVERED, ENDED, MOVED]);
+});
+
+test('a row whose data does not parse is left out of the timeline, as the import skips such a line (#960)', async (t) => {
+  const home = await tempDir(t, 'usage-');
+  const store = await openUsageStore(home, fakeLog().log);
+  store.write(ENDED);
+  const raw = new DatabaseSync(join(home, USAGE_FILE));
+  raw.prepare(`INSERT INTO records (ts, event, task_id, data) VALUES (?, 'task.moved', 'board:I1', '{"to":')`).run('2026-10-20T12:05:00.000Z');
+  raw.close();
+  const timeline = store.timeline('board:I1');
+  store.close();
+  assert.deepEqual(timeline, [ENDED]);
+});
+
+test('the off store answers undefined to a timeline read (#960)', async (t) => {
+  const home = await tempDir(t, 'usage-');
+  await writeFile(join(home, USAGE_FILE), randomBytes(4096)); // not a database: openUsageStore answers OFF
+  const store = await openUsageStore(home, fakeLog().log);
+  assert.equal(store.timeline('board:I1'), undefined);
+  store.close();
+});
