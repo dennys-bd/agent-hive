@@ -56,3 +56,10 @@ test('the flow scope lists the zoom keys after atualizar, then the fixed ⇧1, i
   ]);
   expect(zoomRows(OTHER)?.map((row) => row.keys)).toEqual(['Ctrl+-', 'Ctrl+=', 'Ctrl+0', 'Shift+1']);
 });
+
+test('a fixed row with no key on this platform is left out: pickSource off macOS; the tarefas entries list after goBack (#921)', () => {
+  expect(labels(shortcutMapSections({}, OTHER))).not.toContain('shortcuts.fixed.pickSource');
+  expect(keysOf(shortcutMapSections({}, MAC), 'shortcuts.fixed.pickSource')).toBe('⌥0–9');
+  expect(keysOf(shortcutMapSections({}, MAC), 'shortcuts.flowEntry1')).toBe('⌃1');
+  expect(keysOf(shortcutMapSections({}, OTHER), 'shortcuts.flowEntry9')).toBe('Alt+9');
+});

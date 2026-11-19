@@ -218,7 +218,9 @@ test('the outside grid has exibir with no voltas rows, counting only the stagele
   expect(pop.getByRole('checkbox', { name: 'hive' })).not.toBeChecked();
 });
 
-test('⌥0 opens todas em lista, the list with its groups, and ⌥1 the hive source, while the tasks view shows (#572, #577)', () => {
+test('⌥0 opens todas em lista, the list with its groups, and ⌥1 the hive source, while the tasks view shows, on macOS (#572, #577, #921)', () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'); // pickSource's ⌥n is macOS's (#921)
+  onTestFinished(() => { vi.restoreAllMocks(); });
   render(<Dashboard state={STATE} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showTasks();
   fireEvent.keyDown(window, { key: '™', code: 'Digit0', altKey: true });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FIXED_SHORTCUTS, fixedShortcut, SHORTCUT_MAP, SHORTCUT_SCOPES, SHORTCUTS, type ShortcutScope, shortcutDef } from '../src/shortcut-registry.js';
+import { FIXED_SHORTCUTS, FLOW_ENTRY_IDS, fixedShortcut, SHORTCUT_MAP, SHORTCUT_SCOPES, SHORTCUTS, type ShortcutScope, shortcutDef } from '../src/shortcut-registry.js';
 import { ariaKeyShortcut, bindingFromEvent, canonicalBinding, collisions, defaultBinding, displayBinding, displayKeys, effectiveBindings, FIXED_BINDINGS, isReserved, type KeyLike, matches, normalizeBinding, parseShortcuts, takesTerminalKey } from '../src/shortcuts.js';
 import type { OperationId } from '../src/types.js';
 
@@ -126,7 +126,7 @@ test('the registry is the map: the eight scopes in order, every row in its scope
   assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'viewPlugins', 'viewBenchmark', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'problems', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'newSessionDialog', 'openDiff', 'newFile', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
-  assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
+  assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'flowEntry1', 'flowEntry2', 'flowEntry3', 'flowEntry4', 'flowEntry5', 'flowEntry6', 'flowEntry7', 'flowEntry8', 'flowEntry9', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('plugins'), ['searchPlugins', 'askAgent']);
   assert.deepEqual(rows('benchmark'), ['benchmarkSearch']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
@@ -156,7 +156,7 @@ test('two keys collide only when both act in one scope or one of them is global,
   assert.deepEqual(collisions({ searchTasks: 'CmdOrCtrl+K' }, MAC), [], 'the flow\'s key and an activity\'s: never both live');
   assert.deepEqual(collisions({ confirm: 'CmdOrCtrl+Shift+K' }, OTHER), [], 'a dialog\'s key and an activity\'s');
   assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+F' }, MAC), [['toggleConsole', 'findInTerminal'], ['toggleConsole', 'searchTasks'], ['toggleConsole', 'searchPlugins'], ['toggleConsole', 'benchmarkSearch'], ['toggleConsole', 'searchSettings']], 'a global key meets the flow, the activities, plugins, the benchmark and Settings');
-  assert.deepEqual(collisions({ refreshFlow: 'Alt+3' }, OTHER), [['refreshFlow', fixedShortcut('pickSource')]], 'a fixed key of the flow');
+  assert.deepEqual(collisions({ refreshFlow: 'Alt+3' }, MAC), [['refreshFlow', fixedShortcut('pickSource')]], 'a fixed key of the flow');
   assert.deepEqual(collisions({ clear: 'Alt+3' }, MAC), [], 'go to tab is Ctrl+1–9 on macOS');
 });
 
@@ -217,7 +217,7 @@ test('naming a soon id or feedbackStart is a parse error (#585)', () => {
 test('displayKeys writes a digit range as one key and lists the rest; displayBinding writes the arrows, Esc and macOS\'s ↵ (#585)', () => {
   assert.equal(displayKeys(fixedShortcut('signal').keys.mac, MAC), '⌘⌥1–3');
   assert.equal(displayKeys(fixedShortcut('signal').keys.other, OTHER), 'Ctrl+Shift+1–3');
-  assert.equal(displayKeys(fixedShortcut('pickSource').keys.other, OTHER), 'Alt+0–9');
+  assert.equal(displayKeys(fixedShortcut('pickSource').keys.mac, MAC), '⌥0–9');
   assert.equal(displayKeys(fixedShortcut('moveFocus').keys.mac, MAC), '↑ ↓ ← →');
   assert.equal(displayKeys(fixedShortcut('taskMenu').keys.other, OTHER), 'M Shift+F10');
   assert.equal(displayBinding('CmdOrCtrl+Enter', MAC), '⌘↵');
@@ -334,4 +334,17 @@ test('ariaKeyShortcut writes a binding as aria-keyshortcuts names keys: Meta on 
     [ariaKeyShortcut('CmdOrCtrl+[', MAC), ariaKeyShortcut('CmdOrCtrl+[', OTHER), ariaKeyShortcut('Alt+Left', OTHER), ariaKeyShortcut('Ctrl+1', MAC), ariaKeyShortcut('Alt+Shift+B', OTHER)],
     ['Meta+[', 'Control+[', 'Alt+ArrowLeft', 'Control+1', 'Alt+Shift+B'],
   );
+});
+
+test('the tarefas entries (#921): flowEntry1–9 are flow rows, ⌃n on macOS and Alt+n elsewhere, never in a terminal; no default collides, and they rebind and collide like any row', () => {
+  assert.deepEqual(FLOW_ENTRY_IDS.map(pair), FLOW_ENTRY_IDS.map((_, i) => [`Ctrl+${i + 1}`, `Alt+${i + 1}`]));
+  for (const id of FLOW_ENTRY_IDS) assert.deepEqual([shortcutDef(id).scope, shortcutDef(id).inTerminal], ['flow', false], id);
+  assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []], "macOS ⌃1–9 and goToTab's meet only across scopes");
+  assert.deepEqual(collisions({ refreshFlow: 'Alt+3' }, OTHER), [['refreshFlow', 'flowEntry3']]);
+  assert.deepEqual(collisions({ flowEntry1: 'Alt+5' }, MAC), [['flowEntry1', fixedShortcut('pickSource')]]);
+  assert.deepEqual(parseShortcuts({ flowEntry2: 'Ctrl+Alt+2', flowEntry9: null }, MAC), { flowEntry2: 'Ctrl+Alt+2', flowEntry9: null });
+});
+
+test('pickSource keeps ⌥0–9 on macOS and has no key elsewhere (#921)', () => {
+  assert.deepEqual(fixedShortcut('pickSource').keys, { mac: ['Alt+0', 'Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5', 'Alt+6', 'Alt+7', 'Alt+8', 'Alt+9'], other: [] });
 });

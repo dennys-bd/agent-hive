@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowShownContext } from '@/components/MainDock';
 import { FlowSources, type FlowSourcesProps, type SourcesNav } from '@/components/FlowSources';
 import { setLanguage } from '@/i18n';
@@ -15,6 +15,9 @@ const nav: SourcesNav = {
 const alt = (digit: number, target: Window | Element = window): boolean => fireEvent.keyDown(target, { key: '™', code: `Digit${digit}`, altKey: true });
 
 beforeEach(() => setLanguage('pt'));
+// pickSource has keys only on macOS (#921)
+beforeEach(() => { vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'); });
+afterEach(() => vi.restoreAllMocks());
 
 // the handlers stay mocks (a spread of Partial<FlowSourcesProps> would widen them to their plain type)
 const renderSources = (over: Partial<Pick<FlowSourcesProps, 'nav'>> = {}) => {
@@ -61,22 +64,30 @@ test('no key from inside an open dialog, even on one of its buttons (#585)', () 
 
 test('each row names its key in its tooltip and shows no key cap: hive Alt+1, then the sources by config order from Alt+2 (#500, #665, #572)', () => {
   renderSources();
-  expect([tipOf('hive'), tipOf('board'), tipOf('core')]).toEqual(['hive · Alt+1', 'board · acme · Alt+2', 'core · acme · Alt+3']);
+  expect([tipOf('hive'), tipOf('board'), tipOf('core')]).toEqual(['hive · ⌥1', 'board · acme · ⌥2', 'core · acme · ⌥3']);
   expect(document.querySelector('[data-key-hint]')).toBeNull();
 });
 
 test('a source past the eighth names no key: hive holds Alt+1 (#500, #665)', () => {
   renderSources({ nav: { auth: 'cli', sources: Array.from({ length: 10 }, (_, i) => ({ ...nav.sources[0], name: `s${i + 1}` })) } });
-  expect(tipOf('s8')).toBe('s8 · acme · Alt+9');
+  expect(tipOf('s8')).toBe('s8 · acme · ⌥9');
   expect(tipOf('s9')).toBe('s9 · acme');
 });
 
 test('with hive off there is no hive row and the configured sources start at Alt+1 (#846)', () => {
   const { onPick } = renderSources({ nav: { ...nav, hiveSource: false } });
   expect(screen.queryByText('hive')).toBeNull();
-  expect(tipOf('board')).toBe('board · acme · Alt+1');
+  expect(tipOf('board')).toBe('board · acme · ⌥1');
   alt(1);
   alt(2);
   expect(alt(3)).toBe(true);
   expect(onPick.mock.calls).toEqual([['board'], ['core']]);
+});
+
+test("off macOS no source has a key: Alt+n is the tarefas entries' (#921)", () => {
+  vi.restoreAllMocks();
+  const { onPick, onList } = renderSources();
+  expect([alt(1), alt(0)]).toEqual([true, true]);
+  expect([onPick.mock.calls, onList.mock.calls]).toEqual([[], []]);
+  expect([tipOf('hive'), tipOf('board')]).toEqual(['hive', 'board · acme']);
 });

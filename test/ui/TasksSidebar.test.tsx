@@ -53,7 +53,7 @@ beforeEach(() => {
   resetViewState();
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => json(String(input) === '/repositories' ? listed : { ok: true })));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 function renderSidebar(over: Partial<TasksSidebarProps> = {}) {
   const props: TasksSidebarProps = {
@@ -121,16 +121,18 @@ test('a reload restores the closed flags and the heights (#572)', () => {
 });
 
 test('a source row: icon, name and count over owner · type; the hive row first on one line; the tooltip names the key; no key caps (#572)', () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'); // pickSource's ⌥n is macOS's (#921)
   renderSidebar();
   const rows = within(section('sources')).getAllByRole('button', { name: /^(hive|roadmap|notes)/ });
   expect(rows.map((r) => r.textContent)).toEqual(['hive1', 'roadmap3acme · github project', 'notes1acme · github project']);
-  expect(rows.map((r) => r.title)).toEqual(['hive · Alt+1', 'roadmap · acme · Alt+2', 'notes · acme · Alt+3']);
+  expect(rows.map((r) => r.title)).toEqual(['hive · ⌥1', 'roadmap · acme · ⌥2', 'notes · acme · ⌥3']);
   expect(within(rows[1]).getByText('acme · github project')).toHaveClass('pl-6');
   expect(document.querySelector('[data-key-hint]')).toBeNull();
   expect(within(section('sources')).queryByRole('button', { name: /^todas/ })).not.toBeInTheDocument();
 });
 
 test('a source row\'s click and ⌥n open its table, hive on ⌥1; ⌥0 opens todas em lista; a closed sources section still answers (#572)', async () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel'); // pickSource's ⌥n is macOS's (#921)
   const user = userEvent.setup();
   const { props } = renderSidebar();
   await user.click(screen.getByText('roadmap'));

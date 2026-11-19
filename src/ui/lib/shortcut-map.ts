@@ -9,10 +9,10 @@ import type { MessageKey } from '../i18n.js';
 export interface MapRow { label: MessageKey; keys: string }
 export interface MapSection { scope: ShortcutScope; rows: MapRow[] }
 
-// A row as the map shows it, or none: a soon row does nothing yet, and a shortcut turned off has no key
+// A row as the map shows it, or none: a soon row does nothing yet, a fixed row with no key on this platform has nothing to show (#921), and a shortcut turned off has no key
 function mapRow(row: ShortcutDef | FixedShortcut, shortcuts: Shortcuts, mac: boolean): MapRow[] {
   if (row.soon) return [];
-  if ('keys' in row) return [{ label: row.label, keys: displayKeys(fixedKeys(row, mac), mac) }];
+  if ('keys' in row) return fixedKeys(row, mac).length === 0 ? [] : [{ label: row.label, keys: displayKeys(fixedKeys(row, mac), mac) }];
   const binding = bindingOf(shortcuts, row, mac);
   return binding === null ? [] : [{ label: row.label, keys: displayBinding(binding, mac) }];
 }

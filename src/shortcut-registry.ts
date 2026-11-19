@@ -23,6 +23,8 @@ export type FixedShortcutId =
 /** A key that is no binding (#481, #585): listed read only, never in the config. keys: every key it acts on per platform, a range expanded. */
 export interface FixedShortcut { id: FixedShortcutId; label: MessageKey; scope: ShortcutScope; keys: { mac: string[]; other: string[] }; soon?: true }
 
+export const FLOW_ENTRY_IDS = ['flowEntry1', 'flowEntry2', 'flowEntry3', 'flowEntry4', 'flowEntry5', 'flowEntry6', 'flowEntry7', 'flowEntry8', 'flowEntry9'] as const satisfies readonly OperationId[];
+
 const SOON = { soon: true } as const;
 const UNBOUND: PlatformKeys = { mac: null, other: null }; // #818
 const both = (binding: string): PlatformKeys => ({ mac: binding, other: binding });
@@ -110,11 +112,14 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   fixed('openActivity', 'flow', same(['O'])),
   fixed('autoTask', 'flow', same(['S'])),
   fixed('taskMenu', 'flow', { mac: ['M'], other: ['M', 'Shift+F10'] }),
-  fixed('pickSource', 'flow', same(digits('Alt+', 0, 9))),
+  // #921: off macOS Alt+1–9 are the tarefas entries' keys, so the sources have none there
+  fixed('pickSource', 'flow', { mac: digits('Alt+', 0, 9), other: [] }),
   row('refreshFlow', { mac: 'CmdOrCtrl+Alt+R', other: 'F5' }, 'flow'),
   // #911: back from an issue or PR page, as browsers and Finder bind ⌘[; Alt+Left elsewhere, the browsers' back. Before the zoom rows, so the
   // map's flow section still ends on them
   row('goBack', { mac: 'CmdOrCtrl+[', other: 'Alt+Left' }, 'flow'),
+  // #921: the tarefas entries by position. Off macOS Ctrl+1–4 are the views' CmdOrCtrl keys, so Alt; macOS ⌃1–9 meets goToTab's only across scopes
+  ...FLOW_ENTRY_IDS.map((id, i) => row(id, { mac: `Ctrl+${i + 1}`, other: `Alt+${i + 1}` }, 'flow')),
   // #910: the canvas's zoom; + is the = key without Shift
   row('zoomOut', both('CmdOrCtrl+-'), 'flow'),
   row('zoomIn', both('CmdOrCtrl+='), 'flow'),

@@ -1450,7 +1450,9 @@ export type OperationId =
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
   | 'newTerminal' | 'newSession' | 'newSessionDialog' | 'openDiff' | 'newFile' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
-  | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #911: back from a page; #910: the flow canvas's zoom
+  | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset'
+  | 'flowEntry1' | 'flowEntry2' | 'flowEntry3' | 'flowEntry4' | 'flowEntry5' | 'flowEntry6' | 'flowEntry7' | 'flowEntry8' | 'flowEntry9'
+  // #911: back from a page; #910: the flow canvas's zoom; #921: the tarefas entries by position
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
   | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings' | 'searchPlugins' | 'askAgent' | 'viewBenchmark' | 'benchmarkSearch'; // #689, #313, #331, #458
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
