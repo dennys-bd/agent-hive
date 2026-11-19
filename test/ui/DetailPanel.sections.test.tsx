@@ -36,7 +36,7 @@ const STATE: State = withPointedWork({
   shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 const panel = (taskId: string) => <DetailPanel state={STATE} selected={{ taskId }} locale="pt-BR" isShown onClose={() => {}} onOpenTask={() => {}} />;
-const SECTIONS = ['árvore', 'relacionamentos', 'pontos de restauração'];
+const SECTIONS = ['árvore', 'relacionamentos', 'pontos de restauração', 'linha do tempo'];
 const opened = (): boolean[] => SECTIONS.map((name) => (screen.getByRole('group', { name }) as HTMLDetailsElement).open);
 // true when `a` comes before `b` in the document
 const before = (a: Element, b: Element): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
@@ -49,7 +49,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('the body reads, top to bottom, title, status, facts, resultados, sessões, árvore, relacionamentos, pontos de restauração, descrição and comentários (#958)', () => {
+test('the body reads, top to bottom, title, status, facts, resultados, sessões, árvore, relacionamentos, pontos de restauração, linha do tempo, descrição and comentários (#958)', () => {
   render(panel('I1'));
   const order = [
     screen.getByRole('heading', { name: '#1 Task 1' }), screen.getByRole('region', { name: 'parada' }), screen.getByText('trabalhou', { selector: 'dt' }),
@@ -61,12 +61,19 @@ test('the body reads, top to bottom, title, status, facts, resultados, sessões,
   expect(within(screen.getByRole('region', { name: 'comentários' })).getByText('sem comentários')).toBeInTheDocument();
 });
 
-test('árvore starts open and the other two closed, and each goes back to that when the panel shows another task (#958)', async () => {
+test('árvore starts open and the other three closed, and each goes back to that when the panel shows another task (#958, #961)', async () => {
   const user = userEvent.setup();
   const { rerender } = render(panel('I1'));
-  expect(opened()).toEqual([true, false, false]);
+  expect(opened()).toEqual([true, false, false, false]);
   for (const name of SECTIONS) await user.click(screen.getByRole('group', { name }).querySelector('summary')!);
-  expect(opened()).toEqual([false, true, true]);
+  expect(opened()).toEqual([false, true, true, true]);
   rerender(panel('I0'));
-  expect(opened()).toEqual([true, false, false]);
+  expect(opened()).toEqual([true, false, false, false]);
+});
+
+test('linha do tempo comes right after pontos de restauração, with its closed line (#961)', () => {
+  render(panel('I1'));
+  const timeline = screen.getByRole('group', { name: 'linha do tempo' });
+  expect(screen.getByRole('group', { name: 'pontos de restauração' }).nextElementSibling).toBe(timeline);
+  expect(timeline.querySelector('summary')).toHaveTextContent('nada registrado ainda'); // setup.ts's empty timeline
 });

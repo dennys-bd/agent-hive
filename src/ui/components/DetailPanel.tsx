@@ -7,6 +7,7 @@ import type { Task, TaskFile, State } from '../../types';
 import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
 import { DetailMenu } from '@/components/DetailMenu';
 import { CheckpointsList } from '@/components/CheckpointsList';
+import { TimelineSection } from '@/components/TimelineSection';
 import { BlockersSection } from '@/components/BlockersSection';
 import { CiNotice } from '@/components/CiProgress';
 import { SlotTitle, useDetailSlotRef } from '@/components/DetailSlot';
@@ -105,7 +106,7 @@ function PageMeta({ task, state }: { task: Task; state: State }) {
 // task's error in full (a failed start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), with
 // dispensar under it (#354), the status block (the status box, the running block while a wait for CI or a commands stage runs, #914, or the
 // exhausted block once the tries ran out, #916), the tries section, the sync and CI notices, a page's slot, the facts grid, resultados and
-// sessões, then the sections árvore (#36), relacionamentos (#57, #829) and pontos de restauração (#619), then behind a divider descrição and
+// sessões, then the sections árvore (#36), relacionamentos (#57, #829), pontos de restauração (#619) and linha do tempo (#961), then behind a divider descrição and
 // comentários. On a page (#64, handoff "Estrutura comum"): the workspace · source line under the title, the page's slot right after the
 // notices, and no issue body or comments, which are the center already
 function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask, page }: BodyProps) {
@@ -137,6 +138,7 @@ function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask
       {onOpenTask && <TreeSection key={`tree:${item.itemId}`} task={task} state={state} onOpenTask={onOpenTask} />}
       <BlockersSection key={`relations:${item.itemId}`} task={task} state={state} />
       <CheckpointsList key={`checkpoints:${item.itemId}`} task={task} state={state} />
+      <TimelineSection key={`timeline:${item.itemId}`} task={task} state={state} locale={locale} />
       {!page && (
         <div className="flex flex-col gap-3.5 border-t pt-3.5 text-[13px] leading-5">
           <TaskDescription body={item.body} />
