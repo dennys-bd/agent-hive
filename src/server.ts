@@ -855,9 +855,10 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function refreshPlanLimits(replace = false, agents?: readonly AgentId[]): Promise<string | undefined> {
     const read = deps.readPlanLimits;
     if (!read || !live) return undefined;
-    const enabled = live.runtime.config.agentEnabled; // #949: an agent Settings turns off is never read, nor its failure logged
+    // #949: an agent Settings turns off is never read, nor its failure logged; with none left no endpoint was asked, so nothing failed
+    const enabled = live.runtime.config.agentEnabled;
     const asked = planLimitAgents(agents).filter((agent) => enabled[agent]);
-    if (asked.length === 0) return replace ? NO_PLAN_READING : undefined;
+    if (asked.length === 0) return undefined;
     const { readings, failures } = await read(asked);
     for (const agent of asked) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
     for (const { agent, rateLimits } of readings) await dispatch({ type: 'rateLimits', agent, rateLimits, replace });

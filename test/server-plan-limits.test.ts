@@ -166,5 +166,7 @@ test('a disabled agent\'s plan limits are never read: not after the save, not on
   await waitFor(() => asked.length > 0);
   assert.equal((await postJson(`${base}/plan-limits/refresh`)).status, 200);
   await server.refreshPlanLimits();
+  const one = await postJson(`${base}/plan-limits/refresh`, { agent: 'codex' });
+  assert.deepEqual([one.status, await one.json()], [200, { ok: true }], 'a disabled agent\'s ↻ asks no endpoint, so nothing failed');
   assert.deepEqual(asked.filter((list) => list.includes('codex')), [], 'codex is off: no read names it');
 });
