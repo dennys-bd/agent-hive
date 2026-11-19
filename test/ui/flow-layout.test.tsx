@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { DEPTH, END_SIZE, FORWARD_Y, GAP, GAP_ARROW, GAP_BARE, hiddenBelow, isInner, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, segmentLine, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
+import { DEPTH, END_SIZE, FORWARD_Y, GAP, GAP_ARROW, GAP_BARE, hiddenBelow, isInner, isInnerEdge, layoutFlow, LOOP_RISE, MARGIN, maxNodeHeight, NODE_MIN, segmentLine, SIDE_STEP, SPREAD, TOP_LOOPS } from '@/lib/flow-layout';
+import type { Loops } from '@/lib/flow-view';
 
 // The flowchart's geometry (#134, #887, #908), with no DOM.
 const W = 190;
@@ -178,4 +179,51 @@ test('a forward arrow leaves at its source\'s exit and bends up to the target\'s
 
 test('segmentLine is a segment\'s header line: its top in equal segments, plus FORWARD_Y (#914)', () => {
   expect([segmentLine(300, 3, 0), segmentLine(300, 3, 1), segmentLine(300, 3, 2), segmentLine(240, 1, 0)]).toEqual([FORWARD_Y, 100 + FORWARD_Y, 200 + FORWARD_Y, FORWARD_Y]);
+});
+
+const side = (id: string, from: number, to: number, count = 3, extra: object = {}) => ({ ...edge(id, 'strip', 'strip'), inner: true, segments: { from, to, count }, ...extra });
+
+test('an arrow between two segments of a strip is a side arc on its left, from the source segment\'s line to the target\'s, nested by span, dashed going up when automatic; it leaves the row\'s top alone (#914)', () => {
+  const layout = layoutFlow(MIXED, [side('short', 0, 1, 3, { automatic: false }), side('long', 0, 2), side('back', 2, 1)]);
+  const strip = layout.nodes[1];
+  const line = (k: number): number => strip.y + segmentLine(strip.height, 3, k);
+  const arc = (from: number, to: number, level: number): string => {
+    const d = SIDE_STEP * level;
+    return `M ${strip.x} ${line(from)} C ${strip.x - d} ${line(from)}, ${strip.x - d} ${line(to)}, ${strip.x} ${line(to)}`;
+  };
+  expect(layout.top).toBe(MARGIN);
+  // short and back each span one segment but touch segment 1, so they take two levels; long spans two and goes outside both
+  expect(layout.edges.map((e) => [e.id, e.kind, e.path, e.dashed])).toEqual([
+    ['short', 'side', arc(0, 1, 1), false], ['long', 'side', arc(0, 2, 3), false], ['back', 'side', arc(2, 1, 2), true],
+  ]);
+  expect(layout.edges[0].label).toEqual({ x: strip.x - SIDE_STEP * 0.75, y: (line(0) + line(1)) / 2 });
+});
+
+test('a strip\'s side arcs take the room before it by #480\'s rules, as the first slot too; with the loops hidden they take none (#914)', () => {
+  const arc = (unlabelled: boolean) => side('s', 0, 1, 2, { unlabelled });
+  const first = [{ id: 'strip', width: S, height: 300 }, { id: 'b', width: W, height: 100 }];
+  expect(layoutFlow(first, [arc(false)]).nodes[0].x).toBe(MARGIN + GAP);
+  expect(layoutFlow(first, [arc(true)]).nodes[0].x).toBe(MARGIN + GAP_ARROW);
+  expect(layoutFlow(first, [arc(false)], { loops: 'none' }).nodes[0].x).toBe(MARGIN);
+  // the arrow in carries no pill, the arc does: the gap stays wide
+  expect(layoutFlow(MIXED, [{ ...edge('in', 'a', 'strip'), unlabelled: true }, arc(false)]).nodes[1].x).toBe(MARGIN + W + GAP);
+});
+
+test('a side arc is inner by its mark, feedback too: kept under loops inner with the neighbour arrows, gone under none (#914)', () => {
+  const edges = [edge('in', 'a', 'strip'), side('fb', 1, 0, 2, { feedback: true }), edge('skip', 'b', 'a')];
+  const kinds = (loops: Loops) => layoutFlow(MIXED, edges, { loops }).edges.map((e) => [e.id, e.kind]);
+  expect(kinds('all')).toEqual([['in', 'forward'], ['fb', 'side'], ['skip', 'above']]);
+  expect(kinds('inner')).toEqual([['in', 'forward'], ['fb', 'side']]);
+  expect(kinds('none')).toEqual([]);
+  expect([isInnerEdge({ inner: true, feedback: true }, 3, 3), isInnerEdge({}, 1, 2), isInnerEdge({ feedback: true }, 1, 2)]).toEqual([true, true, false]);
+});
+
+test('no pill sits on a strip: the forward, above, loop and side pills around it all fall outside its box (#914)', () => {
+  const nodes = [MIXED[0], { id: 'strip', width: S, height: 300, exit: segmentLine(300, 3, 2) }, MIXED[2]];
+  const edges = [edge('in', 'a', 'strip'), edge('out', 'strip', 'b'), edge('over', 'b', 'a'), edge('back', 'b', 'strip'), edge('loop', 'strip', 'strip'), side('side', 2, 0)];
+  const layout = layoutFlow(nodes, edges);
+  const strip = layout.nodes[1];
+  const isOn = ({ x, y }: { x: number; y: number }): boolean => x >= strip.x && x <= strip.x + strip.width && y >= strip.y && y <= strip.y + strip.height;
+  expect(layout.edges).toHaveLength(6);
+  expect(layout.edges.filter((e) => isOn(e.label)).map((e) => e.id)).toEqual([]);
 });
