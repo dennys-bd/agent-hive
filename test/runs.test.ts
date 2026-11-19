@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { initialState, reduce, SIGNALS } from '../src/orchestrator.js';
 import { SIGNALS_DEFAULTS, type Signal, type SignalOnOpen } from '../src/types.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import type { Activity, Session, State, Terminal, Worker } from '../src/types.js';
+import type { Activity, Effect, Session, State, Terminal, Transition, Worker } from '../src/types.js';
 import { closeTerminals } from '../src/runs.js';
 import { liveRuns, stageSession, startMode } from '../src/task-runs.js';
 import { sessionsOf } from '../src/tasks.js';
@@ -228,12 +228,53 @@ test('stageStarted keeps `after` as the stage run\'s stage when a free session w
   assert.deepEqual(activityOf(started, ITEM.itemId)?.stageStart, { stage: 'dev', commit: 'a1b2c3d', after: 'spec' });
 });
 
-test('hive_done in a free session hands a `previous` transition that session, the run that ended the stage, though it ran no stage (#812, #134)', () => {
-  const start: State = { ...ranSpec('spec'), transitions: [{ from: 'spec', to: 'plan', when: 'done', session: 'previous' }] };
+// #720: task 1 in spec with plan going on in the session, its record holding `sessions` and its activity resuming `sessionId`
+const PLAIN: Transition[] = [{ from: 'spec', to: 'plan', when: 'done' }];
+const continuing = (sessions: Session[], sessionId?: string, transitions: Transition[] = PLAIN): State => withWork({
+  ...initialState(1), signal: 'red', workspaces: ['hive'],
+  ...flowed([{ name: 'spec', from: {}, prompt: 'x' }, { name: 'plan', from: {}, prompt: 'x', session: 'continue' }], transitions),
+  tasks: [{ item: ITEM, stage: 'spec', boardColumn: 'Ready', auto: true }],
+}, ITEM.itemId, { slug: 'hive-1-t', worktree: WORKTREE, ...(sessionId === undefined ? {} : { sessionId }) }, { sessions });
+// The free session's hive_done, then the destination started by hand: the spawn and the free session's id
+const freeEnds = (start: State): { spawn: Effect | undefined; free: string | undefined; done: State } => {
   const opened = opens(start);
   const own = freeRun(opened);
   const done = reduce(opened, { type: 'done', ptyId: own.runId! }).state;
-  assert.deepEqual([done.tasks[0].stage, activityOf(done, ITEM.itemId)?.handover?.sessionId], ['plan', own.sessionId]);
+  return { spawn: reduce(done, { type: 'start', itemId: ITEM.itemId }).effects.find((e) => e.type === 'spawn'), free: own.sessionId, done };
+};
+const PREVIOUS: Transition[] = [{ from: 'spec', to: 'plan', when: 'done', session: 'previous', prompt: 'go on' }];
+
+test('hive_done in a free session hands a `previous` transition the stage run\'s session when the stage has one; once it is cleared, the free session that ended the stage (#720, #812, #134)', () => {
+  const start: State = { ...ranSpec('spec'), transitions: [{ from: 'spec', to: 'plan', when: 'done', session: 'previous' }] };
+  const first = opens(start);
+  const done = reduce(first, { type: 'done', ptyId: freeRun(first).runId! }).state;
+  assert.deepEqual([done.tasks[0].stage, activityOf(done, ITEM.itemId)?.handover?.sessionId], ['plan', STAGE_RUN]);
+  const cleared = withWork({ ...start, activities: [], activityRecords: [] }, ITEM.itemId, { slug: 'hive-1-t', worktree: WORKTREE }, { sessions: [] });
+  const opened = opens(cleared);
+  const own = freeRun(opened);
+  const after = reduce(opened, { type: 'done', ptyId: own.runId! }).state;
+  assert.deepEqual([after.tasks[0].stage, activityOf(after, ITEM.itemId)?.handover?.sessionId], ['plan', own.sessionId]);
+});
+
+test('a free session ending a stage whose run left no session is what a plain continue stage resumes next: the activity names it and the spawn continues it (#720)', () => {
+  for (const [why, start] of [['the stage run\'s session cleared', continuing([])], ['an earlier free session only', continuing([{ ...SPEC_RUN, stages: [], free: true, id: 'eeeeeeee-0000-4000-8000-000000000009' }])]] as const) {
+    const { spawn, free, done } = freeEnds(start);
+    assert.equal(activityOf(done, ITEM.itemId)?.sessionId, free, why);
+    assert.ok(spawn?.type === 'spawn' && spawn.stage.name === 'plan' && spawn.session === 'continue' && spawn.activity.sessionId === free, `${why}: ${JSON.stringify(spawn)}`);
+  }
+});
+
+test('a free session ending a stage whose run left no session is what a handover with its own prompt resumes (#720)', () => {
+  const { spawn, free } = freeEnds(continuing([], undefined, PREVIOUS));
+  assert.ok(spawn?.type === 'spawn' && spawn.session === 'continue' && spawn.activity.sessionId === free && spawn.prompt?.startsWith('go on'), JSON.stringify(spawn));
+});
+
+test('with the stage run\'s session there, a free session ending the stage hands the stage run\'s session, plain or with a handover; the activity keeps it (#720)', () => {
+  for (const transitions of [PLAIN, PREVIOUS]) {
+    const { spawn, done } = freeEnds(continuing([SPEC_RUN], STAGE_RUN, transitions));
+    assert.equal(activityOf(done, ITEM.itemId)?.sessionId, STAGE_RUN);
+    assert.ok(spawn?.type === 'spawn' && spawn.session === 'continue' && spawn.activity.sessionId === STAGE_RUN, JSON.stringify(spawn));
+  }
 });
 
 test('captureSession on a task appends a free session with no stage: the task still offers start (#812, #696)', () => {

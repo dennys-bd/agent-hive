@@ -25,6 +25,8 @@ const types = (effects: Effect[]): string[] => effects.map((e) => e.type);
 const running = (stages: LegacyStage[] = [SPEC, PLAN]): State =>
   reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(stages) }, { type: 'poll', source: 'board', items: [listed] }).state;
 // hive_done (with its result) then the Stop: what ends a stage
+// The stage run's session limpa'd in the panel (#304)
+const cleared = (state: State): State => reduce(state, { type: 'clearSessions', activityId: workId(state, ID), sessionId: task(state).sessionId! }).state;
 const stageEnd = (state: State, result?: Record<string, unknown>) => {
   const ptyId = state.workers[0].runId!;
   return reduce(reduce(state, { type: 'done', ptyId, ...(result ? { result } : {}) }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
@@ -77,7 +79,7 @@ test('approve with the stage\'s session open in the user\'s own session types HA
   const first = running(GATED);
   const worker = first.workers[0].runId!;
   const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
-  const idle = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
+  const idle = cleared(reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state); // #720: else the stage run's session gets it
   const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
   const ptyId = opened.workers.find((s) => s.freeSession)!.runId!;
   const parked = reduce(opened, { type: 'done', ptyId }).state;
@@ -88,21 +90,26 @@ test('approve with the stage\'s session open in the user\'s own session types HA
   assert.deepEqual([task(moved).stage, 'handoffPending' in task(moved), 'approval' in task(moved)], ['plan', false, false]);
 });
 
-test('approve after a new free session\'s hive_done asks that session for the handoff: once it is closed, the handover resumes it (#812, #692)', () => {
-  const first = running(GATED);
-  const worker = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
-  const idle = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
-  const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
-  const own = opened.workers.find((s) => s.freeSession)!;
-  const closed = reduce(reduce(opened, { type: 'done', ptyId: own.runId! }).state, { type: 'exit', ptyId: own.runId! }).state;
-  const approved = reduce(closed, { type: 'approve', activityId: workId(closed, ID) });
-  const asked = task(approved.state);
-  assert.deepEqual([asked.stage, asked.handoffPending, 'approval' in asked, asked.handover?.sessionId], ['spec', transitionKey({ from: 'spec', when: 'approved' }), false, own.sessionId]);
-  // the stage run was stopped by hand: the fill leaves the task, a start takes the handover
-  const spawn = [...approved.effects, ...reduce(approved.state, { type: 'start', itemId: ID }).effects].find((e) => e.type === 'spawn');
-  assert.ok(spawn?.type === 'spawn' && spawn.run === 'continue' && spawn.activity.sessionId === own.sessionId && spawn.prompt === HANDOFF_PROMPT, JSON.stringify(spawn));
-  assert.equal(sessionsOf(approved.state, ID).length, 2, 'the stage run\'s and the free one');
+test('approve after a new free session\'s hive_done hands the handoff to the stage run\'s session while it is there, else to the free one: once it is closed, the handover resumes it (#812, #692, #720)', () => {
+  for (const clear of [false, true]) {
+    const first = running(GATED);
+    const worker = first.workers[0].runId!;
+    const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+    const stopped = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
+    const stageRun = task(stopped).sessionId;
+    const idle = clear ? cleared(stopped) : stopped;
+    const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
+    const own = opened.workers.find((s) => s.freeSession)!;
+    const closed = reduce(reduce(opened, { type: 'done', ptyId: own.runId! }).state, { type: 'exit', ptyId: own.runId! }).state;
+    const approved = reduce(closed, { type: 'approve', activityId: workId(closed, ID) });
+    const asked = task(approved.state);
+    const resumed = clear ? own.sessionId : stageRun;
+    assert.deepEqual([asked.stage, asked.handoffPending, 'approval' in asked, asked.handover?.sessionId], ['spec', transitionKey({ from: 'spec', when: 'approved' }), false, resumed], `cleared: ${clear}`);
+    // the stage run was stopped by hand: the fill leaves the task, a start takes the handover
+    const spawn = [...approved.effects, ...reduce(approved.state, { type: 'start', itemId: ID }).effects].find((e) => e.type === 'spawn');
+    assert.ok(spawn?.type === 'spawn' && spawn.run === 'continue' && spawn.activity.sessionId === resumed && spawn.prompt === HANDOFF_PROMPT, JSON.stringify(spawn));
+    assert.equal(sessionsOf(approved.state, ID).length, clear ? 1 : 2, 'the stage run\'s, unless cleared, and the free one');
+  }
 });
 
 // The handoff run stopped by the user: the task sits in spec, stopped, still marked
