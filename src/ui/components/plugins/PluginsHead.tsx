@@ -99,10 +99,7 @@ function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadP
   const meta = viewAs !== undefined
     ? t('plugins.preview.label', { workspace: viewAs })
     : [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
-  // #320 decision 15, #338 decision 11: one link and card per origin, in header order, after the saved time
-  const origins = (item.basedOn ?? []).map((origin) => (
-    <Fragment key={`${origin.name} ${origin.url}`}> · <OriginCard basedOn={origin} description={item.description} className={NO_DRAG} /></Fragment>
-  ));
+  const origins = originsOf(item);
   const metaLine = origins.length === 0 ? meta : <>{meta}{origins}</>;
   return (
     <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
@@ -113,21 +110,34 @@ function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadP
 
 const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
 
-export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void }
+// #320 decision 15, #338 decision 11: one link and card per origin, in header order, each after a ·
+const originsOf = (item: CatalogueItem): ReactNode[] => (item.basedOn ?? []).map((origin) => (
+  <Fragment key={`${origin.name} ${origin.url}`}> · <OriginCard basedOn={origin} description={item.description} className={NO_DRAG} /></Fragment>
+));
+
+export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void; onRevert(): void }
 
 /** The update screen's head (#325, decisions 3 and 5): the item's mono name, the yellow chip, `hive <from> → <to>` once the preview answers;
  * a select of the versions with an update when there are two or more, since the version menu opens versions, not their updates (#320, decision 14). The update
  * screen portals it, since only it holds the preview. */
-export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProps) {
+export function UpdateHead({ item, version, preview, onVersion, onRevert }: UpdateHeadProps) {
   const look = STATE_LOOK['update available'];
   const updated = item.versions.filter((v) => v.updateAvailable);
+  // #492: the section, then the versions once the preview answers, then the origins, as the item's head reads
+  const meta = <>{t(`plugins.section.${sectionOf(item.kind)}`)}{preview && <> · <span>{metaOf(preview)}</span></>}{originsOf(item)}</>;
   return (
-    <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)}>
+    <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={meta}>
       {updated.length >= 2 && (
         <Select value={version} onValueChange={onVersion}>
           <SelectTrigger size="sm" aria-label={t('plugins.update.version')} className={`${NO_DRAG} ${XS_TRIGGER}`}><SelectValue /></SelectTrigger>
           <SelectContent>{updated.map((v) => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
         </Select>
+      )}
+      {!item.userCreated && (
+        <Confirm
+          title={t('plugins.revert.title')} message={t('plugins.revert.message', { version })} confirmLabel={t('plugins.revert.confirm')} onConfirm={onRevert}
+          trigger={<Button type="button" size="xs" variant="outline" className={NO_DRAG}>{t('plugins.head.revert')}</Button>}
+        />
       )}
     </Head>
   );

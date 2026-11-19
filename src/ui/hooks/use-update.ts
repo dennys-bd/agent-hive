@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useState } from 'react';
 import type { UpdateChoice, UpdatePreview } from '../../types';
 import type { MessageKey } from '@/i18n';
-import { getJson, postJson } from '@/lib/api';
+import { getJson, postJson, sendJson } from '@/lib/api';
 
 export interface Update {
   preview?: UpdatePreview; // undefined until a read answers
@@ -10,12 +10,14 @@ export interface Update {
   choose(conflictId: string, choice: UpdateChoice): void;
   isApplying: boolean;
   apply(): Promise<void>;
+  revert(): Promise<void>; // #492: the head's "revert to the hive's original" deletes the version, as the editor's revert does
 }
 
 const GONE = 'gone'; // the version has no update any more (no_update): nothing to show
 type Read = UpdatePreview | MessageKey | typeof GONE;
 const codeOf = (err: unknown): unknown => (err instanceof Error && 'code' in err ? err.code : undefined);
-const pathOf = (id: string, version: string): string => `/api/items/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}/update`;
+const versionPath = (id: string, version: string): string => `/api/items/${encodeURIComponent(id)}/versions/${encodeURIComponent(version)}`;
+const pathOf = (id: string, version: string): string => `${versionPath(id, version)}/update`;
 
 // The preview, or why there is none; the server's own words stay in hive.log (decision 15)
 async function readPreview(path: string): Promise<Read> {
@@ -76,5 +78,14 @@ export function useUpdate(id: string, version: string, leave: () => Promise<void
     }
   }, [preview, path, choices, leave, refused]);
   const choose = useCallback((conflictId: string, choice: UpdateChoice): void => setChoices((now) => ({ ...now, [conflictId]: choice })), []);
-  return { preview, notice, choices, choose, isApplying, apply };
+  const revert = useCallback(async (): Promise<void> => {
+    try {
+      await sendJson<unknown>('DELETE', versionPath(id, version));
+    } catch {
+      setNotice('plugins.editor.revertFailed');
+      return;
+    }
+    await leave();
+  }, [id, version, leave]);
+  return { preview, notice, choices, choose, isApplying, apply, revert };
 }
