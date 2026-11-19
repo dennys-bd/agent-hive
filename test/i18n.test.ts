@@ -622,6 +622,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'plugins.chain.enters', 'plugins.chain.textKept', 'plugins.chain.elseLine', 'plugins.version.header', 'plugins.version.footer', 'plugins.origin.openOn',
     'plugins.update.conflict', 'plugins.update.lines', 'plugins.update.edited', 'plugins.update.hiveSide',
     'plugins.reviewer.next',
+    'plugins.update.version',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
     'based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}', 'map · generated from the text',
@@ -632,6 +633,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'applies', 'text kept', 'else · line {line}', 'versions of {name}', 'each workspace uses one version. editing here changes only the open version.', 'open on {host}',
     'conflict', 'lines {start}–{end}', 'edited {date}', 'hive {version}',
     'next annotation',
+    'version: {name}',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
     'baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}', 'mapa · gerado do texto',
@@ -642,6 +644,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'entra', 'texto mantido', 'else · linha {line}', 'versões de {name}', 'cada workspace usa uma versão. editar aqui muda só a versão aberta.', 'abrir em {host}',
     'conflito', 'linhas {start}–{end}', 'editada em {date}', 'hive {version}',
     'próxima anotação',
+    'versão: {name}',
   ]);
 });
 

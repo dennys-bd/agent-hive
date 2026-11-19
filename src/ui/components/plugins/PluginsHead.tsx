@@ -129,7 +129,7 @@ export function UpdateHead({ item, version, preview, onVersion, onRevert }: Upda
     <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={meta}>
       {updated.length >= 2 && (
         <Select value={version} onValueChange={onVersion}>
-          <SelectTrigger size="sm" aria-label={t('plugins.update.version')} className={`${NO_DRAG} ${XS_TRIGGER}`}><SelectValue /></SelectTrigger>
+          <SelectTrigger size="sm" aria-label={t('plugins.update.version', { name: version })} className={`${NO_DRAG} ${XS_TRIGGER}`}><SelectValue /></SelectTrigger>
           <SelectContent>{updated.map((v) => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
         </Select>
       )}
