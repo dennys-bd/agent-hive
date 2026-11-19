@@ -559,12 +559,12 @@ const FAMILY: State = withTasks(IDLE, [EPIC, { ...STOPPED, item: { ...STOPPED.it
 
 test('with onOpenTask the tree section sits between the status block and the properties grid; without it there is none (#36)', () => {
   const { unmount } = render(<DetailPanel state={FAMILY} selected={TASK} locale="pt-BR" isShown onClose={() => {}} onOpenTask={() => {}} />);
-  const tree = screen.getByRole('region', { name: 'árvore' });
+  const tree = screen.getByRole('group', { name: 'árvore' });
   expect(before(screen.getByRole('region', { name: 'parada' }), tree)).toBe(true);
   expect(before(tree, screen.getByText('início', { selector: 'dt' }))).toBe(true);
   unmount();
   render(<Panel state={FAMILY} initial={TASK} />);
-  expect(screen.queryByRole('region', { name: 'árvore' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'árvore' })).not.toBeInTheDocument();
 });
 
 test('the parent row follows the issue row, reads the parent\'s #id title and opens it; a root has no parent row (#36)', async () => {
@@ -578,7 +578,7 @@ test('the parent row follows the issue row, reads the parent\'s #id title and op
   unmount();
   render(<DetailPanel state={FAMILY} selected={{ taskId: 'I0' }} locale="pt-BR" isShown onClose={() => {}} onOpenTask={onOpenTask} />);
   expect(screen.queryByText('pai', { selector: 'dt' })).not.toBeInTheDocument();
-  expect(screen.getByRole('region', { name: 'árvore' })).toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'árvore' })).toBeInTheDocument();
 });
 
 test('dispensar sits under the task\'s error and under a failed start, outside the alert, and posts dismiss-error; disabled while a run holds the task; an idle epic\'s error has it enabled (#354)', async () => {

@@ -33,7 +33,7 @@ const state = (tasks: WithWork[] = TREE, workers: Worker[] = [WAITING]): State =
 });
 // withPointedWork splits each fixture, so the section gets the state's own task
 const taskOf = (s: State, itemId: string): Task => s.tasks.find((c) => c.item.itemId === itemId)!;
-const section = (): HTMLElement => screen.getByRole('region', { name: 'árvore' });
+const section = (): HTMLElement => screen.getByRole('group', { name: 'árvore' });
 const rows = (): HTMLElement[] => within(section()).getAllByRole('listitem');
 const labels = (): string[] => rows().map((li) => within(li).getByText(/^#\d Task \d$/).textContent ?? '');
 function Section({ s = state(), open, onOpenTask = () => {} }: { s?: State; open: string; onOpenTask?(itemId: string): void }) {
@@ -41,6 +41,21 @@ function Section({ s = state(), open, onOpenTask = () => {} }: { s?: State; open
 }
 beforeEach(() => { setLanguage('pt'); resetViewState(); });
 afterEach(() => resetViewState()); // also drops toggleOutline's pending post
+
+const HINT = 'clicar numa linha abre os detalhes dela · passar o mouse marca no grafo';
+
+test('árvore is a details open by default: the count, the marks and the bar sit in its summary, and the click hint is its note (#958)', () => {
+  render(<Section open="I1" />);
+  const details = section() as HTMLDetailsElement;
+  expect(details.open).toBe(true);
+  const summary = details.querySelector('summary')!;
+  expect(within(summary).getByText('5 tarefas · 2/5 done')).toHaveClass('truncate', 'text-muted-foreground');
+  expect(within(summary).getByTitle('esperando você')).toHaveTextContent('● 1');
+  expect(within(summary).getByTitle('tentativas esgotadas')).toHaveTextContent('● 1');
+  expect(summary.querySelector('[data-tree-bar]')).not.toBeNull();
+  expect(document.getElementById(summary.getAttribute('aria-describedby')!)).toHaveTextContent(HINT);
+  expect(within(section()).getByText(HINT)).toHaveClass('sr-only');
+});
 
 test('on a leaf the outline lists the tree from the root, depth first, the leaf marked; each row reads its stage and its status word, indented by depth; the bar draws every node below the root (#36)', () => {
   render(<Section open="I4" />);
@@ -55,7 +70,6 @@ test('on a leaf the outline lists the tree from the root, depth first, the leaf 
   expect(within(rows()[3]).getByText('vazio')).toHaveClass('text-muted-foreground');
   const segments = [...section().querySelectorAll('[data-tree-bar] > span')];
   expect(segments.map((s) => s.className.match(/bg-[a-z-]+/)?.[0])).toEqual(['bg-empty', 'bg-muted-foreground', 'bg-empty', 'bg-waiting', 'bg-muted-foreground']);
-  expect(within(section()).getByText('clicar numa linha abre os detalhes dela · passar o mouse marca no grafo')).toHaveClass('text-muted-foreground');
 });
 
 test('the header reads N tarefas · done/N done over every node below the root, then ● N for the tasks waiting for you and ● N for those out of tries, each only when non-zero (#36)', () => {
