@@ -109,7 +109,7 @@ test('switching file while the agent works cancels the request; the other file p
   await open('new-build');
   ask('two sentences');
   expect(await screen.findByText(RUNNING)).toBeInTheDocument();
-  fireEvent.click(fileTab('scripts/slice.py'));
+  fireEvent.click(fileTab('slice.py'));
   await waitFor(() => expect(signals[0]?.aborted).toBe(true));
   await waitFor(() => expect(field()).toBeEnabled());
   expect([screen.queryByText(RUNNING), screen.queryByRole('button', { name: 'aceitar' }), view().model.getValue()]).toEqual([null, null, 'print(1)\n']);

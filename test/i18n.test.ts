@@ -614,9 +614,18 @@ test("the based-on card's copy reads as the handoff writes it, in both languages
 });
 
 test('the plugins design pass copy (#492): both languages', () => {
-  const keys = ['plugins.origin.link', 'plugins.preview.label', 'plugins.list.hivePathVersion'] as const;
-  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}']);
-  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}']);
+  const keys = [
+    'plugins.origin.link', 'plugins.preview.label', 'plugins.list.hivePathVersion', 'plugins.map.header',
+    'plugins.chain.onlyWhen', 'plugins.chain.and', 'plugins.chain.or', 'plugins.chain.otherwise',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}', 'map · generated from the text',
+    'only when {condition}', 'and', 'or', 'otherwise',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}', 'mapa · gerado do texto',
+    'só quando {condition}', 'e', 'ou', 'senão',
+  ]);
 });
 
 test('an evaluation\'s card copy reads as the spec writes it, in both languages, and never says rodar (#877)', () => {

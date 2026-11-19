@@ -40,7 +40,7 @@ test('the hidden ranges, marks and chips after the hunk move down by the added l
   expect(look.decorations.filter((d) => !d.className.startsWith('template-proposal')).map((d) => [d.line, d.className])).toEqual([
     ...[16, 17, 18, 19, 20].map((line) => [line, 'template-branch']), [15, 'template-pill'],
   ]);
-  expect(look.chips).toEqual([{ line: 16, label: 'if delivery == "stacked"' }, { line: 18, label: 'else' }, { line: 10, label: 'agent proposal' }]);
+  expect(look.chips).toEqual([{ line: 16, label: 'only when delivery = stacked' }, { line: 18, label: 'otherwise' }, { line: 10, label: 'agent proposal' }]);
   expect([look.lineOf(7), look.lineOf(16), look.lineOf(20)]).toEqual([7, 19, 22]);
   expect(look.dimmed).toBe(base.dimmed);
 });

@@ -65,7 +65,7 @@ test('view as a workspace switches the editor to its preview and "template" swit
   await user.click(screen.getByRole('combobox', { name: 'ver como' }));
   await user.click(await screen.findByRole('option', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
-  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('SKILL.md · hive-site');
+  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^SKILL\.md$/);
   await user.click(screen.getByRole('combobox', { name: 'ver como' }));
   await user.click(await screen.findByRole('option', { name: 'template' }));
   await waitFor(() => expect(view().readOnly).toBe(false));
@@ -132,7 +132,7 @@ test('a file that is not markdown has no variables (#321, decision 3)', async ()
   stubItems(serverOf({ reads: { 'hive:new-build@mine': readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': VARS_TEXT, 'scripts/slice.py': 'print(1)\n' }), 'hive:new-build@': ORIGINAL } }));
   render(<PluginsWindow />);
   await open('new-build');
-  fireEvent.click(screen.getByRole('tab', { name: 'scripts/slice.py' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'slice.py' }));
   expect(await screen.findByText('nenhuma variável neste arquivo')).toBeInTheDocument();
   expect(screen.queryByRole('list', { name: 'variáveis' })).not.toBeInTheDocument();
 });

@@ -45,33 +45,31 @@ function NewFileField({ onAdd, onClose }: { onAdd(path: string): Promise<Message
   );
 }
 
-const labelOf = (path: string, open: string, previewOf?: string): string => {
-  if (previewOf === undefined) return path;
-  return path === open ? `${deliveredName(path)} · ${previewOf}` : deliveredName(path);
-};
+// #492: the basename, the full path in the tab's title; the delivered name under a preview
+const labelOf = (path: string, previewOf?: string): string => (previewOf === undefined ? path : deliveredName(path)).split('/').at(-1) ?? path;
+const TAB = 'flex shrink-0 items-center gap-1.5 border-r px-3 font-mono text-muted-foreground hover:text-foreground aria-selected:bg-card aria-selected:text-foreground aria-selected:shadow-[inset_0_-2px_0_var(--foreground)]';
 
-/** The skill's file tabs (#319, handoff 11b): the folder's files with the dirty dot, "+" and its name field, the visual | text toggle on the right. */
+/** The skill's file tabs (#319, handoff 11b): the folder's files filling the bar with the dirty dot, "+" and its name field, the visual | text
+ * toggle on the right, or the preview's line in its place (#492). */
 export function FileTabs({ files, open, isDirty, onOpen, onAdd, mode, onMode, previewOf }: FileTabsProps) {
   const [isAdding, setAdding] = useState(false);
   return (
-    <div className="flex h-8 shrink-0 items-center gap-1 border-b px-2 text-xs">
-      <div role="tablist" aria-label={t('plugins.file.tabs')} className="flex min-w-0 items-center gap-1 overflow-x-auto">
+    <div className="flex h-8 shrink-0 items-stretch border-b text-xs">
+      <div role="tablist" aria-label={t('plugins.file.tabs')} className="flex min-w-0 items-stretch overflow-x-auto">
         {files.map((path) => (
-          <button
-            key={path} type="button" role="tab" aria-selected={path === open} data-dirty={isDirty(path)} onClick={() => onOpen(path)}
-            className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 font-mono text-muted-foreground aria-selected:bg-accent aria-selected:text-foreground"
-          >
-            {labelOf(path, open, previewOf)}
-            {isDirty(path) && <span title={t('plugins.file.unsaved')} className="size-1.5 rounded-full bg-foreground" />}
+          <button key={path} type="button" role="tab" title={path} aria-selected={path === open} data-dirty={isDirty(path)} onClick={() => onOpen(path)} className={TAB}>
+            {labelOf(path, previewOf)}
+            {isDirty(path) && <span title={t('plugins.file.unsaved')} className="size-1.5 shrink-0 rounded-full bg-foreground" />}
           </button>
         ))}
       </div>
       {onAdd && (isAdding
-        ? <NewFileField onAdd={onAdd} onClose={() => setAdding(false)} />
-        : <Button type="button" variant="ghost" size="icon" aria-label={t('plugins.file.new')} className="size-6" onClick={() => setAdding(true)}><PlusIcon /></Button>)}
+        ? <span className="flex items-center px-2"><NewFileField onAdd={onAdd} onClose={() => setAdding(false)} /></span>
+        : <Button type="button" variant="ghost" aria-label={t('plugins.file.new')} className="h-auto rounded-none px-3" onClick={() => setAdding(true)}><PlusIcon className="size-3" /></Button>)}
+      {previewOf !== undefined && <span className="ml-auto flex items-center whitespace-nowrap px-4 text-muted-foreground">{t('plugins.preview.label', { workspace: previewOf })}</span>}
       {mode && onMode && (
         // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the toggle
-        <div role="group" aria-label={t('plugins.mode.label')} className="ml-auto flex items-center rounded-md border p-0.5">
+        <div role="group" aria-label={t('plugins.mode.label')} className="mr-3 ml-auto flex items-center self-center rounded-md border bg-card p-0.5">
           {MODES.map((m) => (
             <button key={m} type="button" aria-pressed={m === mode} onClick={() => onMode(m)} className="rounded-sm px-2 py-0.5 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground">{t(MODE_LABEL[m])}</button>
           ))}

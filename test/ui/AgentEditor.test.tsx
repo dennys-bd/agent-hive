@@ -75,5 +75,5 @@ test('"view as" previews a specialist read-only, as it does a skill (#323)', asy
   await user.click(screen.getByRole('combobox', { name: 'ver como' }));
   await user.click(await screen.findByRole('option', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
-  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('architect.md · hive-site');
+  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^architect\.md$/);
 });

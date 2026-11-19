@@ -19,7 +19,7 @@ import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
 import { type LineSelection, proposalLook } from '@/lib/assist-view';
 import { appendLine, formVariables } from '@/lib/chain-draft';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
-import { isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
+import { blockAt, isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
 
 interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; workspaces: readonly string[]; fontFamily: string;
   pick: AssistPick; onPick(pick: AssistPick): void; // #331: the chip's pick, held by the dock
@@ -115,6 +115,7 @@ function EditorBody(props: BodyProps) {
   const { isMd, parsed, map, workspace, preview, look } = useFileLook(props);
   // The source line of the last reveal: the look maps it at render, so a chain just inserted lands under the look that holds it
   const [reveal, setReveal] = useState<Reveal>();
+  const [caret, setCaret] = useState<number>(); // #492: the map raises the caret's block
   const revealLine = (line: number): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1 }));
   useAnnotationReveal(annotations.revealed, revealLine);
   const isPreview = workspace !== undefined;
@@ -142,13 +143,14 @@ function EditorBody(props: BodyProps) {
             map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move} appendLine={appendLine(parsed)}
             onReveal={revealLine} onPlus={forms.onPlus} gap={forms.gap}
             dots={isPreview || isProposal ? undefined : dots} onDot={annotations.openAt}
+            current={isPreview || caret === undefined ? undefined : blockAt(map, caret)}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
           modelKey={modelKey} path={path} text={shown.text} isReadOnly={!canEdit} isProposal={isProposal}
           fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { line: shown.lineOf(reveal.line), n: reveal.n }}
           onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={(lines) => { selection.current = lines; }}
-          annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf}
+          annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf} onCaret={setCaret}
         />
       </div>
       <AssistFooter assist={assist} pick={props.pick} onPick={props.onPick} workspace={workspaces[0]} isDisabled={!isWritable} onAsk={(request) => assist.ask(request, selection.current)} />
