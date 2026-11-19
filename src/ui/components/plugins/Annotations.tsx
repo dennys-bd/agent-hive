@@ -17,9 +17,11 @@ const COPY: Record<LintCheck, { title: MessageKey; body: MessageKey }> = {
   callRequired: { title: 'plugins.annotations.callRequired.title', body: 'plugins.annotations.callRequired.body' },
   heading: { title: 'plugins.annotations.heading.title', body: 'plugins.annotations.heading.body' },
 };
-// Yellow and red are status colours (design-system.md): the severity is the one colour a card carries
-const DOT: Record<Severity, string> = { red: 'bg-destructive', yellow: 'bg-waiting' };
-const EDGE: Record<Severity, string> = { red: 'border-l-destructive', yellow: 'border-l-waiting' };
+// Yellow and red are status colours (design-system.md): the severity is the one colour a card carries, in its border and a note's text (#492)
+const EDGE: Record<Severity, string> = {
+  red: 'border-[color-mix(in_oklab,var(--destructive)_45%,var(--border))]', yellow: 'border-[color-mix(in_oklab,var(--waiting)_45%,var(--border))]',
+};
+const NOTE_TEXT: Record<Severity, string> = { red: 'text-destructive', yellow: 'text-waiting' };
 const ENGINE_CHECKS: readonly LintCheck[] = ['parse', 'render']; // their title is the engine's message, shown as the card's detail
 
 const varsOf = (a: LintAnnotation): Record<string, string | number> => ({
@@ -33,32 +35,23 @@ const bodyOf = (a: EditorAnnotation): string => (isAgent(a) ? a.body : t(COPY[a.
 
 interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number; canFix: boolean }
 
-function Headline({ annotation }: { annotation: EditorAnnotation }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span className={`size-1.5 shrink-0 rounded-full ${DOT[annotation.severity]}`} />
-      <span className="truncate">{headlineOf(annotation)}</span>
-    </span>
-  );
-}
-
 function Card({ annotation, annotations, top, canFix }: SlotProps) {
   const isOpen = annotations.open === annotation;
   return (
     <article
       aria-label={headlineOf(annotation)} data-open={isOpen} style={{ top, height: CARD_HEIGHT }}
-      className={`absolute right-2 left-2 flex flex-col gap-1 overflow-hidden rounded-md border border-l-2 bg-popover p-2 text-[11px] ${EDGE[annotation.severity]} ${isOpen ? 'z-10 ring-1 ring-ring' : ''}`}
+      className={`absolute right-2 left-2 flex flex-col gap-1.5 overflow-hidden rounded-[6px] border bg-card px-2.5 py-2 text-xs ${EDGE[annotation.severity]} ${isOpen ? 'z-10 ring-1 ring-ring' : ''}`}
     >
-      <span className="flex min-w-0 items-center gap-1.5 font-medium">
-        {/* #329: the issue's "marked as the agent's"; the severity stays the card's one colour */}
-        {isAgent(annotation) && <span className="shrink-0 rounded border px-1 font-normal text-[10px] text-muted-foreground">{t('plugins.annotations.agent')}</span>}
-        <Headline annotation={annotation} />
+      <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+        <span className="truncate">{headlineOf(annotation)}</span>
+        {/* #329: the issue's "marked as the agent's", after the title (#492); the severity stays the card's one colour */}
+        {isAgent(annotation) && <span className="shrink-0 rounded border px-1 font-normal text-muted-foreground">{t('plugins.annotations.agent')}</span>}
       </span>
-      <p className="line-clamp-2 text-muted-foreground">{bodyOf(annotation)}</p>
+      <p className="line-clamp-2 text-soft">{bodyOf(annotation)}</p>
       {!isAgent(annotation) && ENGINE_CHECKS.includes(annotation.check) && <p title={annotation.title} className="truncate font-mono text-muted-foreground">{annotation.title}</p>}
-      <span className="mt-auto flex gap-1">
-        {canFix && hasFix(annotation) && <Button type="button" size="xs" variant="outline" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
-        <Button type="button" size="xs" variant="ghost" disabled={!annotations.canDismiss} onClick={() => annotations.dismiss(annotation)}>{t('plugins.annotations.dismiss')}</Button>
+      <span className="mt-auto flex gap-1.5">
+        {canFix && hasFix(annotation) && <Button type="button" size="xs" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
+        <Button type="button" size="xs" variant="outline" disabled={!annotations.canDismiss} onClick={() => annotations.dismiss(annotation)}>{t('plugins.annotations.dismiss')}</Button>
       </span>
     </article>
   );
@@ -68,9 +61,9 @@ function Note({ annotation, annotations, top }: SlotProps) {
   return (
     <button
       type="button" onClick={() => annotations.openAt(annotation)} style={{ top }}
-      className="absolute right-2 left-2 truncate rounded border bg-popover px-1.5 text-left text-[11px] hover:bg-accent"
+      className={`absolute right-2 left-2 truncate px-1.5 text-left text-xs hover:underline ${NOTE_TEXT[annotation.severity]}`}
     >
-      <Headline annotation={annotation} />
+      {headlineOf(annotation)}
     </button>
   );
 }

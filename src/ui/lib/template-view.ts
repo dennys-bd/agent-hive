@@ -11,7 +11,7 @@ export interface LineRange { from: number; to: number } // 1-based, inclusive
 export type LookClass = 'template-pill' | 'template-ref' | 'template-marker' | 'template-branch' | 'template-dim' | 'template-annotation-yellow' | 'template-annotation-red' | 'template-proposal-old' | 'template-proposal-new'; // index.css
 /** A mark on a line: columns from..to (1-based, to exclusive), or the whole line's text; a background spans the line's width. */
 export interface Decoration { line: number; from?: number; to?: number; className: LookClass; isBackground?: boolean }
-export interface Chip { line: number; label: string }
+export interface Chip { line: number; label: string; isNote?: boolean } // a note is plain text in the column, opening nothing (#492)
 /** dimmed: the source lines of the branches that do not hold (the map dims them); lineOf: a source line's line in the editor. */
 export interface TextLook { text: string; hidden: LineRange[]; decorations: Decoration[]; chips: Chip[]; dimmed: ReadonlySet<number>; lineOf(source: number): number }
 interface LookArgs { text: string; parsed: ParsedTemplate; map: TemplateMap; catalogue: Catalogue; mode: EditorMode; isHeaderShown?: boolean }

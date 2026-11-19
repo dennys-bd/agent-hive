@@ -80,7 +80,7 @@ test('a request over selected lines posts them; the proposal marks old and new l
   expect(bodies).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: BUILD_TEXT, request: 'two sentences', selection: { startLine: 9, endLine: 9 }, agent: 'claude' }]);
   const marks = view().decorations.filter((d) => d.options.isWholeLine && d.options.className?.startsWith('template-proposal'));
   expect(marks.map((d) => [d.range.startLineNumber, d.options.className])).toEqual([[9, 'template-proposal-old'], [10, 'template-proposal-new'], [11, 'template-proposal-new']]);
-  expect(within(screen.getByRole('group', { name: 'condições' })).getByRole('button', { name: 'proposta do agente' })).toBeInTheDocument();
+  expect(within(screen.getByRole('group', { name: 'condições' })).getByText('proposta do agente').tagName).toBe('SPAN'); // #492: a note, not a button
   expect([view().readOnly, field().disabled]).toEqual([true, true]);
   expect(screen.getByText('mudança marcada no texto (linhas 9–11)')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'aceitar' }));

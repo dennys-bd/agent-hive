@@ -86,3 +86,12 @@ test("a selection reports its first and last line; one ending at a line's first 
   act(() => view.select({ startLineNumber: 2, startColumn: 1, endLineNumber: 2, endColumn: 1 }));
   expect(onSelection.mock.calls).toEqual([[{ startLine: 1, endLine: 2 }], [{ startLine: 1, endLine: 2 }], [undefined]]);
 });
+
+test('a note chip is plain text, not a button (#492)', async () => {
+  render(<TemplateText {...props({ chips: [{ line: 3, label: 'if a' }, { line: 5, label: 'agent proposal', isNote: true }] })} />);
+  await firstEditor();
+  const column = within(screen.getByRole('group', { name: 'condições' }));
+  expect(column.queryByRole('button', { name: 'agent proposal' })).toBeNull();
+  expect(column.getByText('agent proposal')).toHaveClass('text-muted-foreground');
+  expect(column.getByRole('button', { name: 'if a' })).toBeInTheDocument();
+});

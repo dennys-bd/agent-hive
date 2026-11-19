@@ -21,7 +21,7 @@ test('proposalLook puts the deleted lines above the added ones, each on its whol
   const look = proposalLook(base, hunk);
   expect(look.text.split('\n').slice(7, 12)).toEqual(['', 'Intro, then /hive:new-pr.', 'Intro.', 'Then /hive:new-pr.', '']);
   expect(proposals(look)).toEqual([[9, 'template-proposal-old', true], [10, 'template-proposal-new', true], [11, 'template-proposal-new', true]]);
-  expect(look.chips.at(-1)).toEqual({ line: 10, label: 'agent proposal' });
+  expect(look.chips.at(-1)).toEqual({ line: 10, label: 'agent proposal', isNote: true });
   expect(markedLines(hunk)).toEqual({ from: 9, to: 11 });
 });
 
@@ -30,7 +30,7 @@ test('a pure deletion keeps the text, marks the deleted lines and puts the chip 
   const look = proposalLook(base, hunk);
   expect(look.text).toBe(BUILD_TEXT);
   expect(proposals(look)).toEqual([[9, 'template-proposal-old', true], [10, 'template-proposal-old', true]]);
-  expect(look.chips.at(-1)).toEqual({ line: 9, label: 'agent proposal' });
+  expect(look.chips.at(-1)).toEqual({ line: 9, label: 'agent proposal', isNote: true });
   expect(markedLines(hunk)).toEqual({ from: 9, to: 10 });
 });
 
@@ -40,7 +40,7 @@ test('the hidden ranges, marks and chips after the hunk move down by the added l
   expect(look.decorations.filter((d) => !d.className.startsWith('template-proposal')).map((d) => [d.line, d.className])).toEqual([
     ...[16, 17, 18, 19, 20].map((line) => [line, 'template-branch']), [15, 'template-pill'],
   ]);
-  expect(look.chips).toEqual([{ line: 16, label: 'only when delivery = stacked' }, { line: 18, label: 'otherwise' }, { line: 10, label: 'agent proposal' }]);
+  expect(look.chips).toEqual([{ line: 16, label: 'only when delivery = stacked' }, { line: 18, label: 'otherwise' }, { line: 10, label: 'agent proposal', isNote: true }]);
   expect([look.lineOf(7), look.lineOf(16), look.lineOf(20)]).toEqual([7, 19, 22]);
   expect(look.dimmed).toBe(base.dimmed);
 });

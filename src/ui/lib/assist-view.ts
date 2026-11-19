@@ -35,7 +35,7 @@ export function proposalLook(base: TextLook, hunk: DiffHunk): TextLook {
     ...deleted.map((_, i): Decoration => ({ line: at + i, className: 'template-proposal-old', isBackground: true })),
     ...added.map((_, i): Decoration => ({ line: end + i, className: 'template-proposal-new', isBackground: true })),
   ];
-  const chip: Chip = { line: added.length > 0 ? end : at, label: t('plugins.assist.proposal') };
+  const chip: Chip = { line: added.length > 0 ? end : at, label: t('plugins.assist.proposal'), isNote: true };
   return {
     text: [...lines.slice(0, end - 1), ...added, ...lines.slice(end - 1)].join('\n'),
     hidden: base.hidden.filter(isKept).map((range) => ({ from: shift(range.from), to: shift(range.to) })),

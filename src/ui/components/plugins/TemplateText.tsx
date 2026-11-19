@@ -143,6 +143,7 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the chips column
     <div role="group" aria-label={t('plugins.editor.conditions')}>
       {chips.map((chip) => {
+        if (chip.isNote) return <span key={chip.line} style={{ top: topOf(chip.line) }} className="absolute left-2 max-w-[214px] truncate px-2 text-muted-foreground text-xs">{chip.label}</span>;
         const isOpen = popover?.line === chip.line;
         // Every chip sits under a Popover, open or not, so opening one keeps its button (and its focus) instead of remounting it
         return (
@@ -155,7 +156,7 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
                 {chip.label}
               </button>
             </PopoverAnchor>
-            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3"
+            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[340px] p-3"
                 // the open chip toggles it: its pointerdown is no outside click, or the click after it would reopen what Radix just closed
                 onPointerDownOutside={(event) => { if (openChip.current?.contains(event.target as Node)) event.preventDefault(); }}
               >{popover.content}</PopoverContent>}
