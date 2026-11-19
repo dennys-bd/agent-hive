@@ -21,7 +21,7 @@ import { statusText, t } from '@/i18n';
 import { sessionPath } from '@/lib/copy-targets';
 import { CreateTargetsContext } from '@/lib/create-targets';
 import { isMarkdownPath } from '@/lib/doc-links';
-import { answerableActivity, backoffUntil, createsIssues, createsTasks, taskState } from '@/lib/task-state';
+import { answerableActivity, backoffUntil, createsIssues, createsTasks, type TaskStateInput, taskState } from '@/lib/task-state';
 import { backoffLabel, clock, compact, fmt } from '@/lib/usage';
 import { shownSize } from '@/lib/xterm-setup';
 import { baseName } from '../../base-name';
@@ -34,10 +34,18 @@ const STATUS_BOX: Record<TaskState, string> = {
   empty: 'border-empty bg-empty/12', working: 'border-working bg-working/12', waiting: 'border-waiting bg-waiting/12',
   review: 'border-review bg-review/12', approval: 'border-approval bg-approval/12', backoff: 'border-backoff bg-backoff/12',
 };
-const STATUS_WORD: Record<TaskState, string> = {
+export const STATUS_WORD: Record<TaskState, string> = {
   new: 'text-muted-foreground',
   empty: 'text-muted-foreground', working: 'text-working', waiting: 'text-waiting', review: 'text-review', approval: 'text-approval', backoff: 'text-backoff',
 };
+
+/** The task's state in the status box's words (#663, #805): parada when stopped, backoff with its wait, else the status; the timeline's live
+ * line reads the same one (#961), so the two never word it apart. */
+export function statusWord(task: Task, state: TaskStateInput, now: number): string {
+  const status = taskState(task, state);
+  if (status === 'empty') return t('detail.stopped');
+  return status === 'backoff' ? backoffLabel(backoffUntil(task, state), now) : statusText(status);
+}
 
 // Under Atividades, each live session of the task: its short id, how long it has run and its tokens so far
 function RunLines({ task, state }: { task: Task; state: Work }) {
@@ -84,7 +92,7 @@ export function StatusBox({ task, state, isActivity }: { task: Task; state: Stat
   const live = activityOf(state, task.item.itemId);
   const answerable = answerableActivity(task, state);
   const { hiveSource } = useContext(CreateTargetsContext); // #784: State does not carry it
-  const word = status === 'empty' ? t('detail.stopped') : status === 'backoff' ? backoffLabel(backoffUntil(task, state), Date.now()) : statusText(status); // #805
+  const word = statusWord(task, state, Date.now()); // #805
   // Since the stop (#580): refreshed by each state broadcast, no timer of its own; a task stopped before stoppedAt existed reads as before
   const stoppedAt = live?.stoppedAt;
   const since = status === 'empty' && stoppedAt !== undefined ? [compact(Math.max(0, Date.now() - Date.parse(stoppedAt)))] : [];
