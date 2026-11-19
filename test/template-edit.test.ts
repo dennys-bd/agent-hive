@@ -300,4 +300,10 @@ test('updateVariable sets from: task in place, dropping the values a task variab
   if (!back.ok) return assert.fail(back.error.message);
   assert.equal(back.text, '---\nname: x\nvariables:\n  planPath: { default: null }\n---\n{{ planPath }}\n');
   assert.equal(back.parsed.variables[0]?.from, undefined);
+  // a list's values and a yes/no's type go too: the parser refuses either beside from: task
+  for (const declaration of ['{ values: [a, b], default: a }', '{ type: boolean, default: true }']) {
+    const typed = updateVariable(doc.replace('{ default: a, workspaces: { hive: b } }', declaration), 'planPath', { from: 'task' });
+    if (!typed.ok) return assert.fail(typed.error.message);
+    assert.equal(typed.text, tasked.text, declaration);
+  }
 });
