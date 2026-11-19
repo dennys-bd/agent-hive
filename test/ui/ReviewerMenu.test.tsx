@@ -26,7 +26,8 @@ const serverOf = (extra: Partial<ItemsServer> = {}): ItemsServer => ({
 });
 const head = (): HTMLElement => screen.getByTestId('head');
 const counter = (name: string): HTMLElement => within(head()).getByRole('button', { name });
-const chevron = (): HTMLElement => within(head()).getByRole('button', { name: 'menu do revisor' });
+// #492: one trigger, named by the counter, opens the menu
+const trigger = (): HTMLElement => within(head()).getByRole('button', { name: /^revisor/ });
 const menu = (): HTMLElement => screen.getByRole('dialog');
 const margin = (): HTMLElement => screen.getByRole('group', { name: 'anotações' });
 const view = (): FakeEditor => FakeEditor.all.at(-1)!;
@@ -36,7 +37,7 @@ async function open(): Promise<void> {
   await waitFor(() => expect(view().hiddenAreas.length).toBeGreaterThan(0));
 }
 async function openMenu(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(chevron());
+  await user.click(trigger());
   await screen.findByRole('switch', { name: 'revisor' });
 }
 
@@ -46,7 +47,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('turned off: the counter reads "reviewer off · 1 annotation", muted and still jumping, with only the lint\'s; a save posts no review (#329)', async () => {
+test('turned off: the trigger reads "reviewer off · 1 annotation", muted, with only the lint\'s; a save posts no review (#329)', async () => {
   const user = userEvent.setup();
   const saves: SaveBody[] = [];
   const server = serverOf({ reviewer: { ...SAVED, when: 'save' }, save: (id, body) => { saves.push(body); return echo(id, body); } });
@@ -81,15 +82,15 @@ test('a run reads "reviewer · reviewing…" and disables review now; a failure 
   await open();
   await openMenu(user);
   await user.click(screen.getByRole('button', { name: 'revisar agora' }));
-  expect(counter('revisor · revisando…')).toBeEnabled(); // the lint's annotation: it still jumps
+  expect(counter('revisor · revisando…')).toBeEnabled();
   expect(screen.getByRole('button', { name: 'revisar agora' })).toBeDisabled();
   await act(async () => { release(json({ error: "the reviewer's answer was refused; see hive.log", code: 'bad_answer' }, 502)); });
   expect(await within(menu()).findByRole('alert')).toHaveTextContent('a resposta do revisor foi recusada; veja o hive.log');
-  expect(chevron()).toHaveAttribute('data-error', 'true');
+  expect(trigger()).toHaveAttribute('data-error', 'true');
   await user.click(screen.getByRole('button', { name: 'revisar agora' }));
   await waitFor(() => expect(counter('revisor · 2 anotações')).toBeInTheDocument());
   expect(within(menu()).queryByRole('alert')).not.toBeInTheDocument();
-  expect(chevron()).toHaveAttribute('data-error', 'false');
+  expect(trigger()).toHaveAttribute('data-error', 'false');
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('switch', { name: 'revisor' })).not.toBeInTheDocument());
 });
@@ -107,8 +108,8 @@ test('"reviews", the switch and the agent each post { prefix, reviewer } with on
   await waitFor(() => expect(screen.getByRole('radio', { name: 'ao salvar' })).toHaveAttribute('aria-checked', 'true'));
   await user.click(screen.getByRole('switch', { name: 'revisor' }));
   await waitFor(() => expect(screen.getByRole('switch', { name: 'revisor' })).not.toBeChecked());
-  await user.click(screen.getByRole('combobox', { name: 'agente' }));
-  await user.click(await screen.findByRole('option', { name: /^codex/ }));
+  await user.click(screen.getByRole('button', { name: 'agente' }));
+  await user.click(await screen.findByRole('button', { name: 'codex' }));
   await waitFor(() => expect(bodies).toHaveLength(3));
   expect(bodies).toEqual([
     { prefix: 'HIVE', reviewer: { ...SAVED, when: 'save' } },
@@ -130,9 +131,8 @@ test("an agent annotation's card carries the agent mark, its title and body, and
   await openMenu(user);
   await user.click(screen.getByRole('button', { name: 'revisar agora' }));
   await waitFor(() => expect(counter('revisor · 2 anotações')).toBeInTheDocument());
-  await user.keyboard('{Escape}');
-  fireEvent.click(counter('revisor · 2 anotações')); // the lint's, first
-  fireEvent.click(counter('revisor · 2 anotações')); // then the agent's
+  await user.click(screen.getByRole('button', { name: 'próxima anotação' })); // the lint's, first
+  await user.click(screen.getByRole('button', { name: 'próxima anotação' })); // then the agent's
   const card = within(margin()).getByRole('article', { name: ON_DEPTH.title });
   expect(card).toHaveTextContent('agente');
   expect(card).toHaveTextContent(ON_DEPTH.body);
@@ -148,7 +148,40 @@ test('without a scope (a non-markdown file) review now is disabled (#329)', asyn
   const review = { config: SAVED, running: false, canReview: false, now: vi.fn(), set: vi.fn() };
   const annotations = { list: [], review, canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn() } satisfies Annotations;
   render(<ReviewerMenu annotations={annotations} workspaces={[]} />);
-  await user.click(chevron2());
+  await user.click(screen.getByRole('button', { name: 'revisor · nenhuma anotação' }));
   expect(await screen.findByRole('button', { name: 'revisar agora' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'próxima anotação' })).toBeDisabled();
 });
-const chevron2 = (): HTMLElement => screen.getByRole('button', { name: 'menu do revisor' });
+
+const annotationsOf = (severities: readonly ('red' | 'yellow')[]): Annotations => ({
+  list: severities.map((severity, line): AgentAnnotation => ({ line, severity, title: `t${line}`, body: 'b', source: 'agent' })),
+  review: { config: SAVED, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
+  canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(),
+});
+
+test("the trigger's dot is the worst severity's colour: yellow for yellow ones, red once one is red, none at zero (#492)", () => {
+  const dotOf = (): Element | null => screen.getByRole('button', { name: /^revisor/ }).querySelector('[data-severity]');
+  const { rerender } = render(<ReviewerMenu annotations={annotationsOf(['yellow', 'yellow'])} workspaces={[]} />);
+  expect(dotOf()).toHaveClass('bg-waiting');
+  rerender(<ReviewerMenu annotations={annotationsOf(['yellow', 'red', 'yellow'])} workspaces={[]} />);
+  expect(dotOf()).toHaveClass('bg-destructive');
+  rerender(<ReviewerMenu annotations={annotationsOf([])} workspaces={[]} />);
+  expect(dotOf()).toBeNull();
+});
+
+test("the menu's agent chip reads the picked model and posts it; its default entry posts the default agent and model (#492)", async () => {
+  const user = userEvent.setup();
+  const annotations = annotationsOf(['yellow']);
+  const { rerender } = render(<ReviewerMenu annotations={annotations} workspaces={['agent-hive']} />);
+  await user.click(screen.getByRole('button', { name: /^revisor/ }));
+  const chip = await screen.findByRole('button', { name: 'agente' });
+  await user.click(chip);
+  await user.click(screen.getByRole('combobox', { name: 'modelo' }));
+  await user.click(await screen.findByRole('option', { name: /^haiku/ }));
+  expect(annotations.review.set).toHaveBeenLastCalledWith({ agent: 'claude', model: 'haiku' });
+  await user.click(await screen.findByRole('button', { name: /^padrão/ }));
+  expect(annotations.review.set).toHaveBeenLastCalledWith({ agent: null, model: null });
+  const picked = { ...annotations, review: { ...annotations.review, config: { ...SAVED, agent: 'claude' as const, model: 'haiku' } } };
+  rerender(<ReviewerMenu annotations={picked} workspaces={['agent-hive']} />);
+  expect(screen.getByRole('button', { name: 'agente' })).toHaveTextContent('claude · haiku');
+});

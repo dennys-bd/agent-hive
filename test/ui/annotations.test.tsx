@@ -101,16 +101,18 @@ test('the text, the map and the variables pane show the same annotation, and all
   await waitFor(() => expect(server.dismissed).toEqual({ 'hive:new-build@mine': ['SKILL.md.liquid\0unused\0unused variable reviewDepth\0  reviewDepth: { default: full }'] }));
 });
 
-test('the head counts the annotations: a click moves the text to the next one and opens its card, Esc closes it; at zero it reads "no annotations", disabled (#327)', async () => {
+test('the head counts the annotations: "next annotation" in its menu moves the text to the next one and opens its card, Esc closes it; at zero it reads "no annotations" and the row is disabled (#327, #492)', async () => {
   stubItems(serverOf());
   render(<PluginsWindow />);
   await open();
   const head = screen.getByTestId('head');
   fireEvent.click(await within(head).findByRole('button', { name: 'revisor · 1 anotação' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'próxima anotação' }));
   expect(view().position).toEqual({ lineNumber: 10, column: 1 });
   expect(within(margin()).getByRole('article', { name: HEADLINE })).toHaveAttribute('data-open', 'true');
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(within(margin()).queryByRole('article')).not.toBeInTheDocument();
   act(() => view().model.type(ONE_VARS.replace('  reviewDepth: { default: full }\n', '')));
-  expect(within(head).getByRole('button', { name: 'revisor · nenhuma anotação' })).toBeDisabled();
+  expect(within(head).getByRole('button', { name: 'revisor · nenhuma anotação' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'próxima anotação' })).toBeDisabled();
 });

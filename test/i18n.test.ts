@@ -621,6 +621,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'plugins.variables.form.origin', 'plugins.variables.form.byWorkspace', 'plugins.variables.form.taskNote',
     'plugins.chain.enters', 'plugins.chain.textKept', 'plugins.chain.elseLine', 'plugins.version.header', 'plugins.version.footer', 'plugins.origin.openOn',
     'plugins.update.conflict', 'plugins.update.lines', 'plugins.update.edited', 'plugins.update.hiveSide',
+    'plugins.reviewer.next',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
     'based on {name}', 'preview · {workspace} · read only', 'hive plugin {version}', 'map · generated from the text',
@@ -630,6 +631,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'from task', 'remove {name}', 'origin', 'per workspace', "no value here: the skill reads the task's value when it runs. written to the header, under variables:.",
     'applies', 'text kept', 'else · line {line}', 'versions of {name}', 'each workspace uses one version. editing here changes only the open version.', 'open on {host}',
     'conflict', 'lines {start}–{end}', 'edited {date}', 'hive {version}',
+    'next annotation',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
     'baseada em {name}', 'preview · {workspace} · só leitura', 'plugin hive {version}', 'mapa · gerado do texto',
@@ -639,6 +641,7 @@ test('the plugins design pass copy (#492): both languages', () => {
     'da tarefa', 'remover {name}', 'origem', 'por workspace', 'sem valor aqui: a skill lê o valor da tarefa quando roda. grava no cabeçalho, em variables:.',
     'entra', 'texto mantido', 'else · linha {line}', 'versões de {name}', 'cada workspace usa uma versão. editar aqui muda só a versão aberta.', 'abrir em {host}',
     'conflito', 'linhas {start}–{end}', 'editada em {date}', 'hive {version}',
+    'próxima anotação',
   ]);
 });
 
