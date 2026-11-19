@@ -138,13 +138,12 @@ function RepoTitle({ header }: { header: RepoHeader }) {
 export type HeaderMode = { kind: 'tasks' } | { kind: 'source'; source: SourceConfig | typeof HIVE_SOURCE } | { kind: 'repo'; header: RepoHeader };
 const TASKS_MODE: HeaderMode = { kind: 'tasks' };
 
-// fluxo, the sources legend (#574) and the display slot; the workspaces are the canvas legend's (#576)
-function TasksTitle({ legend, display }: { legend?: string; display?: ReactNode }) {
+// fluxo and the sources legend (#574); the display slot sits at the right, by the search (#911); the workspaces are the canvas legend's (#576)
+function TasksTitle({ legend }: { legend?: string }) {
   return (
     <>
       <span className="font-semibold text-[13px] text-foreground">{t('header.flow')}</span>
       <span>{legend ?? t('tasks.display.allSources')}</span>
-      {display}
     </>
   );
 }
@@ -180,12 +179,12 @@ interface FlowHeaderProps {
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   mode?: HeaderMode; // #571: tasks (default), a source (#756) or a repository (#757)
   legend?: string; // #574: the tasks mode's sources legend; absent: todas as sources
-  display?: ReactNode; // #571: the tasks mode's display control (exibir, #574), right after the legend
+  display?: ReactNode; // #571: the tasks mode's display control (exibir, #574), at the right, just before the search (#911)
   back?: BackLink; // #911, #380: the way back to the last flow; only the issue and PR pages pass it
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
 }
 
-/** The flow's header (redesign 10, #542): fluxo, the sources legend and exibir (#574), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does.
+/** The flow's header (redesign 10, #542): fluxo and the sources legend, then exibir (#574, at the right since #911), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does.
  * With `mode` source it is the source header (#756, handoff §2) and with `mode` repo the repository header (#757, handoff 02): no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. With mode source and inside the dock, + criar tarefa (#774) sits before the search. It renders in the window header's center column (#295, HeaderSlot),
  * the header's 44px and border its own. */
 export function FlowHeader({ state, search, onSearch, isShown = true, onRefresh, mode = TASKS_MODE, legend, display, back, github }: FlowHeaderProps) {
@@ -203,7 +202,7 @@ export function FlowHeader({ state, search, onSearch, isShown = true, onRefresh,
     refreshKey.current = refresh;
   });
   useEffect(() => (isShown ? onShortcutKey([[true, 'refreshFlow']], () => refreshKey.current()) : undefined), [isShown]);
-  const title = mode.kind === 'repo' ? <RepoTitle header={mode.header} /> : mode.kind === 'source' ? <SourceHeading source={mode.source} /> : <TasksTitle legend={legend} display={display} />;
+  const title = mode.kind === 'repo' ? <RepoTitle header={mode.header} /> : mode.kind === 'source' ? <SourceHeading source={mode.source} /> : <TasksTitle legend={legend} />;
   return (
     <HeaderSlot>
     <section aria-label={t('header.flow')} className={`flex h-full min-w-0 flex-1 items-center gap-2.5 px-3.5 text-muted-foreground text-xs ${NO_DRAG_CONTROLS}`}>
@@ -211,6 +210,7 @@ export function FlowHeader({ state, search, onSearch, isShown = true, onRefresh,
       {title}
       <span className="flex-1" />
       {mode.kind === 'source' && <SourceCreateButton source={mode.source} />}
+      {isTasks && display}
       {onSearch && <SearchField label={t(mode.kind === 'repo' ? 'repos.search' : 'flow.search')} value={search ?? ''} isShown={isShown} isNarrow={!isTasks} onChange={onSearch} />}
       {polled !== undefined && <span>{t('flow.updated', { time: polled })}</span>}
       {github !== undefined && !isTasks && <GithubButton url={github} />}
