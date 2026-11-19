@@ -42,19 +42,35 @@ test('centerOfTask places a task in the flow its stage belongs to, else outside 
   expect(centerOfTask(FLOWS, { stage: 'gone' })).toEqual({ kind: 'tasks', view: 'outside' });
 });
 
-test('backOf: a page goes back to the list it was opened from, labelled voltar; a list and the tasks view have no way back (#571)', () => {
+test('backOf: a page goes back to its list, labelled voltar; the list, a source\'s table and a repository\'s list go back to the last flow, else the first; a flow, sem fluxo and no flows have none (#571, #921)', () => {
   const show = vi.fn();
   const issue = { repository: 'acme/site', number: 12 };
-  const lists: TasksCenter[] = [FIRST_CENTER, { kind: 'source', source: 'roadmap' }, { kind: 'repo', repository: 'acme/site', tab: 'prs' }];
-  for (const center of lists) expect(backOf(center, show)).toBeUndefined();
+  const none: [TasksCenter, readonly Flow[]][] = [
+    [FIRST_CENTER, FLOWS], [{ kind: 'tasks', view: 'flow', flow: 'ship' }, FLOWS], [{ kind: 'tasks', view: 'outside' }, FLOWS],
+    [{ kind: 'tasks', view: 'list' }, []], [{ kind: 'source', source: 'roadmap' }, []], [{ kind: 'repo', repository: 'acme/site', tab: 'prs' }, []],
+  ];
+  for (const [center, flows] of none) expect(backOf(center, show, flows, 'ship')).toBeUndefined();
+  const lists: TasksCenter[] = [
+    { kind: 'tasks', view: 'list' }, { kind: 'source', source: 'roadmap' }, { kind: 'source', source: 'hive' },
+    { kind: 'repo', repository: 'acme/site', tab: 'prs' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' },
+  ];
+  for (const center of lists) {
+    const back = backOf(center, show, FLOWS, 'ship');
+    expect(back).toMatchObject({ label: 'ship', toFlow: true });
+    back?.onBack();
+    expect(show).toHaveBeenLastCalledWith({ kind: 'tasks', view: 'flow', flow: 'ship' });
+  }
+  expect(backOf(lists[0], show, FLOWS, undefined)?.label).toBe('build'); // no flow shown yet: the first
+  expect(backOf(lists[0], show, FLOWS, 'gone')?.label).toBe('build'); // the last one was removed: the first
   const pages: [TasksCenter, TasksCenter][] = [
     [{ kind: 'source', source: 'roadmap', issue }, { kind: 'source', source: 'roadmap' }],
     [{ kind: 'repo', repository: 'acme/site', tab: 'issues', issue }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }],
     [{ kind: 'repo', repository: 'acme/site', tab: 'prs', pr: { repository: 'acme/site', number: 7 } }, { kind: 'repo', repository: 'acme/site', tab: 'prs' }],
   ];
   for (const [page, list] of pages) {
-    const back = backOf(page, show);
-    expect(back?.label).toBe('voltar');
+    const back = backOf(page, show, FLOWS, 'ship');
+    expect(back).toMatchObject({ label: 'voltar' });
+    expect(back?.toFlow).toBeUndefined();
     back?.onBack();
     expect(show).toHaveBeenLastCalledWith(list);
   }
@@ -258,4 +274,35 @@ test('a native view row with no repository goes to its task when it is one, else
   expect(onSelect).toHaveBeenLastCalledWith({ taskId: 'roadmap:PVTI_2' });
   expect(open).toHaveBeenCalledOnce();
   open.mockRestore();
+});
+
+test('useTasksCenter remembers the last flow shown: a list goes back to it, to the first before any other, and to the first once a save removes it; none with no flow (#921)', () => {
+  const { result, rerender } = renderHook(({ state }) => useTasksCenter(state, NAV, [SITE], vi.fn()), { initialProps: { state: STATE } });
+  act(() => result.current.show({ kind: 'tasks', view: 'list' }));
+  expect(result.current.back?.label).toBe('build'); // the first flow, the center's start
+  act(() => result.current.show({ kind: 'tasks', view: 'flow', flow: 'ship' }));
+  act(() => result.current.show({ kind: 'repo', repository: 'acme/site', tab: 'issues' }));
+  expect(result.current.back?.label).toBe('ship');
+  act(() => result.current.back?.onBack());
+  expect(result.current.center).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });
+  act(() => result.current.show({ kind: 'source', source: 'roadmap' }));
+  rerender({ state: { ...STATE, flows: [FLOWS[0]] } });
+  expect(result.current.back?.label).toBe('build');
+  rerender({ state: { ...STATE, flows: [] } });
+  expect(result.current.back).toBeUndefined();
+});
+
+test('onMerged goes to the PR list only while the stored center is still that PR\'s page; otherwise it leaves the center (#921)', () => {
+  const { result } = renderHook(() => useTasksCenter(STATE, NAV, [SITE], vi.fn()));
+  const pr = { repository: 'acme/site', number: 7 };
+  act(() => result.current.openPr(pr));
+  act(() => result.current.onMerged(pr));
+  expect(result.current.center).toEqual({ kind: 'repo', repository: 'acme/site', tab: 'prs' });
+  const other = { repository: 'acme/site', number: 8 };
+  act(() => result.current.openPr(other));
+  act(() => result.current.onMerged(pr));
+  expect(result.current.center).toEqual({ kind: 'repo', repository: 'acme/site', tab: 'prs', pr: other });
+  act(() => result.current.show({ kind: 'tasks', view: 'flow', flow: 'ship' }));
+  act(() => result.current.onMerged(pr));
+  expect(result.current.center).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });
 });

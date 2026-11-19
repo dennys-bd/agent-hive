@@ -39,12 +39,23 @@ export function centerOfTask(flows: readonly Flow[], task: Pick<Task, 'stage'>):
 
 export const centerOfRepo = (repository: string): TasksCenter => ({ kind: 'repo', repository, tab: 'prs' });
 
-/** Decision 3: a page goes back to the list it was opened from: a source's issue to its table, a repository's page to its list on the same tab. */
-export function backOf(center: TasksCenter, show: (next: TasksCenter) => void): BackLink | undefined {
-  if (center.kind === 'source' && center.issue) return { label: t('back.list'), onBack: () => show({ kind: 'source', source: center.source }) };
-  if (center.kind === 'repo' && (center.issue || center.pr)) return { label: t('back.list'), onBack: () => show({ kind: 'repo', repository: center.repository, tab: center.tab }) };
-  return undefined;
+// Decision 1-2 (#921): a list's way back, to the last flow shown while it exists, else the first; none with no flow (TasksSoon)
+function flowBack(flows: readonly Flow[], lastFlow: string | undefined, show: (next: TasksCenter) => void): BackLink | undefined {
+  const flow = flows.find((f) => f.name === lastFlow) ?? flows[0];
+  return flow && { label: flow.name, toFlow: true, onBack: () => show({ kind: 'tasks', view: 'flow', flow: flow.name }) };
 }
+
+/** Decision 3 (#571): a page goes back to the list it was opened from, a source's issue to its table, a repository's page to its list on the
+ * same tab. #921: todas em lista, a source's table and a repository's list go back to the last flow; a flow and sem fluxo have no way back. */
+export function backOf(center: TasksCenter, show: (next: TasksCenter) => void, flows: readonly Flow[], lastFlow: string | undefined): BackLink | undefined {
+  if (center.kind === 'source') return center.issue ? { label: t('back.list'), onBack: () => show({ kind: 'source', source: center.source }) } : flowBack(flows, lastFlow, show);
+  if (center.kind === 'repo') {
+    return center.issue || center.pr ? { label: t('back.list'), onBack: () => show({ kind: 'repo', repository: center.repository, tab: center.tab }) } : flowBack(flows, lastFlow, show);
+  }
+  return center.view === 'list' ? flowBack(flows, lastFlow, show) : undefined;
+}
+
+const isSamePr = (a: PrRef | undefined, b: PrRef): boolean => a !== undefined && a.repository === b.repository && a.number === b.number;
 
 // openIssue: under a source its issue page, under a repository its issue page on the tab it is on; the tasks view opens none
 function withIssue(center: TasksCenter, issue: IssueRef): TasksCenter {
@@ -125,6 +136,7 @@ export interface TasksNav {
   openIssueIn(ref: IssueRef): void; // an issue page under its repository's issues tab (the PR page's task #N)
   openPr(ref: PrRef): void; // a PR page under its repository's PRs tab
   onRepoTab(tab: RepoTab): void; // a tab's click: its list, closing the page
+  onMerged(pr: PrRef): void; // #921: a merge's back, only while the stored center is still that PR's page
   openPrUrl(url: string): void; openIssueUrl(url: string): void; openProjectItem(item: ProjectItem, task?: Task): void;
   back?: BackLink; page?: DetailPage;
 }
@@ -140,6 +152,13 @@ export function useTasksCenter(state: State | undefined, sources: SourcesNav | u
   const flows = state?.flows ?? [];
   const external = sources?.sources ?? [];
   const center = resolveCenter(stored, flows, external, repositories, sources?.hiveSource !== false); // #846: absent (a harness) = hive on
+  // Decision 2 (#921): the flow last shown, in memory as the center is. Set during render, so every way into a flow (show, goTo, a back,
+  // the first center) records it; React re-renders before painting
+  const [lastFlow, setLastFlow] = useState<string>();
+  const shownFlow = center.kind === 'tasks' && center.view === 'flow' ? (center.flow ?? flows[0]?.name) : undefined;
+  if (shownFlow !== undefined && shownFlow !== lastFlow) setLastFlow(shownFlow);
+  // Decision 12 (#921): read when the merge lands, so a merge the user walked away from leaves the center where they took it
+  const onMerged = (pr: PrRef): void => setCenter((c) => (c.kind === 'repo' && isSamePr(c.pr, pr) ? { kind: 'repo', repository: c.repository, tab: c.tab } : c));
   const goTo = useGoTo(state, setCenter, onSelect);
   const isListed: IsListed = (repository) => repositories.some((r) => r.repository === repository);
   const openIssue = (ref: IssueRef): void => setCenter((c) => withIssue(c, ref));
@@ -150,6 +169,6 @@ export function useTasksCenter(state: State | undefined, sources: SourcesNav | u
     show: setCenter, goTo, openIssue, openIssueIn, openPr,
     onRepoTab: (tab) => setCenter((c) => (c.kind === 'repo' ? { kind: 'repo', repository: c.repository, tab } : c)),
     openPrUrl: prOpener(isListed, openPr), openIssueUrl: issueOpener(isListed, openIssueIn), openProjectItem: projectOpener(isListed, openIssue, goTo),
-    back: backOf(center, setCenter), page: state && shownPage(state, center),
+    onMerged, back: backOf(center, setCenter, flows, lastFlow), page: state && shownPage(state, center),
   };
 }
