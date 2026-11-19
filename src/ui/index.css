@@ -64,6 +64,11 @@
   * { scrollbar-width: thin; scrollbar-color: var(--empty) transparent; }
   body { @apply bg-background text-foreground text-sm; font-family: -apple-system, system-ui, sans-serif; }
   a { color: var(--review); }
+  /* Floating layers over the window header (#908): Electron subtracts every no-drag box from the drag area wherever it sits in the DOM, so a
+     portalled layer cuts its own hole in the header and keeps its clicks. The roles also cover Select's item-aligned mode, whose wrapper has
+     no popper attribute. */
+  [data-radix-popper-content-wrapper], [role="listbox"], [role="menu"], [role="dialog"], [role="alertdialog"], [role="tooltip"],
+  [data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"] { -webkit-app-region: no-drag; }
 }
 
 @keyframes blink { 0%, 100% { background: var(--card); } 50% { background: var(--blink); } }
