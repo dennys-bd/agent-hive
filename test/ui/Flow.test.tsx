@@ -393,7 +393,7 @@ const loopsChoice = (pop: Scope, name: string): HTMLElement => within(pop.getByR
 const LOOPED_STATE = (): State => ({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED });
 
 test('voltas nenhuma hides every arrow with its pill, the row falling to the margin; só internas draws the neighbour arrows, forward and back, without the loop and the skip; todas brings them back; flowView keeps each (#909, #574, #576)', async () => {
-  resetViewState();
+  resetViewState({ flowView: { emptyStages: 'open' } }); // #914: the looped flow's empty stages stay nodes
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   render(<DisplayedFlow state={LOOPED_STATE()} flow={firstFlow(LOOPED_STATE())} />);
@@ -420,7 +420,7 @@ test('voltas nenhuma hides every arrow with its pill, the row falling to the mar
 });
 
 test('a stored boolean loops off reads as nenhuma: no arrow on the first render and exibir shows nenhuma, the reload case (#909, #574)', async () => {
-  resetViewState({ flowView: { loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
+  resetViewState({ flowView: { emptyStages: 'open', loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   render(<DisplayedFlow state={LOOPED_STATE()} flow={firstFlow(LOOPED_STATE())} />);
@@ -986,7 +986,7 @@ test('a flow switch closes the open list panel; coming back does not reopen it (
 });
 
 test('each flow shows its own stored zoom on a switch (#571)', () => {
-  resetViewState({ flowView: { loops: true, canvas: { build: { zoom: 0.8 }, ship: { zoom: 1.2 } } } });
+  resetViewState({ flowView: { emptyStages: 'open', loops: true, canvas: { build: { zoom: 0.8 }, ship: { zoom: 1.2 } } } });
   onTestFinished(() => resetViewState());
   const s = twoFlows([]);
   const { rerender } = render(<Flow state={s} flow={s.flows[0]} />);

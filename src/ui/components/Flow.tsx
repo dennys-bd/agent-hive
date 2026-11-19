@@ -8,6 +8,7 @@ import type { SourcesNav } from '@/components/FlowSources';
 import { displayProps } from '@/components/tasks/DisplayPopover';
 import { FlowListPanel } from '@/components/FlowListPanel';
 import { FlowNode } from '@/components/FlowNode';
+import { FlowStrip, type StripSegment } from '@/components/FlowStrip';
 import { FlowZoom } from '@/components/FlowZoom';
 import { FocusTrail } from '@/components/FocusTrail';
 import { useIsFlowShown } from '@/components/MainDock';
@@ -56,7 +57,7 @@ export function WorkspacesLegend({ state, tasks }: { state: State; tasks: readon
 /** The flow (#134, 1b): a canvas that pans both ways, each stage a node holding its tasks, the transitions as arrows between them, and a node's
  * list panel over its right. Drag a task to reorder or, for a task canMoveToStage allows, onto another node (#366, #708); the ⋯ offers the
  * source's order back and the stage's view filter (#374). A parent's focus › dims all but its subtree, with a trail to climb back and leave
- * (#35). The canvas is the task menus' collision boundary. */
+ * (#35). A stage with no shown task is a strip under exibir's etapas vazias, and every segment takes a drop (#914). The canvas is the task menus' collision boundary. */
 export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, display, sources }: FlowProps) {
   const drag = useRef<Dragging | undefined>(undefined);
   const filters = useStageFilters(state.stages.map((s) => s.name));
@@ -91,6 +92,12 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
       />
     );
   };
+  // #914: a strip's segments, each with its stage's whole order for the drop, the node's count, its filter and its list panel
+  const segment = (stage: Stage): StripSegment => {
+    const { all } = of(stage.name);
+    return { stage, order: all, count: all.length, rules: filters.rulesOf(stage.name), onFilter: () => setEditing(stage.name), onClearFilter: () => filters.set(stage.name, []), onList: () => setListed(stage.name) };
+  };
+  const strip = (stages: readonly Stage[], maxHeight: number) => <FlowStrip segments={stages.map(segment)} state={state} drag={drag} maxHeight={maxHeight} />;
   const listedStage = drawn.stages.find((s) => s.name === listed);
   const listedTasks = listedStage && of(listedStage.name);
   return (
@@ -101,6 +108,7 @@ export function Flow({ state, flow: drawn, selectedId, onOpen, stageCaps, displa
           <FlowChart
             key={drawn.name} stages={drawn.stages} transitions={drawn.transitions} loops={options.loops} labels={options.labels} zoom={chart.view.zoom} pan={chart.view.pan}
             fitRequest={chart.fitRequest} onPan={chart.onPan} onFit={chart.onFit} onZoom={chart.zoomTo} renderNode={node}
+            emptyStages={options.emptyStages} isEmpty={(name) => of(name).tasks.length === 0} renderStrip={strip}
           />
           <FlowZoom zoom={chart.view.zoom} onZoom={chart.zoomTo} onFit={chart.fit} />
           <WorkspacesLegend state={state} tasks={drawn.stages.flatMap((s) => of(s.name).tasks)} />

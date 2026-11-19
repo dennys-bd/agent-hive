@@ -17,12 +17,12 @@ const task = (id: string, stage: string, item: Partial<Item> = {}, extra: Partia
 const state = (tasks: WithWork[], workers: Worker[] = [], workspaces = ['hive']): State =>
   withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, ...flowed(stages, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces, sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 // flowView as stored for the fixtures' one flow (flowed → 'main'), with the display fields a test sets
-const stored = (display: object) => ({ sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', outline: [], ...display, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] } } });
+const stored = (display: object) => ({ sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', emptyStages: 'open', outline: [], ...display, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] } } });
 const nodeOf = (stage: string): HTMLElement => screen.getByRole('region', { name: 'fluxograma' }).querySelector<HTMLElement>(`[data-stage="${stage}"]`)!;
 const countOf = (stage: string): string | null | undefined => within(nodeOf(stage)).getByRole('heading', { name: stage }).nextElementSibling?.textContent;
 const cards = (stage: string): string[] => [...nodeOf(stage).querySelectorAll('[data-task-id]')].map((li) => li.getAttribute('data-task-id') ?? '');
 const show = (s: State) => render(<Flow state={s} flow={firstFlow(s)} />);
-beforeEach(() => setLanguage('pt'));
+beforeEach(() => { setLanguage('pt'); resetViewState({ flowView: { emptyStages: 'open' } }); }); // #914: these tests read an empty stage as a node
 afterEach(() => resetViewState());
 
 test('a task of an unchecked source is not drawn, counted or listed; a Hive task\'s source is hive (#576 decision 7)', () => {
