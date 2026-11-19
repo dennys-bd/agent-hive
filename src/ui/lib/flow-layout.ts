@@ -20,7 +20,11 @@ export const NODE_MIN = 160; // the least a node is given, however little room t
 const CORNER = 8;
 
 export interface LayoutNode { id: string; height: number }
-export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; unlabelled?: boolean; feedback?: boolean } // unlabelled: carries no pill (#480); feedback: never inner (#576)
+/** #914: the two segments of one strip an arrow joins, and how many segments the strip has. */
+export interface Segments { from: number; to: number; count: number }
+// unlabelled: carries no pill (#480); feedback: never inner by isInner (#576); inner: drawnEdgesOf's mark (#914), inner whatever isInner says;
+// segments: an arrow between two segments of one strip (#914)
+export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; unlabelled?: boolean; feedback?: boolean; inner?: boolean; segments?: Segments }
 export interface LayoutOptions { end?: boolean; loops?: Loops } // end: the end circle, Settings only (#908); loops (#576): absent reads 'all'; 'none' draws no arrow (#909, #480)
 export interface Box { id: string; x: number; y: number; width: number; height: number }
 export type EdgeKind = 'forward' | 'above' | 'loop';
