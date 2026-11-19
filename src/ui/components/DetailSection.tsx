@@ -47,9 +47,10 @@ export function DetailSection({ name, note, summary, defaultOpen = false, childr
         <ChevronRightIcon aria-hidden="true" className="size-3 shrink-0 transition-transform group-open/section:rotate-90 motion-reduce:transition-none" />
         <span className="whitespace-nowrap font-medium text-foreground">{name}</span>
         {note !== undefined && <NoteIcon note={note} />}
-        {note !== undefined && <span id={noteId} className="sr-only">{note}</span>}
         {summary}
       </summary>
+      {/* Outside the summary, so its accessible name stays short and the note is read once, as its description */}
+      {note !== undefined && <span id={noteId} className="sr-only">{note}</span>}
       <div className="mt-2 flex flex-col gap-1.5">{children}</div>
     </details>
   );
