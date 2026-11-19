@@ -105,7 +105,7 @@ test('{ agent } reads that agent only and replaces only its reading; {} reads ev
   assert.deepEqual(server.getState()?.rateLimits, { claude: HIGH, codex: codexLater }, 'claude keeps its held reading');
   const all = await postJson(`${base}/plan-limits/refresh`, {});
   assert.deepEqual([all.status, await all.json()], [200, { ok: true }]);
-  assert.equal(asked.at(-1), undefined, 'no list: every agent with plan limits');
+  assert.deepEqual(asked.at(-1), ['claude', 'codex'], 'no list asked: every enabled agent with plan limits (#949)');
   assert.deepEqual(server.getState()?.rateLimits, { claude: AFTER_UPGRADE, codex: codexLater });
 });
 
@@ -149,4 +149,24 @@ test('POST /plan-limits/refresh logs its reason every time it answers 502, a rep
     'INFO plan limits refresh: HTTP 429',
     'INFO plan limits refresh: the usage endpoint answered no plan window',
   ]);
+});
+
+test('a disabled agent\'s plan limits are never read: not after the save, not on ↻ todos, not on the timer (#949)', async (t) => {
+  const asked: AgentId[][] = [];
+  const readPlanLimits = async (agents?: readonly AgentId[]): Promise<PlanLimitsReport> => {
+    asked.push([...(agents ?? ['claude', 'codex'])]);
+    return claudePlan(HIGH);
+  };
+  const { home, repo } = await tempHive(t);
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }), readPlanLimits });
+  const base = `http://127.0.0.1:${await server.listen(0)}`;
+  t.after(() => server.close());
+  const agentEnabled: Record<AgentId, boolean> = { claude: true, codex: false, copilot: false };
+  assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY, agentEnabled })).status, 200);
+  await waitFor(() => asked.length > 0);
+  assert.equal((await postJson(`${base}/plan-limits/refresh`)).status, 200);
+  await server.refreshPlanLimits();
+  const one = await postJson(`${base}/plan-limits/refresh`, { agent: 'codex' });
+  assert.deepEqual([one.status, await one.json()], [200, { ok: true }], 'a disabled agent\'s ↻ asks no endpoint, so nothing failed');
+  assert.deepEqual(asked.filter((list) => list.includes('codex')), [], 'codex is off: no read names it');
 });

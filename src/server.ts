@@ -855,8 +855,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function refreshPlanLimits(replace = false, agents?: readonly AgentId[]): Promise<string | undefined> {
     const read = deps.readPlanLimits;
     if (!read || !live) return undefined;
-    const { readings, failures } = await read(agents);
-    for (const agent of planLimitAgents(agents)) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
+    // #949: an agent Settings turns off is never read, nor its failure logged; with none left no endpoint was asked, so nothing failed
+    const enabled = live.runtime.config.agentEnabled;
+    const asked = planLimitAgents(agents).filter((agent) => enabled[agent]);
+    if (asked.length === 0) return undefined;
+    const { readings, failures } = await read(asked);
+    for (const agent of asked) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
     for (const { agent, rateLimits } of readings) await dispatch({ type: 'rateLimits', agent, rateLimits, replace });
     if (readings.length > 0) return undefined;
     return failures[0]?.reason ?? (replace ? NO_PLAN_READING : undefined); // the refresh says so; the timer just has nothing to merge

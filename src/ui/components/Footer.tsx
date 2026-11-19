@@ -1,7 +1,8 @@
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, useContext, useRef } from 'react';
 import type { AgentId, EffectiveLimits, State } from '../../types';
 import { AgentUsage, PLAN_AGENTS } from '@/components/footer/AgentUsage';
 import { workersLine } from '@/components/HeaderBrand';
+import { AgentsContext } from '@/components/NewRunButton';
 import { PowerButtons } from '@/components/footer/PowerButtons';
 import { RunFooter } from '@/components/benchmark/run-mode/RunChrome';
 import { useRunHive } from '@/components/benchmark/run-mode/run-hive';
@@ -19,7 +20,9 @@ interface FooterProps {
 /** The window's footer (redesign 02, #223), the same under fluxo and atividades: the agents' plan usage and its panel, the rules button (#224)
  * opening the rules panel, then the checkers and the problems of the activity on screen (#225), the console's chip (redesign 05) and the
  * power buttons (#226) at the right edge. The usage and the rules take the first step of handoff §6 whose content fits (#227). */
-export function Footer({ state, effective, locale, onEditRules, checkers, problems, console: consoleChip, agents = PLAN_AGENTS }: FooterProps) {
+export function Footer({ state, effective, locale, onEditRules, checkers, problems, console: consoleChip, agents: only }: FooterProps) {
+  const offered = useContext(AgentsContext); // #949: the agents Settings leaves on, the list every launch menu offers
+  const agents = only ?? PLAN_AGENTS.filter((agent) => offered.some((a) => a.agent === agent));
   const row = useRef<HTMLDivElement>(null);
   // What the content's width hangs on besides the window. Content that grows overflows and steps down by itself; an agent or a rule that
   // goes away frees room no resize reports, so a new key starts the descent over
@@ -31,8 +34,8 @@ export function Footer({ state, effective, locale, onEditRules, checkers, proble
     <footer data-usage={step.usage} data-rules={step.rules} className={FOOTER}>
       {/* The row clips, not the footer: the usage panel hangs above the footer (absolute, bottom-full) and an overflow-hidden footer would cut it */}
       <div ref={row} className="flex h-full min-w-0 flex-1 items-center gap-3 overflow-hidden *:shrink-0 *:whitespace-nowrap">
-        <AgentUsage state={state} form={step.usage} agents={agents} />
-        <span aria-hidden="true" className="h-3.5 w-px bg-border" />
+        {agents.length > 0 && <AgentUsage state={state} form={step.usage} agents={agents} />}
+        {agents.length > 0 && <span aria-hidden="true" className="h-3.5 w-px bg-border" />}
         <RulesButton state={state} effective={effective} locale={locale} form={step.rules} onEditRules={onEditRules} />
         <span className="flex-1" />
         {checkers}
