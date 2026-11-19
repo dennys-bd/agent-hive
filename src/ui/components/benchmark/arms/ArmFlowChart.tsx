@@ -18,9 +18,9 @@ interface ArmFlowChartProps {
  * dot marks a stage the arm overrides. */
 export function ArmFlowChart({ stages, transitions, picked, marked, isArm, onPick }: ArmFlowChartProps) {
   const layout = layoutFlow(
-    stages.map((s) => ({ id: s.name, height: NODE_HEIGHT })),
+    stages.map((s) => ({ id: s.name, width: NODE_WIDTH, height: NODE_HEIGHT })),
     transitions.map((tr) => ({ id: transitionKey(tr), from: tr.from, to: tr.to, automatic: isAutomatic(tr.when) })),
-    NODE_WIDTH, { end: true },
+    { end: true },
   );
   const labels = Object.fromEntries(transitions.map((tr) => [transitionKey(tr), transitionLabel(tr, stages.find((s) => s.name === tr.from)?.action)]));
   return (

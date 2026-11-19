@@ -25,7 +25,7 @@ const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages, sou
   withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder, localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 // #571: flowView as stored for the fixtures' one flow (flowed → MAIN_FLOW 'main')
-const storedView = (shared: object = {}, canvas: object = {}) => ({ sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', outline: [], listCollapsed: [], ...shared, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], ...canvas } } });
+const storedView = (shared: object = {}, canvas: object = {}) => ({ sourcesOff: [], loops: 'all', labels: 'all', epics: 'none', emptyStages: 'open', outline: [], listCollapsed: [], ...shared, canvas: { main: { zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], ...canvas } } });
 const header = (name: string): HTMLElement => screen.getByRole('heading', { level: 3, name }).parentElement!; // a stage's header row (#542)
 
 // jsdom has no DataTransfer: the stub carries what dragStart set to the drop, as the browser's would. Reused across the events of one drag.
@@ -49,7 +49,7 @@ const NO_WORKTREE: BaseOptions = { hasWorktree: false, defaultRef: 'origin/main'
 let bases = WITH_WORKTREE;
 const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
   new Response(JSON.stringify(String(input).endsWith('/bases') ? bases : { ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
-beforeEach(() => { setLanguage('pt'); bases = WITH_WORKTREE; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
+beforeEach(() => { setLanguage('pt'); resetViewState({ flowView: { emptyStages: 'open' } }); bases = WITH_WORKTREE; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
 test('a running task shows abrir and no iniciar; a blocked task and a stage without prompt show no button (#542)', () => {
@@ -59,7 +59,7 @@ test('a running task shows abrir and no iniciar; a blocked task and a stage with
   expect(screen.getByText('⊘ bloqueada por 1')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
   expect(screen.getByText('trabalhando')).toBeInTheDocument();
-  expect(screen.queryByText('vazia')).not.toBeInTheDocument(); // both stages have a task
+  expect(screen.queryByText('nenhuma tarefa')).not.toBeInTheDocument(); // both stages have a task
 });
 
 test('a task awaiting approval shows Aprovar on the board task itself; clicking it posts approve and does not open the panel (#349)', async () => {
@@ -85,7 +85,7 @@ test('a stage header shows its name, the count the source pick lets through, aut
   expect(within(header('dev')).queryByText('auto')).not.toBeInTheDocument(); // the stage's auto is gone (#134)
   expect(screen.queryByText('manual')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /nova tarefa/ })).not.toBeInTheDocument();
-  expect(screen.getAllByText('vazia')).toHaveLength(4);
+  expect(screen.getAllByText('nenhuma tarefa')).toHaveLength(4);
   rerender(<Flow state={state([task('1', 'dev')], [worker('s1')], cols)} flow={firstFlow(state([task('1', 'dev')], [worker('s1')], cols))} />);
   expect(within(header('dev')).getByText('1')).toBeInTheDocument();
 });
@@ -285,7 +285,7 @@ test('an empty stage keeps its list, which takes a task that may change stage at
   render(<Flow state={state([task('1', 'dev', { created: true })], [worker('s1')])} flow={firstFlow(state([task('1', 'dev', { created: true })], [worker('s1')]))} />);
   const one = screen.getByText('1 Task 1').closest('li')!; // a local task's label has no # (#132)
   const review = screen.getByRole('list', { name: 'review' });
-  expect(within(review).getByText('vazia')).toBeInTheDocument();
+  expect(within(review).getByText('nenhuma tarefa')).toBeInTheDocument();
   const dt = dataTransfer();
   fireEvent.dragStart(one, { dataTransfer: dt });
   fireEvent.dragOver(review, { dataTransfer: dt });
@@ -393,7 +393,7 @@ const loopsChoice = (pop: Scope, name: string): HTMLElement => within(pop.getByR
 const LOOPED_STATE = (): State => ({ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED });
 
 test('voltas nenhuma hides every arrow with its pill, the row falling to the margin; só internas draws the neighbour arrows, forward and back, without the loop and the skip; todas brings them back; flowView keeps each (#909, #574, #576)', async () => {
-  resetViewState();
+  resetViewState({ flowView: { emptyStages: 'open' } }); // #914: the looped flow's empty stages stay nodes
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   render(<DisplayedFlow state={LOOPED_STATE()} flow={firstFlow(LOOPED_STATE())} />);
@@ -420,7 +420,7 @@ test('voltas nenhuma hides every arrow with its pill, the row falling to the mar
 });
 
 test('a stored boolean loops off reads as nenhuma: no arrow on the first render and exibir shows nenhuma, the reload case (#909, #574)', async () => {
-  resetViewState({ flowView: { loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
+  resetViewState({ flowView: { emptyStages: 'open', loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   render(<DisplayedFlow state={LOOPED_STATE()} flow={firstFlow(LOOPED_STATE())} />);
@@ -499,7 +499,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
 test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled to that pan, and a scroll keeps the new pan: the come-back case (#910)', () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
   viewport(400, 600);
-  resetViewState({ flowView: { loops: true, canvas: { main: { zoom: 0.8, pan: { x: 120, y: 15 } } } } });
+  resetViewState({ flowView: { emptyStages: 'open', loops: true, canvas: { main: { zoom: 0.8, pan: { x: 120, y: 15 } } } } });
   render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument();
@@ -550,7 +550,7 @@ test('a wheel zoom keeps the point under the pointer in place; one at the bound 
   onTestFinished(() => { vi.restoreAllMocks(); });
   const user = userEvent.setup();
   viewport(400, 600);
-  resetViewState({ flowView: { loops: true, canvas: { main: { zoom: 1.4, pan: { x: 100, y: 0 } } } } });
+  resetViewState({ flowView: { emptyStages: 'open', loops: true, canvas: { main: { zoom: 1.4, pan: { x: 100, y: 0 } } } } });
   render(<Flow state={twoStages()} flow={firstFlow(twoStages())} />);
   const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
   vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ left: 50, top: 20 } as DOMRect);
@@ -825,7 +825,7 @@ test('⑂ agrupar a árvore na etapa starts on with a tree in the list and off w
 });
 
 test('the chevron collapses a tree\'s group in its own node only, and the collapse survives a reload through flowView (#34)', async () => {
-  resetViewState();
+  resetViewState({ flowView: { emptyStages: 'open' } }); // #914: the stored view is read back whole
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   const { unmount } = render(<Flow state={forest()} flow={firstFlow(forest())} />);
@@ -986,7 +986,7 @@ test('a flow switch closes the open list panel; coming back does not reopen it (
 });
 
 test('each flow shows its own stored zoom on a switch (#571)', () => {
-  resetViewState({ flowView: { loops: true, canvas: { build: { zoom: 0.8 }, ship: { zoom: 1.2 } } } });
+  resetViewState({ flowView: { emptyStages: 'open', loops: true, canvas: { build: { zoom: 0.8 }, ship: { zoom: 1.2 } } } });
   onTestFinished(() => resetViewState());
   const s = twoFlows([]);
   const { rerender } = render(<Flow state={s} flow={s.flows[0]} />);

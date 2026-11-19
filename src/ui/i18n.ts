@@ -1561,7 +1561,7 @@ const en = {
   'settings.error.approvalMinutes': 'the approval window must be a whole number of minutes from 1 to 120',
   'settings.error.rateLimitWait': 'the plan limit wait must be a whole number of minutes from 1 to 10080',
   'settings.error.consoleLines': 'the console lines per channel must be a whole number from 100 to 100000',
-  'stage.empty': 'empty',
+  'stage.empty': 'no tasks', // #914: an empty node's body
   'task.blockedBy': 'blocked by {ids}',
   'task.blockedVia': '{id} (via {via})', // #424: an inherited blocker and the ancestor that holds it
   'task.start': 'start',
@@ -1734,6 +1734,10 @@ const en = {
   'flow.node.exhausted': '{n} out of tries', // #913
   'flow.node.overflow': 'scroll to see {n}',
   'flow.node.list': 'list ›',
+  // #914: a collapsed empty stage
+  'flow.strip.tip': '{stage} · empty · opens when a task enters',
+  'flow.strip.label': '{stage}, empty, collapsed',
+  'flow.strip.moveTo': 'move to {stage}',
   'flow.stageCap.byHand': '{k} started by hand', // #727
   'flow.chart': 'flow chart',
   'flow.list.count': '{n} tasks',
@@ -3377,6 +3381,13 @@ const en = {
   'tasks.display.epics.hint.none': 'epics show as cards in the stages.',
   'tasks.display.epics.hint.middle': 'only the root epic stays. the middle ones leave the view and stay in the flow.',
   'tasks.display.epics.hint.all': 'no epic in the view. they stay in the flow and their children stay in the stages.',
+  'tasks.display.emptyStages': 'empty stages', // #914
+  'tasks.display.emptyStages.open': "don't collapse",
+  'tasks.display.emptyStages.collapse': 'collapse',
+  'tasks.display.emptyStages.merge': 'collapse and merge',
+  'tasks.display.emptyStages.hint.open': 'they stay open, as wide as the other stages.',
+  'tasks.display.emptyStages.hint.collapse': 'each empty stage becomes a narrow strip.',
+  'tasks.display.emptyStages.hint.merge': 'they collapse, and neighbouring ones become a single strip.',
   'tasks.sidebar.list': 'all as a list', // #572: the tasks section's rows (handoff §4b)
   'tasks.sidebar.outside': 'no flow',
   'tasks.sidebar.entryTitle': '{name} · {key}', // #921: an entry's tooltip
@@ -4990,7 +5001,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.approvalMinutes': 'a janela de aprovação precisa ser um número inteiro de minutos de 1 a 120',
   'settings.error.rateLimitWait': 'a espera pelo limite do plano precisa ser um número inteiro de minutos de 1 a 10080',
   'settings.error.consoleLines': 'as linhas do console por canal precisam ser um número inteiro de 100 a 100000',
-  'stage.empty': 'vazia',
+  'stage.empty': 'nenhuma tarefa',
   'task.blockedBy': 'bloqueada por {ids}',
   'task.blockedVia': '{id} (via {via})', // #424
   'task.start': 'iniciar',
@@ -5162,6 +5173,9 @@ const pt: Record<MessageKey, string> = {
   'flow.node.exhausted': '{n} com tentativas esgotadas',
   'flow.node.overflow': 'rola para ver {n}',
   'flow.node.list': 'lista ›',
+  'flow.strip.tip': '{stage} · vazia · abre quando uma tarefa entrar',
+  'flow.strip.label': '{stage}, vazia, recolhida',
+  'flow.strip.moveTo': 'mover para {stage}',
   'flow.stageCap.byHand': '{k} iniciados à mão',
   'flow.chart': 'fluxograma',
   'flow.list.count': '{n} tarefas',
@@ -6804,6 +6818,13 @@ const pt: Record<MessageKey, string> = {
   'tasks.display.epics.hint.none': 'epics aparecem como cards nas etapas.',
   'tasks.display.epics.hint.middle': 'fica só o epic raiz. os do meio somem da vista e continuam no fluxo.',
   'tasks.display.epics.hint.all': 'nenhum epic na vista. continuam no fluxo e as filhas seguem nas etapas.',
+  'tasks.display.emptyStages': 'etapas vazias',
+  'tasks.display.emptyStages.open': 'não recolher',
+  'tasks.display.emptyStages.collapse': 'recolher',
+  'tasks.display.emptyStages.merge': 'recolher e juntar',
+  'tasks.display.emptyStages.hint.open': 'ficam abertas, do tamanho das outras etapas.',
+  'tasks.display.emptyStages.hint.collapse': 'cada etapa vazia vira uma faixa estreita.',
+  'tasks.display.emptyStages.hint.merge': 'recolhem, e as vizinhas viram uma faixa só.',
   'tasks.sidebar.list': 'todas em lista',
   'tasks.sidebar.outside': 'sem fluxo',
   'tasks.sidebar.entryTitle': '{name} · {key}',

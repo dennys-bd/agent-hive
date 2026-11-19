@@ -28,7 +28,7 @@ const state = (tasks: WithWork[], workers: Worker[], cols: Stage[] = stages): St
   withPointedWork({ signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: workers.length, workers, ...flowed(cols, []), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [] });
 const titles = () => screen.getAllByText(/^#\d Task/).map((el) => el.textContent);
 const saved = (): unknown => readView('stageFilters') ?? null;
-const save = (value: unknown): void => resetViewState({ stageFilters: value });
+const save = (value: unknown): void => resetViewState({ stageFilters: value, flowView: { emptyStages: 'open' } }); // #914: an empty stage is read as a node
 const ANA: FilterRule = { field: 'assignee', op: 'any', values: ['ana'] };
 const LABEL_X: FilterRule = { field: 'label', op: 'any', values: ['x'] };
 
@@ -39,7 +39,7 @@ const openStageMenu = async (user: ReturnType<typeof userEvent.setup>, index: nu
 };
 
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
-beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
+beforeEach(() => { setLanguage('pt'); resetViewState({ flowView: { emptyStages: 'open' } }); /* #914: an empty stage is read as a node */ vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
 test('Filtrar… opens a dialog whose pickers list the stage\'s own values; Aplicar hides every task that fails, a live one too, says how many it hides, saves the rules and posts nothing but the view state (#374, #484)', async () => {
@@ -96,7 +96,7 @@ test('a stage whose every task fails its filter says so instead of vazia; the ke
   save({ dev: [LABEL_X] });
   render(<Flow state={state([task('1', 'dev'), task('2', 'dev')], [worker('s1')])} flow={firstFlow(state([task('1', 'dev'), task('2', 'dev')], [worker('s1')]))} />);
   expect(screen.getByText('Nenhuma tarefa passa no filtro')).toBeInTheDocument();
-  expect(screen.getAllByText('vazia')).toHaveLength(1); // review really is empty
+  expect(screen.getAllByText('nenhuma tarefa')).toHaveLength(1); // review really is empty
   await openStageMenu(user, 1); // review: no rule
   expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['restaurar ordem da source', 'Filtrar…']);
   await user.keyboard('{Escape}');

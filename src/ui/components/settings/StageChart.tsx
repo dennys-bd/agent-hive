@@ -42,7 +42,7 @@ function crossingsOf(flow: string, transitions: readonly TransitionDraft[], comb
  * a node or a pill selects what the editor below shows. The wrapper is the canvas (#887): it bleeds to the card body's edges and scrolls
  * sideways when the chart is wider; the chart is centred. */
 export function StageChart({ flow, comb, stages, transitions, selection, defaultAgent, onSelect }: StageChartProps) {
-  const layout = layoutFlow(stages.map((s) => ({ id: s.id, height: NODE_HEIGHT })), transitions.map((d) => ({ id: d.id, from: d.from, to: d.to, automatic: isAutomatic(d.when) })), NODE_WIDTH, { end: true });
+  const layout = layoutFlow(stages.map((s) => ({ id: s.id, width: NODE_WIDTH, height: NODE_HEIGHT })), transitions.map((d) => ({ id: d.id, from: d.from, to: d.to, automatic: isAutomatic(d.when) })), { end: true });
   const labels = Object.fromEntries(transitions.map((d) => [d.id, draftLabel(d, stages)]));
   const { edges, texts } = crossingsOf(flow, transitions, comb);
   const placed = placeCrossings(layout.nodes, edges);

@@ -162,3 +162,15 @@ test('a collapsed group whose hidden tasks hold the focus keeps its header unfad
   rerender(<Node s={s} tasks={s.tasks} isTree collapsed={['Build\u0000I1']} />);
   expect(document.querySelector(`.${FADED}`)).toBeNull();
 });
+
+test('a node with no task reads nenhuma tarefa, and no tasks in English, in muted-foreground, its count 0 in the muted header (#914)', () => {
+  const { unmount } = render(<Node s={state([])} tasks={[]} />);
+  expect(screen.getByText('nenhuma tarefa')).toHaveClass('text-muted-foreground');
+  const header = screen.getByRole('heading', { level: 3, name: 'Build' }).parentElement!;
+  expect(header).toHaveClass('text-muted-foreground');
+  expect(within(header).getByText('0')).toBeInTheDocument();
+  unmount();
+  setLanguage('en');
+  render(<Node s={state([])} tasks={[]} />);
+  expect(screen.getByText('no tasks')).toBeInTheDocument();
+});
