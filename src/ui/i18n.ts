@@ -268,6 +268,7 @@ const en = {
   'detail.tree': 'tree', // #36: the details' tree section
   'detail.tree.count': '{n} tasks · {done}/{n} done',
   'detail.tree.hint': 'click a row to open its details · hover marks it in the flow',
+  'detail.section.info': 'about this section', // #958: the info icon of a details section
   'detail.results': 'results',
   'detail.resultGone': 'this activity was deleted: its files no longer open',
   'detail.stage': 'stage {stage}',
@@ -3653,6 +3654,7 @@ const pt: Record<MessageKey, string> = {
   'detail.tree': 'árvore',
   'detail.tree.count': '{n} tarefas · {done}/{n} done',
   'detail.tree.hint': 'clicar numa linha abre os detalhes dela · passar o mouse marca no grafo',
+  'detail.section.info': 'sobre esta seção',
   'detail.results': 'resultados',
   'detail.resultGone': 'esta atividade foi apagada: os arquivos dela não abrem mais',
   'detail.stage': 'etapa {stage}',

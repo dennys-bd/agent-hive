@@ -753,3 +753,9 @@ test('the relations section\'s copy (#829): both languages, relação in Portugu
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['relations', '+ add', 'relation type', 'no relations']);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['relações', '+ adicionar', 'tipo de relação', 'nenhuma relação']);
 });
+
+test('the details panel sections\' copy (#958): both languages', () => {
+  const keys = ['detail.section.info'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['about this section']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['sobre esta seção']);
+});
