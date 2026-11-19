@@ -1698,6 +1698,10 @@ const en = {
   'flow.node.exhausted': '{n} out of tries', // #913
   'flow.node.overflow': 'scroll to see {n}',
   'flow.node.list': 'list ›',
+  // #914: a collapsed empty stage
+  'flow.strip.tip': '{stage} · empty · opens when a task enters',
+  'flow.strip.label': '{stage}, empty, collapsed',
+  'flow.strip.moveTo': 'move to {stage}',
   'flow.stageCap.byHand': '{k} started by hand', // #727
   'flow.chart': 'flow chart',
   'flow.list.count': '{n} tasks',
@@ -5090,6 +5094,9 @@ const pt: Record<MessageKey, string> = {
   'flow.node.exhausted': '{n} com tentativas esgotadas',
   'flow.node.overflow': 'rola para ver {n}',
   'flow.node.list': 'lista ›',
+  'flow.strip.tip': '{stage} · vazia · abre quando uma tarefa entrar',
+  'flow.strip.label': '{stage}, vazia, recolhida',
+  'flow.strip.moveTo': 'mover para {stage}',
   'flow.stageCap.byHand': '{k} iniciados à mão',
   'flow.chart': 'fluxograma',
   'flow.list.count': '{n} tarefas',

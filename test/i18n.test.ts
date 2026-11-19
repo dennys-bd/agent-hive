@@ -765,3 +765,9 @@ test('the details panel sections\' copy (#958): both languages', () => {
     '{n} ponto · último {ago} · {stage}', '{n} pontos · último {ago} · {stage}', 'trabalhou', 'descrição',
   ]);
 });
+
+test('the empty stages\' copy (#914): both languages', () => {
+  const keys = ['flow.strip.tip', 'flow.strip.label', 'flow.strip.moveTo'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['{stage} · empty · opens when a task enters', '{stage}, empty, collapsed', 'move to {stage}']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['{stage} · vazia · abre quando uma tarefa entrar', '{stage}, vazia, recolhida', 'mover para {stage}']);
+});

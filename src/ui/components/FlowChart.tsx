@@ -8,6 +8,10 @@ import { isInner, layoutFlow, maxNodeHeight, NODE_MIN } from '@/lib/flow-layout'
 import type { FlowCanvas, LoopLabels, Loops } from '@/lib/flow-view';
 
 export const NODE_WIDTH = 220; // #54: room for a task's ⊘ blocked line and its footer's status beside the button
+export const STRIP_WIDTH = 40; // #914: an empty stage, collapsed
+export const STRIP_HEIGHT = 300;
+/** A strip's height (#914): STRIP_HEIGHT, never past what a node may grow to. */
+export const stripHeight = (maxHeight: number): number => Math.min(STRIP_HEIGHT, maxHeight);
 
 interface FlowChartProps {
   stages: readonly Stage[]; transitions: readonly Transition[];

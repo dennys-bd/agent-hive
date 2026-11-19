@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { t } from '@/i18n';
 
-interface StageMenuProps { stage: string; state: State; filtered: boolean; onFilter(): void; onClearFilter(): void }
+interface StageMenuProps { stage: string; state: State; filtered: boolean; onFilter(): void; onClearFilter(): void; onList?(): void }
 
 // The stage's actions behind a kebab, on every stage so the menu has a fixed place; reset is disabled while the stage already
 // follows the flow (#141). Filtrar… asks the flow to open the view filter's dialog (#374), which it renders beside every menu: an item's
-// onSelect closes the menu and would unmount a dialog inside it. Limpar filtro shows only while the stage has a rule.
-export function StageMenu({ stage, state, filtered, onFilter, onClearFilter }: StageMenuProps) {
+// onSelect closes the menu and would unmount a dialog inside it. Limpar filtro shows only while the stage has a rule. A strip's segment (#914)
+// opens its list panel from here, having no footer.
+export function StageMenu({ stage, state, filtered, onFilter, onClearFilter, onList }: StageMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -20,6 +21,7 @@ export function StageMenu({ stage, state, filtered, onFilter, onClearFilter }: S
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {onList && <DropdownMenuItem onSelect={onList}>{t('flow.node.list')}</DropdownMenuItem>}
         <DropdownMenuItem
           disabled={!differsFromSource(state.tasks, stage, state.sourceOrder, state)}
           onSelect={() => act(`/stages/${encodeURIComponent(stage)}/reset-order`)}
