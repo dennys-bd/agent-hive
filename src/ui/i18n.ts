@@ -1604,7 +1604,7 @@ const en = {
   'timeline.retry': 'try again',
   'timeline.empty': 'nothing recorded yet',
   'timeline.since': 'since {date}',
-  'timeline.sinceNote': 'The Hive\'s history of this task starts on {date}.',
+  'timeline.sinceNote': 'the Hive\'s history of this task starts on {date}.',
   'timeline.today': 'today',
   'timeline.yesterday': 'yesterday',
   'timeline.worked': 'worked {time}',

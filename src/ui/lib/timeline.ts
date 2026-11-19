@@ -128,5 +128,7 @@ export function eventText(event: TimelineEvent, n?: number): TextPart[] {
       return line([t(APPROVAL_KEY[event.result])], [t('timeline.after', { time: compact(event.durationMs) })], event.start === true ? [t('timeline.startedNow')] : []);
     case 'move': return line([t('timeline.movedTo'), ' ', { bold: event.to }], event.by === undefined ? [] : [known(BY_KEY, event.by)]);
     case 'pr': return [t('timeline.pr'), ' ', { bold: `#${event.pr}` }];
+    // A newer server may answer a kind this UI does not know yet: no line, rather than a panel that throws
+    default: return [];
   }
 }
