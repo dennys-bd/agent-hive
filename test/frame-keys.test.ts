@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Input } from 'electron';
-import { frameKeyOf } from '../src/frame-keys.js';
+import { FRAME_KEY_CHANNEL, type FrameKeyContents, forwardFrameKeys, frameKeyOf } from '../src/frame-keys.js';
 import { fixedShortcut, SHORTCUTS } from '../src/shortcut-registry.js';
 import { defaultBinding, fixedKeys, type KeyLike } from '../src/shortcuts.js';
+import type { Shortcuts } from '../src/types.js';
 
 const PLATFORMS = [true, false]; // macOS, then Linux and Windows: the rule is pure, so both run on every OS
 const PUNCTUATION_CODES: Record<string, string> = { ',': 'Comma', '.': 'Period', '/': 'Slash', '\\': 'Backslash', '[': 'BracketLeft', ']': 'BracketRight', '-': 'Minus', '=': 'Equal' };
@@ -76,4 +77,51 @@ test('the bindings are the user\'s: a rebound key crosses and its old one stays,
   assert.equal(forwards('CmdOrCtrl+B', true, { toggleLeft: null }), false);
   assert.equal(forwards('CmdOrCtrl+Alt+W', true, { close: 'CmdOrCtrl+Alt+W' }), false, 'the menu\'s Close carries it in every frame');
   assert.equal(forwards('CmdOrCtrl+W', true, { close: 'CmdOrCtrl+Alt+W' }), false, '⌘W is no shortcut any more');
+});
+
+const MAIN_FRAME = 1;
+const DESIGN_FRAME = 2;
+
+// A window's WebContents with the frame `focused` names (null: nothing focused): `press` runs the listener and answers whether it prevented
+function fakeContents(focused: number | null) {
+  let listener: ((event: { preventDefault(): void }, input: Input) => void) | undefined;
+  const sent: unknown[][] = [];
+  const contents: FrameKeyContents = {
+    on: (_event, callback) => { listener = callback; },
+    focusedFrame: focused === null ? null : { frameTreeNodeId: focused },
+    mainFrame: { frameTreeNodeId: MAIN_FRAME },
+    send: (...args) => { sent.push(args); },
+  };
+  const press = (input: Input): boolean => {
+    let isPrevented = false;
+    listener?.({ preventDefault: () => { isPrevented = true; } }, input);
+    return isPrevented;
+  };
+  return { contents, sent, press };
+}
+
+test('forwardFrameKeys: with a subframe focused a forwarded key is prevented and sent on window:frameKey; any other key goes on (#906)', () => {
+  const { contents, sent, press } = fakeContents(DESIGN_FRAME);
+  forwardFrameKeys(contents, () => ({ shortcuts: {}, isMac: true }));
+  const toggleLeft = inputOf('CmdOrCtrl+B', true);
+  assert.deepEqual([press(toggleLeft), press(inputOf('CmdOrCtrl+C', true)), press(inputOf('B', true))], [true, false, false]);
+  assert.deepEqual(sent, [[FRAME_KEY_CHANNEL, keyLikeOf(toggleLeft)]]);
+});
+
+test('forwardFrameKeys: with the main frame focused, or nothing, every key goes on untouched; the page\'s own listeners have it (#906)', () => {
+  for (const focused of [MAIN_FRAME, null]) {
+    const { contents, sent, press } = fakeContents(focused);
+    forwardFrameKeys(contents, () => ({ shortcuts: {}, isMac: true }));
+    assert.equal(press(inputOf('CmdOrCtrl+B', true)), false);
+    assert.deepEqual(sent, []);
+  }
+});
+
+test('forwardFrameKeys reads the shortcuts at each key: a Settings save reaches the next one (#906)', () => {
+  let shortcuts: Shortcuts = {};
+  const { contents, press } = fakeContents(DESIGN_FRAME);
+  forwardFrameKeys(contents, () => ({ shortcuts, isMac: false }));
+  assert.equal(press(inputOf('CmdOrCtrl+Shift+B', false)), true);
+  shortcuts = { toggleLeft: null };
+  assert.equal(press(inputOf('CmdOrCtrl+Shift+B', false)), false);
 });

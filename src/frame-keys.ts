@@ -43,3 +43,30 @@ export function frameKeyOf(input: Input, shortcuts: Shortcuts, isMac: boolean): 
   const isMenuKey = Object.values(menuKeys(bindings)).some((binding) => binding !== null && matches(key, binding, isMac));
   return !isMenuKey && forwardedKeys(bindings, isMac).some((binding) => matches(key, binding, isMac)) ? key : undefined;
 }
+
+/** What forwardFrameKeys reads of a window's WebContents (#906); a real WebContents is one, a test passes a plain fake. Frames compare by
+ *  frameTreeNodeId, which Electron keeps for a frame's whole life. */
+export interface FrameKeyContents {
+  on(event: 'before-input-event', listener: (event: { preventDefault(): void }, input: Input) => void): unknown;
+  readonly focusedFrame: { frameTreeNodeId: number } | null;
+  readonly mainFrame: { frameTreeNodeId: number };
+  send(channel: string, ...args: unknown[]): void;
+}
+
+/** Main's cached shortcuts (loadSettings refreshes them on settingsChanged) and the platform, read at each key. */
+export interface FrameKeySettings { shortcuts: Shortcuts; isMac: boolean }
+
+/** Every key of a focused subframe that frameKeyOf forwards (#906): prevented, so the frame never gets it (⌘B no longer bolds in draw.io),
+ *  and sent to the window's page, which dispatches it where its capture listeners act. A key in the main document goes on untouched, read
+ *  before any binding work: it is every keystroke of the page. */
+export function forwardFrameKeys(contents: FrameKeyContents, read: () => FrameKeySettings): void {
+  contents.on('before-input-event', (event, input) => {
+    const focused = contents.focusedFrame;
+    if (focused === null || focused.frameTreeNodeId === contents.mainFrame.frameTreeNodeId) return;
+    const { shortcuts, isMac } = read();
+    const key = frameKeyOf(input, shortcuts, isMac);
+    if (key === undefined) return;
+    event.preventDefault();
+    contents.send(FRAME_KEY_CHANNEL, key);
+  });
+}
