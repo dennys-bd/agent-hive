@@ -179,7 +179,7 @@ interface FlowHeaderProps {
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   mode?: HeaderMode; // #571: tasks (default), a source (#756) or a repository (#757)
   legend?: string; // #574: the tasks mode's sources legend; absent: todas as sources
-  display?: ReactNode; // #571: the tasks mode's display control (exibir, #574), at the right right before the search (#911)
+  display?: ReactNode; // #571: the tasks mode's display control (exibir, #574), at the right, just before the search (#911)
   back?: BackLink; // #911, #380: the way back to the last flow; only the issue and PR pages pass it
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
 }
