@@ -63,15 +63,16 @@ ipcRenderer.on('window:fullScreen', (_event, on: unknown) => {
   if (typeof on === 'boolean') fullScreenListener?.(on);
 });
 
-// A global key main took from a focused subframe (#906). Untrusted IPC: only the six fields of a KeyLike, each a string or a boolean, reach the page
+// A global key main took from a focused subframe (#906). Untrusted IPC: only the seven fields of a FrameKey, each a string or a boolean, reach the page
 type FrameKeyListener = Parameters<HiveWindow['onFrameKey']>[0];
 type FrameKey = Parameters<FrameKeyListener>[0];
 function frameKeyOf(value: unknown): FrameKey | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { key, code, metaKey, ctrlKey, altKey, shiftKey } = value as Record<string, unknown>;
+  const { key, code, metaKey, ctrlKey, altKey, shiftKey, repeat } = value as Record<string, unknown>;
   if (typeof key !== 'string' || typeof code !== 'string') return undefined;
   if (typeof metaKey !== 'boolean' || typeof ctrlKey !== 'boolean' || typeof altKey !== 'boolean' || typeof shiftKey !== 'boolean') return undefined;
-  return { key, code, metaKey, ctrlKey, altKey, shiftKey };
+  if (typeof repeat !== 'boolean') return undefined;
+  return { key, code, metaKey, ctrlKey, altKey, shiftKey, repeat };
 }
 let frameKeyListener: FrameKeyListener | undefined;
 ipcRenderer.on('window:frameKey', (_event, value: unknown) => {

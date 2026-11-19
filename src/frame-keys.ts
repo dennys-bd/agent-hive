@@ -19,6 +19,9 @@ const TERMINAL_ONLY: readonly OperationId[] = ['clear', 'findInTerminal'];
 // bindingFromEvent orders CmdOrCtrl, Ctrl, Alt, Shift: a guard modifier, when there is one, leads. Without one the key is typing
 const HAS_GUARD = /^(?:CmdOrCtrl|Ctrl|Alt)\+/;
 
+/** A forwarded key (#906): the KeyLike it matched, plus whether the OS repeats it, so a held key reaches the page as a held key. */
+export interface FrameKey extends KeyLike { repeat: boolean }
+
 const keyLikeOf = (input: Input): KeyLike =>
   ({ key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, altKey: input.alt, shiftKey: input.shift });
 
@@ -34,14 +37,14 @@ function forwardedKeys(bindings: Bindings, isMac: boolean): string[] {
 /** The key to forward for a keyDown in a subframe (#906), or undefined to leave it to the frame: a bare or Shift key (typing), a reserved
  *  key (copy, paste, undo stay the frame's), a menu key (the menu handles it in every frame, and preventing it would cancel the accelerator),
  *  or any key no global or activities listener acts on. Bindings are read at each key: Settings' changes reach it at once. */
-export function frameKeyOf(input: Input, shortcuts: Shortcuts, isMac: boolean): KeyLike | undefined {
+export function frameKeyOf(input: Input, shortcuts: Shortcuts, isMac: boolean): FrameKey | undefined {
   if (input.type !== 'keyDown') return undefined;
   const key = keyLikeOf(input);
   const pressed = bindingFromEvent(key, isMac);
   if (pressed === undefined || !HAS_GUARD.test(pressed) || isReserved(pressed)) return undefined;
   const bindings = effectiveBindings(shortcuts, isMac);
   const isMenuKey = Object.values(menuKeys(bindings)).some((binding) => binding !== null && matches(key, binding, isMac));
-  return !isMenuKey && forwardedKeys(bindings, isMac).some((binding) => matches(key, binding, isMac)) ? key : undefined;
+  return !isMenuKey && forwardedKeys(bindings, isMac).some((binding) => matches(key, binding, isMac)) ? { ...key, repeat: input.isAutoRepeat } : undefined;
 }
 
 /** What forwardFrameKeys reads of a window's WebContents (#906); a real WebContents is one, a test passes a plain fake. Frames compare by

@@ -48,8 +48,8 @@ interface HiveWindow {
   // Returns the unsubscribe, which clears only its own callback.
   onFullScreen(callback: (on: boolean) => void): () => void;
   // window:frameKey (#906): a global key main took from a focused subframe (an iframe's document never reaches the page's listeners). The
-  // preload drops a payload that is no KeyLike; nothing is held before the page subscribes. Returns the unsubscribe, which clears only its own callback.
-  onFrameKey(callback: (key: import('./shortcuts.js').KeyLike) => void): () => void;
+  // preload drops a payload that is no FrameKey; nothing is held before the page subscribes. Returns the unsubscribe, which clears only its own callback.
+  onFrameKey(callback: (key: import('./frame-keys.js').FrameKey) => void): () => void;
   // every theme the page resolves (#648): main recolours Windows' caption buttons with it; sent, nothing to answer, a no-op off Windows
   themeResolved(theme: import('./ui/lib/theme.js').ResolvedTheme): void;
 }

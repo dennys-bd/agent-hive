@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Input } from 'electron';
-import { FRAME_KEY_CHANNEL, type FrameKeyContents, forwardFrameKeys, frameKeyOf } from '../src/frame-keys.js';
+import { FRAME_KEY_CHANNEL, type FrameKey, type FrameKeyContents, forwardFrameKeys, frameKeyOf } from '../src/frame-keys.js';
 import { fixedShortcut, SHORTCUTS } from '../src/shortcut-registry.js';
-import { defaultBinding, fixedKeys, type KeyLike } from '../src/shortcuts.js';
+import { defaultBinding, fixedKeys } from '../src/shortcuts.js';
 import type { Shortcuts } from '../src/types.js';
 
 const PLATFORMS = [true, false]; // macOS, then Linux and Windows: the rule is pure, so both run on every OS
@@ -26,7 +26,8 @@ function inputOf(binding: string, isMac: boolean, type = 'keyDown'): Input {
     isAutoRepeat: false, isComposing: false, location: 0, modifiers: [],
   };
 }
-const keyLikeOf = (input: Input): KeyLike => ({ key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, altKey: input.alt, shiftKey: input.shift });
+const keyLikeOf = (input: Input): FrameKey =>
+  ({ key: input.key, code: input.code, metaKey: input.meta, ctrlKey: input.control, altKey: input.alt, shiftKey: input.shift, repeat: input.isAutoRepeat });
 const forwards = (binding: string, isMac: boolean, shortcuts = {}): boolean => frameKeyOf(inputOf(binding, isMac), shortcuts, isMac) !== undefined;
 
 // The global and activities shortcuts a frame keeps on their default, in map order: the menu's (fullScreen, closeWindow, close), the
@@ -106,6 +107,12 @@ test('forwardFrameKeys: with a subframe focused a forwarded key is prevented and
   const toggleLeft = inputOf('CmdOrCtrl+B', true);
   assert.deepEqual([press(toggleLeft), press(inputOf('CmdOrCtrl+C', true)), press(inputOf('B', true))], [true, false, false]);
   assert.deepEqual(sent, [[FRAME_KEY_CHANNEL, keyLikeOf(toggleLeft)]]);
+});
+
+test('a held key crosses as a held key: the OS repeat reaches the page as repeat (#906)', () => {
+  const held = { ...inputOf('CmdOrCtrl+B', true), isAutoRepeat: true };
+  assert.equal(frameKeyOf(held, {}, true)?.repeat, true);
+  assert.equal(frameKeyOf(inputOf('CmdOrCtrl+B', true), {}, true)?.repeat, false);
 });
 
 test('forwardFrameKeys: with the main frame focused, or nothing, every key goes on untouched; the page\'s own listeners have it (#906)', () => {

@@ -1,13 +1,13 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { listenFrameKeys, onPanelKey } from '@/lib/dock-layout';
-import type { KeyLike } from '../../src/shortcuts';
+import type { FrameKey } from '../../src/frame-keys';
 
 // window.hive as the preload exposes it: the one listener window:frameKey calls, and its unsubscribe
 function fakeBridge() {
-  let listener: ((key: KeyLike) => void) | undefined;
+  let listener: ((key: FrameKey) => void) | undefined;
   const off = vi.fn();
-  vi.stubGlobal('hive', { onFrameKey: vi.fn((callback: (key: KeyLike) => void) => { listener = callback; return off; }) });
-  return { off, send: (key: KeyLike): void => listener?.(key) };
+  vi.stubGlobal('hive', { onFrameKey: vi.fn((callback: (key: FrameKey) => void) => { listener = callback; return off; }) });
+  return { off, send: (key: FrameKey): void => listener?.(key) };
 }
 // The design pane's or draw.io's frame with the focus in it: document.activeElement is the <iframe> element
 function focusedFrame(): HTMLIFrameElement {
@@ -17,7 +17,7 @@ function focusedFrame(): HTMLIFrameElement {
   return frame;
 }
 // toggleLeft off macOS (jsdom's platform is ''): Ctrl+Shift+B, as main sends it from a focused frame
-const TOGGLE_LEFT: KeyLike = { key: 'B', code: 'KeyB', metaKey: false, ctrlKey: true, altKey: false, shiftKey: true };
+const TOGGLE_LEFT: FrameKey = { key: 'B', code: 'KeyB', metaKey: false, ctrlKey: true, altKey: false, shiftKey: true, repeat: true };
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -34,8 +34,8 @@ test('listenFrameKeys dispatches each key main sends as a keydown on the focused
   const off = listenFrameKeys();
   bridge.send(TOGGLE_LEFT);
   window.removeEventListener('keydown', record, true);
-  expect(seen.map((e) => [e.target, e.key, e.code, e.metaKey, e.ctrlKey, e.altKey, e.shiftKey, e.bubbles, e.cancelable]))
-    .toEqual([[frame, 'B', 'KeyB', false, true, false, true, true, true]]);
+  expect(seen.map((e) => [e.target, e.key, e.code, e.metaKey, e.ctrlKey, e.altKey, e.shiftKey, e.repeat, e.bubbles, e.cancelable]))
+    .toEqual([[frame, 'B', 'KeyB', false, true, false, true, true, true, true]]);
   off();
   expect(bridge.off).toHaveBeenCalledTimes(1);
 });

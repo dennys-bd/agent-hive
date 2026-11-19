@@ -12,11 +12,11 @@ const read = (path: string): Promise<string> => readFile(join(ROOT, path), 'utf8
 // global key first; each entry says why it does not.
 // ponytail: a stop counts per file that mentions keydown, so a click's stop there is listed too; a per-listener parse if that gets noisy
 const SURFACES = [
-  { kind: 'iframe', pattern: /<iframe\b/g },
+  { kind: 'iframe', pattern: /<iframe\b|createElement\(\s*['"]iframe['"]/g },
   { kind: 'webview', pattern: /<webview\b/g },
-  { kind: 'window', pattern: /new BrowserWindow\(/g },
+  { kind: 'window', pattern: /new (?:BrowserWindow|BrowserView|WebContentsView)\(/g },
   { kind: 'xterm keys', pattern: /\.attachCustomKeyEventHandler\(/g },
-  { kind: 'key stop', pattern: /\.stop(?:Immediate)?Propagation\(/g, within: /keydown|onKeyDown/ },
+  { kind: 'key stop', pattern: /\.stop(?:Immediate)?Propagation\(/g, within: /keydown|KeyboardEvent/i },
 ] as const;
 
 const ALLOWED: Record<string, { count: number; reason: string }> = {
@@ -37,11 +37,10 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
   'key stop src/ui/lib/xterm-setup.ts': { count: 1, reason: 'terminalPaste\'s paste listener; no key' },
 };
 
-// src/*.ts and src/ui/**/*.{ts,tsx}: main's windows and the page's keys (xterm's handler and the capture listeners live in src/ui/lib/*.ts)
+// Every source under src/ (.ts, .tsx, .cts), so a window or a frame opened in any folder, the preload included, is found
 async function scanned(): Promise<string[]> {
-  const top = (await readdir(join(ROOT, 'src'))).filter((p) => p.endsWith('.ts')).map((p) => `src/${p}`);
-  const ui = (await readdir(join(ROOT, 'src', 'ui'), { recursive: true })).map((p) => `src/ui/${p.split(sep).join('/')}`);
-  return [...top, ...ui.filter((p) => /\.tsx?$/.test(p))].sort();
+  const all = (await readdir(join(ROOT, 'src'), { recursive: true })).map((p) => `src/${p.split(sep).join('/')}`);
+  return all.filter((p) => /\.(?:tsx?|cts)$/.test(p) && !p.endsWith('.d.ts')).sort();
 }
 
 async function found(): Promise<Record<string, number>> {
