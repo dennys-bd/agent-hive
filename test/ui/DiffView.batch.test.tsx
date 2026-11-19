@@ -22,7 +22,8 @@ test('adicionar à revisão posts a draft; the footer counts it and enviar revis
   expect(callsTo(hive, 'POST', '/tasks/I1/review/drafts')[0].body).toEqual({ anchor: ANCHOR, text: 'later', session: SESSION });
   expect(footer()).toHaveTextContent('revisão · 0 comentários · 0 conversas abertas');
   expect(within(footer()).getByRole('button', { name: /enviar revisão/ })).toBeDisabled();
-  expect(footer()).toHaveTextContent('] próximo arquivo · [ anterior · C comentar · V revisado');
+  // each key as a chip (#910), not one string whose bare brackets read as broken text
+  expect([...footer().querySelectorAll('kbd')].map((kbd) => kbd.parentElement?.textContent)).toEqual([']próximo arquivo', '[anterior', 'Ccomentar', 'Vrevisado']);
 });
 
 test('a draft shows on its line with na revisão and editar; editing saves with PUT on ⌥↵; enviar revisão posts submit and names a failed session (#591)', async () => {

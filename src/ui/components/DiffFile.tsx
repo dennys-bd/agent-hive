@@ -87,7 +87,8 @@ interface FileHeaderProps { file: FileDiff; collapsed: boolean; isReviewed: bool
 function FileHeader({ file, collapsed, isReviewed, onToggle, onReviewed }: FileHeaderProps) {
   const surface = useReviewSurface();
   return (
-    <header className={`sticky top-0 z-10 flex h-10 items-center gap-2.5 bg-card px-3.5 text-[13px] ${collapsed ? '' : 'border-b'}`}>
+    // -top-4 cancels ReviewBody's p-4: a sticky box sticks to its scroller's padding edge, so top-0 left a 16px gap the lines showed through (#910)
+    <header className={`sticky -top-4 z-10 flex h-10 items-center gap-2.5 bg-card px-3.5 text-[13px] ${collapsed ? '' : 'border-b'}`}>
       <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground" aria-expanded={!collapsed} aria-label={t(collapsed ? 'diff.expand' : 'diff.collapse')} onClick={onToggle}>
         {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
       </Button>
