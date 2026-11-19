@@ -419,12 +419,12 @@ test('the blockers add row\'s copy (#57): both languages, the handoff\'s Portugu
 });
 
 test('the blockers section\'s copy (#57): both languages, the handoff\'s Portuguese, one line per route code', () => {
-  const keys = ['blockers.title', 'blockers.add', 'blockers.closed', 'blockers.open', 'blockers.remove', 'blockers.note'] as const;
+  const keys = ['blockers.add', 'blockers.closed', 'blockers.open', 'blockers.remove'] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
-    'bloqueios', '+ adicionar', 'fechada', 'aberta', 'remover {id}', 'são as dependências da issue no GitHub. a tarefa bloqueada não inicia até o bloqueio fechar.',
+    '+ adicionar', 'fechada', 'aberta', 'remover {id}',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
-    'blockers', '+ add', 'closed', 'open', 'remove {id}', 'these are the issue\'s dependencies on GitHub. a blocked task does not start until the blocker closes.',
+    '+ add', 'closed', 'open', 'remove {id}',
   ]);
   const codes = ['unknownItem', 'unknownRef', 'crossSource', 'self', 'cycle', 'refused', 'badRequest', 'unexpected'] as const;
   for (const code of codes) assert.ok(MESSAGES.en[`blockers.${code}`].length > 0 && MESSAGES.pt[`blockers.${code}`].length > 0, code);
@@ -749,7 +749,19 @@ test('the semaphore picker, its hint and the commands card foot read as the scre
 });
 
 test('the relations section\'s copy (#829): both languages, relação in Portuguese, agent-neutral', () => {
-  const keys = ['relations.title', 'relations.add', 'relations.type', 'relations.none'] as const;
-  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['relations', '+ add', 'relation type', 'no relations']);
-  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['relações', '+ adicionar', 'tipo de relação', 'nenhuma relação']);
+  const keys = ['relations.add', 'relations.type', 'relations.none'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['+ relation', 'relation type', 'no relations']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['+ relação', 'tipo de relação', 'nenhuma relação']);
+});
+
+test('the details panel sections\' copy (#958): both languages', () => {
+  const keys = ['detail.section.info', 'blockers.title', 'blockers.note', 'blockers.notBlocked', 'checkpoints.summary.one', 'checkpoints.summary.other', 'detail.totalLabel', 'detail.description'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'about this section', 'relations', 'these are the task\'s dependencies in its source (GitHub, Jira). a blocked task does not start until the blocker closes.', 'not blocked',
+    '{n} checkpoint · last {ago} · {stage}', '{n} checkpoints · last {ago} · {stage}', 'worked', 'description',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'sobre esta seção', 'relacionamentos', 'são as dependências da tarefa na source (GitHub, Jira). a tarefa bloqueada não inicia até o bloqueio fechar.', 'não está bloqueada',
+    '{n} ponto · último {ago} · {stage}', '{n} pontos · último {ago} · {stage}', 'trabalhou', 'descrição',
+  ]);
 });

@@ -26,6 +26,7 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
   'window src/detached-window.ts': { count: 1, reason: 'a detached window; calls forwardFrameKeys' },
   'xterm keys src/ui/lib/xterm-setup.ts': { count: 1, reason: 'terminalKeys refuses only newline, clipboard, find and clear; window\'s capture listener ran first' },
   'key stop src/design-bridge.ts': { count: 1, reason: 'the comment mode\'s pointer, inside the design frame; no key' },
+  'key stop src/ui/components/DetailSection.tsx': { count: 1, reason: 'a click, Enter or Space on the section\'s info button, so the summary does not toggle; no global shortcut' },
   'key stop src/ui/components/NewSessionDialog.tsx': { count: 1, reason: 'Enter, from React\'s capture on the dialog, below window' },
   'key stop src/ui/components/ProjectRow.tsx': { count: 1, reason: 'a click on the chevron; no key' },
   'key stop src/ui/components/TaskPicker.tsx': { count: 3, reason: 'Escape on window (stopPropagation leaves window\'s other listeners), a click, the chip\'s Enter' },

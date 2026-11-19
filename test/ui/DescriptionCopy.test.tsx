@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { toast } from 'sonner';
@@ -65,5 +65,12 @@ test('a failed copy toasts the generic error, never the raw message (#283)', asy
 test('an empty description shows sem descrição and no copy buttons (#283)', () => {
   render(<TaskDescription body={'  \n'} />);
   expect(screen.getByText('sem descrição')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'descrição' })).toBeInTheDocument();
   expect(screen.queryByRole('button')).toBeNull();
+});
+
+test('descrição heads the description, with copiar and copiar markdown on its row (#958)', () => {
+  render(<TaskDescription body={BODY} />);
+  const heading = screen.getByRole('heading', { name: 'descrição', level: 3 });
+  expect(within(heading.parentElement!).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['copiar', 'copiar markdown']);
 });

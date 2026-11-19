@@ -6,7 +6,8 @@ import type { Checkpoint, CheckpointEnd, Stage, State, Task } from '../../types'
 import { RestoreDialog } from '@/components/RestoreDialog';
 import { useOpenDiff } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
-import { type MessageKey, t } from '@/i18n';
+import { DetailSection, SUMMARY_LINE } from '@/components/DetailSection';
+import { type MessageKey, t, tPlural } from '@/i18n';
 import { compact } from '@/lib/usage';
 
 const MUTED = 'text-muted-foreground';
@@ -21,15 +22,24 @@ export function checkpointGroups(checkpoints: readonly Checkpoint[], stages: rea
   });
 }
 
-// `checkpoint <n> · <age> · <short sha> · <how it ended>` (#619): refreshed by each state broadcast, no timer of its own
+// A checkpoint's age as its row and the summary say it (#619, #958), refreshed by each state broadcast, no timer of its own
+const ageText = (at: string, now: number): string => t('detail.ago', { time: compact(Math.max(0, now - Date.parse(at))) });
+
+// `checkpoint <n> · <age> · <short sha> · <how it ended>` (#619)
 const rowText = (checkpoint: Checkpoint, now: number): string => [
-  t('checkpoints.row', { n: checkpoint.n }), t('detail.ago', { time: compact(Math.max(0, now - Date.parse(checkpoint.at))) }),
-  checkpoint.commit.slice(0, SHORT_SHA), t(ENDED_KEY[checkpoint.ended]),
+  t('checkpoints.row', { n: checkpoint.n }), ageText(checkpoint.at, now), checkpoint.commit.slice(0, SHORT_SHA), t(ENDED_KEY[checkpoint.ended]),
 ].join(' · ');
+
+/** pontos de restauração's closed line (#958): how many, the newest one's age and its stage (its group in checkpointGroups). The newest is
+ * the highest n, the order they were captured in. Takes a non-empty list: the section is hidden without one. */
+export function checkpointsSummary(checkpoints: readonly Checkpoint[], now: number): string {
+  const newest = checkpoints.reduce((a, b) => (b.n > a.n ? b : a));
+  return tPlural('checkpoints.summary', checkpoints.length, { n: checkpoints.length, ago: ageText(newest.at, now), stage: newest.stage });
+}
 
 type CheckpointsState = Pick<State, 'stages' | 'workers' | 'terminals' | 'activities' | 'activityRecords'>;
 
-/** The task's checkpoints (#619), the detail panel's section after the sessions; hidden without one. compare opens the diff on the checkpoint scope;
+/** The task's checkpoints (#619, #958), a details section closed by default; hidden without one. compare opens the diff on the checkpoint scope;
  * restore… opens its dialog, disabled while a run is live on the task, which the route would refuse. */
 export function CheckpointsList({ task, state }: { task: Task; state: CheckpointsState }) {
   const openDiff = useOpenDiff();
@@ -40,8 +50,7 @@ export function CheckpointsList({ task, state }: { task: Task; state: Checkpoint
   const busy = liveRuns(task, state).length > 0;
   const now = Date.now();
   return (
-    <section aria-label={t('checkpoints.title')} className="flex flex-col gap-1.5 text-xs">
-      <h3 className={MUTED}>{t('checkpoints.title')}</h3>
+    <DetailSection name={t('checkpoints.title')} summary={<span className={SUMMARY_LINE}>{checkpointsSummary(checkpoints, now)}</span>}>
       {checkpointGroups(checkpoints, state.stages).map(([stage, own]) => (
         <div key={stage} className="flex flex-col gap-1">
           <h4 className="font-medium">{stage}</h4>
@@ -59,6 +68,6 @@ export function CheckpointsList({ task, state }: { task: Task; state: Checkpoint
         </div>
       ))}
       {restoring && <RestoreDialog task={task} activityId={activity.id} checkpoint={restoring} onClose={() => setRestoring(undefined)} />}
-    </section>
+    </DetailSection>
   );
 }

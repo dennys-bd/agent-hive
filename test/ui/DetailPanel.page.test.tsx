@@ -54,12 +54,12 @@ const before = (a: Element, b: Element): boolean => (a.compareDocumentPosition(b
 
 beforeEach(() => { setLanguage('pt'); read.length = 0; });
 
-test('on an issue page with a task the panel draws that task, not the selection: title, workspace · source, status, the page\'s block, blockers, properties, sessions, footer; no issue body, no comments read (#64)', () => {
+test('on an issue page with a task the panel draws that task, not the selection: title, workspace · source, status, the page\'s block, properties, sessions, relations, footer; no issue body, no comments read (#64)', () => {
   renderPanel({ kind: 'issue', url: URL1, task: TASK });
   const order = [
     screen.getByRole('heading', { name: '#1 Task 1' }), screen.getByText('site · roadmap'), screen.getByRole('region', { name: 'parada' }),
-    within(aside()).getByText('BLOCK'), screen.getByRole('region', { name: 'bloqueios' }), screen.getByText('branch', { selector: 'dt' }),
-    screen.getByRole('region', { name: 'sessões' }), footer() as HTMLElement,
+    within(aside()).getByText('BLOCK'), screen.getByText('branch', { selector: 'dt' }),
+    screen.getByRole('region', { name: 'sessões' }), screen.getByRole('group', { name: 'relacionamentos' }), footer() as HTMLElement,
   ];
   expect(order.slice(1).map((el, i) => before(order[i], el))).toEqual([true, true, true, true, true, true, true]);
   expect(screen.queryByRole('heading', { name: 'HIVE-1 Local' })).not.toBeInTheDocument();

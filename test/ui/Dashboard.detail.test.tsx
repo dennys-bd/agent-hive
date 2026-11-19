@@ -152,7 +152,7 @@ test('hovering a row of the details\' tree lights its card in the flow until the
   const calls: (Selection | undefined)[] = [];
   render(<Home initial={{ taskId: 'A' }} calls={calls} s={TREE} />);
   showFlow();
-  const section = screen.getByRole('region', { name: 'árvore' });
+  const section = screen.getByRole('group', { name: 'árvore' });
   await user.hover(within(section).getByText('#2 Task B'));
   expect(card('B')).toHaveClass('border-foreground', 'ring-foreground/25');
   expect(card('A')).not.toHaveClass('border-foreground');

@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { CheckpointsList } from '@/components/CheckpointsList';
+import { CheckpointsList, checkpointsSummary } from '@/components/CheckpointsList';
 import { DiffOpenerContext } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
 import type { Checkpoint, Stage, Worker } from '../../src/types';
@@ -25,11 +25,11 @@ function renderList(state: ReturnType<typeof stateOf>) {
   render(<DiffOpenerContext.Provider value={openDiff}><CheckpointsList task={state.tasks[0]} state={state} /></DiffOpenerContext.Provider>);
   return openDiff;
 }
-const section = (): HTMLElement => screen.getByRole('region', { name: 'pontos de restauração' });
+const section = (): HTMLElement => screen.getByRole('group', { name: 'pontos de restauração' });
 
 test('the section is hidden while the task has no checkpoint (#619)', () => {
   renderList(stateOf([]));
-  expect(screen.queryByRole('region', { name: 'pontos de restauração' })).toBeNull();
+  expect(screen.queryByRole('group', { name: 'pontos de restauração' })).toBeNull();
 });
 
 test('the checkpoints are grouped by stage in column order, each row reading number, age, short sha and how it ended (#619)', () => {
@@ -58,4 +58,21 @@ test('restaurar… is disabled with its reason while a run is live on the task (
   const button = within(section()).getByRole('button', { name: 'restaurar…' });
   expect(button).toBeDisabled();
   expect(button.parentElement).toHaveAttribute('title', 'pare as execuções da tarefa antes de restaurar');
+});
+
+test('pontos de restauração is a details closed by default, with no note; its summary reads the count, the newest one\'s age and its stage (#958)', () => {
+  const older = { ...checkpoint(1, 'dev', 'done'), at: new Date(Date.now() - 2 * 3_600_000).toISOString() };
+  renderList(stateOf([older, checkpoint(2, 'spec', 'done')]));
+  const details = section() as HTMLDetailsElement;
+  expect(details.open).toBe(false);
+  const summary = details.querySelector('summary')!;
+  // the newest is #2, in spec, though dev's column comes later
+  expect(summary).toHaveTextContent('2 pontos · último há 5m · spec');
+  expect(summary).not.toHaveAttribute('aria-describedby');
+});
+
+test('the checkpoints\' summary in the singular and in English (#958)', () => {
+  expect(checkpointsSummary([checkpoint(1, 'dev', 'done')], Date.now())).toBe('1 ponto · último há 5m · dev');
+  setLanguage('en');
+  expect(checkpointsSummary([checkpoint(1, 'dev', 'done'), checkpoint(2, 'spec', 'done')], Date.now())).toBe('2 checkpoints · last 5m ago · spec');
 });

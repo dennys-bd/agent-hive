@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { RelationsSection } from '@/components/RelationsSection';
+import { BlockersSection } from '@/components/BlockersSection';
 import { setLanguage } from '@/i18n';
 import { CreateTargetsContext, HIVE_ONLY } from '@/lib/create-targets';
 import { editRelation, readRelationTypes } from '@/lib/relations-api';
@@ -26,8 +26,8 @@ const TASK = jira('ABC-1', 'dev', RELATIONS);
 const stateOf = (...tasks: Task[]): State => ({ ...initialState(0), tasks });
 // The Dashboard's comb.sources (#810): the section reads its task's source type, and so its ref forms, from them
 const show = (task: Task, state: State) =>
-  render(<CreateTargetsContext.Provider value={{ ...HIVE_ONLY, configs: [JIRA_ENTRY] }}><RelationsSection task={task} state={state} /></CreateTargetsContext.Provider>);
-const section = (): HTMLElement => screen.getByRole('region', { name: 'relações' });
+  render(<CreateTargetsContext.Provider value={{ ...HIVE_ONLY, configs: [JIRA_ENTRY] }}><BlockersSection task={task} state={state} /></CreateTargetsContext.Provider>);
+const section = (): HTMLElement => screen.getByRole('group', { name: 'relacionamentos' });
 const cells = (): string[][] =>
   [...section().querySelectorAll('[data-slot="blocker-row"]')].map((row) => [...row.querySelectorAll('span')].map((s) => s.textContent ?? ''));
 const FIELD = '#número ou título…';
@@ -59,7 +59,7 @@ test('× removes the relation with its own type and direction (#829)', async () 
 test('+ adicionar offers the site\'s types by phrase, a same-phrase type once; the chosen type and direction go with the typed key, and a landed add closes the row (#829)', async () => {
   const user = userEvent.setup();
   show(TASK, stateOf(TASK));
-  await user.click(await screen.findByRole('button', { name: '+ adicionar' }));
+  await user.click(await screen.findByRole('button', { name: '+ relação' }));
   expect(types).toHaveBeenCalledWith('tickets');
   const picker = screen.getByRole('combobox', { name: 'tipo de relação' });
   expect(picker).toHaveTextContent('relates to');
@@ -91,16 +91,36 @@ test('no relations: the header and the empty line; no types offered: no + adicio
   expect(cells()).toEqual([]);
   expect(within(section()).getByText('nenhuma relação')).toBeInTheDocument();
   await waitFor(() => expect(types).toHaveBeenCalled());
-  expect(within(section()).queryByRole('button', { name: '+ adicionar' })).not.toBeInTheDocument();
+  expect(within(section()).queryByRole('button', { name: '+ relação' })).not.toBeInTheDocument();
 });
 
-test('a GitHub item and a hive task show no relations section and read no types (#829)', () => {
+test('a GitHub item and a hive task show their blockers but no relation rows and read no types; a Jira item with neither shows no section (#829, #958)', () => {
   const github: Task = { item: { itemId: 'work:PVTI_12', id: '12', title: 'T12', body: '', url: '', source: 'work', blockers: { blockedBy: [], blocking: [] } }, stage: 'dev', boardColumn: '', auto: false };
   const local: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Local', body: '', url: '' }, stage: 'dev', boardColumn: '', created: true, auto: false };
   for (const task of [github, local]) {
     const view = show(task, stateOf(task));
-    expect(screen.queryByRole('region', { name: 'relações' })).not.toBeInTheDocument();
+    expect(section()).toBeInTheDocument();
+    expect(screen.queryByText('nenhuma relação')).not.toBeInTheDocument();
     view.unmount();
   }
   expect(types).not.toHaveBeenCalled();
+  const bare = jira('ABC-1', 'dev');
+  show(bare, stateOf(bare));
+  expect(screen.queryByRole('group', { name: 'relacionamentos' })).not.toBeInTheDocument();
+});
+
+test('a Jira task\'s relations sit inside relacionamentos after its blocker rows, with no heading of their own; the summary counts only blockers (#958)', async () => {
+  const both: Task = { ...TASK, item: { ...TASK.item, blockers: { blockedBy: [{ id: 'ABC-7', title: 'Blocker', state: 'open' }], blocking: [] } } };
+  show(both, stateOf(both));
+  expect(cells()).toEqual([
+    ['bloqueada por', 'ABC-7', 'Blocker', 'aberta'],
+    ['relates to', 'ABC-2', 'Issue ABC-2', 'aberta'],
+    ['relates to', 'ABC-4', 'Issue ABC-4', 'aberta'],
+    ['is duplicated by', 'ABC-3', 'Issue ABC-3', 'fechada'],
+  ]);
+  expect(section().querySelector('summary')).toHaveTextContent('bloqueada por ABC-7');
+  expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  // the blockers' + adicionar and, once the types are read, the relations' own + relação
+  expect(within(section()).getByRole('button', { name: '+ adicionar' })).toBeInTheDocument();
+  await waitFor(() => expect(within(section()).getByRole('button', { name: '+ relação' })).toBeInTheDocument());
 });

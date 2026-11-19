@@ -8,7 +8,6 @@ import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
 import { DetailMenu } from '@/components/DetailMenu';
 import { CheckpointsList } from '@/components/CheckpointsList';
 import { BlockersSection } from '@/components/BlockersSection';
-import { RelationsSection } from '@/components/RelationsSection';
 import { CiNotice } from '@/components/CiProgress';
 import { SlotTitle, useDetailSlotRef } from '@/components/DetailSlot';
 import { isStartFailure } from '@/components/CommandsProgress';
@@ -55,12 +54,13 @@ interface BodyProps {
   task: Task; state: State; comments: CommentsState; files: TaskFile[]; locale: string; isActivity: boolean; onOpenTask?(itemId: string): void; page?: PageMode;
 }
 
-// Hidden on a source without comments; a failure stays here and never blanks the task data above it.
+// A plain block (#958): the heading, then author · date and body per comment. Hidden on a source without comments; a failure stays here and
+// never blanks the task data above it.
 function Comments({ comments, locale }: { comments: CommentsState; locale: string }) {
   if (comments.kind === 'unsupported') return null;
   return (
-    <section aria-label={t('detail.comments')} className="flex flex-col gap-2 border-t pt-2">
-      <h4 className="font-medium text-xs">{t('detail.comments')}</h4>
+    <section aria-label={t('detail.comments')} className="flex flex-col gap-2 border-t pt-3 text-xs">
+      <h3 className="font-medium text-xs">{t('detail.comments')}</h3>
       {comments.kind === 'loading' && <p className={MUTED}>{t('detail.loading')}</p>}
       {comments.kind === 'error' && <p className="text-destructive text-xs">{t('detail.commentsError', { message: comments.message })}</p>}
       {comments.kind === 'list' && comments.comments.length === 0 && <p className={MUTED}>{t('detail.noComments')}</p>}
@@ -101,12 +101,13 @@ function PageMeta({ task, state }: { task: Task; state: State }) {
   return <p className={MUTED}>{[...(workspace === undefined ? [] : [workspace]), sourceOf(task)].join(' · ')}</p>;
 }
 
-// The scrolling body (redesign 06), with no visible bar and 14px under its last line (#57): the title, the task's error in full (a failed
-// start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), with dispensar under it (#354),
-// the status block (the status box, the running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries
-// section under it, the tree (#36), the blockers (#57), the metadata, the sessions and what the task produced, then behind a divider the
-// issue and its comments. On a page (#64, handoff "Estrutura comum"): the workspace · source line under the title, the page's slot right
-// after the notices, and no issue body or comments, which are the center already
+// The scrolling body (redesign 06, handoff `detalhes = cheio`, #958), with no visible bar and 14px under its last line (#57): the title, the
+// task's error in full (a failed start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), with
+// dispensar under it (#354), the status block (the status box, the running block while a wait for CI or a commands stage runs, #914, or the
+// exhausted block once the tries ran out, #916), the tries section, the sync and CI notices, a page's slot, the facts grid, resultados and
+// sessões, then the sections árvore (#36), relacionamentos (#57, #829) and pontos de restauração (#619), then behind a divider descrição and
+// comentários. On a page (#64, handoff "Estrutura comum"): the workspace · source line under the title, the page's slot right after the
+// notices, and no issue body or comments, which are the center already
 function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask, page }: BodyProps) {
   const { item } = task;
   const live = activityOf(state, item.itemId); // the activity's (#629)
@@ -129,13 +130,13 @@ function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask
       <SyncBlock task={task} state={state} />
       <CiNotice task={task} state={state} />
       {page && <div ref={slotRef} className="flex flex-col gap-3.5" />}
-      {onOpenTask && <TreeSection task={task} state={state} onOpenTask={onOpenTask} />} {/* #36: after the status and its notices, before the properties */}
-      <BlockersSection key={item.itemId} task={task} state={state} />
-      <RelationsSection key={`relations:${item.itemId}`} task={task} state={state} /> {/* #829: after the blockers, a Jira task's other relations */}
       <MetaGrid task={task} state={state} isActivity={isActivity} onOpenTask={onOpenTask} hasPrs={page?.kind !== 'issue'} />
-      <SessionsList task={task} state={state} locale={locale} />
-      <CheckpointsList task={task} state={state} />
       <ResultsList task={task} files={files} />
+      <SessionsList task={task} state={state} locale={locale} />
+      {/* #958: the sections, each keyed by task so another task starts from its defaults; their prefixes keep sibling keys apart */}
+      {onOpenTask && <TreeSection key={`tree:${item.itemId}`} task={task} state={state} onOpenTask={onOpenTask} />}
+      <BlockersSection key={`relations:${item.itemId}`} task={task} state={state} />
+      <CheckpointsList key={`checkpoints:${item.itemId}`} task={task} state={state} />
       {!page && (
         <div className="flex flex-col gap-3.5 border-t pt-3.5 text-[13px] leading-5">
           <TaskDescription body={item.body} />

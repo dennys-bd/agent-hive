@@ -221,12 +221,13 @@ const en = {
   'blockers.search': '#number or title…',
   'blockers.addRef': 'add {id}',
   'blockers.suggestions': 'suggestions',
-  'blockers.title': 'blockers',
+  'blockers.title': 'relations', // #958: the section also holds a Jira task's other relations
   'blockers.add': '+ add',
   'blockers.closed': 'closed',
   'blockers.open': 'open',
   'blockers.remove': 'remove {id}',
-  'blockers.note': 'these are the issue\'s dependencies on GitHub. a blocked task does not start until the blocker closes.',
+  'blockers.note': 'these are the task\'s dependencies in its source (GitHub, Jira). a blocked task does not start until the blocker closes.',
+  'blockers.notBlocked': 'not blocked',
   'blockers.unknownItem': 'this item cannot hold blockers',
   'blockers.unknownRef': 'no issue or task with that id',
   'blockers.crossSource': 'a blocker must come from the same source',
@@ -237,8 +238,7 @@ const en = {
   'blockers.badRefHive': 'write a task id', // #810: a hive task reads only a task id
   'blockers.badRef': 'write {forms} or a task id', // #810: ↵ with no ref the item's source type reads
   'blockers.unexpected': 'Unexpected error',
-  'relations.title': 'relations',
-  'relations.add': '+ add',
+  'relations.add': '+ relation',
   'relations.type': 'relation type',
   'relations.none': 'no relations',
   'detail.deleteActivity': 'delete activity',
@@ -264,10 +264,11 @@ const en = {
   'detail.issue': 'issue',
   'detail.parent': 'parent', // #36: the properties grid's row of the parent task
   'detail.branch': 'branch',
-  'detail.totalLabel': 'total',
+  'detail.totalLabel': 'worked', // #958: the worked time, the waiting left out
   'detail.tree': 'tree', // #36: the details' tree section
   'detail.tree.count': '{n} tasks · {done}/{n} done',
   'detail.tree.hint': 'click a row to open its details · hover marks it in the flow',
+  'detail.section.info': 'about this section', // #958: the info icon of a details section
   'detail.results': 'results',
   'detail.resultGone': 'this activity was deleted: its files no longer open',
   'detail.stage': 'stage {stage}',
@@ -284,6 +285,7 @@ const en = {
   'detail.menu.autoStart': 'start on its own',
   'detail.menu.deleteActivity': 'delete activity',
   'detail.copied': 'copied',
+  'detail.description': 'description', // #958: the description's heading row
   'detail.copy': 'copy', // #283: the description's two copy buttons
   'detail.copyRaw': 'copy raw',
   'detail.copyFailed': 'Unexpected error',
@@ -1586,6 +1588,8 @@ const en = {
   'restart.and': 'and',
   'restart.confirm': 'discard and restart',
   'checkpoints.title': 'checkpoints',
+  'checkpoints.summary.one': '{n} checkpoint · last {ago} · {stage}', // #958: the closed line
+  'checkpoints.summary.other': '{n} checkpoints · last {ago} · {stage}',
   'checkpoints.row': 'checkpoint {n}',
   'checkpoints.ended.done': 'done',
   'checkpoints.ended.restart': 'restarted',
@@ -3606,12 +3610,13 @@ const pt: Record<MessageKey, string> = {
   'blockers.search': '#número ou título…',
   'blockers.addRef': 'adicionar {id}',
   'blockers.suggestions': 'sugestões',
-  'blockers.title': 'bloqueios',
+  'blockers.title': 'relacionamentos',
   'blockers.add': '+ adicionar',
   'blockers.closed': 'fechada',
   'blockers.open': 'aberta',
   'blockers.remove': 'remover {id}',
-  'blockers.note': 'são as dependências da issue no GitHub. a tarefa bloqueada não inicia até o bloqueio fechar.',
+  'blockers.note': 'são as dependências da tarefa na source (GitHub, Jira). a tarefa bloqueada não inicia até o bloqueio fechar.',
+  'blockers.notBlocked': 'não está bloqueada',
   'blockers.unknownItem': 'este item não aceita bloqueios',
   'blockers.unknownRef': 'nenhuma issue ou tarefa com esse id',
   'blockers.crossSource': 'o bloqueio precisa ser da mesma source',
@@ -3622,8 +3627,7 @@ const pt: Record<MessageKey, string> = {
   'blockers.badRefHive': 'escreva o id de uma tarefa',
   'blockers.badRef': 'escreva {forms} ou o id de uma tarefa',
   'blockers.unexpected': 'Erro inesperado',
-  'relations.title': 'relações',
-  'relations.add': '+ adicionar',
+  'relations.add': '+ relação',
   'relations.type': 'tipo de relação',
   'relations.none': 'nenhuma relação',
   'detail.deleteActivity': 'excluir atividade',
@@ -3649,10 +3653,11 @@ const pt: Record<MessageKey, string> = {
   'detail.issue': 'issue',
   'detail.parent': 'pai',
   'detail.branch': 'branch',
-  'detail.totalLabel': 'total',
+  'detail.totalLabel': 'trabalhou',
   'detail.tree': 'árvore',
   'detail.tree.count': '{n} tarefas · {done}/{n} done',
   'detail.tree.hint': 'clicar numa linha abre os detalhes dela · passar o mouse marca no grafo',
+  'detail.section.info': 'sobre esta seção',
   'detail.results': 'resultados',
   'detail.resultGone': 'esta atividade foi apagada: os arquivos dela não abrem mais',
   'detail.stage': 'etapa {stage}',
@@ -3669,6 +3674,7 @@ const pt: Record<MessageKey, string> = {
   'detail.menu.autoStart': 'começar sozinho',
   'detail.menu.deleteActivity': 'excluir atividade',
   'detail.copied': 'copiado',
+  'detail.description': 'descrição',
   'detail.copy': 'copiar',
   'detail.copyRaw': 'copiar markdown',
   'detail.copyFailed': 'Erro inesperado',
@@ -4964,6 +4970,8 @@ const pt: Record<MessageKey, string> = {
   'restart.and': 'e',
   'restart.confirm': 'descartar e reiniciar',
   'checkpoints.title': 'pontos de restauração',
+  'checkpoints.summary.one': '{n} ponto · último {ago} · {stage}',
+  'checkpoints.summary.other': '{n} pontos · último {ago} · {stage}',
   'checkpoints.row': 'ponto {n}',
   'checkpoints.ended.done': 'concluída',
   'checkpoints.ended.restart': 'reiniciada',
@@ -6813,7 +6821,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468), or the memory history's changes (#684). */
-export type PluralFamily = 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'checkpoints.summary' | 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

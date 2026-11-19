@@ -3,6 +3,7 @@ import { lastStageOf } from '../../flows.js';
 import { descendants, rootOf, treeProgress } from '../../task-tree';
 import { taskLabel } from '../../tasks';
 import type { State, Task } from '../../types';
+import { DetailSection } from '@/components/DetailSection';
 import { SEGMENT } from '@/components/TreeProgress';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { statusText, t } from '@/i18n';
@@ -16,29 +17,29 @@ const ROW_STEP_PX = 16;
 
 interface TreePartProps { root: Task; state: State; lastStage: string }
 
-// The header (handoff §4): every node below the root, done over all, as the bar draws them; on the right the tasks waiting for the user and
-// those out of tries, apart, each only when some are. The root counts in both: it can wait on the user too
-function TreeHeader({ root, state, lastStage }: TreePartProps) {
+// The summary (handoff §4, #958): every node below the root, done over all, as the bar draws them; the tasks waiting for the user and those
+// out of tries, apart, each only when some are; the bar on its own row. The root counts in both: it can wait on the user too
+function TreeSummary({ root, state, lastStage }: TreePartProps) {
   const { done, total } = treeProgress(state.tasks, root.item.itemId, lastStage);
   const members = [root, ...descendants(state.tasks, root.item.itemId)];
   const waiting = members.filter((task) => taskState(task, state) === 'waiting').length;
   const exhausted = members.filter((task) => isExhausted(task, state)).length;
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-xs">
-      <span className="shrink-0 font-medium text-foreground">{t('detail.tree')}</span>
-      <span className="min-w-0 truncate text-muted-foreground">{t('detail.tree.count', { n: total, done })}</span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5">
+    <>
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">{t('detail.tree.count', { n: total, done })}</span>
+      <span className="flex shrink-0 items-center gap-1.5">
         {waiting > 0 && <span className="text-waiting" title={statusText('waiting')}>{`● ${waiting}`}</span>}
         {exhausted > 0 && <span className="text-destructive" title={t('tries.exhausted.title')}>{`● ${exhausted}`}</span>}
       </span>
-    </div>
+      <TreeBar root={root} state={state} lastStage={lastStage} />
+    </>
   );
 }
 
 // The bar: one segment per node below the root, a child with no task included, in the tree card's colours (#34)
 function TreeBar({ root, state, lastStage }: TreePartProps) {
   return (
-    <div data-tree-bar className="flex h-1 gap-0.5">
+    <div data-tree-bar className="mt-1 flex h-1 basis-full gap-0.5">
       {treeSegments(state, root.item.itemId, lastStage).map(({ id, tone }) => <span key={id} className={`h-1 flex-1 rounded-[2px] ${SEGMENT[tone]}`} />)}
     </div>
   );
@@ -84,8 +85,8 @@ function OutlineItem({ row, state, isOpen, onOpenTask, onToggle }: OutlineItemPr
 interface TreeSectionProps { task: Task; state: State; onOpenTask(itemId: string): void }
 
 /** The details' tree section (#36, handoff §4): on a task with a parent or a child task in the list, its whole tree from the root over the
- * whole task list (the flow's source and filters aside), as a header, a bar, an outline whose rows open their task and light its card in the
- * flow, and a note. Nothing on a task in no tree. */
+ * whole task list (the flow's source and filters aside), as a section open by default (#958): its summary holds the count, the marks and the
+ * bar, its note the click hint; the outline's rows open their task and light its card in the flow. Nothing on a task in no tree. */
 export function TreeSection({ task, state, onOpenTask }: TreeSectionProps) {
   // Seeded from flowView and replaced by what toggleOutline wrote: one collapse per parent, shared by every task's details of that tree
   const [collapsed, setCollapsed] = useState(() => readFlowView().outline);
@@ -97,15 +98,12 @@ export function TreeSection({ task, state, onOpenTask }: TreeSectionProps) {
   const lastStage = lastStageOf(state.flows, root.stage)?.name ?? ''; // #723: the root's own flow, as the reducer reads it
   const onToggle = (itemId: string): void => setCollapsed(toggleOutline(itemId));
   return (
-    <section aria-label={t('detail.tree')} className="flex flex-col gap-2">
-      <TreeHeader root={root} state={state} lastStage={lastStage} />
-      <TreeBar root={root} state={state} lastStage={lastStage} />
+    <DetailSection name={t('detail.tree')} note={t('detail.tree.hint')} summary={<TreeSummary root={root} state={state} lastStage={lastStage} />} defaultOpen>
       <ul className="-mx-1.5 mt-0.5 flex flex-col">
         {outlineRows(state.tasks, root.item.itemId, collapsed).map((row) => (
           <OutlineItem key={row.task.item.itemId} row={row} state={state} isOpen={row.task.item.itemId === task.item.itemId} onOpenTask={onOpenTask} onToggle={onToggle} />
         ))}
       </ul>
-      <p className="text-muted-foreground text-xs">{t('detail.tree.hint')}</p>
-    </section>
+    </DetailSection>
   );
 }

@@ -138,12 +138,13 @@ test('excluir atividade is absent on a checkout task, disabled with its reason w
   expect(fetchMock).toHaveBeenCalledWith('/activities/a-I1/delete', expect.objectContaining({ method: 'POST' }));
 });
 
-test('the blockers section sits right before the metadata; Escape in its add row closes the row, not the panel; the body scrolls with no visible bar (#57)', async () => {
+test('relacionamentos sits after the metadata; Escape in its add row closes the row, not the panel; the body scrolls with no visible bar (#57)', async () => {
   const user = userEvent.setup();
   const onClose = vi.fn();
   render(<DetailPanel state={state} selected={{ taskId: 'I1' }} locale="pt-BR" isShown onClose={onClose} />);
-  const blockers = screen.getByRole('region', { name: 'bloqueios' });
-  expect(blockers.nextElementSibling).toBe(screen.getByText('início', { selector: 'dt' }).closest('dl'));
+  const blockers = screen.getByRole('group', { name: 'relacionamentos' });
+  const grid = screen.getByText('início', { selector: 'dt' }).closest('dl')!;
+  expect(grid.compareDocumentPosition(blockers) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByRole('heading', { level: 2 }).parentElement).toHaveClass('min-h-0', 'flex-1', 'overflow-y-auto', 'scrollbar-none', 'py-3.5');
   await user.click(within(blockers).getByRole('button', { name: '+ adicionar' }));
   expect(within(blockers).getByRole('combobox', { name: '#número ou título…' })).toHaveFocus();

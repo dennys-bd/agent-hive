@@ -163,6 +163,7 @@ test('comments: loading, then each one headed by author and local date linking t
   comments = { kind: 'list', comments: [] };
   rerender(panel());
   expect(section()).toHaveTextContent('sem comentários');
+  expect(within(section()).getByRole('heading', { name: 'comentários', level: 3 })).toBeInTheDocument();
   comments = { kind: 'error', message: 'github api: HTTP 502' };
   rerender(panel());
   expect(section()).toHaveTextContent('não deu pra carregar os comentários: github api: HTTP 502');
@@ -257,7 +258,7 @@ test('limpar\'s confirm lists only what the scope removes; in a delete activity 
   expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/delete', posted());
 });
 
-test('resultados lists the files of the task\'s result below the sessions, key and file name, and never its PRs, which the PRs field already lists (#809); a click on a file opens it in the editor pane; absent with nothing produced (#258, #818, redesign 06)', async () => {
+test('resultados lists the files of the task\'s result above the sessions, key and file name, and never its PRs, which the PRs field already lists (#809); a click on a file opens it in the editor pane; absent with nothing produced (#258, #818, redesign 06)', async () => {
   const user = userEvent.setup();
   const openFile = vi.fn<OpenFile>(() => true);
   files = [{ key: 'spec', path: 'docs/spec.md', base: 'worktree' }, { key: 'plan', path: 'docs/plan.md', base: 'workspace' }];
@@ -265,7 +266,7 @@ test('resultados lists the files of the task\'s result below the sessions, key a
   const results = screen.getByRole('region', { name: 'resultados' });
   expect(results).toHaveTextContent(/^resultadosspecspec\.mdplanplan\.md$/);
   expect(within(results).queryByRole('link')).not.toBeInTheDocument();
-  expect(before(screen.getByRole('region', { name: 'sessões' }), results)).toBe(true);
+  expect(before(results, screen.getByRole('region', { name: 'sessões' }))).toBe(true);
   await user.click(within(results).getByRole('button', { name: 'plan.md' }));
   expect(openFile).toHaveBeenCalledWith('I1', 'docs/plan.md', undefined, { preview: true });
   unmount();
@@ -288,7 +289,7 @@ test('the total row counts every run on the task: working time with the waiting 
   const ago = (ms: number): string => new Date(Date.now() - ms).toISOString();
   const recorded = rec({ usage: { tokens: 3_400_000, ms: 90 * MINUTE, waitingMs: 30 * MINUTE, parts: [{ tokens: 3_400_000, ms: 90 * MINUTE, waitingMs: 30 * MINUTE }] } });
   const running: Worker = { ...worker, status: 'waiting', startedAt: ago(12 * MINUTE), waitingSince: ago(2 * MINUTE) };
-  const total = (): Element | null => screen.getByText('total', { selector: 'dt' }).nextElementSibling;
+  const total = (): Element | null => screen.getByText('trabalhou', { selector: 'dt' }).nextElementSibling;
   const { unmount } = render(<Panel state={movedWork({ ...state, workers: [running], activityRecords: recorded })} initial={TASK} />);
   expect(total()).toHaveTextContent('1h10m · 3.4M tokens'); // 90 + 12 minutes, less 30 + 2 waiting
   unmount();
@@ -303,13 +304,13 @@ test('the panel has no tab bar whether or not a run holds the task: one pane, th
   expect(screen.getByText('etapa dev')).toBeInTheDocument();
 });
 
-test('the body reads the title, the status box, the metadata, the sessions, the results, then behind a divider the issue (redesign 06)', () => {
+test('the body reads the title, the status box, the metadata, the results, the sessions, then behind a divider the issue (redesign 06, #958)', () => {
   files = [{ key: 'spec', path: 'docs/spec.md', base: 'worktree' }];
   const produced: WithWork = { ...STOPPED, item: { ...STOPPED.item, body: 'the issue body' } };
   render(<Panel state={movedWork({ ...IDLE, tasks: [produced] })} initial={TASK} />);
   const order = [
     screen.getByRole('heading', { name: '#1 Task 1' }), screen.getByRole('region', { name: 'parada' }), screen.getByText('branch', { selector: 'dt' }),
-    screen.getByRole('region', { name: 'sessões' }), screen.getByRole('region', { name: 'resultados' }), screen.getByText('the issue body'),
+    screen.getByRole('region', { name: 'resultados' }), screen.getByRole('region', { name: 'sessões' }), screen.getByText('the issue body'),
   ];
   expect(order.slice(1).map((el, i) => before(order[i], el))).toEqual([true, true, true, true, true]);
   expect(order.map((el) => el.closest('.border-t') !== null)).toEqual([false, false, false, false, false, true]);
@@ -557,14 +558,15 @@ test('a failed start shows its short message in the viewer\'s language; the raw 
 const EPIC: WithWork = { item: { itemId: 'I0', id: '0', title: 'Epic', body: '', url: 'https://github.com/acme/r/issues/0', children: ['I1'] }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const FAMILY: State = withTasks(IDLE, [EPIC, { ...STOPPED, item: { ...STOPPED.item, parent: 'I0' } }]);
 
-test('with onOpenTask the tree section sits between the status block and the properties grid; without it there is none (#36)', () => {
+test('with onOpenTask the tree section sits after the sessions and before relacionamentos; without it there is none (#36, #958)', () => {
   const { unmount } = render(<DetailPanel state={FAMILY} selected={TASK} locale="pt-BR" isShown onClose={() => {}} onOpenTask={() => {}} />);
-  const tree = screen.getByRole('region', { name: 'árvore' });
+  const tree = screen.getByRole('group', { name: 'árvore' });
   expect(before(screen.getByRole('region', { name: 'parada' }), tree)).toBe(true);
-  expect(before(tree, screen.getByText('início', { selector: 'dt' }))).toBe(true);
+  expect(before(screen.getByRole('region', { name: 'sessões' }), tree)).toBe(true);
+  expect(before(tree, screen.getByRole('group', { name: 'relacionamentos' }))).toBe(true);
   unmount();
   render(<Panel state={FAMILY} initial={TASK} />);
-  expect(screen.queryByRole('region', { name: 'árvore' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'árvore' })).not.toBeInTheDocument();
 });
 
 test('the parent row follows the issue row, reads the parent\'s #id title and opens it; a root has no parent row (#36)', async () => {
@@ -578,7 +580,7 @@ test('the parent row follows the issue row, reads the parent\'s #id title and op
   unmount();
   render(<DetailPanel state={FAMILY} selected={{ taskId: 'I0' }} locale="pt-BR" isShown onClose={() => {}} onOpenTask={onOpenTask} />);
   expect(screen.queryByText('pai', { selector: 'dt' })).not.toBeInTheDocument();
-  expect(screen.getByRole('region', { name: 'árvore' })).toBeInTheDocument();
+  expect(screen.getByRole('group', { name: 'árvore' })).toBeInTheDocument();
 });
 
 test('dispensar sits under the task\'s error and under a failed start, outside the alert, and posts dismiss-error; disabled while a run holds the task; an idle epic\'s error has it enabled (#354)', async () => {
