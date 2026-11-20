@@ -123,7 +123,8 @@ import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { accountsRefusal } from './accounts-config.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
-import { createLocalMachines } from './machine-local.js';
+import { createLocalMachine } from './machine-local.js';
+import { createMachines } from './machines.js';
 import type { MachineFor, Machines } from './machine.js';
 import { killStray, runTmpDir, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
@@ -323,13 +324,16 @@ export function createServer(deps: ServerDeps): HiveServer {
   const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
-  // #158: every task's machine, the local one until node 8; 7.2 to 7.4 move their callers onto it. listen() binds the port after this
-  const machines = deps.machines ?? createLocalMachines({
-    exec, launch, ...spawnOptions, home, secret: deps.secret, agents,
-    port: () => {
-      if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
-      return boundPort;
-    },
+  // #158: every task's machine; #931: a wsl: id gets a machine that refuses every call until 5.3 hands a factory. listen() binds the port after this
+  const machines = deps.machines ?? createMachines({
+    local: createLocalMachine({
+      exec, launch, ...spawnOptions, home, secret: deps.secret, agents,
+      port: () => {
+        if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
+        return boundPort;
+      },
+    }),
+    platform: process.platform,
   });
   const machineFor: MachineFor = (activity) => machines.for(activity);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
