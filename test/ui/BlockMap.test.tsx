@@ -25,10 +25,10 @@ beforeEach(() => setLanguage('pt'));
 
 test("each block shows its title, start line and chips: the introduction, the ## with its subsection count, the chain's branches dashed and indented (#319, decision 18)", () => {
   renderMap();
-  expect(within(nav()).getAllByRole('button').map((b) => b.textContent)).toEqual(['introdução', 'Input', '1 subseções', 'if delivery == "stacked"', 'else', 'Stops']);
+  expect(within(nav()).getAllByRole('button').map((b) => b.textContent)).toEqual(['introdução', 'Input', '1 subseções', 'bloco condicional', 'bloco condicional', 'Stops']);
   expect(rowOf('introdução')).toHaveTextContent('hive:new-pr');
   expect(rowOf('Stops')).toHaveTextContent('Stops20');
-  expect(within(nav()).getByRole('button', { name: 'else' }).closest('.border-dashed')).not.toBeNull();
+  expect(within(nav()).getByText('senão').closest('.border-dashed')).not.toBeNull();
   expect(within(rowOf('introdução')).queryAllByTitle('arrastar')).toEqual([]); // the introduction never moves
 });
 
@@ -38,7 +38,7 @@ test('a click reveals the block; the subsections toggle collapses, a collapsed #
   expect(props.onReveal).toHaveBeenCalledWith(20);
   fireEvent.click(within(nav()).getByRole('button', { name: '1 subseções' }));
   expect(props.onToggle).toHaveBeenCalledWith(11);
-  expect(within(nav()).queryByRole('button', { name: 'else' })).not.toBeInTheDocument();
+  expect(within(nav()).queryByText('senão')).not.toBeInTheDocument();
   expect(within(nav()).getByRole('button', { name: 'Stops' }).closest('.opacity-35')).not.toBeNull();
   expect(within(nav()).queryAllByTitle('arrastar')).toEqual([]);
 });
@@ -50,7 +50,7 @@ test('a block dropped on a sibling moves to its index; a drop on a block of anot
   fireEvent.dragOver(rowOf('Stops'), { dataTransfer: dt });
   fireEvent.drop(rowOf('Stops'), { dataTransfer: dt });
   expect(props.onMove).toHaveBeenCalledWith(11, 1);
-  fireEvent.dragStart(handleOf('if delivery == "stacked"'), { dataTransfer: dt }); // the chain lives under Input
+  fireEvent.dragStart(within(within(nav()).getByText('só quando delivery = stacked').closest('li')!).getAllByTitle('arrastar')[0]!, { dataTransfer: dt }); // the chain lives under Input
   fireEvent.drop(rowOf('Stops'), { dataTransfer: dt });
   expect(props.onMove).toHaveBeenCalledTimes(1);
 });
@@ -81,4 +81,12 @@ test('a "+" before each block at every level and one after the last asks for its
   expect(rowOf('Stops')).toHaveTextContent('the card');
   expect(within(rowOf('Stops')).queryByRole('button', { name: PLUS })).not.toBeInTheDocument();
   expect(within(nav()).getAllByRole('button', { name: PLUS })).toHaveLength(5);
+});
+
+test('the map starts with its header line; a branch row reads bloco condicional with its sentence under it; current raises its row only (#492)', () => {
+  renderMap({ current: 11 });
+  expect(nav().firstElementChild).toHaveTextContent('mapa · gerado do texto');
+  const sentence = within(nav()).getByText('só quando delivery = stacked');
+  expect(sentence.closest('[data-line="14"]')).toHaveTextContent(/^bloco condicional14só quando delivery = stacked$/);
+  expect(Array.from(nav().querySelectorAll('[data-current="true"]')).map((row) => row.getAttribute('data-line'))).toEqual(['11']);
 });

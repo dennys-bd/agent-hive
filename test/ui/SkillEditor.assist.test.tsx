@@ -46,11 +46,9 @@ test('a selection made before the text stopped being writable is not sent once i
   render(<PluginsWindow />);
   await open('new-build');
   act(() => view().select({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 26 }));
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }, { timeout: 3000 }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'template' }, { timeout: 3000 }));
+  await user.click(screen.getByRole('radio', { name: 'template' }));
   await waitFor(() => expect(view().readOnly).toBe(false));
   ask('shorter');
   await waitFor(() => expect(bodies).toHaveLength(1));
@@ -80,13 +78,13 @@ test('a request over selected lines posts them; the proposal marks old and new l
   expect(bodies).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: BUILD_TEXT, request: 'two sentences', selection: { startLine: 9, endLine: 9 }, agent: 'claude' }]);
   const marks = view().decorations.filter((d) => d.options.isWholeLine && d.options.className?.startsWith('template-proposal'));
   expect(marks.map((d) => [d.range.startLineNumber, d.options.className])).toEqual([[9, 'template-proposal-old'], [10, 'template-proposal-new'], [11, 'template-proposal-new']]);
-  expect(within(screen.getByRole('group', { name: 'condições' })).getByRole('button', { name: 'proposta do agente' })).toBeInTheDocument();
+  expect(within(screen.getByRole('group', { name: 'condições' })).getByText('proposta do agente').tagName).toBe('SPAN'); // #492: a note, not a button
   expect([view().readOnly, field().disabled]).toEqual([true, true]);
   expect(screen.getByText('mudança marcada no texto (linhas 9–11)')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'aceitar' }));
   await waitFor(() => expect(saves.map((s) => s.text)).toEqual([ANSWER.text]));
   await waitFor(() => expect(fileTab('SKILL.md.liquid')).toHaveAttribute('data-dirty', 'false'));
-  expect([view().model.getValue(), view().readOnly, screen.queryByText('❯ two sentences')]).toEqual([ANSWER.text, false, null]);
+  expect([view().model.getValue(), view().readOnly, screen.queryByText('two sentences')]).toEqual([ANSWER.text, false, null]);
 });
 
 test("discard puts the file's text back and writes nothing; both swaps set the value, so ⌘Z cannot bring the proposal back (#331)", async () => {
@@ -109,7 +107,7 @@ test('switching file while the agent works cancels the request; the other file p
   await open('new-build');
   ask('two sentences');
   expect(await screen.findByText(RUNNING)).toBeInTheDocument();
-  fireEvent.click(fileTab('scripts/slice.py'));
+  fireEvent.click(fileTab('slice.py'));
   await waitFor(() => expect(signals[0]?.aborted).toBe(true));
   await waitFor(() => expect(field()).toBeEnabled());
   expect([screen.queryByText(RUNNING), screen.queryByRole('button', { name: 'aceitar' }), view().model.getValue()]).toEqual([null, null, 'print(1)\n']);

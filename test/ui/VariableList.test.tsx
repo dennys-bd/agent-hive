@@ -25,3 +25,13 @@ test('VariableList works on any text: no origin and no lint line when none is gi
   expect(onApply).toHaveBeenCalledTimes(1);
   expect(onApply.mock.calls[0][0]).toMatchObject({ ok: true, text: written.text });
 });
+
+test('a variable from the task reads "da tarefa" as its origin and as every workspace\'s value, with no control to write one (#492)', () => {
+  const text = '---\nname: x\nvariables:\n  planPath: { from: task }\n---\n{{ planPath }}\n';
+  render(<VariableList text={text} workspaces={['agent-hive', 'hive-site']} onApply={() => undefined} originOf={() => 'yours'} />);
+  const row = screen.getByRole('listitem', { name: 'planPath' });
+  expect(within(row).getAllByText('da tarefa')).toHaveLength(3);
+  for (const value of within(row).getAllByText('da tarefa').slice(1)) expect(value).toHaveClass('text-muted-foreground');
+  expect(within(row).queryByLabelText('planPath · agent-hive')).not.toBeInTheDocument();
+  expect(within(row).getByRole('button', { name: 'remover planPath' })).toBeInTheDocument();
+});

@@ -51,13 +51,12 @@ export function groupsOf(items: readonly CatalogueItem[], kind: ItemKind, worksp
 
 export const countOf = (items: readonly CatalogueItem[], kind: ItemKind): number => items.filter((i) => i.kind === kind).length;
 
-/** The sidebar's mark (#313, the handoff's `2 ↗`): the version count from two up, then ↗ for an item based on an external one; '' for neither. */
+/** The sidebar's count (#313, #492): the version count from two up, '' below; an external origin is the row's arrow icon. */
 export function markOf(item: CatalogueItem): string {
-  const count = item.versions.length >= 2 ? String(item.versions.length) : '';
-  return [count, item.basedOn === undefined ? '' : '↗'].filter((part) => part !== '').join(' ');
+  return item.versions.length >= 2 ? String(item.versions.length) : '';
 }
 
-// #338, decision 12: one line per origin; the sidebar's mark stays one ↗
+// #338, decision 12: one line per origin; the sidebar's arrow stays one
 export const basedOnTitle = ({ basedOn }: CatalogueItem): string | undefined =>
   basedOn?.map(({ name, repo, license }) => t('plugins.basedOn', { name, repo, license })).join('\n');
 

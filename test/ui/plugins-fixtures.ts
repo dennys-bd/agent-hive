@@ -27,11 +27,11 @@ export const CATALOGUE: CatalogueItem[] = [
 
 export const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-/** fetch answering GET /api/items with `catalogue()` and POST /api/items with `post`'s answer; any other path ok. */
-export function stubFetch(post: (body: unknown) => Response = (body) => json(itemOf(`hive:${(body as { name: string }).name}`), 201), catalogue: () => CatalogueItem[] = () => CATALOGUE) {
+/** fetch answering GET /api/items with `catalogue()` and `pluginVersion` (#492) and POST /api/items with `post`'s answer; any other path ok. */
+export function stubFetch(post: (body: unknown) => Response = (body) => json(itemOf(`hive:${(body as { name: string }).name}`), 201), catalogue: () => CatalogueItem[] = () => CATALOGUE, pluginVersion?: string) {
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     if (path === '/api/items' && init?.method === 'POST') return post(JSON.parse(String(init.body)));
-    return path === '/api/items' ? json(catalogue()) : json({ ok: true });
+    return path === '/api/items' ? json({ items: catalogue(), ...(pluginVersion === undefined ? {} : { pluginVersion }) }) : json({ ok: true });
   });
   vi.stubGlobal('fetch', mock);
   return mock;
@@ -141,7 +141,7 @@ export function stubItems(server: ItemsServer) {
     if (url.pathname === '/settings') return answerSettings(server, init);
     if (url.pathname === '/launch-options') return json(server.launchOptions ?? {});
     const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign' | 'dismissed', version
-    if (rawId === undefined) return json(server.catalogue);
+    if (rawId === undefined) return json({ items: server.catalogue });
     const id = decodeURIComponent(rawId);
     if (sub === 'dismissed') return answerDismissed(server, id, url, init);
     if (sub === 'review') return server.review?.(id, JSON.parse(String(init?.body)) as ReviewBody, init ?? {}) ?? notServed('review');

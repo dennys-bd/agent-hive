@@ -2,10 +2,10 @@ import { ChevronDownIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { CatalogueItem } from '../../../types';
 import { DialogBase } from '@/components/DialogBase';
-import { CHIP, STATE_LOOK } from '@/components/plugins/marks';
+import { STATE_LOOK, StateDot } from '@/components/plugins/marks';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent,
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent,
   DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -18,20 +18,20 @@ export interface VersionMenuProps { item: CatalogueItem; editor: ItemEditor; wor
 type Naming = 'new' | 'rename';
 const MUTED = 'text-muted-foreground text-xs';
 
-// A version's row (decisions 4–7): the check on the open one, the name, its state, the workspaces on it, the sub-line
+// A version's row (decisions 4–7): the check on the open one, the name, its state as a dot and its word (#492), the workspaces on it, the sub-line
 function RowItem({ row, isOpen, onOpen }: { row: VersionRow; isOpen: boolean; onOpen(): void }) {
-  const look = row.state && STATE_LOOK[row.state];
+  const { state } = row;
   return (
     <DropdownMenuCheckboxItem checked={isOpen} onSelect={onOpen} className="items-start">
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-mono text-xs">{row.label}</span>
-          {look && <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>}
+          <span className="truncate font-medium text-sm">{row.label}</span>
+          {state && <span className={`flex items-center gap-1.5 ${MUTED}`}><StateDot state={state} isDecorative />{t(STATE_LOOK[state].label)}</span>}
           <span className="ml-auto flex shrink-0 gap-2">
             {row.workspaces.map((w) => <span key={w} className={`flex items-center gap-1 ${MUTED}`}><WorkspaceSquare name={w} />{w}</span>)}
           </span>
         </span>
-        {row.sub && <span className="text-[11px] text-muted-foreground">{row.sub}</span>}
+        {row.sub && <span className={MUTED}>{row.sub}</span>}
       </span>
     </DropdownMenuCheckboxItem>
   );
@@ -101,16 +101,18 @@ export function VersionMenu({ item, editor, workspaces, className = '' }: Versio
     <>
       <DropdownMenu onOpenChange={(isOpen) => { if (isOpen) setRefused(undefined); }}>
         <DropdownMenuTrigger asChild>
-          <Button type="button" size="sm" variant="ghost" title={t('plugins.version.menu')} className={`h-6 gap-1 px-1.5 font-mono font-normal text-xs ${className}`}>
+          <Button type="button" size="xs" variant="outline" title={t('plugins.version.menu')} className={`font-normal ${className}`}>
             {version ?? originalLabel(item)}<ChevronDownIcon />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[360px]">
+        <DropdownMenuContent align="start" className="w-[430px]">
+          <DropdownMenuLabel className={`font-normal ${MUTED}`}>{t('plugins.version.header', { name: item.name })}</DropdownMenuLabel>
           {versionRows(item).map((row) => <RowItem key={row.version ?? ''} row={row} isOpen={row.version === version} onOpen={() => editor.openVersion(row.version)} />)}
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setNaming('new')}>{t('plugins.version.new', { name: openName })}</DropdownMenuItem>
           <UseInSub item={item} editor={editor} workspaces={workspaces} onRefused={setRefused} />
           {version !== null && <DropdownMenuItem onSelect={() => setNaming('rename')}>{t('plugins.version.rename')}</DropdownMenuItem>}
+          <p className={`px-2 pt-1.5 pb-1 ${MUTED}`}>{t('plugins.version.footer')}</p>
         </DropdownMenuContent>
       </DropdownMenu>
       {refused && <span role="alert" className="font-normal text-destructive text-xs">{t(refused)}</span>}

@@ -85,25 +85,25 @@ test('inserting an if / else if / else on delivery from the "+" before a block w
   expect(lines().slice(21, 26)).toEqual(['{% if delivery == "pr" %}', '{% elsif delivery == "stacked" %}', '{% else %}', '{% endif %}', '## Stops']);
   expect(screen.getByRole('tab', { name: 'SKILL.md.liquid' })).toHaveAttribute('data-dirty', 'true');
   expect(screen.queryByRole('region', { name: CARD })).not.toBeInTheDocument();
-  const rows = within(nav()).getAllByRole('button', { name: /^(if |else|unless )/ }).map((b) => b.textContent);
-  expect(rows).toEqual(['if delivery == "pr"', 'else if delivery == "stacked"', 'else', 'unless quick', 'if delivery == "pr"', 'else if delivery == "stacked"', 'else']);
+  const rows = within(nav()).getAllByText(/^(só quando|senão)/).map((b) => b.textContent);
+  expect(rows).toEqual(['só quando delivery = pr', 'só quando delivery = stacked', 'senão', 'só quando quick é não', 'só quando delivery = pr', 'só quando delivery = stacked', 'senão']);
 }, SLOW_MS);
 
 test('the chip opens its chain in the popover; "is one of" with two values and ok writes an or; "remove condition" keeps every block\'s text and drops its markers (#322, decisions 5, 13, 17, 18)', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(chip('else'));
+  await user.click(chip('senão'));
   await screen.findByRole('dialog', { name: 'bloco condicional' });
-  await user.click(chip('else')); // the open chip closes it again, not a close then a reopen
+  await user.click(chip('senão')); // the open chip closes it again, not a close then a reopen
   expect(screen.queryByRole('dialog')).toBeNull();
-  await user.click(chip('else'));
+  await user.click(chip('senão'));
   const dialog = await screen.findByRole('dialog', { name: 'bloco condicional' });
   expect(within(dialog).getAllByRole('combobox', { name: 'valor' }).map((c) => c.textContent)).toEqual(['pr', 'stacked']);
   await choose(user, block(dialog, 'if'), 'operador', 'é um de…');
   await user.click(within(block(dialog, 'if')).getByRole('checkbox', { name: 'x' }));
   await ok(user, dialog);
   expect(lines()[10]).toBe('{% if delivery == "pr" or delivery == "x" %}');
-  await user.click(chip('if delivery == "pr" or delivery == "x"'));
+  await user.click(chip('só quando delivery = pr ou delivery = x'));
   await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'remover condição' }));
   expect(lines().slice(9, 14)).toEqual(['## Input', 'One PR.', 'Stacked PRs.', 'Other.', '{% unless quick %}']);
   expect(view().model.getValue()).not.toMatch(/\{% (if|elsif|else|endif)\b/);
@@ -112,14 +112,14 @@ test('the chip opens its chain in the popover; "is one of" with two values and o
 test('"+ and / or" adds a term on another variable, written with and; switching the connective writes or (#322, decision 4)', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(chip('if delivery == "pr"'));
+  await user.click(chip('só quando delivery = pr'));
   const dialog = await screen.findByRole('dialog');
   await user.click(within(block(dialog, 'if')).getByRole('button', { name: '+ e / ou' }));
   await choose(user, block(dialog, 'if'), 'variável', 'quick', 1);
   await choose(user, block(dialog, 'if'), 'operador', 'é sim', 1);
   await ok(user, dialog);
   expect(lines()[10]).toBe('{% if delivery == "pr" and quick %}');
-  await user.click(chip('if delivery == "pr" and quick'));
+  await user.click(chip('só quando delivery = pr e quick tem valor'));
   const again = await screen.findByRole('dialog');
   await user.click(within(within(again).getByRole('group', { name: 'conectivo' })).getByRole('button', { name: 'or' }));
   await ok(user, again);
@@ -134,7 +134,8 @@ test("the operators follow the variable's kind and the value field follows the o
   const ifBlock = block(card, 'if');
   const optionsOf = async (label: string): Promise<string[]> => {
     await user.click(within(ifBlock).getByRole('combobox', { name: label }));
-    const names = (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');
+    // an operator's Liquid symbol (#492) is its option's code, beside the name
+    const names = (await screen.findAllByRole('option')).map((o) => (o.textContent ?? '').replace(o.querySelector('code')?.textContent ?? '', ''));
     await user.keyboard('{Escape}'); // closes the list, not the card
     return names;
   };
@@ -159,20 +160,20 @@ test("the operators follow the variable's kind and the value field follows the o
 test("\"with today's values\" names under each conditional block the workspaces it reaches, and changes with the draft before ok (#322, decisions 15, 16)", async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(chip('if delivery == "pr"'));
+  await user.click(chip('só quando delivery = pr'));
   const dialog = await screen.findByRole('dialog');
-  const reachOf = (name: string): string => within(block(dialog, name)).getByText(/com os valores de hoje/).textContent ?? '';
+  const reachOf = (name: string): string => within(block(dialog, name)).getByText('com os valores de hoje').nextElementSibling?.textContent ?? '';
   const reach = (): string[] => ['if', 'else if', 'else'].map(reachOf);
-  expect(reach()).toEqual(['com os valores de hoje: agent-hive', 'com os valores de hoje: hive-site', 'com os valores de hoje: nenhum workspace']);
+  expect(reach()).toEqual(['agent-hive · entra', 'hive-site · entra', 'nenhum workspace']);
   await choose(user, block(dialog, 'if'), 'valor', 'x');
-  expect(reach()).toEqual(['com os valores de hoje: nenhum workspace', 'com os valores de hoje: hive-site', 'com os valores de hoje: agent-hive']);
+  expect(reach()).toEqual(['nenhum workspace', 'hive-site · entra', 'agent-hive · senão']);
   expect(view().model.getValue()).toBe(CHAIN_TEXT);
 }, SLOW_MS);
 
 test('removing an else if whose block holds text keeps the popover open with the message and the text unchanged (#322, decision 17)', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(chip('if delivery == "pr"'));
+  await user.click(chip('só quando delivery = pr'));
   const dialog = await screen.findByRole('dialog');
   await user.click(within(block(dialog, 'else if')).getByRole('button', { name: 'remover else if' }));
   await user.click(within(dialog).getByRole('button', { name: 'ok' }));
@@ -183,7 +184,7 @@ test('removing an else if whose block holds text keeps the popover open with the
 test('a second term on an "is no" first block turns {% unless %} … {% endunless %} into {% if v == false and … %} … {% endif %} (#322, decision 6)', async () => {
   const user = userEvent.setup();
   await open();
-  await user.click(chip('unless quick'));
+  await user.click(chip('só quando quick é não'));
   const dialog = await screen.findByRole('dialog');
   expect(within(block(dialog, 'if')).getAllByRole('combobox').map((c) => c.textContent)).toEqual(['quick', 'é não']);
   await user.click(within(block(dialog, 'if')).getByRole('button', { name: '+ e / ou' }));
@@ -207,14 +208,23 @@ test('Esc closes the card and the popover without writing; another "+" discards 
   await user.click(plusBefore('Input'));
   expect(screen.getAllByRole('region', { name: CARD })).toHaveLength(1);
   expect(within(screen.getByRole('region', { name: CARD })).getByRole('combobox', { name: 'variável' })).not.toHaveTextContent('delivery');
-  await user.click(chip('else'));
+  await user.click(chip('senão'));
   expect(screen.queryByRole('region', { name: CARD })).not.toBeInTheDocument();
   await screen.findByRole('dialog');
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(view().model.getValue()).toBe(CHAIN_TEXT);
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
   expect(within(nav()).queryAllByRole('button', { name: PLUS })).toEqual([]);
+}, SLOW_MS);
+
+test("the popover's else line moves the editor to the else and closes the popover (#492)", async () => {
+  const user = userEvent.setup();
+  await open();
+  await user.click(chip('só quando delivery = pr'));
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(dialog).getByRole('button', { name: 'else · linha 15' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(view().position?.lineNumber).toBe(16); // the else's marker line is hidden, so the reveal lands on its first line, as a map click does
 }, SLOW_MS);

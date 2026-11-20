@@ -15,6 +15,7 @@ import { HIVE_ORIGIN, type ListSection, savedLabel, sectionOf } from '@/lib/plug
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
 const NO_DRAG = '[-webkit-app-region:no-drag]';
+const XS_TRIGGER = 'h-6 text-xs'; // select.tsx has no xs size; the head's controls are xs (#492)
 const ALL = '*'; // the filter's "all workspaces": no workspace may be named `*` (WORKSPACE_NAME)
 const META: Record<ListSection, MessageKey> = { skills: 'plugins.list.meta.skills', specialists: 'plugins.list.meta.specialists' };
 const NEW: Record<ListSection, MessageKey> = { skills: 'plugins.list.newSkill', specialists: 'plugins.list.newSpecialist' };
@@ -25,7 +26,7 @@ function Head({ title, isMono = false, version, chip, meta, children }: HeadProp
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-xs">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-2 font-semibold text-[13px]"><span className={isMono ? 'truncate font-mono' : 'truncate'}>{title}</span>{version}{chip}</span>
+        <span className="flex min-w-0 items-center gap-2 font-semibold text-sm"><span className={isMono ? 'truncate font-mono' : 'truncate'}>{title}</span>{version}{chip}</span>
         {meta && <span className="truncate text-muted-foreground">{meta}</span>}
       </div>
       {children}
@@ -37,13 +38,13 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
   return (
     <Head title={t(`plugins.section.${section}`)} meta={t(META[section])}>
       <Select value={plugins.filter ?? ALL} onValueChange={(value) => plugins.setFilter(value === ALL ? undefined : value)}>
-        <SelectTrigger size="sm" aria-label={t('plugins.list.filter')} className={NO_DRAG}><SelectValue /></SelectTrigger>
+        <SelectTrigger size="sm" aria-label={t('plugins.list.filter')} className={`${NO_DRAG} ${XS_TRIGGER}`}><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>{t('plugins.list.allWorkspaces')}</SelectItem>
           {workspaces.filter((w) => w !== HIVE_ORIGIN).map((w) => <SelectItem key={w} value={w}>{w}</SelectItem>)}
         </SelectContent>
       </Select>
-      <Button type="button" size="sm" className={NO_DRAG} onClick={() => plugins.setCreating(true)}>{t(NEW[section])}</Button>
+      <Button type="button" size="xs" className={NO_DRAG} onClick={() => plugins.setCreating(true)}>{t(NEW[section])}</Button>
     </Head>
   );
 }
@@ -55,7 +56,7 @@ interface ItemHeadProps extends ItemProps { onUpdate(version: string): void }
 function McpHead({ plugins }: { plugins: Plugins }) {
   return (
     <Head title={t('plugins.section.mcp')} meta={t('plugins.mcp.meta')}>
-      <Button type="button" size="sm" variant="outline" className={NO_DRAG} onClick={() => plugins.setCreating(true)}>{t('plugins.mcp.addServer')}</Button>
+      <Button type="button" size="xs" variant="outline" className={NO_DRAG} onClick={() => plugins.setCreating(true)}>{t('plugins.mcp.addServer')}</Button>
     </Head>
   );
 }
@@ -72,12 +73,12 @@ function ItemActions({ item, editor, annotations, workspaces }: ItemProps) {
       {viewAs === undefined && <ReviewerMenu annotations={annotations} workspaces={workspaces} className={NO_DRAG} />}
       {target !== undefined && (
         // a disabled button gets no pointer events: its wrapper carries the tooltip
-        <span title={t('plugins.head.soon')} className={NO_DRAG}><Button type="button" size="sm" variant="outline" disabled>{t('plugins.head.test', { workspace: target })}</Button></span>
+        <span title={t('plugins.head.soon')} className={NO_DRAG}><Button type="button" size="xs" variant="outline" disabled>{t('plugins.head.test', { workspace: target })}</Button></span>
       )}
       {canRevert && (
         <Confirm
           title={t('plugins.revert.title')} message={t('plugins.revert.message', { version })} confirmLabel={t('plugins.revert.confirm')} onConfirm={editor.revert}
-          trigger={<Button type="button" size="sm" variant="outline" className={NO_DRAG}>{t('plugins.head.revert')}</Button>}
+          trigger={<Button type="button" size="xs" variant="outline" className={NO_DRAG}>{t('plugins.head.revert')}</Button>}
         />
       )}
     </>
@@ -93,11 +94,12 @@ function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadP
     : <button type="button" title={t('plugins.update.review')} onClick={() => onUpdate(updated.name)} className={`${CHIP} ${look.chip} ${NO_DRAG} hover:bg-accent`}>{t(look.label)}</button>;
   // decision 10: the open file's mtime; the original answers none, so the part goes
   const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
-  const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
-  // #320 decision 15, #338 decision 11: one link and card per origin, in header order, after the saved time
-  const origins = (item.basedOn ?? []).map((origin) => (
-    <Fragment key={`${origin.name} ${origin.url}`}> · <OriginCard basedOn={origin} description={item.description} className={NO_DRAG} /></Fragment>
-  ));
+  const viewAs = item.origin === HIVE_ORIGIN ? editor.viewAs : undefined;
+  // #492: under "view as" the text is a read-only preview, so the meta says so in place of the section and the saved time
+  const meta = viewAs !== undefined
+    ? t('plugins.preview.label', { workspace: viewAs })
+    : [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
+  const origins = originsOf(item);
   const metaLine = origins.length === 0 ? meta : <>{meta}{origins}</>;
   return (
     <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
@@ -108,21 +110,34 @@ function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadP
 
 const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
 
-export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void }
+// #320 decision 15, #338 decision 11: one link and card per origin, in header order, each after a ·
+const originsOf = (item: CatalogueItem): ReactNode[] => (item.basedOn ?? []).map((origin) => (
+  <Fragment key={`${origin.name} ${origin.url}`}> · <OriginCard basedOn={origin} description={item.description} className={NO_DRAG} /></Fragment>
+));
+
+export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void; onRevert(): void }
 
 /** The update screen's head (#325, decisions 3 and 5): the item's mono name, the yellow chip, `hive <from> → <to>` once the preview answers;
  * a select of the versions with an update when there are two or more, since the version menu opens versions, not their updates (#320, decision 14). The update
  * screen portals it, since only it holds the preview. */
-export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProps) {
+export function UpdateHead({ item, version, preview, onVersion, onRevert }: UpdateHeadProps) {
   const look = STATE_LOOK['update available'];
   const updated = item.versions.filter((v) => v.updateAvailable);
+  // #492: the section, then the versions once the preview answers, then the origins, as the item's head reads
+  const meta = <>{t(`plugins.section.${sectionOf(item.kind)}`)}{preview && <> · <span>{metaOf(preview)}</span></>}{originsOf(item)}</>;
   return (
-    <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)}>
+    <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={meta}>
       {updated.length >= 2 && (
         <Select value={version} onValueChange={onVersion}>
-          <SelectTrigger size="sm" aria-label={t('plugins.update.version')} className={NO_DRAG}><SelectValue /></SelectTrigger>
+          <SelectTrigger size="sm" aria-label={t('plugins.update.version', { name: version })} className={`${NO_DRAG} ${XS_TRIGGER}`}><SelectValue /></SelectTrigger>
           <SelectContent>{updated.map((v) => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
         </Select>
+      )}
+      {!item.userCreated && (
+        <Confirm
+          title={t('plugins.revert.title')} message={t('plugins.revert.message', { version })} confirmLabel={t('plugins.revert.confirm')} onConfirm={onRevert}
+          trigger={<Button type="button" size="xs" variant="outline" className={NO_DRAG}>{t('plugins.head.revert')}</Button>}
+        />
       )}
     </Head>
   );

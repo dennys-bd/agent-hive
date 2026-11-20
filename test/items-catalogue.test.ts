@@ -4,7 +4,7 @@ import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
 import { isRefusal } from '../src/custom-versions.js';
-import { readCatalogue, readItem, usageOf } from '../src/items-catalogue.js';
+import { readCatalogue, readCatalogueRead, readItem, usageOf } from '../src/items-catalogue.js';
 import type { CatalogueItem } from '../src/types.js';
 import { ARCHITECT, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, REPO_SPECIALIST, SKILL, SPECIALIST } from './custom-fixture.js';
 
@@ -197,4 +197,14 @@ test('usageOf counts a skill stage as running its skill, as a prompt stage namin
   const items = [target('hive:new-plan', 'skill'), target('hive:new-spec', 'skill')];
   const stages = [{ name: 'plan', action: 'skill' as const, skill: 'new-plan' }, { name: 'spec', prompt: '/hive:new-spec {url}' }, { name: 'clean', action: 'deleteActivity' as const }];
   assert.deepEqual(usageOf(items, ['', ''], stages), [[{ kind: 'stage', stage: 'plan' }], [{ kind: 'stage', stage: 'spec' }]]);
+});
+
+test('the catalogue read carries the shipped plugin\'s version, and none when plugin.json is unreadable (#492)', async (t) => {
+  const f = await fixture(t);
+  const read = await readCatalogueRead(f);
+  assert.deepEqual([read.pluginVersion, read.items.map((i) => i.id)], ['0.1.0', (await readCatalogue(f)).map((i) => i.id)]);
+  await put(f.pluginSource, { '.claude-plugin/plugin.json': 'not json' });
+  const bare = await readCatalogueRead(f);
+  assert.equal('pluginVersion' in bare, false);
+  assert.ok(bare.items.length > 0);
 });

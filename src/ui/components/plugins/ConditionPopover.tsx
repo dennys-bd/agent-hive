@@ -12,6 +12,7 @@ import { branchLabel } from '@/lib/template-view';
 export interface ConditionPopoverProps {
   chain: ChainBlock; parsed: ParsedTemplate; variables: readonly FormVariable[]; workspaces: readonly string[];
   onOk(spec: ChainSpec): EditResult; onRemove(): EditResult; onClose(): void;
+  onReveal(line: number): void; // the else line's jump (#492)
 }
 
 // replaceChain refuses to drop a block that holds text at that block's line; the copy is the user's words, the edit's own message goes nowhere
@@ -24,7 +25,7 @@ function RawChain({ chain, parsed, workspaces }: Pick<ConditionPopoverProps, 'ch
   return (
     <>
       {chain.branches.map((branch, index) => (
-        <div key={branch.line}><p className="font-mono">{branchLabel(branch)}</p><Reach names={reach[index] ?? []} /></div>
+        <div key={branch.line} className="flex flex-col gap-1.5"><p className="font-mono">{branchLabel(branch)}</p><Reach names={reach[index] ?? []} isElse={branch.marker === 'else'} /></div>
       ))}
       <p className="text-muted-foreground">{t('plugins.chain.raw')}</p>
     </>
@@ -33,7 +34,7 @@ function RawChain({ chain, parsed, workspaces }: Pick<ConditionPopoverProps, 'ch
 
 /** The chip's popover (#322, handoff 11l): the whole chain in ChainForm, each block's reach recomputed from the draft, ok / remove condition;
  * the raw view when the form cannot hold a condition. Esc and a click outside close it through the Popover around it (TemplateText). */
-export function ConditionPopover({ chain, parsed, variables, workspaces, onOk, onRemove, onClose }: ConditionPopoverProps) {
+export function ConditionPopover({ chain, parsed, variables, workspaces, onOk, onRemove, onClose, onReveal }: ConditionPopoverProps) {
   const [initial] = useState(() => draftOf(chain, variables));
   const [draft, setDraft] = useState<Draft | null>(initial);
   const [refusal, setRefusal] = useState<string>();
@@ -45,18 +46,22 @@ export function ConditionPopover({ chain, parsed, variables, workspaces, onOk, o
     else settle(onOk(spec));
   };
   const change = (next: Draft): void => { setDraft(next); setRefusal(undefined); };
+  // #492: the else the text holds now, not the draft's, since the draft's else has no line until ok writes it
+  const elseLine = chain.branches.find((branch) => branch.marker === 'else')?.line;
+  const elseJump = elseLine === undefined ? undefined : { line: elseLine, onJump: () => { onReveal(elseLine); onClose(); } };
   return (
     <div className="flex flex-col gap-2 text-xs">
       {draft === null ? <RawChain chain={chain} parsed={parsed} workspaces={workspaces} /> : (
         <>
           <p className="text-muted-foreground">{t('plugins.chain.when')}</p>
-          <ChainForm draft={draft} variables={variables} onChange={change} reach={spec === null ? undefined : chainReach(parsed, spec, workspaces)} />
+          <ChainForm draft={draft} variables={variables} onChange={change} reach={spec === null ? undefined : chainReach(parsed, spec, workspaces)} canAddTerm elseJump={elseJump} />
         </>
       )}
       {refusal && <p role="alert" className="text-destructive">{refusal}</p>}
-      <div className="flex justify-between gap-1.5">
-        <Button type="button" variant="ghost" size="xs" onClick={() => settle(onRemove())}>{t('plugins.chain.remove')}</Button>
+      <div className="flex items-center gap-1.5 border-t pt-2">
         {draft !== null && <Button type="button" size="xs" disabled={spec === null} onClick={ok}>{t('plugins.chain.ok')}</Button>}
+        <Button type="button" variant="outline" size="xs" onClick={() => settle(onRemove())}>{t('plugins.chain.remove')}</Button>
+        <span className="text-muted-foreground">{t('plugins.chain.textKept')}</span>
       </div>
     </div>
   );

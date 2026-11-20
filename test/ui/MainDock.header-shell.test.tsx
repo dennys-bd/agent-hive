@@ -110,10 +110,15 @@ test('Cmd+B and Cmd+Shift+B still toggle the sides, and the shell follows (#452,
   expect(shell()).toMatchObject({ left: true });
 });
 
-test("in plugins the shell's pane is variáveis alone: arquivos and detalhes off, the right side opening with its key and the active pick closing it (#313)", () => {
+test("in plugins the shell's pane is variáveis alone: arquivos and detalhes off; beside the list the right side cannot open (#492), beside protocol it opens with its key and the active pick closes it (#313)", () => {
   render(<Window />);
   fireEvent.click(railButton('plugins'));
-  expect(shell()).toEqual({ active: 'variables', enabled: { files: false, details: false, variables: true }, rightShown: false, canOpenRight: true, left: true });
+  expect(shell()).toEqual({ active: 'variables', enabled: { files: false, details: false, variables: true }, rightShown: false, canOpenRight: false, left: true });
+  sideKey('right');
+  expect(shell()).toMatchObject({ rightShown: false });
+  sideKey('right');
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Plugins' })).getByRole('button', { name: 'protocolo' }));
+  expect(shell()).toMatchObject({ canOpenRight: true, rightShown: false });
   sideKey('right');
   expect(shell()).toMatchObject({ active: 'variables', rightShown: true });
   pick('pick variáveis'); // the active one: the side closes, as the group's × does

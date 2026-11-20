@@ -1,6 +1,8 @@
+import { ArrowUpRightIcon } from 'lucide-react';
 import { Fragment, type MouseEvent, useEffect, useRef, useState } from 'react';
 import type { BasedOn } from '../../../template';
 import { LinkConfirm } from '@/components/LinkConfirm';
+import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { type MessageKey, t } from '@/i18n';
 import { openLink, webHost } from '@/lib/trusted-links';
@@ -9,6 +11,7 @@ export interface OriginCardProps { basedOn: BasedOn; description: string; classN
 
 // ponytail: a fixed beat lets the pointer cross from the link to the card; a setting if it reads wrong
 const CLOSE_DELAY_MS = 120;
+const ARROW = <ArrowUpRightIcon aria-hidden="true" className="inline size-3" />;
 
 // The url is the item author's header text: only an http(s) one becomes a link the window hands to the browser
 const linkOf = (url: string): string | undefined => (webHost(url) === undefined ? undefined : url);
@@ -31,7 +34,7 @@ function Rows({ basedOn }: { basedOn: BasedOn }) {
     ['plugins.origin.bond', t('plugins.origin.creditOnly'), false],
   ];
   return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+    <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-1 border-t pt-2">
       {rows.map(([key, value, isMono]) => (
         <Fragment key={key}><dt className="text-muted-foreground">{t(key)}</dt><dd className={isMono ? 'font-mono' : ''}>{value}</dd></Fragment>
       ))}
@@ -39,7 +42,7 @@ function Rows({ basedOn }: { basedOn: BasedOn }) {
   );
 }
 
-/** The meta line's "based on <name> ↗" and its 340px card (#320, handoff 11i): the external item, its description (the item's own: BasedOn
+/** The meta line's "based on <name>" with its arrow and its 340px card (#320, handoff 11i): the external item, its description (the item's own: BasedOn
  * has none), its repository, version, license and the credit-only link. A click opens the url in the browser. */
 export function OriginCard({ basedOn, description, className = '' }: OriginCardProps) {
   const hover = useHover();
@@ -55,8 +58,8 @@ export function OriginCard({ basedOn, description, className = '' }: OriginCardP
       <Popover open={hover.isOpen} onOpenChange={hover.setOpen}>
         <PopoverAnchor asChild>
           {href === undefined
-            ? <button type="button" {...handlers} className={look}>{label}</button>
-            : <a href={href} target="_blank" rel="noreferrer" onClick={open} {...handlers} className={look}>{label}</a>}
+            ? <button type="button" {...handlers} className={look}>{label}{ARROW}</button>
+            : <a href={href} target="_blank" rel="noreferrer" onClick={open} {...handlers} className={look}>{label}{ARROW}</a>}
         </PopoverAnchor>
         <PopoverContent
           align="start" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
@@ -64,11 +67,15 @@ export function OriginCard({ basedOn, description, className = '' }: OriginCardP
         >
           <div className="flex items-center justify-between text-muted-foreground">
             <span>{t('plugins.origin.title')}</span>
-            {href !== undefined && <a href={href} target="_blank" rel="noreferrer" onClick={open} className="hover:underline">{t('plugins.origin.open')}</a>}
+            {href !== undefined && (
+              <Button size="xs" variant="outline" asChild>
+                <a href={href} target="_blank" rel="noreferrer" onClick={open}>{t('plugins.origin.openOn', { host: webHost(href) ?? '' })}{ARROW}</a>
+              </Button>
+            )}
           </div>
           <div className="flex flex-col gap-0.5">
             <span className="font-mono font-semibold">{basedOn.name}</span>
-            {description !== '' && <span className="text-muted-foreground">{description}</span>}
+            {description !== '' && <span className="text-soft">{description}</span>}
           </div>
           <Rows basedOn={basedOn} />
         </PopoverContent>

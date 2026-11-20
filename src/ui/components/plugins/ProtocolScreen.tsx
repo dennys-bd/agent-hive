@@ -96,7 +96,7 @@ export function ProtocolPane({ protocol, workspaces }: ProtocolScreenProps) {
   };
   return (
     <>
-      <ViewAsSelect value={protocol.viewAs} workspaces={workspaces} onChange={protocol.setViewAs} />
+      <ViewAsSelect value={protocol.viewAs} workspaces={workspaces} onChange={protocol.setViewAs} isHinted={false} />
       <p className="border-b px-3 py-2 text-muted-foreground text-xs">{t('plugins.protocol.viewAsHint')}</p>
       {text === undefined
         ? <p className="p-3 text-muted-foreground text-xs">{t('plugins.protocol.selectHint')}</p>

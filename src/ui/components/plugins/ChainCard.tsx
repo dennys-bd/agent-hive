@@ -27,12 +27,13 @@ export function ChainCard({ variables, onInsert, onClose }: ChainCardProps) {
     if (event.key === 'Escape' && event.target instanceof Node && host.current?.contains(event.target)) onClose();
   };
   return (
-    <section ref={host} aria-label={t('plugins.chain.card')} onKeyDown={onKeyDown} className="my-1 flex flex-col gap-2 rounded-md border border-dashed p-2">
+    <section ref={host} aria-label={t('plugins.chain.card')} onKeyDown={onKeyDown} className="my-1 flex flex-col gap-2 rounded-md border border-dashed border-faint bg-card p-2.5 text-xs">
+      <p className="font-medium">{t('plugins.chain.card')}</p>
       <ChainForm draft={draft} variables={variables} onChange={(next) => { setDraft(next); setRefused(false); }} />
       {isRefused && <p role="alert" className="text-destructive text-xs">{t('plugins.chain.failed')}</p>}
-      <div className="flex justify-end gap-1.5">
-        <Button type="button" variant="ghost" size="xs" onClick={onClose}>{t('plugins.chain.cancel')}</Button>
+      <div className="flex gap-1.5">
         <Button type="button" size="xs" disabled={spec === null} onClick={insert}>{t('plugins.chain.insert')}</Button>
+        <Button type="button" variant="outline" size="xs" onClick={onClose}>{t('plugins.chain.cancel')}</Button>
       </div>
     </section>
   );

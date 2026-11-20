@@ -89,7 +89,8 @@ test('neither template-refs.ts nor template-lint.ts imports from node, so the UI
     return [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
   };
   assert.deepEqual(imports('template-refs.ts'), ['./template.js']);
-  assert.deepEqual(imports('template-lint.ts'), ['liquidjs', './template.js', './template-refs.js', './types.js']);
+  assert.deepEqual(imports('template-lint.ts'), ['liquidjs', './template.js', './template-map.js', './template-refs.js', './types.js']);
+  assert.deepEqual(imports('template-map.ts'), ['./template-condition.js', './template.js']);
 });
 
 test('a reference to nothing is yellow; a Hive item, a workspace skill, a script and the template itself resolve (#312)', () => {
@@ -235,4 +236,33 @@ test('each finding names what a fix or a card needs: the variable, the reference
     [7, 'reference', undefined, '/nowhere', undefined],
     [9, 'heading', undefined, undefined, 3],
   ]);
+});
+
+test('a variable from the task is never required nor callRequired, and is still unused when the body never names it (#492)', () => {
+  const tasked: LintItem = { origin: 'hive', kind: 'skill', name: 'stacked-branch', variables: parseTemplate('---\nvariables:\n  planPath: { from: task }\n---\n{{ planPath }}\n').variables };
+  const header = ['variables:', '  planPath: { from: task }'];
+  assert.deepEqual(brief(lintTemplate(template(header, ['Read {{ planPath }}, then /hive:stacked-branch.']), { ...INPUT, catalogue: [tasked] })), []);
+  assert.deepEqual(lint(header, ['nothing']), ['4 yellow unused unused variable planPath']);
+});
+
+test('a condition on a variable from the task is yellow on its marker, once per variable, in an if, elsif or unless, nested or raw; a string naming it is not (#492)', () => {
+  const header = ['variables:', '  planPath: { from: task }', '  branch: { from: task }', '  delivery: { values: [pr, stacked], default: pr }'];
+  const body = [
+    '{% if planPath %}', // 8
+    'A {{ planPath }}.',
+    '{% elsif delivery == "planPath" %}', // 10: the name only inside a string
+    'B.',
+    '{% endif %}',
+    '## Steps',
+    '{% unless branch.size > 0 and planPath %}', // 14: raw, two task variables
+    'C {{ branch }}.',
+    '{% endunless %}',
+  ];
+  assert.deepEqual(lint(header, body), [
+    '8 yellow taskCondition condition on task variable planPath',
+    '14 yellow taskCondition condition on task variable branch',
+    '14 yellow taskCondition condition on task variable planPath',
+  ]);
+  const [first] = lintTemplate(template(header, body), INPUT);
+  assert.equal(first?.variable, 'planPath');
 });

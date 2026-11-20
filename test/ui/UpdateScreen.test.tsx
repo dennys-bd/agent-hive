@@ -27,14 +27,15 @@ const PREVIEW: UpdatePreview = {
     CONFLICT,
   ],
 };
-const HIVE = 'new from the hive · 0.15';
+const HIVE = 'new from the hive';
 
 interface Answers { catalogue?: CatalogueItem[]; preview?: () => Response; apply?: () => Response }
 /** fetch for the view: GET /api/items answers the catalogue, which turns to APPLIED after an apply that answers ok; GET …/update the preview. */
 function stubUpdate({ catalogue = [PLAN], preview = () => json(PREVIEW), apply = () => json({}) }: Answers = {}) {
   let items = catalogue;
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
-    if (path === '/api/items') return json(items);
+    if (path === '/api/items') return json({ items });
+    if (init?.method === 'DELETE') return json({}); // the head's revert (#492)
     if (!path.endsWith('/update')) return json({ error: 'not stubbed' }, 404); // the editor's read of the item it returns to (#319)
     if (init?.method !== 'POST') return preview();
     const answer = apply();
@@ -81,13 +82,15 @@ test('the screen heads the item with the versions, titles and sums the update, l
   const user = userEvent.setup();
   stubUpdate();
   const list = await openUpdate(user);
-  expect(screen.getByText('hive 0.14 → 0.15')).toBeInTheDocument();
+  expect(screen.getByText('hive 0.14 → 0.15').parentElement).toHaveTextContent(/^skills · hive 0\.14 → 0\.15$/);
   expect(screen.getByRole('heading', { name: 'the hive updated new-plan: 0.14 → 0.15' })).toBeInTheDocument();
   expect(screen.getByText(/^what changed between the old and new original, applied on top of your version\. 2 changes apply cleanly; 1 passage was edited by you and by the hive\.$/)).toBeInTheDocument();
   const [input, routing, index] = rows(list);
-  expect(input).toHaveTextContent(/^✓## InputSKILL\.md\+1 −1applied cleanly$/);
-  expect(routing).toHaveTextContent(/^✓## Model routingSKILL\.md\+2 −1applied cleanly$/);
-  expect(index).toHaveTextContent(/^!## Indexreference\/index\.md\+1 −1choose below$/);
+  expect(input).toHaveTextContent(/^## InputSKILL\.md · \+1 −1applied cleanly$/);
+  expect(routing).toHaveTextContent(/^## Model routingSKILL\.md · \+2 −1applied cleanly$/);
+  expect(index).toHaveTextContent(/^## Indexreference\/index\.md · \+1 −1choose below$/);
+  expect(within(input!).getByText('applied cleanly')).toHaveClass('text-working');
+  expect(within(index!).getByText('choose below')).toHaveClass('text-destructive');
   expect(screen.getByRole('region', { name: 'your version' })).toHaveTextContent('| # | slice | owner |');
   expect(screen.getByRole('region', { name: HIVE })).toHaveTextContent('| # | slice | tests |');
 });
@@ -97,13 +100,15 @@ test('apply update stays disabled while a conflict has no choice; keep mine enab
   const fetchMock = stubUpdate();
   const list = await openUpdate(user);
   const apply = screen.getByRole('button', { name: 'apply update' });
-  expect(apply).toBeDisabled();
-  expect(screen.getByText('1 conflict left · until then the worker uses your current version')).toHaveClass('text-destructive');
+  expect([apply.getAttribute('aria-disabled'), apply.hasAttribute('disabled')]).toEqual(['true', false]); // focusable while a conflict waits (#492)
+  await user.click(apply);
+  expect(posts(fetchMock)).toEqual([]);
+  expect(screen.getByText('1 conflict left · until then the worker uses your current version')).toHaveClass('text-muted-foreground');
   await user.click(screen.getByRole('button', { name: 'keep mine' }));
-  expect(apply).toBeEnabled();
+  expect(apply).not.toHaveAttribute('aria-disabled');
   expect(rows(list)[2]).toHaveTextContent(/keep mine$/);
   expect(screen.getByRole('button', { name: 'keep mine' })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('region', { name: HIVE })).toHaveClass('opacity-45');
+  expect(screen.getByRole('region', { name: HIVE })).toHaveClass('opacity-50');
   expect(screen.queryByText(/conflict left/)).not.toBeInTheDocument();
   await user.click(apply);
   await waitFor(() => expect(screen.getByText('customized')).toBeInTheDocument());
@@ -136,7 +141,7 @@ test('a stale apply reads the update again, clears the choice and says so; a fai
   expect(await screen.findByText('the update changed while it was open; review it again')).toHaveAttribute('role', 'alert');
   expect(reads(fetchMock, PATH)).toBe(2);
   expect(keepMine()).toHaveAttribute('aria-pressed', 'false');
-  expect(applyButton()).toBeDisabled();
+  expect(applyButton()).toHaveAttribute('aria-disabled', 'true');
   await user.click(keepMine());
   await user.click(applyButton());
   expect(await screen.findByText('could not apply the update')).toHaveAttribute('role', 'alert');
@@ -194,7 +199,7 @@ test("an item in update available heads its chip as a button that opens its firs
   expect(reads(fetchMock, PATH)).toBe(1);
   expect(rows(screen.getByRole('list', { name: 'changes' }))).toHaveLength(3);
   expect(screen.getByRole('region', { name: HIVE })).toBeInTheDocument();
-  expect(screen.queryByRole('combobox', { name: 'version' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: /^version/ })).not.toBeInTheDocument();
 });
 
 test('with two updated versions the head selects between them, the up-to-date one left out; choosing tdd reads its update (#325)', async () => {
@@ -205,9 +210,34 @@ test('with two updated versions the head selects between them, the up-to-date on
   await user.click(screen.getByRole('button', { name: 'update available' }));
   await screen.findByText('hive 0.14 → 0.15');
   // the keyboard opens it: in jsdom the mouse click's pointerup lands on the first item and closes the list at once
-  screen.getByRole('combobox', { name: 'version' }).focus();
+  screen.getByRole('combobox', { name: 'version: mine' }).focus(); // #492: the label names the open version
   await user.keyboard('{Enter}');
   expect((await screen.findAllByRole('option')).map((option) => option.textContent)).toEqual(['mine', 'tdd']);
   await user.click(screen.getByRole('option', { name: 'tdd' }));
   await waitFor(() => expect(reads(fetchMock, '/api/items/hive%3Anew-plan/versions/tdd/update')).toBe(1));
+});
+
+test('a change with a changelog note shows it in place of its file and counts; the footer has no border, apply then later (#492)', async () => {
+  const user = userEvent.setup();
+  const [input, ...rest] = PREVIEW.changes;
+  stubUpdate({ preview: () => json({ ...PREVIEW, changes: [{ ...input!, note: 'accepts the issue number anywhere' }, ...rest] }) });
+  const list = await openUpdate(user);
+  const [noted, plain] = rows(list);
+  expect(noted).toHaveTextContent(/^## Inputaccepts the issue number anywhereapplied cleanly$/);
+  expect(within(noted!).getByText('accepts the issue number anywhere')).toHaveClass('text-soft');
+  expect(plain).toHaveTextContent('SKILL.md · +2 −1');
+  const footer = document.querySelector('footer')!; // inside the screen's section a footer is no landmark
+  expect(footer).not.toHaveClass('border-t');
+  expect(within(footer).getAllByRole('button').map((b) => b.textContent)).toEqual(['apply update', 'later']);
+});
+
+test("the head's revert asks first, deletes the version, reads the catalogue again and opens the item (#492)", async () => {
+  const user = userEvent.setup();
+  const fetchMock = stubUpdate();
+  await openUpdate(user);
+  await user.click(screen.getByRole('button', { name: "revert to the hive's original" }));
+  await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'revert' }));
+  await waitFor(() => expect(isOnItem()).toBe(true));
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE').map(([path]) => path)).toEqual(['/api/items/hive%3Anew-plan/versions/mine']);
+  expect(reads(fetchMock, '/api/items')).toBe(2);
 });

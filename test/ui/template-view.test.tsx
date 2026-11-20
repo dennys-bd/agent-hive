@@ -1,13 +1,16 @@
-import { expect, test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 import { parseTemplate, renderTemplate } from '../../src/template';
-import { buildMap, type Catalogue } from '../../src/template-map';
+import { parseCondition } from '../../src/template-condition';
+import { buildMap, type Catalogue, type MapBranch } from '../../src/template-map';
 import { previewTemplate } from '../../src/template-preview';
-import { type EditorMode, isMarkdown, plainLook, previewLook, templateLook } from '@/lib/template-view';
+import { setLanguage } from '@/i18n';
+import { blockAt, branchSentence, type EditorMode, isMarkdown, plainLook, previewLook, templateLook } from '@/lib/template-view';
 import { BUILD_TEXT } from './plugins-fixtures';
 
 const CATALOGUE: Catalogue = { skills: ['hive:new-pr'], agents: [] };
 const parsed = parseTemplate(BUILD_TEXT);
 const map = buildMap(parsed, CATALOGUE);
+beforeEach(() => setLanguage('pt'));
 const look = (mode: EditorMode) => templateLook({ text: BUILD_TEXT, parsed, map, catalogue: CATALOGUE, mode });
 
 test('visual hides the header and every marker line, text hides nothing; a hidden line reveals on the line after it (#319, decisions 15, 19)', () => {
@@ -22,7 +25,7 @@ test("the marks: the chain's lines on the branch background, the markers grey in
   const body = [[9, 'template-ref', 14, 25, undefined], [13, 'template-pill', 19, 34, undefined]];
   expect(marks('visual')).toEqual([...background, ...body]);
   expect(marks('text')).toEqual([...background, ...[14, 16, 18].map((line) => [line, 'template-marker', undefined, undefined, undefined]), ...body]);
-  expect(look('visual').chips).toEqual([{ line: 14, label: 'if delivery == "stacked"' }, { line: 16, label: 'else' }]);
+  expect(look('visual').chips).toEqual([{ line: 14, label: 'só quando delivery = stacked' }, { line: 16, label: 'senão' }]);
   const other = parseTemplate('---\nvariables:\n  a: { default: x }\n---\n{{ a }} {{ b }} {{ workspace | upcase }}\n');
   const pills = templateLook({ text: '---\nvariables:\n  a: { default: x }\n---\n{{ a }} {{ b }} {{ workspace | upcase }}\n', parsed: other, map: buildMap(other), catalogue: CATALOGUE, mode: 'text' });
   expect(pills.decorations.map((d) => [d.line, d.from, d.to])).toEqual([[5, 1, 8], [5, 17, 41]]); // b is not declared: no pill
@@ -45,4 +48,25 @@ test('a markdown file is .md or .md.liquid; any other file looks plain (#319, de
   expect(['SKILL.md', 'SKILL.md.liquid', 'slice_index.py', 'notes.liquid'].map(isMarkdown)).toEqual([true, true, false, false]);
   const plain = plainLook('print(1)\n');
   expect([plain.text, plain.hidden, plain.decorations, plain.chips, plain.lineOf(3)]).toEqual(['print(1)\n', [], [], [], 3]);
+});
+
+test('a branch\'s sentence reads its condition in words; a condition the form cannot read stays Liquid (#492)', () => {
+  setLanguage('pt');
+  const branch = (marker: MapBranch['marker'], conditionText: string): MapBranch =>
+    ({ marker, conditionText, condition: marker === 'else' ? null : parseCondition(conditionText), line: 1, references: [], children: [] });
+  expect(branchSentence(branch('if', 'delivery == "stacked"'))).toBe('só quando delivery = stacked');
+  expect(branchSentence(branch('elsif', 'a != "x" or quick'))).toBe('só quando a ≠ x ou quick tem valor');
+  expect(branchSentence(branch('unless', 'quick'))).toBe('só quando quick é não');
+  expect(branchSentence(branch('unless', 'a == "x"'))).toBe('unless a == "x"');
+  expect(branchSentence(branch('if', 'a contains "x" and b == blank and c == false and d == true'))).toBe('só quando a contém x e b está vazia e c é não e d = sim');
+  expect(branchSentence(branch('else', ''))).toBe('senão');
+  expect(branchSentence(branch('if', 'a == "x" and b or c'))).toBe('if a == "x" and b or c');
+  setLanguage('en');
+  expect(branchSentence(branch('if', 'delivery == "stacked"'))).toBe('only when delivery = stacked');
+});
+
+test('blockAt answers the map row at or above a line, nested rows included (#492)', () => {
+  const built = buildMap(parseTemplate(BUILD_TEXT));
+  expect([blockAt(built, 9), blockAt(built, 12), blockAt(built, 15), blockAt(built, 17), blockAt(built, 22)]).toEqual([9, 11, 14, 16, 20]);
+  expect(blockAt(built, 3)).toBeUndefined(); // the header holds no row
 });

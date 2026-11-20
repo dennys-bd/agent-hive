@@ -1,3 +1,4 @@
+import { ArrowUpRightIcon } from 'lucide-react';
 import type { CatalogueItem, ItemKind } from '../../../types';
 import { OriginMark, STATE_LOOK, StateDot } from '@/components/plugins/marks';
 import { NewItemField } from '@/components/plugins/NewItemField';
@@ -14,19 +15,25 @@ function Row({ item, items, onOpen }: { item: CatalogueItem; items: readonly Cat
   const look = STATE_LOOK[item.state];
   return (
     <li className="border-b last:border-b-0">
-      <button type="button" onClick={onOpen} className={`${COLUMNS} w-full px-3.5 py-2.5 text-left text-[13px] hover:bg-accent/60`}>
+      <button type="button" onClick={onOpen} className={`${COLUMNS} w-full px-3.5 py-2.5 text-left text-sm hover:bg-accent/60`}>
         <span className="truncate font-medium font-mono">{item.name}</span>
         <span className="truncate text-muted-foreground">{item.description}</span>
         <span className={`flex items-center gap-1.5 text-xs ${look.text}`}><StateDot state={item.state} isDecorative />{t(look.label)}</span>
         <span className="text-muted-foreground text-xs">{usageText(item, items)}</span>
-        <span title={basedOnTitle(item)} className="truncate text-muted-foreground text-xs">{item.basedOn ? `↗ ${item.basedOn.map((origin) => origin.name).join(', ')}` : ''}</span>
+        <span title={basedOnTitle(item)} className="truncate text-muted-foreground text-xs">{item.basedOn && <><ArrowUpRightIcon aria-hidden="true" className="mr-1 inline size-3" />{item.basedOn.map((origin) => origin.name).join(', ')}</>}</span>
       </button>
     </li>
   );
 }
 
-function ListGroup({ group, kind, items, onOpen }: { group: ItemGroup; kind: ItemKind; items: readonly CatalogueItem[]; onOpen(id: string): void }) {
-  const path = group.origin === HIVE_ORIGIN ? t('plugins.list.hivePath') : KIND_PATH[kind];
+interface ListGroupProps { group: ItemGroup; kind: ItemKind; items: readonly CatalogueItem[]; pluginVersion?: string; onOpen(id: string): void }
+
+function hivePath(version?: string): string {
+  return version === undefined ? t('plugins.list.hivePath') : t('plugins.list.hivePathVersion', { version });
+}
+
+function ListGroup({ group, kind, items, pluginVersion, onOpen }: ListGroupProps) {
+  const path = group.origin === HIVE_ORIGIN ? hivePath(pluginVersion) : KIND_PATH[kind];
   return (
     <fieldset aria-label={group.origin} className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -48,7 +55,7 @@ export function ListScreen({ plugins, section, workspaces }: { plugins: Plugins;
         <NewItemField kind={kind} workspaces={workspaces} initialOrigin={plugins.filter ?? HIVE_ORIGIN} onCreate={plugins.create} onCancel={() => plugins.setCreating(false)} />
       )}
       {groupsOf(items, kind, workspaces, plugins.query, plugins.filter).map((group) => (
-        <ListGroup key={group.origin} group={group} kind={kind} items={items} onOpen={(id) => plugins.open({ kind: 'item', id })} />
+        <ListGroup key={group.origin} group={group} kind={kind} items={items} pluginVersion={plugins.pluginVersion} onOpen={(id) => plugins.open({ kind: 'item', id })} />
       ))}
     </section>
   );

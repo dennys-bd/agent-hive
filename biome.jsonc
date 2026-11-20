@@ -44,7 +44,8 @@
         "src/agents/**", "!src/agents/claude-transcript.ts", "!src/agents/codex-transcript.ts", "!src/agents/jsonl.ts", // #161: the transcripts are the machine's
         "src/benchmark/**", "src/read-model/**", "src/sources/**",
         "src/*-store.ts", "src/config.ts", "src/credentials.ts", "src/github-token.ts", "src/daemon*.ts", "src/hive.ts", "src/home-*.ts",
-        "src/log.ts", "src/facts.ts", "src/editor-*.ts", "src/server-editor-install.ts", "src/plugin-render.ts", "src/launch-options.ts",
+        "src/log.ts", "src/facts.ts", "src/editor-*.ts", "src/server-editor-install.ts", "src/plugin-render.ts", "src/plugin-changelog.ts",
+        "src/launch-options.ts",
         "src/custom-*.ts", "src/command-shim.ts", "src/shim.ts", "src/shell-init.ts", "src/exec-path.ts", "src/posix-shell.ts",
         "src/kill-tree.ts", "src/pty-host.ts", "src/spawn.ts", "src/spawn-internal.ts", "src/terminal-files.ts", "src/terminal-wire.ts",
         "src/headless-run.ts", "src/worker-lsp.ts", "src/server-memory.ts", "src/settings-save.ts", "src/replace-file.ts",

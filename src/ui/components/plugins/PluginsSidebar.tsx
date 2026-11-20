@@ -1,3 +1,4 @@
+import { ArrowUpRightIcon } from 'lucide-react';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CatalogueItem, ItemKind } from '../../../types';
 import { displayBinding } from '../../../shortcuts.js';
@@ -20,7 +21,7 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange(va
   return (
     <div className="relative">
       <Input ref={inputRef} type="search" aria-label={t('plugins.search')} placeholder={t('plugins.search')} value={value} onChange={(event) => onChange(event.target.value)} className="h-8 pr-10 text-sm" />
-      {keys && <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[11px] text-muted-foreground tracking-widest">{displayBinding(keys, isMac())}</kbd>}
+      {keys && <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground tracking-widest">{displayBinding(keys, isMac())}</kbd>}
     </div>
   );
 }
@@ -28,9 +29,13 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange(va
 function ItemRow({ item, isOpen, onOpen }: { item: CatalogueItem; isOpen: boolean; onOpen(): void }) {
   const mark = markOf(item);
   return (
-    <button type="button" aria-current={isOpen || undefined} onClick={onOpen} className={`${ROW} py-1 text-[13px] ${isOpen ? 'bg-accent' : 'hover:bg-accent/60'}`}>
+    <button type="button" aria-current={isOpen || undefined} onClick={onOpen} className={`${ROW} py-1 text-sm ${isOpen ? 'bg-accent' : 'hover:bg-accent/60'}`}>
       <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.name}</span>
-      {mark !== '' && <span title={basedOnTitle(item)} className="text-[11px] text-muted-foreground">{mark}</span>}
+      {(mark !== '' || item.basedOn) && (
+        <span title={basedOnTitle(item)} className="flex items-center gap-0.5 text-xs text-muted-foreground">
+          {mark}{item.basedOn && <ArrowUpRightIcon aria-hidden="true" className="size-3 text-faint" />}
+        </span>
+      )}
       <StateDot state={item.state} />
     </button>
   );
@@ -41,7 +46,7 @@ function Groups({ plugins, items, kind, workspaces }: { plugins: Plugins; items:
   const open = itemIdOf(plugins.screen); // an update screen marks its item's row (#325)
   return groupsOf(items, kind, workspaces, plugins.query).map((group) => (
     <fieldset key={group.origin} aria-label={group.origin} className="flex min-w-0 flex-col gap-px pt-1.5 pl-2">
-      <div className="flex items-center gap-1.5 px-2 pb-0.5 text-[11px] text-muted-foreground"><OriginMark origin={group.origin} />{group.origin}</div>
+      <div className="flex items-center gap-1.5 px-2 pb-0.5 text-xs text-muted-foreground"><OriginMark origin={group.origin} />{group.origin}</div>
       {group.items.map((item) => (
         <ItemRow key={item.id} item={item} isOpen={item.id === open} onOpen={() => plugins.open({ kind: 'item', id: item.id })} />
       ))}
@@ -58,7 +63,7 @@ function SectionBlock({ section, plugins, workspaces, isActive }: SectionProps) 
   const count = plugins.items !== undefined && isListSection(section) ? countOf(items, KIND_OF[section]) : undefined;
   return (
     <div className="flex flex-col gap-0.5">
-      <button type="button" aria-current={isActive || undefined} onClick={() => plugins.open(screenOf(section))} className={`${ROW} py-1.5 font-medium text-[13px] ${isActive ? 'bg-accent' : 'hover:bg-accent/60'}`}>
+      <button type="button" aria-current={isActive || undefined} onClick={() => plugins.open(screenOf(section))} className={`${ROW} py-1.5 font-medium text-sm ${isActive ? 'bg-accent' : 'hover:bg-accent/60'}`}>
         <span className="flex-1">{t(`plugins.section.${section}`)}</span>
         {count !== undefined && <span className="font-normal text-muted-foreground text-xs">{count}</span>}
       </button>
@@ -69,8 +74,8 @@ function SectionBlock({ section, plugins, workspaces, isActive }: SectionProps) 
 
 function Legend() {
   return (
-    <ul aria-label={t('plugins.legend')} className="flex flex-col gap-1 px-2 text-[11px] text-muted-foreground">
-      {LEGEND.map((state) => <li key={state} className="flex items-center gap-1.5"><StateDot state={state} isDecorative />{t(STATE_LOOK[state].label)}</li>)}
+    <ul aria-label={t('plugins.legend')} className="flex flex-col gap-1 px-2 text-xs text-muted-foreground">
+      {LEGEND.map((state) => <li key={state} className="flex items-center gap-1.5"><StateDot state={state} isDecorative isLegend />{t(STATE_LOOK[state].label)}</li>)}
     </ul>
   );
 }

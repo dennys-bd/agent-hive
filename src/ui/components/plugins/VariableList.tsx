@@ -1,3 +1,4 @@
+import { PencilIcon, Trash2Icon } from 'lucide-react';
 import { type KeyboardEvent, useMemo, useState } from 'react';
 import { parseTemplate, type TemplateVariable, type VariableValue } from '../../../template';
 import { type EditResult, removeVariable, setVariableValue } from '../../../template-edit';
@@ -17,25 +18,28 @@ export interface VariableListProps {
   onApply(result: WriteResult): MessageKey | undefined; // the item editor's applyEdit, or a protocol passage's draft (#337)
   originOf?(name: string): Origin | undefined; // omitted: no origin line
   findings?(name: string): readonly LintAnnotation[]; onFinding?(finding: LintAnnotation): void; // omitted: no lint lines
+  viewAs?: string; // a workspace's preview: the other workspaces' values are dimmed
 }
 interface Removal { name: string; lines: number[] }
 interface ValueProps { variable: TemplateVariable; workspace: string; onWrite(value: VariableValue | undefined): void }
 interface RowProps {
-  variable: TemplateVariable; workspaces: readonly string[]; origin?: Origin; findings: readonly LintAnnotation[];
+  variable: TemplateVariable; workspaces: readonly string[]; origin?: Origin; findings: readonly LintAnnotation[]; viewAs?: string;
   onWrite(workspace: string, value: VariableValue | undefined): void; onEdit(): void; onRemove(): void; onFinding(finding: LintAnnotation): void;
 }
 
 const ORIGIN: Record<Origin, MessageKey> = { hive: 'plugins.variables.fromHive', yours: 'plugins.variables.yours' };
 const NO_FINDINGS: readonly LintAnnotation[] = [];
+const ICON_BUTTON = 'size-5 text-faint hover:text-foreground';
+const MISSING = '—';
 
 const entryOf = (variable: TemplateVariable, workspace: string): VariableValue | undefined =>
   Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : undefined;
 
-// Decision 12: the workspace's entry, else the default muted; null grey; a required variable with no value is "missing" in red
+// Decision 12: the workspace's entry, else the default muted; null grey; a required variable with no value is a red dash (#492)
 function shownValue(variable: TemplateVariable, workspace: string): { text: string; tone: string } {
   const entry = entryOf(variable, workspace);
   const value = entry === undefined ? variable.default : entry;
-  if (value === null) return variable.required ? { text: t('plugins.variables.missing'), tone: 'text-destructive' } : { text: 'null', tone: 'text-muted-foreground' };
+  if (value === null) return variable.required ? { text: MISSING, tone: 'text-destructive' } : { text: 'null', tone: 'text-muted-foreground' };
   const text = typeof value === 'boolean' ? t(value ? 'plugins.variables.yes' : 'plugins.variables.no') : value;
   return { text, tone: entry === undefined ? 'text-muted-foreground' : 'text-foreground' };
 }
@@ -44,6 +48,8 @@ function shownValue(variable: TemplateVariable, workspace: string): { text: stri
 // Esc cancels, empty removes the entry)
 function ValueControl({ variable, workspace, onWrite }: ValueProps) {
   const [isEditing, setEditing] = useState(false);
+  // #492: the task's value exists only when the skill runs, so there is nothing to write here
+  if (variable.from === 'task') return <span className="truncate font-mono text-muted-foreground">{t('plugins.variables.fromTask')}</span>;
   const shown = shownValue(variable, workspace);
   const label = `${variable.name} · ${workspace}`;
   const raw = rawOf(entryOf(variable, workspace));
@@ -75,20 +81,43 @@ function FindingLine({ finding, onOpen }: { finding: LintAnnotation; onOpen(): v
   return <button type="button" onClick={onOpen} className={`text-left hover:underline ${isRequired ? 'text-destructive' : 'text-waiting'}`}>{text}</button>;
 }
 
-// One variable (handoff 11b): its name and origin, a value per configured workspace in config order, the entries of names no workspace has
-// dimmed and read-only (decision 11), the lint's line. Every declaration can be edited; only a "yours" variable can go (decisions 7, 8)
-function VariableRow({ variable, workspaces, origin, findings, onWrite, onEdit, onRemove, onFinding }: RowProps) {
-  const unknown = Object.keys(variable.workspaces).filter((w) => !workspaces.includes(w));
+// #492: one dot on the name line for the row's worst finding, red over yellow; an empty cell keeps the grid's column
+function FindingDot({ findings }: { findings: readonly LintAnnotation[] }) {
+  if (findings.length === 0) return <span />;
+  const tone = findings.some((f) => f.check === 'required') ? 'bg-destructive' : 'bg-waiting';
+  return <span aria-hidden="true" className={`size-1.5 rounded-full ${tone}`} />;
+}
+
+// The name line (#492's grid): name, origin, the finding's dot, then the icon actions. Every declaration can be edited; only a "yours"
+// variable can go (decisions 7, 8)
+function RowHead({ variable, origin, findings, onEdit, onRemove }: Pick<RowProps, 'variable' | 'origin' | 'findings' | 'onEdit' | 'onRemove'>) {
+  const { name } = variable;
+  const originText = variable.from === 'task' ? t('plugins.variables.fromTask') : origin && t(ORIGIN[origin]);
   return (
-    <li aria-label={variable.name} className="flex flex-col gap-1 rounded-md border px-2 py-1.5">
-      <div className="flex items-center gap-1.5">
-        <span className="min-w-0 flex-1 truncate font-mono font-semibold">{variable.name}</span>
-        {origin && <span className="text-[10px] text-muted-foreground">{t(ORIGIN[origin])}</span>}
-        <Button type="button" size="xs" variant="ghost" onClick={onEdit}>{t('plugins.variables.edit')}</Button>
-        {origin === 'yours' && <Button type="button" size="xs" variant="ghost" onClick={onRemove}>{t('plugins.variables.remove')}</Button>}
-      </div>
+    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1.5">
+      <span className="truncate font-mono font-semibold">{name}</span>
+      <span className="min-w-0 text-muted-foreground">{originText}</span>
+      <FindingDot findings={findings} />
+      <span className="flex">
+        <Button type="button" size="icon-xs" variant="ghost" aria-label={t('plugins.variables.form.editTitle', { name })} title={t('plugins.variables.edit')} onClick={onEdit} className={ICON_BUTTON}><PencilIcon /></Button>
+        {origin === 'yours' && (
+          <Button type="button" size="icon-xs" variant="ghost" aria-label={t('plugins.variables.removeNamed', { name })} title={t('plugins.variables.remove')} onClick={onRemove} className={ICON_BUTTON}><Trash2Icon /></Button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// One variable (handoff 11b): its name line, a value per configured workspace in config order, the entries of names no workspace has
+// dimmed and read-only (decision 11), the lint's line. A required one with no value somewhere tints the row's border (#492)
+function VariableRow({ variable, workspaces, origin, findings, viewAs, onWrite, onEdit, onRemove, onFinding }: RowProps) {
+  const unknown = Object.keys(variable.workspaces).filter((w) => !workspaces.includes(w));
+  const isMissing = variable.required && workspaces.some((w) => shownValue(variable, w).text === MISSING);
+  return (
+    <li aria-label={variable.name} className={`flex flex-col gap-1 rounded-md border px-2 py-1.5 ${isMissing ? 'border-destructive/30' : ''}`}>
+      <RowHead variable={variable} origin={origin} findings={findings} onEdit={onEdit} onRemove={onRemove} />
       {workspaces.map((w) => (
-        <div key={w} className="flex min-w-0 items-center gap-1.5">
+        <div key={w} className={`flex min-w-0 items-center gap-1.5 ${viewAs !== undefined && viewAs !== w ? 'opacity-40' : ''}`}>
           <WorkspaceSquare name={w} title={w} />
           <ValueControl variable={variable} workspace={w} onWrite={(value) => onWrite(w, value)} />
         </div>
@@ -127,7 +156,7 @@ function PaneHead({ isDisabled, onAdd }: { isDisabled: boolean; onAdd(): void })
 /** A text's declared variables (#321), a value per workspace each, editable in place; every write goes through onApply (#337: the item
  * editor's buffer, or a protocol passage's draft). The parse is memoised on the text: the list re-renders on every keystroke (decision 23).
  * A header that does not parse replaces the list with its line and hides the form (decision 22); the form opens at the top (decision 14). */
-export function VariableList({ text, workspaces, onApply, originOf, findings, onFinding }: VariableListProps) {
+export function VariableList({ text, workspaces, onApply, originOf, findings, onFinding, viewAs }: VariableListProps) {
   const parsed = useMemo(() => parseTemplate(text), [text]);
   const [error, setError] = useState<MessageKey>();
   const [removal, setRemoval] = useState<Removal>();
@@ -153,7 +182,7 @@ export function VariableList({ text, workspaces, onApply, originOf, findings, on
         <ul aria-label={t('files.tab.variables')} className="flex flex-col gap-1">
           {parsed.variables.map((variable) => (
             <VariableRow
-              key={variable.name} variable={variable} workspaces={workspaces} origin={originOf?.(variable.name)}
+              key={variable.name} variable={variable} workspaces={workspaces} origin={originOf?.(variable.name)} viewAs={viewAs}
               findings={findings?.(variable.name) ?? NO_FINDINGS} onFinding={(finding) => onFinding?.(finding)}
               onEdit={() => setForm({ name: variable.name })} onRemove={() => remove(variable.name)}
               onWrite={(workspace, value) => write(setVariableValue(text, variable.name, workspace, value))}

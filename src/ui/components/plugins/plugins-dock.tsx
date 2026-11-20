@@ -13,9 +13,12 @@ import { usePlugins } from '@/hooks/use-plugins';
 import { useProtocol } from '@/hooks/use-protocol';
 import { t } from '@/i18n';
 import type { PanelId } from '@/lib/dock-layout';
-import { HIVE_ORIGIN } from '@/lib/plugins';
+import { HIVE_ORIGIN, type PluginScreen } from '@/lib/plugins';
 
-export interface PluginsDock { panel: DockPanel; right: DockPanel; center: ReactNode }
+export interface PluginsDock { panel: DockPanel; right: DockPanel; center: ReactNode; isRightHidden: boolean }
+
+// #492: these screens have nothing for the right side to show, so it is hidden there, as on the home screen
+const NO_RIGHT: ReadonlySet<PluginScreen['kind']> = new Set(['list', 'update', 'mcp']);
 interface PluginsDockArgs { isShown: boolean; workspaces: readonly string[]; activate(id: PanelId): void; fontFamily: string }
 
 /** The plugins view in the dock (#313), beside MainDock, which is at its line limit: the sidebar as the left column's panel, the right group's
@@ -45,6 +48,7 @@ export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: Pl
         </section>
       ),
     },
+    isRightHidden: NO_RIGHT.has(plugins.screen.kind),
     center: isShown
       ? <PluginsView plugins={plugins} editor={editor} annotations={annotations} protocol={protocol} workspaces={workspaces} fontFamily={fontFamily} pick={pick} onPick={setPicked} />
       : null,

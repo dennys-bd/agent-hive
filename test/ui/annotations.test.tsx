@@ -39,6 +39,7 @@ test('an annotation underlines its line; on a header line in visual mode it sits
   await waitFor(() => expect(view().decorations.filter((d) => d.options.inlineClassName === 'template-annotation-yellow').map((d) => [d.range.startLineNumber, d.range.startColumn])).toEqual([[6, 3]]));
   const note = await within(margin()).findByRole('button', { name: HEADLINE });
   await waitFor(() => expect(note).toHaveStyle({ top: `${9 * FAKE_LINE_HEIGHT}px` }));
+  expect([note.classList.contains('border'), note.classList.contains('text-waiting')]).toEqual([false, true]); // #492: plain text in its severity's colour
   fireEvent.click(note);
   expect(within(margin()).getByRole('article', { name: HEADLINE })).toHaveAttribute('data-open', 'true');
   expect(view().position).toEqual({ lineNumber: 10, column: 1 });
@@ -66,7 +67,11 @@ test('in text mode the annotation stays on its own line, with room for a card; "
   fireEvent.click(within(screen.getByRole('group', { name: 'modo' })).getByRole('button', { name: 'texto' }));
   const card = await within(margin()).findByRole('article', { name: HEADLINE });
   await waitFor(() => expect(card).toHaveStyle({ top: `${5 * FAKE_LINE_HEIGHT}px` }));
-  fireEvent.click(within(card).getByRole('button', { name: 'aplicar correção' }));
+  // #492: the card on card, its headline with no dot, apply primary and dismiss outlined
+  expect([card.classList.contains('bg-card'), card.querySelector('.rounded-full')]).toEqual([true, null]);
+  const [apply, dismiss] = [within(card).getByRole('button', { name: 'aplicar correção' }), within(card).getByRole('button', { name: 'dispensar' })];
+  expect([apply.classList.contains('bg-background'), dismiss.classList.contains('bg-background')]).toEqual([false, true]);
+  fireEvent.click(apply);
   const removed = removeVariable(ONE_VARS, 'reviewDepth');
   if (!removed.ok) throw new Error(removed.error.message);
   await waitFor(() => expect(view().model.getValue()).toBe(removed.text));
@@ -96,16 +101,18 @@ test('the text, the map and the variables pane show the same annotation, and all
   await waitFor(() => expect(server.dismissed).toEqual({ 'hive:new-build@mine': ['SKILL.md.liquid\0unused\0unused variable reviewDepth\0  reviewDepth: { default: full }'] }));
 });
 
-test('the head counts the annotations: a click moves the text to the next one and opens its card, Esc closes it; at zero it reads "no annotations", disabled (#327)', async () => {
+test('the head counts the annotations: "next annotation" in its menu moves the text to the next one and opens its card, Esc closes it; at zero it reads "no annotations" and the row is disabled (#327, #492)', async () => {
   stubItems(serverOf());
   render(<PluginsWindow />);
   await open();
   const head = screen.getByTestId('head');
   fireEvent.click(await within(head).findByRole('button', { name: 'revisor · 1 anotação' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'próxima anotação' }));
   expect(view().position).toEqual({ lineNumber: 10, column: 1 });
   expect(within(margin()).getByRole('article', { name: HEADLINE })).toHaveAttribute('data-open', 'true');
   fireEvent.keyDown(window, { key: 'Escape' });
   expect(within(margin()).queryByRole('article')).not.toBeInTheDocument();
   act(() => view().model.type(ONE_VARS.replace('  reviewDepth: { default: full }\n', '')));
-  expect(within(head).getByRole('button', { name: 'revisor · nenhuma anotação' })).toBeDisabled();
+  expect(within(head).getByRole('button', { name: 'revisor · nenhuma anotação' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'próxima anotação' })).toBeDisabled();
 });

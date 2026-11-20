@@ -8,7 +8,7 @@ import { type CustomStore, MINE } from './custom-store.js';
 import { isRefusal, type RefusalCode, refusal, type StoreRefusal } from './custom-versions.js';
 import { readDismissed, writeDismissed } from './dismissed-store.js';
 import { HIVE_ORIGIN, type ItemSources, itemId } from './item-sources.js';
-import { findItem, readCatalogue, readItem, readLintInput, type StageRef } from './items-catalogue.js';
+import { findItem, readCatalogueRead, readItem, readLintInput, type StageRef } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { type CatalogueItem, ITEM_KINDS, UPDATE_CHOICES } from './types.js';
 
@@ -51,7 +51,7 @@ export interface PluginRouteDeps {
   store: CustomStore;
   home: string;
   pluginSource: string;
-  log: Pick<Logger, 'error'>;
+  log: Pick<Logger, 'error' | 'warn'>;
 }
 type Handle = (req: Request, res: Response, sources: ItemSources, stages: readonly StageRef[]) => Promise<void>;
 
@@ -101,7 +101,7 @@ async function answerItem(res: Response, sources: ItemSources, id: string): Prom
 
 function registerItemRoutes(app: Express, deps: PluginRouteDeps): void {
   app.get('/api/items', route(deps, async (_req, res, s, stages) => {
-    res.json(await readCatalogue(s, stages));
+    res.json(await readCatalogueRead(s, stages));
   }));
   app.get('/api/items/:id', route(deps, async (req, res, s) => {
     await answerRead(res, s, idOf(req), queryVersion(req));
@@ -164,7 +164,7 @@ function registerVersionRoutes(app: Express, deps: PluginRouteDeps): void {
 // The update of one version (#324): GET previews it and writes nothing; POST applies it and answers the version read, as every write does
 function registerUpdateRoutes(app: Express, deps: PluginRouteDeps): void {
   app.get('/api/items/:id/versions/:version/update', route(deps, async (req, res, s) => {
-    const preview = await previewUpdate(s, idOf(req), String(req.params.version));
+    const preview = await previewUpdate(s, idOf(req), String(req.params.version), deps.log);
     if (isRefusal(preview)) return refuse(res, preview);
     res.json(preview);
   }));

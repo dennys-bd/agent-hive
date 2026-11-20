@@ -1,0 +1,7 @@
+# The plugin's changelog (#492): what the plugins update screen shows beside a change. One entry per plugin version, then the item's id
+# (hive:<name>), then the heading of the changed section as the file writes it, quoted, and one line in English. A version's notes are
+# written with the release that bumps .claude-plugin/plugin.json. Example:
+# 0.2.0:
+#   hive:new-spec:
+#     "## Input": accepts the issue number anywhere in the input
+{}

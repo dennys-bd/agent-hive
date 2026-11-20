@@ -23,6 +23,7 @@ export interface TemplateTextProps {
   annotations?: Annotations; anchorOf?(line: number): number; // #327: the margin's annotations, each at the line the look shows it on
   isProposal?: boolean; // #331: the text is an agent's proposal look; only a flip swaps the model's text
   onSelection?(lines: LineSelection | undefined): void; // #331: the selection's lines, undefined when it is empty
+  onCaret?(line: number): void; // #492: the caret's line, for the map to raise its block
 }
 
 const SAME_LINE = (line: number): number => line;
@@ -120,6 +121,17 @@ function useScrollTop(view: View | undefined): number {
   return top;
 }
 
+// The latest onCaret through a ref: the listener lives as long as the view, the callback changes every render
+function useCaret(view: View | undefined, onCaret: TemplateTextProps['onCaret']): void {
+  const latest = useRef(onCaret);
+  useEffect(() => { latest.current = onCaret; });
+  useEffect(() => {
+    if (view === undefined) return undefined;
+    const moving = view.onDidChangeCursorPosition(({ position }) => latest.current?.(position.lineNumber));
+    return () => moving.dispose();
+  }, [view]);
+}
+
 // The conditions column (#319): each chip at its marker's line as the text scrolls; the open one anchors its popover, upward (#322, decision 13)
 interface ChipsProps { chips: readonly Chip[]; topOf(line: number): number; onChip?(line: number): void; popover?: ChipPopover }
 
@@ -131,6 +143,7 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the chips column
     <div role="group" aria-label={t('plugins.editor.conditions')}>
       {chips.map((chip) => {
+        if (chip.isNote) return <span key={chip.line} style={{ top: topOf(chip.line) }} className="absolute left-2 max-w-[214px] truncate px-2 text-muted-foreground text-xs">{chip.label}</span>;
         const isOpen = popover?.line === chip.line;
         // Every chip sits under a Popover, open or not, so opening one keeps its button (and its focus) instead of remounting it
         return (
@@ -138,12 +151,12 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
             <PopoverAnchor asChild>
               <button
                 ref={isOpen ? openChip : undefined} type="button" onClick={() => (isOpen ? close() : onChip?.(chip.line))} style={{ top: topOf(chip.line) }}
-                className="absolute left-2 max-w-[214px] truncate rounded-full border px-2 font-mono text-[11px] text-muted-foreground hover:bg-accent"
+                className="absolute left-2 max-w-[214px] truncate rounded-[5px] border px-2 text-muted-foreground text-xs hover:bg-accent"
               >
                 {chip.label}
               </button>
             </PopoverAnchor>
-            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3"
+            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[340px] p-3"
                 // the open chip toggles it: its pointerdown is no outside click, or the click after it would reopen what Radix just closed
                 onPointerDownOutside={(event) => { if (openChip.current?.contains(event.target as Node)) event.preventDefault(); }}
               >{popover.content}</PopoverContent>}
@@ -161,6 +174,7 @@ export function TemplateText(props: TemplateTextProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useTemplateEditor(host, props);
   useLook(view, props);
+  useCaret(view, props.onCaret);
   const scrollTop = useScrollTop(view);
   const { chips, onChip, popover, annotations, anchorOf = SAME_LINE, isReadOnly } = props;
   const topOf = (line: number): number => (view?.getTopForLineNumber(line) ?? 0) - scrollTop;

@@ -2272,6 +2272,7 @@ export interface UpdateChange {
   heading: string; // nearest heading above the change in the version's text, else the file path
   removed: string[]; // lines of the version's text the update replaces
   added: string[]; // lines it puts in their place
+  note?: string; // #492: the plugin changelog's note for the heading, absent without one
 }
 
 export interface UpdateConflict {
@@ -2282,6 +2283,9 @@ export interface UpdateConflict {
   mine: string[] | null; // null: the side has no such file (deleted)
   hive: string[] | null;
   base: string[];
+  note?: string; // #492: the plugin changelog's note for the heading, absent without one
+  // #492: 1-based, inclusive, in the version's text as merged (every conflict kept as mine); absent on a whole-file conflict or an empty side
+  lines?: { start: number; end: number };
 }
 
 export interface UpdatePreview {
@@ -2291,3 +2295,6 @@ export interface UpdatePreview {
   token: string; // sha256 of the three inputs; apply must send it back
   changes: (UpdateChange | UpdateConflict)[]; // ordered by file, then by position
 }
+
+/** GET /api/items (#492): the catalogue, and the shipped plugin's version that the list's hive group shows. */
+export interface CatalogueRead { items: CatalogueItem[]; pluginVersion?: string }

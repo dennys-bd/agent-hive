@@ -27,7 +27,7 @@ test("new version from mine… creates it from mine and opens it; the sidebar co
   stubItems(server);
   render(<PluginsWindow />);
   await open('new-build');
-  expect(sidebarItem('new-build')).toHaveTextContent('new-build2 ↗');
+  expect(sidebarItem('new-build')).toHaveTextContent('new-build2');
   await user.click(selector('mine'));
   await user.click(await screen.findByRole('menuitem', { name: 'nova versão a partir de mine…' }));
   const dialog = await screen.findByRole('alertdialog', { name: 'Nova versão a partir de mine' });
@@ -36,7 +36,7 @@ test("new version from mine… creates it from mine and opens it; the sidebar co
   await user.click(within(dialog).getByRole('button', { name: 'criar' }));
   await waitFor(() => expect(selector('fast')).toBeInTheDocument());
   expect(creates).toEqual([{ name: 'fast', from: 'mine' }]);
-  expect(sidebarItem('new-build')).toHaveTextContent('new-build3 ↗');
+  expect(sidebarItem('new-build')).toHaveTextContent('new-build3');
   const fast = await nextEditor(before);
   act(() => fast.model.type(`${BUILD_TEXT}fast only\n`));
   expect(fileTab('SKILL.md.liquid')).toHaveAttribute('data-dirty', 'true');

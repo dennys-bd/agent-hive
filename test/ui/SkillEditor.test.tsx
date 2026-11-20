@@ -38,10 +38,10 @@ test('opening new-build shows its files as tabs, its map and its text; another f
   stubItems(serverOf());
   render(<PluginsWindow />);
   await open('new-build');
-  expect(screen.getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['SKILL.md.liquid', 'true'], ['scripts/slice.py', 'false']]);
+  expect(screen.getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['SKILL.md.liquid', 'true'], ['slice.py', 'false']]);
   expect(within(nav()).getByRole('button', { name: 'Stops' })).toBeInTheDocument();
   expect([view().model.getValue(), view().model.language]).toEqual([BUILD_TEXT, 'markdown']);
-  fireEvent.click(fileTab('scripts/slice.py'));
+  fireEvent.click(fileTab('slice.py'));
   await waitFor(() => expect(view().model.language).toBe('python'));
   expect(screen.getByText('sem mapa para este arquivo')).toBeInTheDocument();
   expect(screen.queryByRole('group', { name: 'modo' })).not.toBeInTheDocument();
@@ -53,7 +53,7 @@ test("clicking a map block reveals its line; in visual mode a hidden marker land
   await open('new-build');
   fireEvent.click(within(nav()).getByRole('button', { name: 'Stops' }));
   expect(view().position).toEqual({ lineNumber: 20, column: 1 });
-  fireEvent.click(within(nav()).getByRole('button', { name: 'else' }));
+  fireEvent.click(within(nav()).getByText('senão').closest('[data-line]')!.querySelector('button')!);
   expect(view().position).toEqual({ lineNumber: 17, column: 1 });
 });
 
@@ -77,26 +77,29 @@ test('visual mode hides the header and the markers and shows the chips; text mod
   render(<PluginsWindow />);
   await open('new-build');
   expect(view().hiddenAreas).toEqual([{ startLineNumber: 1, endLineNumber: 6 }, { startLineNumber: 14, endLineNumber: 14 }, { startLineNumber: 16, endLineNumber: 16 }, { startLineNumber: 18, endLineNumber: 18 }]);
-  expect(within(screen.getByRole('group', { name: 'condições' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['if delivery == "stacked"', 'else']);
+  const chips = within(screen.getByRole('group', { name: 'condições' })).getAllByRole('button');
+  expect(chips.map((b) => b.textContent)).toEqual(['só quando delivery = stacked', 'senão']);
+  expect([chips[0]?.classList.contains('font-mono'), chips[0]?.classList.contains('rounded-[5px]')]).toEqual([false, true]); // #492: in sans
   fireEvent.click(within(screen.getByRole('group', { name: 'modo' })).getByRole('button', { name: 'texto' }));
   await waitFor(() => expect(view().hiddenAreas).toEqual([]));
   expect(view().decorations.filter((d) => d.options.inlineClassName === 'template-marker').map((d) => d.range.startLineNumber)).toEqual([14, 16, 18]);
   expect(screen.getByRole('group', { name: 'condições' })).toBeInTheDocument();
 });
 
-test('view as a workspace: read-only, the edit controls gone, the false branch dimmed in the text and the map, the tab SKILL.md · hive-site, and the kept text is the render (#319, decisions 22, 23, 26)', async () => {
+test('view as a workspace: read-only, the edit controls gone, the false branch dimmed in the text and the map, the tab SKILL.md, and the kept text is the render (#319, decisions 22, 23, 26)', async () => {
   const user = userEvent.setup();
   stubItems(serverOf());
   render(<PluginsWindow />);
   await open('new-build');
-  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
-  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
   await waitFor(() => expect(view().readOnly).toBe(true));
-  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent('SKILL.md · hive-site');
+  expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^SKILL\.md$/);
+  act(() => view().setPosition({ lineNumber: 12, column: 1 }));
+  expect(nav().querySelector('[data-current]')).toBeNull(); // #492: the preview raises no block
   expect(screen.queryByRole('button', { name: 'novo arquivo' })).not.toBeInTheDocument();
   expect(screen.queryByRole('group', { name: 'modo' })).not.toBeInTheDocument();
   expect(within(nav()).queryAllByTitle('arrastar')).toEqual([]);
-  expect(within(nav()).getByRole('button', { name: 'else' }).closest('.opacity-35')).not.toBeNull();
+  expect(within(nav()).getByText('senão').closest('.opacity-35')).not.toBeNull();
   const dimmed = new Set(view().decorations.filter((d) => d.options.inlineClassName === 'template-dim').map((d) => d.range.startLineNumber));
   const kept = view().model.getValue().split('\n').filter((_, i) => !dimmed.has(i + 1)).join('\n');
   const rendered = renderTemplate(parseTemplate(BUILD_TEXT), 'hive-site');
@@ -153,4 +156,15 @@ test('edits survive switching to another item and back (#319, decision 6)', asyn
   fireEvent.click(sidebarItem('new-build'));
   await waitFor(() => expect(view().model.getValue()).toBe(`${BUILD_TEXT}unsaved\n`));
   expect(fileTab('SKILL.md.liquid')).toHaveAttribute('data-dirty', 'true');
+});
+
+test('the caret raises its block on the map (#492)', async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open('new-build');
+  const current = (): (string | null)[] => Array.from(nav().querySelectorAll('[data-current="true"]')).map((row) => row.getAttribute('data-line'));
+  act(() => view().setPosition({ lineNumber: 12, column: 1 }));
+  expect(current()).toEqual(['11']);
+  act(() => view().setPosition({ lineNumber: 17, column: 1 }));
+  expect(current()).toEqual(['16']);
 });

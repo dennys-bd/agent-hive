@@ -206,3 +206,19 @@ test('splitHeader answers the header text, the body as a suffix of the text and 
   assert.deepEqual(splitHeader('---\nname: x\n---\n# Body\n'), { header: 'name: x\n', body: '# Body\n', bodyLine: 4 });
   assert.deepEqual(splitHeader('# No header\n'), { header: '', body: '# No header\n', bodyLine: 1 });
 });
+
+const TASK = ['---', 'name: x', 'variables:', '  planPath: { from: task }', '---', 'Read {{ planPath }}.', ''].join('\n');
+
+test('a variable from the task parses with no value, renders {result.<name>} for every workspace, and refuses type, values, default, required and workspaces (#492)', () => {
+  const parsed = parseTemplate(TASK);
+  assert.deepEqual(parsed.errors, []);
+  assert.deepEqual(parsed.variables, [{ name: 'planPath', kind: 'text', default: null, required: false, workspaces: {}, line: 4, from: 'task' }]);
+  for (const workspace of ['hive', 'hive-site']) {
+    assert.deepEqual(renderTemplate(parsed, workspace), { ok: true, text: '---\nname: x\n---\nRead {result.planPath}.\n' });
+  }
+  for (const [extra, key] of [['type: boolean', 'type'], ['values: [a, b]', 'values'], ['default: a', 'default'], ['required: true', 'required'], ['workspaces: { hive: a }', 'workspaces']] as const) {
+    const [error] = parseTemplate(TASK.replace('{ from: task }', `{ from: task, ${extra} }`)).errors;
+    assert.deepEqual([error?.line, error?.message], [4, `variable "planPath": a variable from the task has no ${key}`]);
+  }
+  assert.equal(parseTemplate(TASK.replace('from: task', 'from: run')).errors[0]?.message, 'variable "planPath": from may only be task');
+});

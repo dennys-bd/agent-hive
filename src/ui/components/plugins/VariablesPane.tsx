@@ -37,7 +37,7 @@ function PaneBody({ editor, annotations, workspaces, path }: BodyProps) {
   const originOf = useOriginOf(editor, path);
   return (
     <VariableList
-      text={editor.textOf(path)} workspaces={workspaces} onApply={editor.applyEdit} originOf={originOf}
+      text={editor.textOf(path)} workspaces={workspaces} onApply={editor.applyEdit} originOf={originOf} viewAs={editor.viewAs}
       findings={(name) => findingsOf(annotations.list, name)} onFinding={annotations.openAt}
     />
   );

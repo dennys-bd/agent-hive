@@ -75,8 +75,8 @@ test('a read that answers after a newer one is dropped: the newer catalogue stay
   rerender({ isShown: false });
   rerender({ isShown: true });
   await waitFor(() => expect(answers).toHaveLength(2));
-  await act(async () => answers[1]?.(json([itemOf('hive:fresh')])));
-  await act(async () => answers[0]?.(json(CATALOGUE)));
+  await act(async () => answers[1]?.(json({ items: [itemOf('hive:fresh')] })));
+  await act(async () => answers[0]?.(json({ items: CATALOGUE })));
   expect(result.current.items?.map((i) => i.id)).toEqual(['hive:fresh']);
 });
 
@@ -103,4 +103,15 @@ test('open to another screen kind closes the new-item field or the server form; 
   act(() => result.current.setCreating(true));
   act(() => result.current.open({ kind: 'mcp' }));
   expect(result.current.isCreating).toBe(true);
+});
+
+test('the read lands the items and the plugin version; a bare list is a failed read (#492)', async () => {
+  stubFetch(undefined, undefined, '0.2.0');
+  const { result, unmount } = renderHook(() => usePlugins(true));
+  await waitFor(() => expect(result.current.items).toEqual(CATALOGUE));
+  expect(result.current.pluginVersion).toBe('0.2.0');
+  unmount();
+  vi.stubGlobal('fetch', vi.fn(async () => json(CATALOGUE)));
+  const bare = renderHook(() => usePlugins(true));
+  await waitFor(() => expect(bare.result.current.hasFailed).toBe(true));
 });

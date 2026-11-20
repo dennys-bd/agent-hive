@@ -89,11 +89,11 @@ const CREDITED: Record<string, string[]> = {
   'skills/new-spec/SKILL.md.liquid': ['superpowers:brainstorming'],
 };
 
-test('the plugin ships the manifest, the five skills, the fourteen agents and the three references, the skeleton and the scripts, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the fourteen agents and the three references, the skeleton, the scripts and the changelog, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
-  assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
+  assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'changelog.yaml', 'reference', 'scripts', 'skills'], 'changelog.yaml holds the notes the update screen shows (#492)');
   assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html', 'system-design.md'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares, the system design subset the system designer and its reviewer read');
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);

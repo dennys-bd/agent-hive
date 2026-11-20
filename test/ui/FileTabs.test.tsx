@@ -39,7 +39,16 @@ test('+ opens a name field: Enter creates and closes, a refusal shows its copy, 
   expect(screen.queryByRole('group', { name: 'modo' })).not.toBeInTheDocument();
 });
 
-test('in the preview the tabs read the delivered names and the open one names the workspace (#319, decision 26)', () => {
+test('in the preview the tabs read the delivered names and the bar the preview line in place of the toggle (#319, decision 26, #492)', () => {
   render(<FileTabs files={FILES} open="SKILL.md.liquid" isDirty={() => false} onOpen={vi.fn()} previewOf="hive-site" />);
-  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['SKILL.md · hive-site', 'slicing.md']);
+  expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['SKILL.md', 'slicing.md']);
+  expect(screen.queryByRole('group', { name: 'modo' })).not.toBeInTheDocument();
+  expect(screen.getByText('preview · hive-site · só leitura')).toBeInTheDocument();
+});
+
+test('a tab reads its basename with the full path as its title; the open one is filled (#492)', () => {
+  render(<FileTabs files={['SKILL.md.liquid', 'scripts/run.sh']} open="scripts/run.sh" isDirty={() => false} onOpen={vi.fn()} mode="text" onMode={vi.fn()} />);
+  const tab = screen.getByRole('tab', { name: 'run.sh' });
+  expect(tab).toHaveAttribute('title', 'scripts/run.sh');
+  expect(tab).toHaveClass('aria-selected:bg-card');
 });

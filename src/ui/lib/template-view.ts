@@ -1,15 +1,17 @@
 // The skill editor's look of a template (#319): what Monaco hides, marks and puts in the conditions column, in edit mode and in the "view as"
 // preview. Pure: TemplateText turns a look into Monaco's calls, so the rules are tested without an editor.
-import { type Catalogue, findReferences, type MapBranch, type TemplateMap } from '../../template-map.js';
+import type { ConditionTerm, ConditionValue } from '../../template-condition.js';
+import { type Catalogue, findReferences, type MapBlock, type MapBranch, type TemplateMap } from '../../template-map.js';
 import { chainsOf, type Preview } from '../../template-preview.js';
 import type { ParsedTemplate } from '../../template.js';
+import { type MessageKey, t } from '../i18n.js';
 
 export type EditorMode = 'visual' | 'text';
 export interface LineRange { from: number; to: number } // 1-based, inclusive
 export type LookClass = 'template-pill' | 'template-ref' | 'template-marker' | 'template-branch' | 'template-dim' | 'template-annotation-yellow' | 'template-annotation-red' | 'template-proposal-old' | 'template-proposal-new'; // index.css
 /** A mark on a line: columns from..to (1-based, to exclusive), or the whole line's text; a background spans the line's width. */
 export interface Decoration { line: number; from?: number; to?: number; className: LookClass; isBackground?: boolean }
-export interface Chip { line: number; label: string }
+export interface Chip { line: number; label: string; isNote?: boolean } // a note is plain text in the column, opening nothing (#492)
 /** dimmed: the source lines of the branches that do not hold (the map dims them); lineOf: a source line's line in the editor. */
 export interface TextLook { text: string; hidden: LineRange[]; decorations: Decoration[]; chips: Chip[]; dimmed: ReadonlySet<number>; lineOf(source: number): number }
 interface LookArgs { text: string; parsed: ParsedTemplate; map: TemplateMap; catalogue: Catalogue; mode: EditorMode; isHeaderShown?: boolean }
@@ -26,6 +28,47 @@ export const isMarkdown = (path: string): boolean => MARKDOWN.test(path);
 /** A branch as its chip and map row read it; the Liquid words stay in English in every language (handoff). */
 export const branchLabel = ({ marker, conditionText }: MapBranch): string =>
   marker === 'else' ? 'else' : `${marker === 'elsif' ? 'else if' : marker} ${conditionText}`;
+
+const valueWord = (value: ConditionValue | undefined): string => {
+  if (typeof value === 'boolean') return t(value ? 'plugins.variables.yes' : 'plugins.variables.no');
+  return value === null || value === undefined ? 'null' : value;
+};
+const BARE_WORD: Partial<Record<ConditionTerm['op'], MessageKey>> = { hasValue: 'plugins.chain.op.hasValue', isBlank: 'plugins.chain.op.isBlank', isNo: 'plugins.chain.op.no' };
+
+function termWords({ variable, op, value }: ConditionTerm): string {
+  const bare = BARE_WORD[op];
+  if (bare !== undefined) return `${variable} ${t(bare)}`;
+  const operator = op === 'is' ? '=' : op === 'isNot' ? '≠' : t('plugins.chain.op.contains');
+  return `${variable} ${operator} ${valueWord(value)}`;
+}
+
+/** A branch in words, as the map's sub-line and the margin's chip read it (#492): `only when <condition>`, `otherwise` for an else. A
+ * condition the form cannot hold, or an unless that is not one "is no", stays its Liquid text. */
+export function branchSentence(branch: MapBranch): string {
+  if (branch.marker === 'else') return t('plugins.chain.otherwise');
+  const { condition } = branch;
+  if (condition === null) return branchLabel(branch);
+  // unless v is the root design's "v is no": buildMap already reads it so, a bare parseCondition reads it as "has a value"
+  const isUnlessNo = condition.terms.length === 1 && (condition.terms[0]?.op === 'hasValue' || condition.terms[0]?.op === 'isNo');
+  if (branch.marker === 'unless' && !isUnlessNo) return branchLabel(branch);
+  const terms = branch.marker === 'unless' ? condition.terms.map((term): ConditionTerm => ({ ...term, op: 'isNo' })) : condition.terms;
+  const joined = terms.map(termWords).join(` ${t(condition.connective === 'and' ? 'plugins.chain.and' : 'plugins.chain.or')} `);
+  return t('plugins.chain.onlyWhen', { condition: joined });
+}
+
+function rowLines(blocks: readonly MapBlock[]): number[] {
+  return blocks.flatMap((block) => {
+    if (block.kind === 'introduction') return [block.line];
+    if (block.kind === 'heading') return [block.line, ...rowLines(block.children)];
+    return block.branches.flatMap((branch) => [branch.line, ...rowLines(branch.children)]);
+  });
+}
+
+/** The map row the caret is in (#492): the last row, nested ones included, at or above `line`; none above the first. */
+export function blockAt(map: TemplateMap, line: number): number | undefined {
+  const above = rowLines(map.blocks).filter((row) => row <= line);
+  return above.length === 0 ? undefined : Math.max(...above);
+}
 
 const markerLines = (map: TemplateMap): number[] => chainsOf(map.blocks).flatMap((c) => [...c.branches.map((b) => b.line), c.endLine]);
 const span = (from: number, to: number): number[] => Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i);
@@ -75,7 +118,7 @@ function decorationsOf({ text, parsed, map, catalogue, mode }: LookArgs): Decora
 export function templateLook(args: LookArgs): TextLook {
   const header = args.isHeaderShown ? [] : span(1, args.parsed.bodyLine - 1);
   const hidden = args.mode === 'text' ? [] : rangesOf([...header, ...markerLines(args.map)]);
-  const chips = chainsOf(args.map.blocks).flatMap((c) => c.branches.map((b) => ({ line: b.line, label: branchLabel(b) })));
+  const chips = chainsOf(args.map.blocks).flatMap((c) => c.branches.map((b) => ({ line: b.line, label: branchSentence(b) })));
   return { text: args.text, hidden, decorations: decorationsOf(args), chips, dimmed: NONE, lineOf: (line) => visibleLine(line, hidden) };
 }
 

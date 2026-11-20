@@ -15,6 +15,7 @@ type MouseListener = (event: { target: { type: number; position: Position | null
 /** A selection as Monaco's cursor event carries it (#331). */
 export interface FakeSelection { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }
 type SelectionListener = (event: { selection: FakeSelection }) => void;
+type PositionListener = (event: { position: Position }) => void;
 
 export const registered: { kind: string; language: string; provider: unknown }[] = [];
 export const markers: { model: FakeModel; owner: string; list: unknown[] }[] = [];
@@ -85,6 +86,7 @@ export class FakeEditor {
   decorations: FakeDecoration[] = [];
   private mouse: MouseListener[] = [];
   private selecting: SelectionListener[] = [];
+  private moving: PositionListener[] = [];
   hiddenAreas: { startLineNumber: number; endLineNumber: number }[] = [];
   readOnly = false;
 
@@ -99,7 +101,14 @@ export class FakeEditor {
 
   saveViewState(): { scrollTop: number } { return { scrollTop: 40 }; }
   restoreViewState(_state: unknown): void {}
-  setPosition(position: Position): void { this.position = position; }
+  setPosition(position: Position): void {
+    this.position = position;
+    for (const listener of this.moving) listener({ position }); // Monaco reports its own moves too (#492)
+  }
+  onDidChangeCursorPosition(listener: PositionListener): { dispose(): void } {
+    this.moving = [...this.moving, listener];
+    return { dispose: () => { this.moving = this.moving.filter((l) => l !== listener); } };
+  }
   revealPositionInCenter(_position: Position): void {}
   focus(): void {}
   updateOptions({ fontFamily, readOnly }: { fontFamily?: string; readOnly?: boolean }): void { if (fontFamily !== undefined) this.fontFamily = fontFamily; if (readOnly !== undefined) this.readOnly = readOnly; }
