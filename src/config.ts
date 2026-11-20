@@ -25,13 +25,14 @@ import { parseNestedRepos } from './config-nested.js';
 import { parseBenchmarkPrIn } from './config-benchmark-pr.js';
 import { parseSignals } from './signals-config.js';
 import { parseMcp } from './mcp-settings.js';
-import { MCP_DEFAULTS, type McpSettings, AGENT_IDS, REVIEWER_DEFAULTS, type ReviewerConfig, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
+import { parseAccounts } from './accounts-config.js';
+import { MCP_DEFAULTS, type AccountsConfig, type McpSettings, AGENT_IDS, REVIEWER_DEFAULTS, type ReviewerConfig, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
 export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github', 'jira'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
-export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
+export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor' | 'accounts'> = {
   logLevel: 'info',
   agentArgs: { claude: [], codex: [], copilot: [] },
   // #482: a first save without them; #873: copilot off until its hooks land (#608 node 2): a worker of it never leaves working before
@@ -521,6 +522,13 @@ function requireMcp(raw: unknown, workspaces: readonly string[], platform: NodeJ
   return mcp;
 }
 
+// Required, no default (#952): the parse is accounts-config.ts'. No prefill in hive.ts: the one file is fixed by hand
+function requireAccounts(raw: unknown): AccountsConfig {
+  const accounts = parseAccounts(raw);
+  if (typeof accounts === 'string') throw new Error(`${CONFIG_FILE}: ${accounts}`);
+  return accounts;
+}
+
 // Optional (#328): absent reads as REVIEWER_DEFAULTS, no migration; the parse is reviewer-config.ts'
 function requireReviewer(raw: unknown): ReviewerConfig {
   const reviewer = parseReviewer(raw);
@@ -640,6 +648,7 @@ function parseFields(raw: unknown): Config {
     fileIcons: requireFileIcons(raw.fileIcons), // #754: a file from before the key is migrated to FILE_ICONS_DEFAULTS
     sidebarsPerView: requireSidebarsPerView(raw.sidebarsPerView), // #821: a file from before the key boots the settings form prefilled (hive.ts)
     signals: requireSignals(raw.signals), // #727: a file from before the key boots the settings form prefilled (hive.ts)
+    accounts: requireAccounts(raw.accounts), // #952: last, so any other problem in a file is named first
   };
 }
 

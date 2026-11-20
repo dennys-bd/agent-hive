@@ -169,7 +169,7 @@ test('POST /settings writes the config with defaults and boots the runtime on th
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const { prefix, sources, flows, commands, hiveSource, createIn, ...rest } = BODY;
-  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(flatten(flows ?? []).stages).stages, transitions: chained(flatten(flows ?? []).stages).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
+  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, accounts: {}, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(flatten(flows ?? []).stages).stages, transitions: chained(flatten(flows ?? []).stages).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
   await server.poll(); // the first poll runs in the background (#59); wait for it before reading tasks
   const state = server.getState();
   assert.equal(state?.workers.length, 0);
@@ -1313,6 +1313,16 @@ test('POST /settings writes mcp\'s defaults on a first save, keeps the saved mcp
   assert.equal(renamed.status, 400);
   assert.deepEqual(await json(renamed), { error: `hive.config.json: "mcp.servers": figma is scoped to ${WORKSPACE}, which no longer exists` });
   assert.deepEqual(await onDisk(), mcp, 'refused before the write');
+});
+
+test('POST /settings writes accounts {} on a first save and keeps the saved selection when the body has none (#952)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).accounts;
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), {}, 'a body without it, as the Settings form sends until #964');
+  assert.equal((await postSettings(base, { ...BODY, accounts: { github: 'me' } })).status, 200);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), { github: 'me' }, 'an omitted key keeps the saved selection');
 });
 
 test('POST /settings refuses to delete a flow that holds tasks, naming it and the count, and deletes an empty one (#565)', async (t) => {
