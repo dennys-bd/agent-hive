@@ -1,17 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PassThrough } from 'node:stream';
 import { promisify } from 'node:util';
 import { localActivityId } from '../src/activities.js';
-import type { Machine, MachineChild } from '../src/machine.js';
+import type { Machine } from '../src/machine.js';
 import { createGrepParser, grepArgs, grepError, type GrepLine, MATCH_END, MATCH_START, searchQueryOf, searchTree, stripMatches, toWireMatch } from '../src/server-search.js';
 import { type SearchLine, SEARCH_CAP } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { fakeFiles, fakeMachine } from './fake-machine.js';
+import { grepMachine } from './fixtures/grep-machine.js';
 import { workPath } from './fixtures/work.js';
 import { startTree, task } from './fixtures/tree-server.js';
 import { hiveFetch } from './secret-client.js';
@@ -68,25 +67,6 @@ test('grepError: git\'s fatal reason without its prefix, else what stderr says (
   assert.equal(grepError('warning: x\nfatal: not a git repository\n'), 'not a git repository');
   assert.equal(grepError(''), 'git grep failed');
 });
-
-interface Script { out?: Buffer[]; err?: string; code?: number; isHeld?: boolean } // isHeld: never closes until killed
-function grepMachine(byCwd: Record<string, Script>, base: Machine = fakeMachine()): { machine: Machine; killed: string[]; ran: string[] } {
-  const killed: string[] = [];
-  const ran: string[] = [];
-  const process: Machine['process'] = (_command, _args, { cwd }) => {
-    ran.push(cwd);
-    const { out = [], err = '', code = 0, isHeld = false } = byCwd[cwd] ?? { code: 1 };
-    const child = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), pid: 1,
-      kill: () => { killed.push(cwd); setImmediate(() => child.emit('close', null, 'SIGTERM')); return true; } });
-    setImmediate(() => {
-      for (const chunk of out) child.stdout.write(chunk);
-      child.stderr.write(err);
-      if (!isHeld) setImmediate(() => child.emit('close', code, null));
-    });
-    return child as unknown as MachineChild;
-  };
-  return { machine: { ...base, process }, killed, ran };
-}
 
 // nestedRepos and the searched count run on this exec: docs/ is the one nested repository, and each repository lists two files
 const exec = async (_file: string, args: string[]): Promise<{ stdout: string }> => ({ stdout: args.includes('--directory') ? 'docs/\0' : args.includes('--cached') ? 'a.ts\0b.ts\0' : '' });
