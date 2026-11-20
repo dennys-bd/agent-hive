@@ -1,4 +1,4 @@
-import { CaseSensitiveIcon, ChevronDownIcon, ChevronRightIcon, RegexIcon, WholeWordIcon, type LucideIcon } from 'lucide-react';
+import { CaseSensitiveIcon, ChevronDownIcon, ChevronRightIcon, RegexIcon, ReplaceAllIcon, WholeWordIcon, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { keyTitle } from '@/components/KeyHint';
 import { t } from '@/i18n';
@@ -13,10 +13,10 @@ const TOGGLES: ReadonlyArray<{ field: Toggle; id: 'searchMatchCase' | 'searchWho
 ];
 const ICON_BUTTON = 'flex shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground';
 
-interface FormProps { pane: SearchPaneState; error?: string }
+interface FormProps { pane: SearchPaneState; error?: string; canReplaceAll: boolean; onReplaceAll(): void }
 
 /** The query field with its three toggles, the chevron that shows the replace field and the invalid-regex alert. */
-export function SearchForm({ pane, error }: FormProps) {
+export function SearchForm({ pane, error, canReplaceAll, onReplaceAll }: FormProps) {
   const input = useRef<HTMLInputElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: focusAt is the trigger of a focus (⌘⇧F), not a value it uses
   useEffect(() => { input.current?.focus(); }, [pane.focusAt]);
@@ -24,6 +24,7 @@ export function SearchForm({ pane, error }: FormProps) {
   const Chevron = pane.isReplaceOpen ? ChevronDownIcon : ChevronRightIcon;
   const label = t(pane.isReplaceOpen ? 'search.hideReplace' : 'search.showReplace');
   const isBroken = error !== undefined;
+  const replaceAll = t('shortcuts.searchReplaceAll');
   return (
     <div className="flex gap-0.5 pr-3 pl-1">
       <button type="button" aria-label={label} title={pane.isReplaceOpen ? label : keyTitle(label, 'replaceInFiles')} aria-expanded={pane.isReplaceOpen} onClick={() => setSearchPane({ isReplaceOpen: !pane.isReplaceOpen })} className={`h-[26px] w-5 ${ICON_BUTTON}`}>
@@ -43,6 +44,14 @@ export function SearchForm({ pane, error }: FormProps) {
           })}
         </div>
         {isBroken && <div role="alert" className="px-0.5 pt-0.5 text-destructive text-xs">{pane.query.isRegex ? t('search.invalidRegex', { reason: error }) : error}</div>}
+        {pane.isReplaceOpen && (
+          <div className="flex h-[26px] items-center gap-px rounded-md border border-input pr-0.5 pl-2 text-[13px] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+            <input value={pane.replacement} onChange={(event) => setSearchPane({ replacement: event.target.value })} aria-label={t('search.replaceField')} spellCheck={false} className="min-w-0 flex-1 bg-transparent outline-none" />
+            <button type="button" aria-label={replaceAll} title={keyTitle(replaceAll, 'searchReplaceAll')} disabled={!canReplaceAll} onClick={onReplaceAll} className={`h-5 w-[22px] border border-transparent ${ICON_BUTTON} disabled:opacity-50`}>
+              <ReplaceAllIcon aria-hidden="true" className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

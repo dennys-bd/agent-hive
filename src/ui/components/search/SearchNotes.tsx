@@ -6,7 +6,7 @@ import { binding, isMac } from '@/lib/shortcut-bindings';
 const NOTE = 'flex flex-col gap-1.5 px-3 py-2 text-xs leading-[18px] text-muted-foreground text-pretty';
 
 // A message's {name} slots filled with nodes (the repos in <b>, a key in <kbd>): the text is split on the slots, as the dictionaries keep them
-function rich(key: MessageKey, slots: Record<string, ReactNode>): ReactNode {
+export function rich(key: MessageKey, slots: Record<string, ReactNode>): ReactNode {
   return t(key).split(/(\{\w+\})/).map((piece, i) => {
     const name = /^\{(\w+)\}$/.exec(piece)?.[1];
     // biome-ignore lint/suspicious/noArrayIndexKey: the pieces are a fixed split of one message, never reordered

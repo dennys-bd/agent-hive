@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ActivitySide } from '@/components/FilesPanel';
 import { SearchPane } from '@/components/search/SearchPane';
@@ -9,6 +10,11 @@ import { activityKey, type TaskActivity } from '@/lib/activities';
 import { setSearchPane } from '@/lib/search-query';
 import type { SearchEnd, SearchFileResult, SearchLine, Task } from '../../src/types';
 import { taskPairOf } from '../fixtures/work';
+
+vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), info: vi.fn() }) }));
+// the editor's buffers: which paths hold unsaved edits is the test's to say
+const dirtyPaths = new Set<string>();
+vi.mock('@/lib/editor-models', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/editor-models')>()), isDirty: (_id: string, path: string) => dirtyPaths.has(path) }));
 
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1', branch: 'hive/1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
@@ -40,6 +46,8 @@ const withQuery = (q: string, extra: { isRegex?: boolean } = {}): void => setSea
 beforeEach(() => {
   setLanguage('pt');
   fetchMock.mockReset();
+  vi.mocked(toast).mockClear();
+  dirtyPaths.clear();
   openFile.mockClear();
   setSearchPane({ query: { q: '', isCaseSensitive: false, isWholeWord: false, isRegex: false }, replacement: '', isReplaceOpen: false });
   vi.stubGlobal('fetch', fetchMock);
@@ -216,4 +224,155 @@ test('Ctrl+Alt+Enter in the field replaces all once the search is done, and does
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 resultados em 1 arquivo'));
   await user.keyboard('{Control>}{Alt>}{Enter}{/Alt}{/Control}');
   expect(onReplaceAll).toHaveBeenCalledOnce();
+});
+
+// ---- replace (Task 10) ----
+const rows = (count: number): SearchFileResult['matches'] => Array.from({ length: count }, (_, i) => ({ line: i + 1, text: 'x daemonPort y', spans: [[2, 12]] as [number, number][] }));
+const fileOf = (path: string, count: number): SearchFileResult => ({ file: path, repo: '', matches: rows(count) });
+const CARD = 'src/ui/board/Card.tsx';
+const FIVE = [fileOf('src/daemon.ts', 4), fileOf(CARD, 2), fileOf('src/server.ts', 3), fileOf('src/client.ts', 3), fileOf('src/util.ts', 2)];
+const fiveEnd = end({ total: 14, files: 5, repos: ['docs'] });
+const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const changedOf = (...paths: string[]) => paths.map((path, i) => ({ path, previous: `old ${path}`, version: `v${i}`, count: 3 }));
+const posts = (): unknown[] => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));
+const searches = (): number => fetchMock.mock.calls.filter(([url]) => url.includes('/search?')).length;
+
+function routes(answer: unknown, put: (body: { path: string }) => Response = () => json({ version: 'v9' })): void {
+  fetchMock.mockImplementation(async (_url, init) => {
+    if (init?.method === 'POST') return json(answer);
+    if (init?.method === 'PUT') return put(JSON.parse(String(init.body)));
+    return done(...FIVE, fiveEnd);
+  });
+}
+const openReplace = (replacement = 'daemonAddress'): void => { withQuery('daemonPort'); setSearchPane({ isReplaceOpen: true, replacement }); };
+const groupOf = (name: RegExp): HTMLElement => screen.getByRole('treeitem', { name }).closest('[role=group]') as HTMLElement;
+
+test('with the replace field open every row previews the old struck and the new inserted, on every span of the line', async () => {
+  openReplace();
+  const many: SearchFileResult = { file: 'src/daemon.ts', repo: '', matches: [{ line: 5, text: 'a daemonPort b daemonPort c daemonPort', spans: [[2, 12], [15, 25], [28, 38]] }] };
+  fetchMock.mockImplementation(async () => done(many, end({ total: 3 })));
+  render(pane());
+  const row = await screen.findByRole('treeitem', { name: /^5 / });
+  expect(row.querySelectorAll('mark')).toHaveLength(3);
+  expect(row.querySelectorAll('s')).toHaveLength(3);
+  expect(row.querySelectorAll('ins')).toHaveLength(3);
+  expect(row.querySelector('s')).toHaveTextContent('daemonPort');
+  expect(row.querySelector('ins')).toHaveTextContent('daemonAddress');
+});
+
+test('an unsaved file keeps the plain highlight, wears the tag and cannot be replaced', async () => {
+  dirtyPaths.add(CARD);
+  openReplace();
+  routes({ changed: [], skipped: [] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  const card = screen.getByRole('treeitem', { name: /Card\.tsx/ });
+  expect(card).toHaveTextContent('não salvo');
+  expect(card).toHaveAttribute('title', 'alterações não salvas no editor: os resultados são do arquivo salvo, e substituir não o altera');
+  expect(within(groupOf(/Card\.tsx/)).queryByRole('treeitem', { name: /^1 / })?.querySelector('s')).toBeNull();
+  expect(within(groupOf(/Card\.tsx/)).getByRole('treeitem', { name: /^1 / }).querySelector('mark')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'substituir em Card.tsx' })).toBeDisabled();
+  expect(within(groupOf(/daemon\.ts/)).getByRole('treeitem', { name: /^1 / }).querySelector('s')).not.toBeNull();
+});
+
+test('replace-all asks first: files, occurrences, scope and the unsaved file left out; confirming posts without it', async () => {
+  const user = userEvent.setup();
+  dirtyPaths.add(CARD);
+  openReplace();
+  routes({ changed: changedOf('src/daemon.ts'), skipped: [] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir tudo' }));
+  const dialog = await screen.findByRole('alertdialog');
+  expect(within(dialog).getByText('Substituir em 4 arquivos')).toBeInTheDocument();
+  expect(within(dialog).getByText('hive/1-task-1 + docs')).toBeInTheDocument();
+  expect(dialog).toHaveTextContent('12 ocorrências de daemonPort por daemonAddress. Card.tsx tem alterações não salvas no editor e fica de fora.');
+  expect(posts()).toHaveLength(0);
+  await user.click(within(dialog).getByRole('button', { name: 'substituir' }));
+  await waitFor(() => expect(posts()).toHaveLength(1));
+  expect(posts()[0]).toEqual({
+    query: { q: 'daemonPort', isCaseSensitive: false, isWholeWord: false, isRegex: false }, replacement: 'daemonAddress',
+    files: ['src/daemon.ts', 'src/server.ts', 'src/client.ts', 'src/util.ts'],
+  });
+});
+
+test('a file\'s replace posts that file alone without asking, and the notice names it', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  routes({ changed: [{ path: 'src/daemon.ts', previous: 'old', version: 'v1', count: 4 }], skipped: [] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir em daemon.ts' }));
+  await waitFor(() => expect(toast).toHaveBeenCalled());
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  expect((posts()[0] as { files: string[] }).files).toEqual(['src/daemon.ts']);
+  expect(vi.mocked(toast).mock.calls[0]?.[0]).toBe('substituído em daemon.ts');
+  expect(vi.mocked(toast).mock.calls[0]?.[1]).toMatchObject({ description: '4 ocorrências.' });
+});
+
+test('replace-all\'s notice counts files and occurrences, and its undo puts every previous text back; a 409 is named', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  const paths = ['src/daemon.ts', 'src/server.ts', 'src/client.ts', 'src/util.ts'];
+  routes({ changed: changedOf(...paths), skipped: [] }, (body) => (body.path === 'src/server.ts' ? json({ error: 'changed', version: 'v' }, 409) : json({ version: 'v9' })));
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir tudo' }));
+  await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'substituir' }));
+  await waitFor(() => expect(toast).toHaveBeenCalled());
+  const [title, options] = vi.mocked(toast).mock.calls[0] as [string, { description: string; action: { label: string; onClick(): void } }];
+  expect(title).toBe('substituído em 4 arquivos');
+  expect(options.description).toBe('12 ocorrências. as tabs abertas desses arquivos recarregaram.');
+  expect(options.action.label).toBe('desfazer');
+  options.action.onClick();
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('não desfeito em src/server.ts: o arquivo mudou no disco'));
+  const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT').map(([, init]) => JSON.parse(String(init?.body)));
+  expect(puts.map((p: { path: string }) => p.path)).toEqual(paths);
+  expect(puts[0]).toMatchObject({ text: 'old src/daemon.ts', version: 'v0', format: false });
+});
+
+test('a file the replace left out is named in the notice', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  routes({ changed: changedOf('src/daemon.ts'), skipped: [{ path: 'big.json', reason: 'too_large' }] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir em daemon.ts' }));
+  await waitFor(() => expect(toast).toHaveBeenCalled());
+  expect(vi.mocked(toast).mock.calls[0]?.[1]).toMatchObject({ description: '3 ocorrências. ficaram de fora: big.json' });
+});
+
+test('replace-all is disabled while the search runs, with an error, with no results and with no query', async () => {
+  openReplace();
+  const s = stream(FIVE[0] as SearchFileResult);
+  fetchMock.mockImplementation(async () => s.res);
+  const running = render(pane());
+  expect(await screen.findByRole('button', { name: 'substituir tudo' })).toBeDisabled();
+  running.unmount();
+  fetchMock.mockImplementation(async () => done({ error: 'boom' }));
+  const failed = render(pane());
+  await screen.findByRole('alert');
+  expect(screen.getByRole('button', { name: 'substituir tudo' })).toBeDisabled();
+  failed.unmount();
+  fetchMock.mockImplementation(async () => done(end({ total: 0, files: 0 })));
+  const empty = render(pane());
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('nenhum resultado'));
+  expect(screen.getByRole('button', { name: 'substituir tudo' })).toBeDisabled();
+  empty.unmount();
+  withQuery('');
+  setSearchPane({ isReplaceOpen: true });
+  render(pane());
+  expect(screen.getByRole('button', { name: 'substituir tudo' })).toBeDisabled();
+});
+
+test('after a replace the search runs again with the same query', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  routes({ changed: changedOf('src/daemon.ts'), skipped: [] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  const before = searches();
+  await user.click(screen.getByRole('button', { name: 'substituir em daemon.ts' }));
+  await waitFor(() => expect(searches()).toBe(before + 1));
+  expect(fetchMock.mock.calls.filter(([url]) => url.includes('/search?')).at(-1)?.[0]).toContain('q=daemonPort&');
 });

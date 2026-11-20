@@ -1,5 +1,5 @@
 import { GitBranchIcon, LoaderCircleIcon } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useOpenFile } from '@/components/terminal-tabs';
 import { formatCount, t, tPlural } from '@/i18n';
 import { type Activity, activityKey } from '@/lib/activities';
@@ -9,6 +9,8 @@ import { setSearchPane, type SearchPaneState, useSearchPane } from '@/lib/search
 import { type SearchView, useSearch } from '@/lib/search-stream';
 import { SEARCH_CAP } from '../../../types';
 import { CapNote, EmptyNote, NoResultsNote, NoWorktreeNote } from './SearchNotes';
+import { ReplaceConfirm } from './ReplaceConfirm';
+import { useReplace } from './use-replace';
 import { SearchForm } from './SearchForm';
 import { SearchResults } from './SearchResults';
 
@@ -53,20 +55,24 @@ export function SearchPane({ target, isShown, onReplaceAll }: { target: Activity
   const root = useRef<HTMLDivElement>(null);
   const pane = useSearchPane();
   const openFile = useOpenFile();
-  const found = useSearch(target.activity.id, pane.query, 0);
+  const [runId, setRunId] = useState(0);
+  const found = useSearch(target.activity.id, pane.query, runId);
   // the first read of an empty query is the scope question: it is idle, not "searching"
   const view: SearchView = pane.query.q === '' && found.kind === 'running' ? { kind: 'idle', repos: [] } : found;
   const onOpen = (path: string, at: FileAt): void => { openFile?.(activityKey(target), path, at); };
   const summary = summaryOf(view);
   // replace-all needs a settled search with something to replace and the replace field open
   const canReplaceAll = pane.isReplaceOpen && view.kind === 'done' && view.end.total > 0;
-  useSearchPaneKeys(root, (key) => runKey(key, pane, canReplaceAll, onReplaceAll));
+  const results = view.kind === 'running' || view.kind === 'done' ? view.files : [];
+  const replace = useReplace({ activityId: target.activity.id, query: pane.query, replacement: pane.replacement, files: results, rerun: () => setRunId((n) => n + 1) });
+  const askReplaceAll = (): void => { replace.setConfirmOpen(true); onReplaceAll?.(); };
+  useSearchPaneKeys(root, (key) => runKey(key, pane, canReplaceAll, askReplaceAll));
   return (
     <div ref={root} {...{ [SEARCH_PANE_ATTR]: '' }} hidden={!isShown} className="flex min-h-0 flex-1 flex-col">
       {view.kind === 'unavailable' ? <NoWorktreeNote /> : (
         <>
           <Scope target={target} repos={reposOf(view)} />
-          <SearchForm pane={pane} error={view.kind === 'error' ? view.message : undefined} />
+          <SearchForm pane={pane} error={view.kind === 'error' ? view.message : undefined} canReplaceAll={canReplaceAll} onReplaceAll={askReplaceAll} />
           {summary !== undefined && (
             <div role="status" className="flex min-h-[30px] items-center gap-1.5 px-3 py-1.5 text-muted-foreground text-xs">
               {view.kind === 'running' && <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 motion-safe:animate-spin" />}
@@ -74,9 +80,13 @@ export function SearchPane({ target, isShown, onReplaceAll }: { target: Activity
             </div>
           )}
           {view.kind === 'done' && view.end.capped && <CapNote text={t('search.capNote', { n: formatCount(SEARCH_CAP) })} />}
-          {(view.kind === 'running' || view.kind === 'done') && view.files.length > 0 && <SearchResults files={view.files} onOpen={onOpen} />}
+          {(view.kind === 'running' || view.kind === 'done') && view.files.length > 0 && <SearchResults files={view.files} onOpen={onOpen} dirty={replace.dirty} {...(pane.isReplaceOpen ? { replacement: pane.replacement, onReplaceFile: replace.replaceFile } : {})} />}
           {view.kind === 'idle' && <EmptyNote repos={view.repos} />}
           {view.kind === 'done' && view.end.total === 0 && <NoResultsNote text={t('search.noneNote', { n: formatCount(view.end.searched ?? 0) })} />}
+          <ReplaceConfirm
+            open={replace.isConfirmOpen} onOpenChange={replace.setConfirmOpen} {...replace.plan} query={pane.query.q} replacement={pane.replacement}
+            scope={`${target.activity.branch ?? target.activity.workspace}${reposOf(view).length > 0 ? ` + ${reposOf(view).join(', ')}` : ''}`} onConfirm={replace.replaceAll}
+          />
         </>
       )}
     </div>
