@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { renameSync, writeFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -88,9 +88,9 @@ test('darwin and linux: EPERM is a real permission problem, thrown on the first 
 
 // A Node handle cannot hold the lock: libuv opens files with FILE_SHARE_DELETE, so a Node reader never blocks the rename. PowerShell opens
 // the target with Read sharing only, says so, holds it ~300 ms (inside the 1.3 s window) and closes it. The path comes through the env,
-// never through the script's text. No progress record is written: writeAtomically blocks the event loop while it retries, so nothing
-// reads the holder's pipes then, and a write the holder blocks on would keep the file held past the window (#936).
-const HOLD_SCRIPT = "$ProgressPreference = 'SilentlyContinue'; $f = [IO.File]::Open($env:HIVE_HOLD_PATH, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('open'); [Console]::Out.Flush(); Start-Sleep -Milliseconds 300; $f.Close()";
+// never through the script's text. The wait is .NET's, not Start-Sleep: the first cmdlet a cold powershell.exe runs autoloads its module,
+// which on a loaded runner held the file past the window (#936).
+const HOLD_SCRIPT = "$f = [IO.File]::Open($env:HIVE_HOLD_PATH, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('open'); [Console]::Out.Flush(); [Threading.Thread]::Sleep(300); $f.Close()";
 const LOCK_CODES = ['EPERM', 'EBUSY', 'EACCES'];
 // Room for powershell.exe to start on a cold runner
 const WIN32_ONLY = { skip: process.platform !== 'win32' && 'Windows only: runs on the Windows lane', timeout: 30_000 };
@@ -113,8 +113,7 @@ async function holdOpen(t: AfterHost, path: string): Promise<void> {
   const root = process.env.SystemRoot;
   assert.ok(root, 'SystemRoot is not set');
   const exe = win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  // stdin and stderr go nowhere: only stdout is read, and only before the write that blocks the event loop
-  const holder = spawn(exe, ['-NoProfile', '-NonInteractive', '-Command', HOLD_SCRIPT], { env: { ...process.env, HIVE_HOLD_PATH: path }, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  const holder = execFile(exe, ['-NoProfile', '-NonInteractive', '-Command', HOLD_SCRIPT], { env: { ...process.env, HIVE_HOLD_PATH: path }, windowsHide: true });
   const exited = once(holder, 'exit').catch(() => undefined);
   t.after(async () => { await exited; });
   const stdout = holder.stdout ?? assert.fail('the holder has no stdout');
