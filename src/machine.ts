@@ -1,7 +1,7 @@
 // The machine (#158, node 7.1 of #157): where a task's disk, processes and ptys are. The host's own is the local machine (machine-local.ts);
-// node 8 adds an actor's, reached over the link. Types only, but MachineError: a remote machine's failure arrives as data and is rebuilt as
-// one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, and node:path for pathsOf, which is why this file is on
-// biome.jsonc's host-only list.
+// node 8 adds an actor's, reached over the link. Types only, but MachineError and pathsOf: a remote machine's failure arrives as data and is
+// rebuilt as one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, and
+// node:path for pathsOf, which is why this file is on biome.jsonc's host-only list.
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { BigIntStats, CopyOptions, Dirent, MakeDirectoryOptions, Mode, RmOptions, Stats } from 'node:fs';
 import path from 'node:path';
