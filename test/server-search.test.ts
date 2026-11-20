@@ -133,7 +133,7 @@ test('createGrepParser: a long line fed in small chunks is read once, not re-joi
 
 test('toWireMatch: many spans on a long multibyte line map to UTF-16 in order (#868)', () => {
   const unit = 'ação ';
-  const raw = Buffer.from(unit.repeat(1000) + 'x');
+  const raw = Buffer.from(`${unit.repeat(1000)}x`);
   const spans: [number, number][] = Array.from({ length: 1000 }, (_, i) => [i * Buffer.byteLength(unit), i * Buffer.byteLength(unit) + 3]);
   const match = toWireMatch({ file: 'f', line: 2, raw, spans });
   assert.deepEqual(match.spans[999], [999 * unit.length, 999 * unit.length + 2]);
