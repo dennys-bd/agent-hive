@@ -293,6 +293,29 @@ const en = {
   'files.tab.files': 'files',
   'files.tab.details': 'details',
   'files.tab.variables': 'variables',
+  'files.tab.search': 'search', // #868
+  'search.scope': "the focused activity's worktree and its nested repositories",
+  'search.field': 'search in files',
+  'search.fieldPlaceholder': 'search',
+  'search.showReplace': 'show replace',
+  'search.hideReplace': 'hide replace',
+  'search.invalidRegex': 'invalid regex: {reason}',
+  'search.results.one': '{n} result',
+  'search.results.other': '{n} results',
+  'search.files.one': '{n} file',
+  'search.files.other': '{n} files',
+  'search.summary': '{results} in {files}',
+  'search.busy': 'searching · {results} so far',
+  'search.noResults': 'no results',
+  'search.many': 'more than {n} results',
+  'search.capNote': 'showing the first {n}. refine the search to see the rest.',
+  'search.emptyNote': 'searches the contents of the files in this worktree, the same ones {key} lists.',
+  'search.emptyNoteNested': 'searches the contents of the files in this worktree and in {repos}, the same ones {key} lists.',
+  'search.openHint': '{key} opens the file at the line.',
+  'search.noneNote': 'nothing in {n} files. check the spelling, or turn off match case and whole word if they are on.',
+  'search.noWorktree': 'the focused activity has no worktree.',
+  'search.noWorktreeHint': 'open an activity with a worktree to search its files.',
+  'search.tree': 'results',
   'header.pane.unavailable': '{pane} · unavailable in {view}',
   'header.pane.onlyPlugins': '{pane} · only in plugins',
   'files.menu.collapseAll': 'collapse all',
@@ -3771,6 +3794,29 @@ const pt: Record<MessageKey, string> = {
   'files.tab.files': 'arquivos',
   'files.tab.details': 'detalhes',
   'files.tab.variables': 'variáveis',
+  'files.tab.search': 'busca', // #868
+  'search.scope': 'a worktree da atividade em foco e os repositórios aninhados',
+  'search.field': 'buscar nos arquivos',
+  'search.fieldPlaceholder': 'buscar',
+  'search.showReplace': 'mostrar substituir',
+  'search.hideReplace': 'esconder substituir',
+  'search.invalidRegex': 'regex inválida: {reason}',
+  'search.results.one': '{n} resultado',
+  'search.results.other': '{n} resultados',
+  'search.files.one': '{n} arquivo',
+  'search.files.other': '{n} arquivos',
+  'search.summary': '{results} em {files}',
+  'search.busy': 'buscando · {results} até agora',
+  'search.noResults': 'nenhum resultado',
+  'search.many': 'mais de {n} resultados',
+  'search.capNote': 'mostrando os primeiros {n}. refine a busca para ver o resto.',
+  'search.emptyNote': 'busca no conteúdo dos arquivos desta worktree, os mesmos que {key} lista.',
+  'search.emptyNoteNested': 'busca no conteúdo dos arquivos desta worktree e de {repos}, os mesmos que {key} lista.',
+  'search.openHint': '{key} abre o arquivo na linha.',
+  'search.noneNote': 'nada em {n} arquivos. confira a grafia, ou desligue diferenciar maiúsculas e palavra inteira se estiverem ligados.',
+  'search.noWorktree': 'a atividade em foco não tem worktree.',
+  'search.noWorktreeHint': 'abra uma atividade com worktree para buscar nos arquivos dela.',
+  'search.tree': 'resultados',
   'header.pane.unavailable': '{pane} · indisponível em {view}',
   'header.pane.onlyPlugins': '{pane} · só em plugins',
   'files.menu.collapseAll': 'recolher tudo',
@@ -6998,7 +7044,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468), or the memory history's changes (#684). */
-export type PluralFamily = 'checkpoints.summary' | 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'checkpoints.summary' | 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'search.results' | 'search.files' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
