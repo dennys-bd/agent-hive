@@ -22,7 +22,7 @@ import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
 import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, State, TaskFilter, Stage, Transition, Flow, Gql, ItemAction, SourceItemRead, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits, Exec } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
-import type { Machine, MachineFs, MachineInfo, MachinePty, RunResult } from '../src/machine.js';
+import { type Machine, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type RunResult } from '../src/machine.js';
 import { fakeMachine as localMachine } from './fake-machine.js';
 import { createPtyHost } from '../src/pty-host.js';
 import { AGENTS } from '../src/agents.js';
@@ -422,7 +422,8 @@ export function fakeMachine(parts: FakeMachineParts = {}): Machine {
   const base = localMachine(parts.exec === undefined ? {} : { exec: parts.exec });
   return {
     ...base, fs: { ...base.fs, ...parts.fs }, run: parts.run ?? base.run, pty: { ...idlePty(), ...parts.pty },
-    info: () => ({ ...base.info(), ...parts.info }), ...(parts.process === undefined ? {} : { process: parts.process }),
+    info: () => ({ ...base.info(), ...parts.info }), paths: parts.info?.platform === undefined ? base.paths : pathsOf(parts.info.platform),
+    ...(parts.process === undefined ? {} : { process: parts.process }),
   };
 }
 

@@ -1,6 +1,6 @@
 // The machines registry (#931, leaf 2.1 of #930): the local machine for 'local', a distro's machine for 'wsl:<distro>' once 5.3 hands a
 // factory, and for any id it cannot serve a machine that refuses every call, so a caller fails the way any machine call fails.
-import { type Machine, MachineError, type MachineFs, type MachinePty, type Machines } from './machine.js';
+import { type Machine, MachineError, type MachineFs, type MachinePty, type Machines, pathsOf } from './machine.js';
 import { LOCAL_MACHINE, type MachineId, WSL_MACHINE_PREFIX } from './types.js';
 
 export const NOT_WINDOWS = 'not_windows'; // a wsl: id off win32
@@ -23,7 +23,8 @@ export function unavailableMachine(id: MachineId, reason: string): Machine {
     spawn: fail, has: () => false, pid: () => undefined, write: () => false, resize: () => false, kill: () => false,
     subscribe: () => undefined, adopt: () => {}, forget: () => {},
   };
-  return { id, fs, pty, exec: reject, run: reject, process: fail, info: fail };
+  // paths: a distro's disk is Linux; an unknown id has no disk to join paths on, and every call of it fails anyway
+  return { id, fs, pty, exec: reject, run: reject, process: fail, info: fail, paths: pathsOf('linux') };
 }
 
 const buildFor = (id: MachineId, { platform, wsl }: MachinesDeps): Machine => {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { type Machine, MachineError } from '../src/machine.js';
+import { type Machine, MachineError, pathsOf } from '../src/machine.js';
 import { createMachines, unavailableMachine } from '../src/machines.js';
 import type { PtyHandlers } from '../src/types.js';
 import { fakeMachine } from './fake-machine.js';
@@ -20,6 +20,7 @@ test('for answers the local machine for an activity with no machine and for loca
 test('a wsl: id off win32 is a machine that refuses every call with machine_unavailable and not_windows (#931)', async () => {
   const machine = createMachines({ local, platform: 'darwin' }).for({ machine: 'wsl:X' });
   assert.equal(machine.id, 'wsl:X');
+  assert.equal(machine.paths, pathsOf('linux'), 'a distro\'s disk joins with /');
   await assert.rejects(machine.exec('git', ['status']), unavailable('not_windows'));
   await assert.rejects(machine.fs.stat('/home/u/repo'), unavailable('not_windows'));
   await assert.rejects(machine.fs.stat('/home/u/repo'), { message: 'machine wsl:X is unavailable: not_windows' });

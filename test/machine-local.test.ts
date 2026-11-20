@@ -2,14 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import path, { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { MachineError } from '../src/machine.js';
 import { createLocalMachine, LOCAL_DISK, localDisk } from '../src/machine-local.js';
 import { runDetached } from '../src/machine-run.js';
 import { posixShell } from '../src/posix-shell.js';
 import type { Exec } from '../src/types.js';
-import { localDeps as deps } from './fake-machine.js';
+import { localDeps as deps, fakeMachine as fakeLocal, machineWith } from './fake-machine.js';
+import { fakeMachine } from './fakes.js';
 import { assertMode, NO_POSIX_FAULTS } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
@@ -130,4 +131,18 @@ test('process starts the command in the given cwd with the given env, and its st
   child.stdout.on('data', (chunk: Buffer) => { out += chunk.toString('utf8'); });
   await new Promise((resolve) => child.once('close', resolve));
   assert.equal(out, `${basename(dir)}|probe`);
+});
+
+test('paths is the platform\'s flavour, whatever the host: win32 joins with \\, linux with / (#927)', () => {
+  assert.equal(createLocalMachine(deps({ platform: 'win32' })).paths, path.win32);
+  assert.equal(createLocalMachine(deps({ platform: 'linux' })).paths, path.posix);
+  assert.equal(createLocalMachine(deps({ platform: 'darwin' })).paths, path.posix);
+});
+
+test('the fake machines answer paths for the platform they were given (#927)', () => {
+  assert.equal(fakeLocal({ platform: 'win32' }).paths, path.win32);
+  assert.equal(fakeLocal({ platform: 'win32', info: { platform: 'linux' } }).paths, path.posix);
+  assert.equal(machineWith({ platform: 'win32' }, fakeLocal({ platform: 'linux' })).paths, path.win32);
+  assert.equal(fakeMachine({ info: { platform: 'win32' } }).paths, path.win32);
+  assert.equal(fakeMachine({ info: { platform: 'linux' } }).paths, path.posix);
 });
