@@ -87,9 +87,10 @@ test('darwin and linux: EPERM is a real permission problem, thrown on the first 
 });
 
 // A Node handle cannot hold the lock: libuv opens files with FILE_SHARE_DELETE, so a Node reader never blocks the rename. PowerShell opens
-// the target with Read sharing only, says so, holds it ~300 ms (inside the 1.3 s window) and closes it. The path comes through the env,
-// never through the script's text.
-const HOLD_SCRIPT = "$f = [IO.File]::Open($env:HIVE_HOLD_PATH, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('open'); [Console]::Out.Flush(); Start-Sleep -Milliseconds 300; $f.Close()";
+// the target with Read sharing only, says so, holds it ~100 ms and closes it. The hold only has to outlast the probe; a loaded Windows
+// runner can stall powershell.exe for most of the 1.3 s retry window, so a longer hold failed there (#936). The path comes through the
+// env, never through the script's text.
+const HOLD_SCRIPT = "$f = [IO.File]::Open($env:HIVE_HOLD_PATH, 'Open', 'Read', 'Read'); [Console]::Out.WriteLine('open'); [Console]::Out.Flush(); Start-Sleep -Milliseconds 100; $f.Close()";
 const LOCK_CODES = ['EPERM', 'EBUSY', 'EACCES'];
 // Room for powershell.exe to start on a cold runner
 const WIN32_ONLY = { skip: process.platform !== 'win32' && 'Windows only: runs on the Windows lane', timeout: 30_000 };
