@@ -110,7 +110,7 @@ test('a new press of the binding with the bar open focuses the field again and s
   expect(selected(field())).toBe('warn');
   await user.keyboard('{ArrowRight}');
   expect(selected(field())).toBe('');
-  await user.keyboard('{Control>}{Shift>}F{/Shift}{/Control}'); // jsdom runs as off macOS: the binding is Ctrl+Shift+F
+  await user.keyboard('{F3}'); // jsdom runs as off macOS: the binding is F3
   expect(selected(field())).toBe('warn');
   expect(field()).toHaveValue('warn');
 });

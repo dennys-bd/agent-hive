@@ -44,7 +44,7 @@ test('the terminal\'s find key reaches Monaco\'s find inside an editor (#254)', 
   const seen = vi.fn();
   textarea.addEventListener('keydown', seen);
   const stop = passHiveKeys(host);
-  const find = { key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }; // findInTerminal off macOS
+  const find = { key: 'F3', code: 'F3' }; // findInTerminal off macOS: Monaco's find next
   expect(isHiveKey(key(find))).toBe(false);
   textarea.dispatchEvent(key(find));
   expect(seen).toHaveBeenCalledOnce();
@@ -70,4 +70,10 @@ test('the sleep key stays Monaco\'s quick fix inside an editor and still sleeps 
   stop();
   editor.remove();
   outside.remove();
+});
+
+test('searchInFiles and replaceInFiles pass to the Hive over the editor: Monaco has no Ctrl+Shift+F or Ctrl+Shift+H of its own (#868)', () => {
+  expect(isHiveKey(key({ key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }))).toBe(true);
+  expect(isHiveKey(key({ key: 'H', code: 'KeyH', ctrlKey: true, shiftKey: true }))).toBe(true);
+  expect(isHiveKey(key({ key: 'h', code: 'KeyH', ctrlKey: true }))).toBe(false); // Monaco's replace off macOS
 });

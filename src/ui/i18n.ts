@@ -2030,6 +2030,12 @@ const en = {
   'shortcuts.toggleRight': 'open or close the right panel',
   'shortcuts.clear': 'clear the terminal', // #448
   'shortcuts.findInTerminal': 'find in terminal', // #12
+  'shortcuts.searchInFiles': 'search in files', // #868
+  'shortcuts.replaceInFiles': 'replace in files',
+  'shortcuts.searchMatchCase': 'match case',
+  'shortcuts.searchWholeWord': 'whole word',
+  'shortcuts.searchRegex': 'regex',
+  'shortcuts.searchReplaceAll': 'replace all',
   'shortcuts.viewFlow': 'go to tasks', // #533
   'shortcuts.viewPlugins': 'go to plugins', // #313
   'shortcuts.viewBenchmark': 'go to benchmark', // #458
@@ -2126,6 +2132,7 @@ const en = {
   'shortcuts.scope.global': 'global',
   'shortcuts.scope.activities': 'activities',
   'shortcuts.scope.files': 'files tree',
+  'shortcuts.scope.search': 'search pane',
   'shortcuts.scope.flow': 'tasks',
   'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.benchmark': 'benchmark', // #458
@@ -5492,6 +5499,12 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleRight': 'abrir ou fechar o painel da direita',
   'shortcuts.clear': 'limpar o terminal',
   'shortcuts.findInTerminal': 'buscar no terminal', // #12
+  'shortcuts.searchInFiles': 'buscar nos arquivos', // #868
+  'shortcuts.replaceInFiles': 'substituir nos arquivos',
+  'shortcuts.searchMatchCase': 'diferenciar maiúsculas',
+  'shortcuts.searchWholeWord': 'palavra inteira',
+  'shortcuts.searchRegex': 'regex',
+  'shortcuts.searchReplaceAll': 'substituir tudo',
   'shortcuts.viewFlow': 'ir para tarefas',
   'shortcuts.viewPlugins': 'ir para plugins', // #313
   'shortcuts.viewBenchmark': 'ir para benchmark', // #458
@@ -5588,6 +5601,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.global': 'global',
   'shortcuts.scope.activities': 'atividades',
   'shortcuts.scope.files': 'árvore de arquivos',
+  'shortcuts.scope.search': 'busca',
   'shortcuts.scope.flow': 'tarefas',
   'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.benchmark': 'benchmark', // #458

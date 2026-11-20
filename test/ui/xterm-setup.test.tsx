@@ -122,7 +122,7 @@ function findTerm(onFind?: () => void): (event: KeyboardEvent) => boolean {
   terminalKeys({ attachCustomKeyEventHandler: (fn: typeof handle) => { handle = fn; } } as unknown as Terminal, onFind);
   return (event) => handle(event);
 }
-const FIND: KeyboardEventInit = { key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }; // off macOS, as jsdom runs
+const FIND: KeyboardEventInit = { key: 'F3', code: 'F3' }; // off macOS, as jsdom runs: the binding is F3
 
 test('terminalKeys: the find binding calls onFind once and every event of the key is refused to xterm; Ctrl+F stays the program\'s off macOS; with no onFind the key goes to xterm (#12)', () => {
   const onFind = vi.fn();

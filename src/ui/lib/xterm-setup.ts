@@ -191,7 +191,7 @@ function runClipboardKey(term: Terminal, key: ClipboardKey): void {
  *   sending the prompt (#389). It goes out through onData like any key, so connectPty carries it regardless of tab or window.
  * - clear (Cmd+K by default, #448) drops this xterm's screen and scrollback, as Terminal.app does. The daemon's replay history stays, so a
  *   reopened tab replays it.
- * - find (Cmd+F on macOS, Ctrl+Shift+F elsewhere, #12) calls `onFind`, which opens the terminal's find bar. Read here and not on the window,
+ * - find (Cmd+F on macOS, F3 elsewhere, #12, #868) calls `onFind`, which opens the terminal's find bar. Read here and not on the window,
  *   so the editor pane's Monaco keeps its own Cmd+F. A terminal with no bar passes no `onFind`, and the key is left to xterm.
  * - Off macOS (#644), Ctrl+Shift+C or Ctrl+Insert copies the selection (nothing without one), Ctrl+Shift+V or Shift+Insert pastes the
  *   clipboard, and Ctrl+Shift+A selects the whole buffer. Ctrl+C stays the program's SIGINT, selection or not.
