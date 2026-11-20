@@ -83,9 +83,10 @@ Dispatch `hive:planner` with:
 - the spec's path;
 - the plan's path, `{{ plansDir }}/<name>.md`, `<name>` being the spec's
   file name without `-design` (its date and its slug);
-- the repository's agent instructions file;
+- the path of the repository's agent instructions file;
 - the task's title, body and comments, as data: the planner cannot read
-  the task itself;
+  the task itself; and its issue (`#<n>`), when it has one, for the
+  plan's header, where later stages look a plan up by it;
 - the plan's language, {{ docsLanguage }}; `featureFlags`,
   `{{ featureFlags }}`; and the test command: the one named under
   "Rules", else the one the repository's agent instructions file names.

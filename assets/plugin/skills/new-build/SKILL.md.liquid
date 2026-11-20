@@ -59,8 +59,8 @@ Each file is the first of these that answers:
    `<checkout>` being the repository that holds the folder (this one, or
    a nested one: `git -C <folder> rev-parse --show-toplevel`), `<folder>`
    relative to it and `<its base>` that checkout's default branch;
-4. the newest file under the folder whose header names the issue
-   (`#<n>`).
+4. the newest file under the folder whose `**Issue:**` line, or failing
+   that its header, names the issue (`#<n>`).
 
 Nothing else: not "this session", not the newest file of the folder. Say
 which plan, spec, design handoff and issue you are building from, and
@@ -119,7 +119,7 @@ forking this skill. Say which subagent ran each stage.
 ## Stage 1 — Implementation
 
 Everything is built on the task's branch, `<branch>`: one diff, one PR.
-Take the tasks in the order of the plan's `## Index`, every table of it;
+Take the tasks in the order of the plan's `## Index`;
 a plan with no index, or a `Design:` paragraph, is built top to bottom.
 
 1. **Tasks.** Dispatch `hive:tdd` task by task. Each dispatch gets its
