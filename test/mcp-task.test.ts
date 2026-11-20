@@ -113,7 +113,7 @@ test('taskComments reads the comments by the task\'s itemId, leaves them out for
 
 type Sources = ReadonlyMap<string, Pick<Source, 'create' | 'comments'>>;
 const NO_SOURCES: Sources = new Map();
-const APP: Workspace = { name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
+const APP: Workspace = { name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
 // git -C /repo remote get-url origin: the workspace's GitHub origin
 const exec: Exec = async (_file, args) => ({ stdout: args[1] === '/repo' ? 'https://github.com/acme/r.git\n' : '' });
 const configWith = (off: OptionalTool[]): Config =>

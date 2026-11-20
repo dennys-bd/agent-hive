@@ -1429,6 +1429,7 @@ export interface Workspace {
   nestedRepos: string[]; // #653: required; relative paths of nested repos, each a git top level this workspace's git ignores (POST /settings checks it); [] = none
   notNestedRepos: string[]; // #653: required; paths the user said are not nested repos: never suggested again
   benchmarkPrIn: BenchmarkPrIn; // #477: required; where a benchmark run's PR is rebased and pushed from
+  machine: MachineId; // #931: required; 'local' or 'wsl:<distro>'; the machine path is on, written into each task activity at its birth
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit

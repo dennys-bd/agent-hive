@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 import { WORKSPACE_HEX_COLOR, WORKSPACE_PRESET_COLORS } from './types.js';
+import { parseWorkspaceMachine, requireWorkspacePath } from './config-machines.js';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { LANGUAGES } from './language.js';
 import { branchProblem, COMB_PREFIX, DURATION, WORKSPACE_NAME, RESERVED_SOURCE, HIVE_SOURCE, isReservedSource, type BranchProblem, type WorkspaceNames, resolveWorkspace } from './tasks.js';
@@ -338,16 +339,18 @@ function requireColor(value: unknown, field: string): string {
 function parseWorkspace(raw: unknown, field: string): Workspace {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "${field}" must be an object`);
   const name = requireName(raw.name, `${field}.name`);
-  if (typeof raw.path !== 'string' || !isAbsolute(raw.path)) throw new Error(`${CONFIG_FILE}: "${field}.path" must be an absolute path`);
+  const machine = parseWorkspaceMachine(raw.machine, field); // #931: before the path, which is checked as its machine's
+  const path = requireWorkspacePath(raw.path, machine, field);
   if (raw.format !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.format" moved to "editor" (#780): one config for every workspace`);
   if (raw.conventions !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.conventions" moved to the plugins view (#318): set each value in its skill's variables`);
   const baseBranch = raw.baseBranch === undefined || raw.baseBranch === '' ? {} : { baseBranch: requireBranch(raw.baseBranch, `${field}.baseBranch`) }; // #854: '' from the form drops it
   return {
-    name, path: raw.path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), // env required (#348), fork required (#854); commands live in comb.commands (#511)
+    name, path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), // env required (#348), fork required (#854); commands live in comb.commands (#511)
     memoryCap: requireIntFrom(raw.memoryCap, `${field}.memoryCap`, MEMORY_CAP_MIN, MEMORY_CAP_MAX), // #73: required, no migration; read last, so an older key's problem keeps its own message
     color: requireColor(raw.color, `${field}.color`), // #78: required
     ...parseNestedRepos(raw, field), // #653: required, read last, so an older key's problem keeps its own message
     benchmarkPrIn: parseBenchmarkPrIn(raw.benchmarkPrIn, field), // #477: required, read last, so an older key's problem keeps its own message
+    machine, // #931: required
   };
 }
 
