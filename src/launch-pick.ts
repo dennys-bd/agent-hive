@@ -1,6 +1,6 @@
 // A free session's picks (#257) in the shape the open routes admit, shared by the routes, the state loader and the spawn. Page-safe: no Node
 // import. Each value reaches the argv as its own word, never through a shell; the rules keep an option out of a value's place.
-import type { LaunchPick, Session } from './types.js';
+import type { LaunchPick, Session, Stage } from './types.js';
 
 export const MODEL_MAX = 100;
 export const ARGS_MAX = 32;
@@ -17,6 +17,13 @@ export const isSpecializedAgent = (value: unknown): value is string => typeof va
 
 /** A pick as a session or a worker carries it: absent stays absent, so a session with none has no key. */
 export const withLaunch = (launch: LaunchPick | undefined): Pick<Session, 'launch'> => (launch === undefined ? {} : { launch });
+
+/** What a stage run launches with (#710, #907): the stage's specialized agent under the run's own picks, a manual pick winning. Undefined
+ * when neither has one. The spawn launches it, and the session records it so a resume runs as the same agent. */
+export function stageRunLaunch(stage: Pick<Stage, 'specializedAgent'> | undefined, picks: LaunchPick | undefined): LaunchPick | undefined {
+  const agent = stage?.specializedAgent;
+  return agent === undefined ? picks : { specializedAgent: agent, ...picks };
+}
 
 /** The picks a saved session or a worker keeps (#257), field by field in the shape the routes admit: a hand-edited state.json cannot put an
  * option where a value goes. A field in any other shape drops alone; none left is no launch. */

@@ -15,6 +15,7 @@ import { feedConsole } from './console-feed.js';
 import { workspaceProtocolPaths, type ProtocolPaths } from './hooks-settings.js';
 import { readProtocolText } from './home-hooks.js';
 import { hasSkill, launchRun, specializedAgents } from './launch-options.js';
+import { stageRunLaunch } from './launch-pick.js';
 import type { Logger } from './log.js';
 import type { PluginRender } from './plugin-render.js';
 import type { PtyHost } from './pty-host.js';
@@ -144,7 +145,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
   const agent = worker.agent ?? agentOf(stage, config);
   const refusal = agentRefusal(agent, agents, config.agentEnabled) ?? skillRefusal(stage, pluginDir);
   if (refusal !== undefined) return { refusal };
-  const launch = { ...(stage.specializedAgent === undefined ? {} : { specializedAgent: stage.specializedAgent }), ...worker.launch }; // #710: a manual pick wins
+  const launch = stageRunLaunch(stage, worker.launch); // #710: a manual pick wins
   const picked = launchRun(launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
   if ('refusal' in picked) return picked;
   return { agent, pluginDir, picked: { ...picked, model: runModel(picked.model, stage, agent, config) } };

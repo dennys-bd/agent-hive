@@ -348,3 +348,28 @@ test('a failed free open keeps the mark an earlier free run of this visit set, a
   const gone = reduce(retried, { type: 'spawnFailed', ptyId: freeRun(retried).runId!, message: 'no claude' }).state;
   assert.equal(activityOf(gone, ITEM.itemId)?.freeSessionStage, undefined);
 });
+
+// #907: task 1 in design, a stage run as hive:designer; its session resumed from the list must run as that agent again, or Claude Code's
+// --resume restores the plugin's agent, whose tools line drops every MCP tool (hive_done)
+const designing = (): State => withWork({
+  ...initialState(1), signal: 'red', workspaces: ['hive'],
+  ...flowed([{ name: 'design', from: {}, prompt: 'x', specializedAgent: 'hive:designer' }]),
+  tasks: [{ item: ITEM, stage: 'design', boardColumn: 'Ready', auto: true }],
+}, ITEM.itemId, { slug: 'hive-1-t', worktree: WORKTREE });
+const stageRun = (state: State): Worker => state.workers.find((w) => w.stage === 'design')!;
+
+test('a stage run records its specialized agent on its session, and reopening that session after a kill resumes it as that agent (#907)', () => {
+  const started = reduce(designing(), { type: 'start', itemId: ITEM.itemId }).state;
+  const [session] = sessionsOf(started, ITEM.itemId);
+  assert.deepEqual(session.launch, { specializedAgent: 'hive:designer' });
+  const killed = reduce(started, { type: 'exit', ptyId: stageRun(started).runId! }).state;
+  const { effects } = reduce(killed, { type: 'openSession', activityId: workId(killed, ITEM.itemId), continueId: session.id });
+  const spawn = effects.find((e) => e.type === 'spawnSession');
+  assert.deepEqual(spawn?.type === 'spawnSession' ? spawn.worker.launch : undefined, { specializedAgent: 'hive:designer' });
+});
+
+test('a manual start\'s picks win over the stage\'s specialized agent on the session it records (#907, #710)', () => {
+  const launch = { specializedAgent: 'hive:planner', model: 'opus' };
+  const started = reduce(designing(), { type: 'start', itemId: ITEM.itemId, runPick: { launch } }).state;
+  assert.deepEqual(sessionsOf(started, ITEM.itemId).map((s) => s.launch), [launch]);
+});
