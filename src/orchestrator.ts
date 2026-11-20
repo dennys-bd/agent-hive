@@ -4,6 +4,7 @@ import { benchmarkReduce, isBenchmarkEvent } from './benchmark-reducer.js';
 import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
+import { stageRunLaunch } from './launch-pick.js';
 import { forgetFailedFreeRun, forgetFailedSession, forgetUnwritten, keepRecord, touchSession, withDecompositionIssue, withEpic, withPr, withResult, withTurn } from './record-kit.js';
 import { liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionTarget, decompositionWritten, TARGET_KEY } from './decomposition.js';
@@ -837,7 +838,7 @@ function firstSession(state: State, worker: Worker, id: string): State {
   const task = taskOfWorker(state, worker);
   const activity = activityOfWorker(state, worker);
   if (!task || !inFlow(task) || !activity || activity.sessionId !== undefined) return state;
-  return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker));
+  return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), stageRunLaunch(stageOf(state.stages, task.stage), worker.launch)); // #907
 }
 
 // #932: a free run that started with no id (a captured Codex) records its first SessionStart's where captureSession records Claude's, with its

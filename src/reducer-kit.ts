@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AGENTS, ranAgent, stageAgentIn } from './agents.js';
 import { activityOf, resultOf, taskOfWorker, withActivity } from './activities.js';
 import { sessionBaseline, touchSession, withRun, withStageRun } from './record-kit.js';
-import { withLaunch } from './launch-pick.js';
+import { stageRunLaunch, withLaunch } from './launch-pick.js';
 import { handoverRun, pickedRun } from './task-runs.js';
 import { resumableBy } from './transitions.js';
 import { withColumnWrite } from './column-write.js';
@@ -175,7 +175,7 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   const running: Activity = { ...unstopped, workerId: worker.id, ...(sessionId === undefined ? {} : { sessionId }) };
   // the activity holds its worker before the stage is reordered
   const next = withActivity(withTask({ ...born.state, workers: born.state.workers.map((s, i) => (i === index ? worker : s)) }, started), running);
-  const touched = withStageRun(sessionId === undefined ? next : touchSession(next, started, sessionId, stage.name, startedAt, agent), started, stage.name); // #742: the run's attempt
+  const touched = withStageRun(sessionId === undefined ? next : touchSession(next, started, sessionId, stage.name, startedAt, agent, stageRunLaunch(stage, picked.pick?.launch)), started, stage.name); // #742: the run's attempt
   const activity = activityOf(touched, taskId(started)) ?? born.activity; // as stored after the writes above (#629)
   const spawn: Effect = {
     type: 'spawn', worker, activity, task: started, stage, session, run: answer?.run ?? run, ...resultField(touched, started), ...(answer ? { prompt: answer.prompt } : {}),

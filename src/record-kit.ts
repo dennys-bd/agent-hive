@@ -25,12 +25,15 @@ const withSession = (state: State, task: Task, id: string, change: (session: Ses
 };
 
 /** Session `id` put to work by a stage run in `stage` at `now` (#236): used again in the record holding it (the stage added unless it is already its last
- * one, a resume in the same stage, keeping its own agent), else appended to the live record, started now; a new one records `agent` (#925). */
-export function touchSession(state: State, task: Task, id: string, stage: string, now: string, agent: AgentId): State {
+ * one, a resume in the same stage, keeping its own agent), else appended to the live record, started now; a new one records `agent` (#925).
+ * `launch`, the run's launch, replaces the session's (#907): Claude Code's --resume restores the agent the transcript last ran as, so a resume
+ * from the list must pass it again. None keeps the session's: a process that went on into the next stage still runs as it started. */
+export function touchSession(state: State, task: Task, id: string, stage: string, now: string, agent: AgentId, launch?: LaunchPick): State {
+  const launched = withLaunch(launch);
   if (recordWithSession(state, taskId(task), id)) {
-    return withSession(state, task, id, (s) => ({ ...s, stages: s.stages.at(-1) === stage ? s.stages : [...s.stages, stage], lastUsedAt: now }));
+    return withSession(state, task, id, (s) => ({ ...s, stages: s.stages.at(-1) === stage ? s.stages : [...s.stages, stage], lastUsedAt: now, ...launched }));
   }
-  return withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [stage], lastUsedAt: now, agent }] }));
+  return withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [stage], lastUsedAt: now, agent, ...launched }] }));
 }
 
 /** Session `id` put to work by a free run at `now` (#812): a free session, a copy or a captured one has no stage prompt to go on with, so it
