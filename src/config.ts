@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { WORKSPACE_HEX_COLOR, WORKSPACE_PRESET_COLORS } from './types.js';
+import { LOCAL_MACHINE, WORKSPACE_HEX_COLOR, WORKSPACE_PRESET_COLORS } from './types.js';
 import { parseWorkspaceMachine, requireWorkspacePath } from './config-machines.js';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { LANGUAGES } from './language.js';
@@ -714,11 +714,12 @@ export function unnamedWorkspacePath(raw: unknown): string | undefined {
 }
 
 /** What the reducer resolves a task's workspace against (#179): the Comb's workspace names and each source's default workspace (#180, #688); the names of the commands the task menu offers in each workspace (#300, #511, #755). */
-export const workspaceScope = ({ comb }: Pick<Config, 'comb'>): WorkspaceNames & Pick<State, 'commands' | 'workspaceColors'> => ({
+export const workspaceScope = ({ comb }: Pick<Config, 'comb'>): WorkspaceNames & Pick<State, 'commands' | 'workspaceColors' | 'workspaceMachines'> => ({
   workspaces: comb.workspaces.map((p) => p.name),
   sourceWorkspaces: Object.fromEntries(comb.sources.flatMap((b) => (b.taskProps.defaults.workspace === undefined ? [] : [[b.name, b.taskProps.defaults.workspace]]))),
   commands: Object.fromEntries(comb.workspaces.map((p) => [p.name, commandsIn(comb.commands, p.name).map((c) => c.name)])),
   workspaceColors: Object.fromEntries(comb.workspaces.map((p) => [p.name, p.color])), // #78
+  workspaceMachines: Object.fromEntries(comb.workspaces.flatMap((p) => (p.machine === LOCAL_MACHINE ? [] : [[p.name, p.machine]]))), // #931: only those not on local
 });
 
 /** The task's workspace in `config` (#179): resolveWorkspace against the Comb's names and the sources' defaults, and the parent's when `tasks`

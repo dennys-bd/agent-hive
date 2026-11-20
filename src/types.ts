@@ -827,6 +827,7 @@ export interface State {
   workspaces: string[]; // the Comb's workspace names, from the config on boot and on every save (#179); what resolveWorkspace reads
   sourceWorkspaces: Record<string, string>; // source name → its default workspace (#179, #180), from the config on boot and on every save
   workspaceColors: Record<string, string>; // #78: the Comb's workspace colours by name, from the config like workspaces; never from state.json
+  workspaceMachines: Record<string, MachineId>; // #931: workspace name -> its machine, only for workspaces not on 'local'; from the config like workspaceColors; never from state.json
   commands: Record<string, string[]>; // workspace name → the names of the run commands enabled in it (#300, #511), from the config on boot and on every save: what the menu and the panel list; never the lines nor the env
   syncs: Record<string, SourceSync>; // each source's sync by name (#180), keys from the config on boot and on every save (setSources); its poll time, quota and last failure
   tasks: Task[]; // every task the Hive holds, in the Hive's order: the anchored tasks (pinned, running, unlisted) keep their index across polls, the rest follow the source
@@ -1684,7 +1685,7 @@ export type HiveEvent =
   | { type: 'setKeepAwake'; on: boolean } // the footer's keep-awake toggle, or the daemon clearing it after the holder failed (#226)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
   | { type: 'setStages'; flows: Flow[] } // #134: the transitions travel with the stages; #564: in their flows, the reducer derives the flattened pair
-  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)
+  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string>; workspaceMachines: Record<string, MachineId> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78), and machine (#931)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
   | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }

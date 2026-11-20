@@ -26,7 +26,7 @@ const WORKERS: Worker[] = [
 const BASE: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers: WORKERS, terminals: [], flows: FLOWS, ...flatten(FLOWS),
   tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
-  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
+  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 export const SIDEBAR_STATE: State = withPointedWork(withTasks(BASE, TASKS));

@@ -895,15 +895,23 @@ test('taskWorkspace resolves a task against the config\'s workspaces and source 
   const config = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'site', auto: true, entry: { flow: 'main' } }, rules: [] } } }));
   const task = { item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '', source: 'board' } };
   assert.deepEqual(taskWorkspace(config, task), { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 70)' }, 'the source default');
-  assert.deepEqual(workspaceScope(config), { workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: { hive: [], site: [] }, workspaceColors: { hive: 'oklch(0.72 0.12 25)', site: 'oklch(0.72 0.12 70)' } });
+  assert.deepEqual(workspaceScope(config), { workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: { hive: [], site: [] }, workspaceColors: { hive: 'oklch(0.72 0.12 25)', site: 'oklch(0.72 0.12 70)' }, workspaceMachines: {} });
   const routed = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: DYNAMIC } }));
   assert.deepEqual(workspaceScope(routed).sourceWorkspaces, {}, 'no default workspace: its rules route through the hint (#293)');
   const both = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { ...DYNAMIC, defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } } } } }));
   assert.deepEqual(workspaceScope(both).sourceWorkspaces, { board: 'hive' }, 'a default next to rules is still the fallback (#688)');
-  assert.deepEqual(workspaceScope(parseConfig(GITHUB)), { workspaces: ['hive'], sourceWorkspaces: { board: 'hive' }, commands: { hive: [] }, workspaceColors: { hive: 'oklch(0.72 0.12 25)' } }, 'the default source is fixed on the Comb\'s only workspace');
+  assert.deepEqual(workspaceScope(parseConfig(GITHUB)), { workspaces: ['hive'], sourceWorkspaces: { board: 'hive' }, commands: { hive: [] }, workspaceColors: { hive: 'oklch(0.72 0.12 25)' }, workspaceMachines: {} }, 'the default source is fixed on the Comb\'s only workspace');
   assert.deepEqual(workspaceScope(parseConfig(github({ commands: [FRONT] }))).commands, { hive: ['Run Frontend'] }, 'names only: never the line nor the env (#300)');
   assert.throws(() => requireWorkspace(config, { ...task, workspace: 'gone' }), { message: 'workspace gone is gone' });
   assert.throws(() => requireWorkspace(routed, task), { message: 'choose a workspace' });
+});
+
+
+test('workspaceScope lists the machine of each workspace not on local, and nothing for one on local (#931)', () => {
+  const [hive, site] = TWO;
+  const config = parseConfig(github({ workspaces: [hive, { ...site, machine: 'wsl:Debian-13' }] }));
+  assert.deepEqual(workspaceScope(config).workspaceMachines, { site: 'wsl:Debian-13' });
+  assert.deepEqual(workspaceScope(parseConfig(github({ workspaces: TWO }))).workspaceMachines, {});
 });
 
 test('workspaceScope lists, per workspace, only what the task menu offers there: menu on and a line that resolves, in comb.commands order (#511, #755)', () => {

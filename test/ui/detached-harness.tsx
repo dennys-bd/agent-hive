@@ -20,7 +20,7 @@ export const ID = activityIdOf('I1'); // the models' key
 export const stateOf = (tasks: WithWork[]): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: tasks.length > 0 ? [WORKER] : [], ...flowed([{ name: 'dev', from: { board: ['Ready'] } }], []), tasks, sourceOrder: [], localCount: 0,
   benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {},
-  workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT,
+  workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT,
   rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 export const CHANNEL = { id: 'command:hive:test', kind: 'command', label: 'hive · test', status: 'done' };
