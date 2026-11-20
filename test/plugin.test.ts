@@ -310,7 +310,7 @@ test('hive:spec-reviewer checks what /hive:new-spec writes: the sources of a clo
   for (const part of ['`user`, `task`, `comment`, `decomposition`, `design handoff <path>`', '`## Feature flags`', '`## Design references`', 'You report and never edit']) assert.ok(text.includes(part), part);
 });
 
-test('hive:planner and hive:plan-reviewer plan no slices and read no resolved conventions (#432)', async () => {
+test('hive:planner and hive:plan-reviewer plan no slices and read no resolved conventions (#432, #441)', async () => {
   for (const agent of ['planner', 'plan-reviewer']) {
     const text = await agentText(agent);
     assert.doesNotMatch(text, /slice|sliceSize|delivery|partial|resolved conventions/i, agent);
@@ -318,6 +318,8 @@ test('hive:planner and hive:plan-reviewer plan no slices and read no resolved co
   const planner = await agentText('planner');
   for (const part of ['## Index', '## Tasks', '## Answer', 'for naming and tone; the format is the one below', "the task's title, body and comments", "On a dispatch with the review's Issues"]) assert.ok(planner.includes(part), part);
   assert.doesNotMatch(planner, /testCommand|docsLanguage|linked issue/, 'the planner names what it is given, not the skill\'s variables');
+  assert.doesNotMatch(planner, /hive_|CLAUDE\.md|AGENTS\.md|conventions\.md|docsRepo|model:/);
+  for (const part of ['the plan already exists at its path', 'the most specific wins', "the flag the spec's `## Feature flags` names", 'the caller reviews it, commits it and decides', '**Issue:** [the issue of your prompt, `#<n>`','tools: Read, Grep, Glob, Write, Edit']) assert.ok(planner.includes(part), part);
   assert.ok((await agentText('plan-reviewer')).includes('| Header | `**Spec:**` names the spec'), 'the reviewer checks what new-build reads');
 });
 
