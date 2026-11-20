@@ -1,9 +1,10 @@
 // The machine (#158, node 7.1 of #157): where a task's disk, processes and ptys are. The host's own is the local machine (machine-local.ts);
 // node 8 adds an actor's, reached over the link. Types only, but MachineError: a remote machine's failure arrives as data and is rebuilt as
-// one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, which is why this file is on
+// one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, and node:path for pathsOf, which is why this file is on
 // biome.jsonc's host-only list.
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { BigIntStats, CopyOptions, Dirent, MakeDirectoryOptions, Mode, RmOptions, Stats } from 'node:fs';
+import path from 'node:path';
 import type { AgentRun } from './agents/runner.js';
 import type { PtyHost, PtyKeep } from './pty-host.js';
 import type { TerminalSize } from './terminal-wire.js';
@@ -141,7 +142,11 @@ export interface Machine {
   process(command: string, args: string[], options: ProcessOptions): MachineChild; // #161
   pty: MachinePty;
   info(): MachineInfo;
+  readonly paths: path.PlatformPath; // #927: every path on this machine's disk is joined and compared with it, never with the host's node:path
 }
+
+/** The path flavour of a machine's platform (#927): a distro's disk needs / even when the Hive runs on Windows. */
+export const pathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
 
 /** Every machine the Hive knows (#158). Until node 8, for answers local for every activity, an unknown id included. */
 export interface Machines {

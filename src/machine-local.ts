@@ -4,7 +4,7 @@ import { execFile, spawn } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { envValue } from './exec-path.js';
-import { type Machine, type MachineChild, MachineError, type MachineExec, type MachineInfo, type Machines, type ProcessOptions } from './machine.js';
+import { type Machine, type MachineChild, MachineError, type MachineExec, type MachineInfo, type Machines, type ProcessOptions, pathsOf } from './machine.js';
 import { createLocalPty, type LocalPtyDeps } from './machine-local-pty.js';
 import { localFs } from './machine-local-fs.js';
 import { runDetached } from './machine-run.js';
@@ -69,7 +69,7 @@ export function createLocalMachine(deps: LocalMachineDeps): Machine {
   const platform = deps.platform ?? process.platform;
   let read: MachineInfo | undefined; // nothing it holds changes while the Hive runs
   return {
-    id: LOCAL, ...localDisk(deps.exec), run: runDetached, process: localProcess,
+    id: LOCAL, ...localDisk(deps.exec), run: runDetached, process: localProcess, paths: pathsOf(platform),
     pty: createLocalPty({ ...deps, env, platform }),
     info: () => {
       read ??= infoOf(env, platform, deps.agents);

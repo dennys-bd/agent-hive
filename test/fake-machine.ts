@@ -1,7 +1,7 @@
 // The machine a test hands a function that takes one (#160, #161): the local machine over a fake exec and a pty host that launches nothing,
 // with any of its deps (env, platform...) given, and the fs, run, info or id a test overrides on top. An exec a test does not inject answers ''.
 import type { Stats } from 'node:fs';
-import { type Machine, MachineError, type MachineFs, type MachineInfo, type Machines } from '../src/machine.js';
+import { type Machine, MachineError, type MachineFs, type MachineInfo, type Machines, pathsOf } from '../src/machine.js';
 import { createLocalMachine, type LocalMachineDeps } from '../src/machine-local.js';
 import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import type { LaunchPty, MachineId } from '../src/types.js';
@@ -21,12 +21,13 @@ export const localDeps = (over: Partial<LocalMachineDeps> = {}): LocalMachineDep
 export function fakeMachine({ id, run, fs, info, ...deps }: Partial<LocalMachineDeps> & FakeMachineOverrides = {}): Machine {
   const base = createLocalMachine(localDeps(deps)); // its exec rebuilds a test exec's rejection as a MachineError
   const facts: MachineInfo | undefined = info === undefined ? undefined : { ...base.info(), ...info };
-  return { ...base, id: id ?? base.id, fs: { ...base.fs, ...fs }, run: run ?? base.run, info: facts === undefined ? base.info : () => facts };
+  return { ...base, id: id ?? base.id, fs: { ...base.fs, ...fs }, run: run ?? base.run,
+    info: facts === undefined ? base.info : () => facts, paths: info?.platform === undefined ? base.paths : pathsOf(info.platform) };
 }
 
 /** A machine whose info() answers `facts` over a local one with an empty env: an actor's home, never the developer's ~/.claude. */
 export function machineWith(facts: Partial<MachineInfo>, base: Machine = fakeMachine({ env: {} })): Machine {
-  return { ...base, info: () => ({ ...base.info(), ...facts }) };
+  return { ...base, info: () => ({ ...base.info(), ...facts }), paths: facts.platform === undefined ? base.paths : pathsOf(facts.platform) };
 }
 
 /** `machine` for every activity: createServer({ machines }). */
