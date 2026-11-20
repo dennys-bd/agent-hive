@@ -666,8 +666,10 @@ export interface Task {
   columnWrite?: ColumnWrite; // set with every setColumn effect, cleared by the poll that confirms, overrides or outlives it (#889)
 }
 
-/** Where an activity's worktree and runs are (#158): `'local'`, the host itself, or a paired machine's certificate fingerprint (`AB:CD:…`). */
+/** Where an activity's worktree and runs are (#158): `'local'`, the host itself, or `'wsl:<distro>'` (#931); a paired machine's id stays #171's. */
 export type MachineId = string;
+export const LOCAL_MACHINE: MachineId = 'local';
+export const WSL_MACHINE_PREFIX = 'wsl:'; // #931: followed by the distro's name
 
 /** The work in progress inside a workspace (glossary: activity): a task's worktree and branch, or the checkout, and its run. Deleting the
  * activity removes it; its ActivityRecord (same id) stays. */
