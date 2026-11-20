@@ -48,6 +48,15 @@ function jiraEntries(raw: unknown): Record<string, JiraCredential> | undefined {
   );
 }
 
+export type ClaudeCredential = NonNullable<Credentials['claude']>[string];
+
+// #952: a Claude token by account name; an entry whose token is not a string is dropped, as a malformed jira is: it would reach the run's env
+// as [object Object]. A map that is no object is dropped whole.
+function claudeEntries(raw: unknown): Record<string, ClaudeCredential> | undefined {
+  if (!isRecord(raw)) return undefined;
+  return Object.fromEntries(Object.entries(raw).flatMap(([name, e]) => (isRecord(e) && typeof e.token === 'string' ? [[name, { token: e.token }]] : [])));
+}
+
 /**
  * What is stored, `{}` when nothing is. A missing, unreadable or corrupt file reads as "not logged in", never as a
  * boot failure. A `github` field with a non-string token or login is dropped the same way (the `mcp` map is kept entry by entry, #333), but in place: every other
@@ -60,10 +69,13 @@ export async function readCredentials(env?: NodeJS.ProcessEnv): Promise<Credenti
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const { github, mcp, jira, ...rest } = parsed as { github?: unknown; mcp?: unknown; jira?: unknown } & Record<string, unknown>;
+    const { github, mcp, jira, claude, ...rest } = parsed as { github?: unknown; mcp?: unknown; jira?: unknown; claude?: unknown } & Record<string, unknown>;
     const values = mcpValues(mcp);
     const sites = jiraEntries(jira);
-    return { ...rest, ...(isGithubCredential(github) ? { github } : {}), ...(values ? { mcp: values } : {}), ...(sites ? { jira: sites } : {}) } as Credentials;
+    const accounts = claudeEntries(claude);
+    return {
+      ...rest, ...(isGithubCredential(github) ? { github } : {}), ...(values ? { mcp: values } : {}), ...(sites ? { jira: sites } : {}), ...(accounts ? { claude: accounts } : {}),
+    } as Credentials;
   } catch {
     return {};
   }
@@ -126,5 +138,23 @@ export async function renewJiraName(site: string, name: string, env?: NodeJS.Pro
     const entry = current.jira !== undefined && Object.hasOwn(current.jira, site) ? current.jira[site] : undefined;
     if (entry === undefined || entry.displayName === name) return undefined;
     return { ...current, jira: { ...current.jira, [site]: { ...entry, displayName: name } } };
+  }, env);
+}
+
+export async function claudeCredential(name: string, env?: NodeJS.ProcessEnv): Promise<ClaudeCredential | undefined> {
+  const { claude } = await readCredentials(env);
+  return claude !== undefined && Object.hasOwn(claude, name) ? claude[name] : undefined;
+}
+
+export async function saveClaudeCredential(name: string, cred: ClaudeCredential, env?: NodeJS.ProcessEnv): Promise<void> {
+  await updateCredentials((current) => ({ ...current, claude: { ...current.claude, [name]: cred } }), env);
+}
+
+export async function removeClaudeCredential(name: string, env?: NodeJS.ProcessEnv): Promise<void> {
+  // nothing to remove, nothing written: an unreadable file reads as {} and a rewrite would drop every other login
+  await updateCredentials((current) => {
+    if (current.claude === undefined || !Object.hasOwn(current.claude, name)) return undefined;
+    const { [name]: _gone, ...left } = current.claude;
+    return { ...current, claude: left };
   }, env);
 }

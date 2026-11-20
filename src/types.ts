@@ -204,6 +204,8 @@ export interface Credentials {
   mcp?: Record<string, { value: string }>;
   /** A Jira Cloud login by bare site host (#816). */
   jira?: Record<string, { email: string; token: string; accountId: string; displayName?: string }>; // displayName: #820, what @me resolves to with no call
+  /** A `claude setup-token` token by account name (#952): the token carries no identity, so the user names it. */
+  claude?: Record<string, { token: string }>;
 }
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */
