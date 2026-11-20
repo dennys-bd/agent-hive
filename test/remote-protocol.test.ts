@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { pack, unpack } from '../src/remote/attachments.js';
-import { createMux, decode, encode, FIRST_STREAM_CHANNEL, REMOTE_PROTOCOL_VERSION, RemoteError, type Mux, type MuxStream, type RequestFrame, type TextFrame } from '../src/remote/protocol.js';
+import { createMux, decode, encode, FIRST_STREAM_CHANNEL, REMOTE_PROTOCOL_VERSION, RemoteError, type Mux, type MuxStream, type RequestFrame } from '../src/remote/protocol.js';
 
 const ALL = Uint8Array.from({ length: 256 }, (_, i) => i);
 
@@ -56,34 +56,8 @@ test('a binary frame is delivered as a copy that owns its buffer, and a bin coun
   assert.ok('error' in decode(req(65)));
 });
 
-type Side = 'host' | 'machine';
-type Sent = { from: Side; data: string | Uint8Array };
+import { pair, settle, textFrames, remote, type Side } from './remote-pair.js';
 
-// two muxes whose send calls the other's receive on a microtask; `receive` is called unbound, as createStdioDecoder(mux.receive, …) will
-function pair(): { host: Mux; machine: Mux; sent: Sent[] } {
-  const sent: Sent[] = [];
-  const muxes: Partial<Record<Side, Mux>> = {};
-  const wire = (from: Side, to: Side) => (data: string | Uint8Array): void => {
-    sent.push({ from, data });
-    queueMicrotask(() => {
-      const { receive } = muxes[to]!;
-      receive(data);
-    });
-  };
-  muxes.host = createMux(wire('host', 'machine'), { side: 'host' });
-  muxes.machine = createMux(wire('machine', 'host'), { side: 'machine' });
-  return { host: muxes.host, machine: muxes.machine, sent };
-}
-
-// every microtask hop of the pair has run once setImmediate fires
-const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
-const textFrames = (sent: Sent[], from: Side): TextFrame[] =>
-  sent.flatMap((s) => {
-    if (s.from !== from) return [];
-    const frame = decode(s.data);
-    return 'error' in frame || 'bytes' in frame ? [] : [frame];
-  });
-const remote = (code: string) => (err: unknown): boolean => err instanceof RemoteError && err.code === code;
 
 test('a request on channel 1 resolves with the handler\'s result; a throw arrives as a RemoteError with its code and data; a plain one as internal; no handler as unknown_method (#936)', async () => {
   const { host, machine } = pair();
@@ -317,130 +291,3 @@ test('close ends every open stream on both sides, and openStream after close thr
   assert.throws(() => host.openStream(), remote('link_closed'));
 });
 
-test('both sides ending a stream at once raise no error and fire both onEnd (#936)', async () => {
-  const { host, machine } = pair();
-  const errors: string[] = [];
-  host.onError((err) => errors.push(err.code));
-  machine.onError((err) => errors.push(err.code));
-  const ends: Side[] = [];
-  let back: MuxStream | undefined;
-  machine.onStream((stream) => {
-    back = stream;
-    stream.onEnd(() => ends.push('machine'));
-  });
-  const out = host.openStream();
-  out.onEnd(() => ends.push('host'));
-  await settle();
-  out.write(Uint8Array.of(1));
-  back?.write(Uint8Array.of(2)); // in flight when the peer's end lands
-  out.end();
-  back?.end();
-  await settle();
-  assert.deepEqual(errors, []);
-  assert.deepEqual(ends.sort(), ['host', 'machine']);
-});
-
-test('a result that cannot be sent is answered internal; a req whose $bin the frame lacks is answered bad_frame and reported (#936)', async () => {
-  const { host, machine } = pair();
-  machine.onRequest(1, (method) => {
-    if (method === 'big') return { n: 1n };
-    const cycle: Record<string, unknown> = {};
-    cycle.self = cycle;
-    return cycle;
-  });
-  await assert.rejects(host.request(1, 'big', null), remote('internal'));
-  await assert.rejects(host.request(1, 'cycle', null), remote('internal'));
-  const codes: string[] = [];
-  machine.onError((err) => codes.push(err.code));
-  const seen: unknown[] = [];
-  const fake = createMux((data) => void seen.push(data), { side: 'host' });
-  const pending = fake.request(1, 'x', null);
-  fake.receive(JSON.stringify({ ch: 1, t: 'res', id: 1, ok: true, result: null }));
-  await pending;
-  machine.receive(JSON.stringify({ ch: 1, t: 'req', id: 1, method: 'x', params: { $bin: 0 } }));
-  assert.deepEqual(codes, ['bad_frame']);
-  await settle();
-});
-
-test('an unusable req from the peer is answered bad_frame to the caller (#936)', async () => {
-  const sent: string[] = [];
-  const machine = createMux((data) => void sent.push(String(data)), { side: 'machine' });
-  machine.onRequest(1, () => null);
-  const codes: string[] = [];
-  machine.onError((err) => codes.push(err.code));
-  machine.receive(JSON.stringify({ ch: 1, t: 'req', id: 1, method: 'x', params: { $bin: 0 } }));
-  await settle();
-  const answer = JSON.parse(sent[0]) as { t: string; ok: boolean; code: string; id: number };
-  assert.deepEqual([answer.t, answer.ok, answer.code, answer.id, codes], ['res', false, 'bad_frame', 1, ['bad_frame']]);
-});
-
-test('request rolls back when sending throws: it rejects, leaves nothing pending and detaches the abort listener (#936)', async () => {
-  const { host } = pair();
-  await assert.rejects(host.request(1, 'x', { n: 1n }), TypeError);
-  const sent: unknown[] = [];
-  let broken = true;
-  const mux = createMux((data) => {
-    if (broken) throw new Error('pipe is gone');
-    sent.push(data);
-  }, { side: 'host' });
-  const controller = new AbortController();
-  await assert.rejects(mux.request(1, 'x', null, { signal: controller.signal }), /pipe is gone/);
-  broken = false;
-  controller.abort();
-  assert.deepEqual(sent, [], 'no cancel goes out for a request that never left');
-});
-
-test('a throwing callback never escapes receive and never skips teardown (#936)', async () => {
-  const { host, machine } = pair();
-  const codes: string[] = [];
-  const closes: (string | undefined)[] = [];
-  host.onError((err) => codes.push(err.code));
-  host.onError(() => {
-    throw new Error('onError itself throws');
-  });
-  host.onClose((code) => closes.push(code));
-  const out = host.openStream();
-  out.onEnd(() => {
-    throw new Error('onEnd throws');
-  });
-  const second = host.openStream();
-  const ended: number[] = [];
-  second.onEnd(() => ended.push(second.ch));
-  await settle();
-  assert.doesNotThrow(() => machine.close('bye'));
-  await settle();
-  assert.deepEqual(closes, ['bye']);
-  assert.deepEqual(ended, [second.ch]);
-  assert.deepEqual(codes, ['internal']);
-});
-
-test('a peer cannot hold more than 256 streams open, reuse this side\'s id parity or repeat a running id; each is bad_frame and the mux stays open (#936)', async () => {
-  const machine = createMux(() => undefined, { side: 'machine' });
-  const codes: string[] = [];
-  let opened = 0;
-  machine.onError((err) => codes.push(err.code));
-  machine.onStream(() => {
-    opened += 1;
-  });
-  for (let i = 0; i < 257; i += 1) machine.receive(JSON.stringify({ ch: 0, t: 'open', stream: 3 + 2 * i }));
-  assert.deepEqual([opened, codes], [256, ['bad_frame']]);
-  codes.length = 0;
-  machine.onRequest(1, () => new Promise(() => undefined));
-  const req = (id: number) => JSON.stringify({ ch: 1, t: 'req', id, method: 'x', params: null });
-  machine.receive(req(2)); // the machine's own parity
-  machine.receive(req(1));
-  machine.receive(req(1)); // already running
-  assert.deepEqual(codes, ['bad_frame', 'bad_frame']);
-});
-
-test('a method echoed in unknown_method and a received failure\'s code and message are cut (#936)', async () => {
-  const { host } = pair();
-  const err = await host.request(2, 'm'.repeat(5000), null).catch((e: unknown) => e);
-  assert.ok(err instanceof RemoteError && err.message.length < 300, String((err as Error).message.length));
-  const sent: string[] = [];
-  const caller = createMux((data) => void sent.push(String(data)), { side: 'host' });
-  const pending = caller.request(1, 'x', null);
-  caller.receive(JSON.stringify({ ch: 1, t: 'res', id: 1, ok: false, code: 'c'.repeat(5000), message: 'm'.repeat(5000) }));
-  const failed = (await pending.catch((e: unknown) => e)) as RemoteError;
-  assert.deepEqual([failed.code.length, failed.message.length], [1024, 1024]);
-});

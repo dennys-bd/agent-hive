@@ -23,8 +23,12 @@ export function createStream(ch: number, write: (bytes: Uint8Array) => void, end
     },
     end: () => {
       if (ended) return;
-      end();
-      finish();
+      // finish even when the transport throws, so the stream is never half ended
+      try {
+        end();
+      } finally {
+        finish();
+      }
     },
     onData: (cb) => void dataCbs.push(cb),
     onEnd: (cb) => void endCbs.push(cb),

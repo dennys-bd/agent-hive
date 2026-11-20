@@ -88,7 +88,8 @@ class MuxCore {
     return new Promise<unknown>((resolve, reject) => {
       const onAbort = (): void => {
         this.pending.delete(id);
-        this.sendText({ ch, t: 'cancel', id });
+        // a throw in an abort listener is an uncaught exception, and must not leave the caller waiting
+        try { this.sendText({ ch, t: 'cancel', id }); } catch (err) { this.report(err); }
         reject(cancelled(signal));
       };
       signal?.addEventListener('abort', onAbort, { once: true });
@@ -162,7 +163,7 @@ class MuxCore {
 
   private onOpen(ch: number): void {
     // the peer opens on its own parity, so it never takes a channel this side's openStream will
-    if (ch % 2 === this.nextStream % 2 || this.streams.has(ch)) {
+    if (ch % 2 === this.nextStream % 2 || this.streams.has(ch) || this.endedLocally.has(ch)) {
       this.fail(`the peer cannot open stream ${ch}`);
       return;
     }
