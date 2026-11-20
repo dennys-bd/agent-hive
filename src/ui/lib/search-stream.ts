@@ -66,18 +66,21 @@ async function run(url: string, signal: AbortSignal, isEmpty: boolean, set: (upd
 }
 
 /** The search of `query` in `activityId`'s root, SEARCH_DEBOUNCE_MS after its last change, the previous one aborted; bump `run` to search again
- * (after a replace). An empty query asks at once, for the closing line's repositories alone. */
-export function useSearch(activityId: string, query: SearchQuery, runId: number): SearchView {
-  const [view, setView] = useState<SearchView>(START);
+ * (after a replace). An empty query asks at once, for the closing line's repositories alone. The old view stays on screen meanwhile, but
+ * `isCurrent` is false until the view answers this query, these toggles and this run: nothing may be replaced from a stale view. */
+export function useSearch(activityId: string, query: SearchQuery, runId: number): { view: SearchView; isCurrent: boolean } {
+  const [held, setHeld] = useState<{ view: SearchView; key: string }>({ view: START, key: '' });
   const { q, isCaseSensitive, isWholeWord, isRegex } = query;
+  const key = JSON.stringify([activityId, q, isCaseSensitive, isWholeWord, isRegex, runId]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: runId is the trigger of a new search, not a value it uses
   useEffect(() => {
     const controller = new AbortController();
     const url = searchUrl(activityId, { q, isCaseSensitive, isWholeWord, isRegex });
-    const start = (): void => { void run(url, controller.signal, q === '', setView); };
+    const set = (update: (view: SearchView) => SearchView): void => setHeld((prev) => ({ view: update(prev.view), key }));
+    const start = (): void => { void run(url, controller.signal, q === '', set); };
     if (q === '') start(); // the scope question has nothing to debounce
     const timer = q === '' ? undefined : setTimeout(start, SEARCH_DEBOUNCE_MS);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [activityId, q, isCaseSensitive, isWholeWord, isRegex, runId]);
-  return view;
+  }, [activityId, q, isCaseSensitive, isWholeWord, isRegex, runId, key]);
+  return { view: held.view, isCurrent: held.key === key };
 }

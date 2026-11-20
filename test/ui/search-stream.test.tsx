@@ -62,13 +62,13 @@ test('a new query aborts the previous search and its late lines never reach the 
   const { result, rerender } = renderHook(({ q }) => useSearch('A1', { ...QUERY, q }, 0), { initialProps: { q: 'one' } });
   act(() => { vi.advanceTimersByTime(300); });
   await flush();
-  expect(result.current).toMatchObject({ kind: 'running', files: [FILE] });
+  expect(result.current.view).toMatchObject({ kind: 'running', files: [FILE] });
   rerender({ q: 'two' });
   expect(fetchMock.mock.calls[0][1]?.signal?.aborted).toBe(true);
   first.push({ ...FILE, file: 'late.ts' });
   act(() => { vi.advanceTimersByTime(300); });
   await flush();
-  const view = result.current as Extract<SearchView, { kind: 'done' }>;
+  const view = result.current.view as Extract<SearchView, { kind: 'done' }>;
   expect(view.kind).toBe('done');
   expect(view.files.map((f) => f.file)).toEqual(['second.ts']);
 });
@@ -79,11 +79,11 @@ test('the view streams: running with the first file before the end, then done', 
   const { result } = renderHook(() => useSearch('A1', QUERY, 0));
   act(() => { vi.advanceTimersByTime(300); });
   await flush();
-  expect(result.current).toMatchObject({ kind: 'running', total: 3 });
+  expect(result.current.view).toMatchObject({ kind: 'running', total: 3 });
   stream.push(END);
   stream.end();
   await flush();
-  expect(result.current).toEqual({ kind: 'done', files: [FILE], end: END });
+  expect(result.current.view).toEqual({ kind: 'done', files: [FILE], end: END });
 });
 
 test('a 409 refusal is unavailable, a 500 is an error with its message', async () => {
@@ -92,11 +92,11 @@ test('a 409 refusal is unavailable, a 500 is an error with its message', async (
   const { result, rerender } = renderHook(({ q }) => useSearch('A1', { ...QUERY, q }, 0), { initialProps: { q: 'a' } });
   act(() => { vi.advanceTimersByTime(300); });
   await flush();
-  expect(result.current).toEqual({ kind: 'unavailable' });
+  expect(result.current.view).toEqual({ kind: 'unavailable' });
   rerender({ q: 'b' });
   act(() => { vi.advanceTimersByTime(300); });
   await flush();
-  expect(result.current).toEqual({ kind: 'error', message: 'boom', repos: [] });
+  expect(result.current.view).toEqual({ kind: 'error', message: 'boom', repos: [] });
 });
 
 test('an empty query asks once with no debounce and gives idle with the repos', async () => {
@@ -104,7 +104,7 @@ test('an empty query asks once with no debounce and gives idle with the repos', 
   const { result } = renderHook(() => useSearch('A1', { ...QUERY, q: '' }, 0));
   await flush();
   expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(result.current).toEqual({ kind: 'idle', repos: ['docs'] });
+  expect(result.current.view).toEqual({ kind: 'idle', repos: ['docs'] });
 });
 
 test('bumping run searches again with the same query', async () => {
@@ -116,4 +116,26 @@ test('bumping run searches again with the same query', async () => {
   act(() => { vi.advanceTimersByTime(300); });
   await flush();
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([searchUrl('A1', QUERY), searchUrl('A1', QUERY)]);
+});
+
+test('the view answers the current query only once its own search has started: typing makes it stale, the next stream makes it current', async () => {
+  fetchMock.mockImplementation(async () => ndjson(FILE, END).res);
+  const { result, rerender } = renderHook(({ q }) => useSearch('A1', { ...QUERY, q }, 0), { initialProps: { q: 'one' } });
+  act(() => { vi.advanceTimersByTime(300); });
+  await flush();
+  expect(result.current).toMatchObject({ view: { kind: 'done' }, isCurrent: true });
+  rerender({ q: 'two' });
+  expect(result.current).toMatchObject({ view: { kind: 'done' }, isCurrent: false });
+  act(() => { vi.advanceTimersByTime(300); });
+  await flush();
+  expect(result.current.isCurrent).toBe(true);
+});
+
+test('a run bump makes the old view stale too: it holds the files from before the replace', async () => {
+  fetchMock.mockImplementation(async () => ndjson(FILE, END).res);
+  const { result, rerender } = renderHook(({ run }) => useSearch('A1', QUERY, run), { initialProps: { run: 0 } });
+  act(() => { vi.advanceTimersByTime(300); });
+  await flush();
+  rerender({ run: 1 });
+  expect(result.current.isCurrent).toBe(false);
 });

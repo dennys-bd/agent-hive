@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { WriteCancelled } from '@/lib/api';
 import * as models from '@/lib/editor-models';
 import { fileSpans, replaceIn } from '@/lib/search-replace';
-import type { ReplaceAnswer, SearchFileResult, SearchQuery } from '../../../types';
+import { formatCount, t } from '@/i18n';
+import { type ReplaceAnswer, SEARCH_CAP, type SearchFileResult, type SearchQuery } from '../../../types';
 import { showReplaced, undoWithNotice } from './replace-toast';
 
 interface ReplaceInput { activityId: string; query: SearchQuery; replacement: string; files: SearchFileResult[]; rerun(): void }
@@ -24,7 +25,8 @@ export function useReplace({ activityId, query, replacement, files, rerun }: Rep
       const answer: ReplaceAnswer = await replaceIn(activityId, { query, replacement, files: targets.map((f) => f.file) });
       showReplaced(answer, { file, isAll: file === undefined, onUndo: () => { void undoWithNotice(activityId, answer).then(rerun); } });
     } catch (error) {
-      if (!(error instanceof WriteCancelled)) toast.error(error instanceof Error ? error.message : String(error));
+      // the server's refusal is English; the page words this one itself
+      if (!(error instanceof WriteCancelled)) toast.error((error as { code?: string }).code === 'too_many_matches' ? t('search.replaceTooMany', { n: formatCount(SEARCH_CAP) }) : error instanceof Error ? error.message : String(error));
     }
     rerun(); // the results read the disk again, whatever the answer
   };

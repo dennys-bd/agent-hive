@@ -57,15 +57,26 @@ test('undoReplace puts each previous text back over the answered version, and a 
     { path: 'a.ts', previous: 'old a', version: 'v1', count: 1 },
     { path: 'b.ts', previous: 'old b', version: 'v2', count: 2 },
   ]);
-  expect(skipped).toEqual(['b.ts']);
+  expect(skipped).toEqual({ skipped: ['b.ts'], failed: [] });
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method, JSON.parse(String(init?.body))])).toEqual([
     ['/activities/a/file', 'PUT', { path: 'a.ts', text: 'old a', version: 'v1', format: false }],
     ['/activities/a/file', 'PUT', { path: 'b.ts', text: 'old b', version: 'v2', format: false }],
   ]);
 });
 
-test('undoReplace rethrows a refusal that is not a conflict', async () => {
+test('undoReplace keeps going past a refusal that is not a conflict and names the failed files apart from the skipped', async () => {
   vi.stubGlobal('fetch', fetchMock);
-  fetchMock.mockResolvedValue(json({ error: 'read only' }, 403));
-  await expect(undoReplace('a', [{ path: 'a.ts', previous: 'x', version: 'v', count: 1 }])).rejects.toThrow('read only');
+  fetchMock.mockImplementation(async (_url, init) => {
+    const { path } = JSON.parse(String(init?.body)) as { path: string };
+    return path === 'a.ts' ? json({ error: 'read only' }, 403) : path === 'b.ts' ? json({ error: 'changed' }, 409) : json({ version: 'v' });
+  });
+  const answer = await undoReplace('a', ['a.ts', 'b.ts', 'c.ts'].map((path) => ({ path, previous: 'x', version: 'v', count: 1 })));
+  expect(answer).toEqual({ skipped: ['b.ts'], failed: ['a.ts'] });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+test('undoReplace stops when run mode\'s gate is cancelled', async () => {
+  vi.stubGlobal('fetch', fetchMock);
+  setWriteGate({ ask: () => Promise.reject(new WriteCancelled()), written: vi.fn() });
+  await expect(undoReplace('a', [{ path: 'a.ts', previous: 'x', version: 'v', count: 1 }])).rejects.toBeInstanceOf(WriteCancelled);
 });

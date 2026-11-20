@@ -1,5 +1,5 @@
 import type { ReplaceAnswer, ReplaceRequest, SearchFileResult, SearchMatch } from '../../types.js';
-import { postJson, sendJson } from './api.js';
+import { postJson, sendJson, WriteCancelled } from './api.js';
 
 export type Segment = { kind: 'text'; text: string } | { kind: 'match'; text: string; replacement?: string };
 
@@ -28,16 +28,18 @@ export const replaceIn = (activityId: string, request: ReplaceRequest): Promise<
   postJson<ReplaceAnswer>(activityPath(activityId, 'search/replace'), request);
 
 /** Each changed file's previous text back through PUT …/file with the version the replace answered (#717's save). A 409, the disk moved since,
- * skips the file; answers the paths skipped. Behind the gate as a save is. */
-export async function undoReplace(activityId: string, changed: ReplaceAnswer['changed']): Promise<string[]> {
+ * skips the file; any other refusal fails it; the rest go on either way. Answers both lists of paths. Behind the gate as a save is, so
+ * the user's cancel of the gate ends the undo. */
+export async function undoReplace(activityId: string, changed: ReplaceAnswer['changed']): Promise<{ skipped: string[]; failed: string[] }> {
   const skipped: string[] = [];
+  const failed: string[] = [];
   for (const { path, previous, version } of changed) {
     try {
       await sendJson('PUT', activityPath(activityId, 'file'), { path, text: previous, version, format: false });
     } catch (error) {
-      if ((error as { status?: number }).status !== HTTP_CONFLICT) throw error;
-      skipped.push(path);
+      if (error instanceof WriteCancelled) throw error;
+      ((error as { status?: number }).status === HTTP_CONFLICT ? skipped : failed).push(path);
     }
   }
-  return skipped;
+  return { skipped, failed };
 }

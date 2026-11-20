@@ -376,3 +376,53 @@ test('after a replace the search runs again with the same query', async () => {
   await waitFor(() => expect(searches()).toBe(before + 1));
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/search?')).at(-1)?.[0]).toContain('q=daemonPort&');
 });
+
+test('a file that failed in the replace is named apart from the ones left out', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  routes({ changed: changedOf('src/daemon.ts'), skipped: [{ path: 'big.json', reason: 'too_large' }, { path: 'src/server.ts', reason: 'failed' }] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir em daemon.ts' }));
+  await waitFor(() => expect(toast).toHaveBeenCalled());
+  expect(vi.mocked(toast).mock.calls[0]?.[1]).toMatchObject({ description: '3 ocorrências. ficaram de fora: big.json falharam: src/server.ts' });
+});
+
+test('the undo goes on past a failed file and names the failed and the changed apart', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  const paths = ['src/daemon.ts', 'src/server.ts', 'src/client.ts'];
+  routes({ changed: changedOf(...paths), skipped: [] }, (body) => (body.path === 'src/daemon.ts' ? json({ error: 'EACCES' }, 500) : body.path === 'src/server.ts' ? json({ error: 'changed' }, 409) : json({ version: 'v9' })));
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir tudo' }));
+  await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'substituir' }));
+  await waitFor(() => expect(toast).toHaveBeenCalled());
+  (vi.mocked(toast).mock.calls[0]?.[1] as unknown as { action: { onClick(): void } }).action.onClick();
+  await waitFor(() => expect(toast).toHaveBeenCalledWith('não desfeito em src/server.ts: o arquivo mudou no disco'));
+  expect(toast.error).toHaveBeenCalledWith('não desfeito em src/daemon.ts: a escrita falhou');
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(3);
+});
+
+test('a replace refused for too many matches says so in the page\'s language', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  fetchMock.mockImplementation(async (_url, init) => (init?.method === 'POST' ? json({ error: 'too many', code: 'too_many_matches' }, 413) : done(...FIVE, fiveEnd)));
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('button', { name: 'substituir em daemon.ts' }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith('mais de 2.000 ocorrências nesses arquivos: refine a busca antes de substituir'));
+});
+
+test('while the query changed and its search has not started, replace-all and the file replaces are off', async () => {
+  const user = userEvent.setup();
+  openReplace();
+  routes({ changed: [], skipped: [] });
+  render(pane());
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'substituir tudo' })).toBeEnabled());
+  await user.type(screen.getByRole('textbox', { name: 'buscar nos arquivos' }), 'x');
+  expect(screen.getByRole('button', { name: 'substituir tudo' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'substituir em daemon.ts' })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'substituir tudo' })).toBeEnabled());
+});

@@ -56,14 +56,15 @@ export function SearchPane({ target, isShown, onReplaceAll }: { target: Activity
   const pane = useSearchPane();
   const openFile = useOpenFile();
   const [runId, setRunId] = useState(0);
-  const found = useSearch(target.activity.id, pane.query, runId);
+  const { view: found, isCurrent } = useSearch(target.activity.id, pane.query, runId);
   // the first read of an empty query is the scope question: it is idle, not "searching"
   const view: SearchView = pane.query.q === '' && found.kind === 'running' ? { kind: 'idle', repos: [] } : found;
   const onOpen = (path: string, at: FileAt): void => { openFile?.(activityKey(target), path, at); };
   const summary = summaryOf(view);
-  // replace-all needs a settled search with something to replace and the replace field open
-  const canReplaceAll = pane.isReplaceOpen && view.kind === 'done' && view.end.total > 0;
-  const results = view.kind === 'running' || view.kind === 'done' ? view.files : [];
+  // replace-all needs a settled search of the query on screen, with something to replace and the replace field open
+  const canReplaceAll = pane.isReplaceOpen && isCurrent && view.kind === 'done' && view.end.total > 0;
+  // a view of an older query stays on screen, but nothing in it can be replaced
+  const results = isCurrent && (view.kind === 'running' || view.kind === 'done') ? view.files : [];
   const replace = useReplace({ activityId: target.activity.id, query: pane.query, replacement: pane.replacement, files: results, rerun: () => setRunId((n) => n + 1) });
   const askReplaceAll = (): void => { replace.setConfirmOpen(true); onReplaceAll?.(); };
   useSearchPaneKeys(root, (key) => runKey(key, pane, canReplaceAll, askReplaceAll));
@@ -80,7 +81,7 @@ export function SearchPane({ target, isShown, onReplaceAll }: { target: Activity
             </div>
           )}
           {view.kind === 'done' && view.end.capped && <CapNote text={t('search.capNote', { n: formatCount(SEARCH_CAP) })} />}
-          {(view.kind === 'running' || view.kind === 'done') && view.files.length > 0 && <SearchResults files={view.files} onOpen={onOpen} dirty={replace.dirty} {...(pane.isReplaceOpen ? { replacement: pane.replacement, onReplaceFile: replace.replaceFile } : {})} />}
+          {(view.kind === 'running' || view.kind === 'done') && view.files.length > 0 && <SearchResults files={view.files} onOpen={onOpen} dirty={replace.dirty} {...(pane.isReplaceOpen && isCurrent ? { replacement: pane.replacement, onReplaceFile: replace.replaceFile } : {})} />}
           {view.kind === 'idle' && <EmptyNote repos={view.repos} />}
           {view.kind === 'done' && view.end.total === 0 && <NoResultsNote text={t('search.noneNote', { n: formatCount(view.end.searched ?? 0) })} />}
           <ReplaceConfirm
