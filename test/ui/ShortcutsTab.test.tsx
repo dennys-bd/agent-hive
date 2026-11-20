@@ -99,8 +99,8 @@ test('an in-terminal shortcut on a key the terminal\'s program reads shows the m
   unmount();
   render(<ShortcutsTab shortcuts={{}} onChange={vi.fn()} />);
   const warned = screen.getAllByText(WARNING).map((w) => w.closest('fieldset')?.getAttribute('aria-label'));
-  // F1 and F11 are keys a terminal program reads, and Ctrl+/ is one too (Ctrl+punctuation): kept, with the warning (#585, #639)
-  expect(warned).toEqual([t('shortcuts.searchOperations'), t('shortcuts.shortcutMap'), t('shortcuts.fullScreen')]);
+  // F1, F3 and F11 are keys a terminal program reads, and Ctrl+/ is one too (Ctrl+punctuation): kept, with the warning (#585, #639)
+  expect(warned).toEqual([t('shortcuts.searchOperations'), t('shortcuts.shortcutMap'), t('shortcuts.fullScreen'), t('shortcuts.findInTerminal')]);
 });
 
 test('rows sit under the four scopes in the map\'s order (#585)', () => {

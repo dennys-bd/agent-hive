@@ -14,6 +14,8 @@ import type { ReviewStore } from './review-store.js';
 import { registerDiffRoutes } from './server-diff.js';
 import { registerReviewRoutes } from './server-review.js';
 import { registerTreeRoutes } from './server-tree.js';
+import { registerSearchRoutes } from './server-search.js';
+import { registerReplaceRoute } from './server-search-replace.js';
 import { registerTreeWatchRoutes } from './server-tree-watch.js';
 import type { TreeWatch } from './tree-watch.js';
 import { registerMoveRoutes } from './server-move.js';
@@ -202,6 +204,8 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   registerDiffRoutes(app, deps); // GET /activities/:id/diff (#270)
   registerReviewRoutes(app, deps); // GET /tasks/:id/review and the reviewed marks (#591)
   registerTreeRoutes(app, deps); // GET /activities/:id/tree, POST /activities/:id/reveal (redesign 07), GET /activities/:id/tree/folder (HIVE-22)
+  registerSearchRoutes(app, deps); // GET /activities/:id/search, the busca pane (#868)
+  registerReplaceRoute(app, deps); // POST /activities/:id/search/replace (#868)
   registerTreeWatchRoutes(app, deps); // POST, DELETE /activities/:id/tree/watch: the files sidebar's lease (#502)
   registerMoveRoutes(app, deps); // POST /activities/:id/tree/move, the file tree's drop (#594)
   registerTreeOpsRoutes(app, deps); // POST /activities/:id/tree/create, /rename, /trash, /file: the files tree's own operations (#818)

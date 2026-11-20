@@ -13,6 +13,7 @@ import { actedOn, clicked, modeOf, NO_SELECTION, single, type TreeSelection } fr
 import { useOpenFile } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { SearchPane } from '@/components/search/SearchPane';
 import { type FileIconsView, useFileIcons } from '@/hooks/use-file-icons';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
@@ -28,8 +29,8 @@ import { expandedOf, onTreeSelect, rememberExpanded, rememberFolder } from '@/li
 import { fileStatus, folderStatuses, MARK_TEXT, type TreeStatus } from '@/lib/tree-status';
 import { readView, writeView } from '@/lib/view-state';
 
-/** Which of the activity sidebar's two views shows (redesign 07). */
-export type SideTab = 'files' | 'details';
+/** Which of the activity sidebar's views shows (redesign 07): arquivos, busca (#868) or detalhes. */
+export type SideTab = 'files' | 'search' | 'details';
 
 // A file's diagnostic as the tree shows it (#780): the most severe count, errors before warnings; infos never show
 interface Worst { n: number; tone: string; family: 'editor.diag.errors' | 'editor.diag.warnings' }
@@ -301,11 +302,12 @@ export function ActivitySide({ target, tab, isShown, activeFile, details }: Acti
   const task = isTask(target) ? target.task : undefined;
   const openFile = useOpenFile();
   const onOpen = (path: string): void => { openFile?.(activityKey(target), path); }; // a click or abrir: the editor pane (#717)
-  const shown: SideTab = task ? tab : 'files'; // the stored tab may be a task's detalhes; read shown, never tab, below
+  const shown: SideTab = task || tab !== 'details' ? tab : 'files'; // the stored tab may be a task's detalhes; read shown, never tab, below
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <SideHeader tab={shown} activityId={target.activity.id} view={view} onView={setView} />
       {shown === 'files' && <FilesBody target={target} view={view} isShown={isShown} activeFile={activeFile} onView={setView} onOpen={onOpen} />}
+      {shown === 'search' && <SearchPane target={target} isShown={isShown} />}
       {task && <div style={shown === 'details' ? SHOWN : COLLAPSED} inert={shown !== 'details'} className="flex min-h-0 min-w-0 flex-col overflow-hidden">{details}</div>}
     </div>
   );

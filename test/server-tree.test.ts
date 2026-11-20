@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
-import { FOLDER_QUERY_MESSAGE, inTreeOf, nestedRepoOf, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot, untrackedMarks } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, inTreeOf, nestedRepoOf, nestedRepos, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot, untrackedMarks } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
 import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
@@ -229,4 +229,15 @@ test('POST /activities/:id/reveal on a machine that is not local answers 409 mac
   const res = await postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`, { path: 'src/b.ts' });
   assert.deepEqual([res.status, await res.json()], [409, { error: MACHINE_REMOTE_MESSAGE, code: MACHINE_REMOTE }]);
   assert.deepEqual(f.calls, []);
+});
+
+test('nestedRepos: the untracked folders, the ignored ones included, that hold .git (a directory or a worktree\'s file), sorted; one ls-files with no exclude (#868, HIVE-22)', async () => {
+  const calls: string[][] = [];
+  const exec: Exec = async (_file, args) => {
+    calls.push(args);
+    return { stdout: ['vendor/lib/', 'docs/', 'node_modules/', 'empty/', '.hive/', ''].join('\0') };
+  };
+  const machine = fakeMachine({ exec, fs: fakeFiles(join('/wt', 'docs', '.git'), join('/wt', 'vendor/lib/', '.git')) });
+  assert.deepEqual(await nestedRepos(machine, '/wt'), ['docs', 'vendor/lib']);
+  assert.deepEqual(calls.map((args) => args.slice(7)), [['ls-files', '-z', '--others', '--directory']]);
 });

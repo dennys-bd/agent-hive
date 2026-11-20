@@ -4,8 +4,8 @@ import type { MessageKey } from '@/i18n';
 import type { Activity } from '@/lib/activities';
 import type { PanelId, Side, ViewLayout } from '@/lib/dock-layout';
 
-/** A pane the right side shows (#221): the activity sidebar's arquivos and detalhes, and plugins' variáveis (#313). */
-export type RightPane = 'files' | 'details' | 'variables';
+/** A pane the right side shows (#221): the activity sidebar's arquivos, busca (#868) and detalhes, and plugins' variáveis (#313). */
+export type RightPane = 'files' | 'search' | 'details' | 'variables';
 type SidePane = Exclude<RightPane, 'variables'>; // the activity sidebar's own tabs
 
 /** What MainDock hands the window header (#221): the center's view, the layout DockFrame draws, whether the right column shows, the activity's
@@ -32,13 +32,13 @@ export function paneHint(center: CenterMode, pane: RightPane): MessageKey | unde
 }
 
 // The pane the right group shows today: variáveis in plugins (#313), Detalhes under the flow; under atividades the side's tab on a task's
-// activity and arquivos alone on a local one (#633); none on the home, which hides the side
+// activity and arquivos alone on a local one (#633), and busca on either (#868); none on the home, which hides the side
 function activePane(center: CenterMode, current: Activity | undefined, sideTab: SidePane): RightPane | undefined {
   if (center === 'benchmark') return undefined; // #461: the right column has no pane yet; panel-right opens it empty
   if (center === 'plugins') return 'variables';
   if (center === 'automation') return 'details';
   if (current === undefined) return undefined;
-  return current.kind === 'task' ? sideTab : 'files';
+  return current.kind === 'task' || sideTab === 'search' ? sideTab : 'files';
 }
 
 /** The header's shell (#221), from what MainDock already holds. The active icon closes the right side, as the group's × does; another opens it
@@ -54,7 +54,8 @@ export function useHeaderShell({ center, current, layout, isRightHidden, bar, si
     activateTab('detail');
     if (pane !== 'variables') setSideTab(pane);
   };
-  const enabled = { files: isActivities && current !== undefined, details: center === 'automation' || (isActivities && current?.kind === 'task'), variables: center === 'plugins' };
+  const hasWork = isActivities && current !== undefined;
+  const enabled = { files: hasWork, search: hasWork, details: center === 'automation' || (isActivities && current?.kind === 'task'), variables: center === 'plugins' };
   return {
     center, layout, bar: isActivities ? bar : undefined, canOpenRight: !isRightHidden, // nothing to open on the home, nor beside a plugins list, update or mcp screen (#492)
     rightShown: layout.open.right, // Detalhes is always the right group (#295)

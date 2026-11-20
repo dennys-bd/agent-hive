@@ -77,7 +77,7 @@ test('appMenuTemplate: Window has full screen, Electron\'s togglefullscreen role
   const byLabel = (menu: MenuItemConstructorOptions[], key: 'main.menu.fullScreen' | 'main.menu.closeWindow') => menu.find((item) => item.label === t(key));
   const click = (item: MenuItemConstructorOptions | undefined) => item?.click as (menuItem: unknown, win: BaseWindow | undefined) => void;
   const mac = window(DEFAULTS);
-  assert.deepEqual([byLabel(mac, 'main.menu.fullScreen')?.role, byLabel(mac, 'main.menu.fullScreen')?.accelerator], ['togglefullscreen', 'CmdOrCtrl+Shift+F']);
+  assert.deepEqual([byLabel(mac, 'main.menu.fullScreen')?.role, byLabel(mac, 'main.menu.fullScreen')?.accelerator], ['togglefullscreen', 'CmdOrCtrl+Ctrl+F']);
   let closed = 0;
   click(byLabel(mac, 'main.menu.closeWindow'))(undefined, { close: () => { closed += 1; } } as unknown as BaseWindow);
   click(byLabel(mac, 'main.menu.closeWindow'))(undefined, undefined); // no focused window: nothing
@@ -115,7 +115,7 @@ test('appMenuTemplate off macOS: the app menu drops about, hide, hide others and
 });
 
 test('menuKeys: what the menu\'s own items carry, Settings… on its fixed key and full screen, Close and Close Window on their bindings, null while off (#906)', () => {
-  assert.deepEqual(menuKeys(DEFAULTS), { settings: SETTINGS_KEY, fullScreen: 'CmdOrCtrl+Shift+F', close: CLOSE_KEY, closeWindow: 'CmdOrCtrl+Shift+W' });
+  assert.deepEqual(menuKeys(DEFAULTS), { settings: SETTINGS_KEY, fullScreen: 'CmdOrCtrl+Ctrl+F', close: CLOSE_KEY, closeWindow: 'CmdOrCtrl+Shift+W' });
   assert.deepEqual(menuKeys(effectiveBindings({}, false)), { settings: SETTINGS_KEY, fullScreen: 'F11', close: 'CmdOrCtrl+Shift+W', closeWindow: 'CmdOrCtrl+Alt+Shift+W' });
   assert.deepEqual(menuKeys(effectiveBindings({ close: null, fullScreen: null }, true)), { settings: SETTINGS_KEY, fullScreen: null, close: null, closeWindow: 'CmdOrCtrl+Shift+W' });
 });
