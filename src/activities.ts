@@ -102,6 +102,12 @@ export const withActivity = (state: State, activity: Activity): State =>
 export const withRecord = (state: State, record: ActivityRecord): State =>
   ({ ...state, activityRecords: state.activityRecords.map((r) => (r.id === record.id ? record : r)) });
 
+/** The machine an activity born in `workspace` carries (#931): absent for a workspace on the local machine. Read once, at the birth. */
+export const bornMachine = (state: Pick<State, 'workspaceMachines'>, workspace: string): Pick<Activity, 'machine'> => {
+  const machine = state.workspaceMachines[workspace];
+  return machine === undefined ? {} : { machine };
+};
+
 /** Every workspace's local activity and record (#590, #629): one per name in `state.workspaces`, born when missing, removed with its
  * workspace. Boot and setWorkspaces run it; the same object when nothing changes. */
 export function withLocalActivities(state: State): State {
@@ -111,7 +117,7 @@ export function withLocalActivities(state: State): State {
   const missing = state.workspaces.filter((ws) => !activities.some((a) => a.id === localActivityId(ws)));
   const unrecorded = state.workspaces.filter((ws) => !records.some((r) => r.id === localActivityId(ws)));
   if (missing.length === 0 && unrecorded.length === 0 && activities.length === state.activities.length && records.length === state.activityRecords.length) return state;
-  const born = missing.map((workspace): Activity => ({ id: localActivityId(workspace), kind: 'local', workspace }));
+  const born = missing.map((workspace): Activity => ({ id: localActivityId(workspace), kind: 'local', workspace, ...bornMachine(state, workspace) }));
   return {
     ...state,
     activities: [...activities, ...born],

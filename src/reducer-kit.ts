@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { AGENTS, ranAgent, stageAgentIn } from './agents.js';
-import { activityOf, resultOf, taskOfWorker, withActivity } from './activities.js';
+import { activityOf, bornMachine, resultOf, taskOfWorker, withActivity } from './activities.js';
 import { sessionBaseline, touchSession, withRun, withStageRun } from './record-kit.js';
 import { stageRunLaunch, withLaunch } from './launch-pick.js';
 import { handoverRun, pickedRun } from './task-runs.js';
@@ -196,7 +196,7 @@ export function ensureActivity(state: State, task: Task): { state: State; activi
   if (workspace === undefined) return undefined;
   const id = randomUUID();
   const slug = slugFor(task.item);
-  const activity: Activity = { id, kind: 'task', workspace, slug };
+  const activity: Activity = { id, kind: 'task', workspace, ...bornMachine(state, workspace), slug };
   const record: ActivityRecord = { id, taskIds: [taskId(task)], slug, sessions: [] };
   return { state: { ...state, activities: [...state.activities, activity], activityRecords: [...state.activityRecords, record] }, activity };
 }

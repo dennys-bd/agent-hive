@@ -677,7 +677,7 @@ export interface Activity {
   id: string; // randomUUID() for a task's activity; `local:<workspace>` for a workspace's local activity
   kind: 'task' | 'local';
   workspace: string; // frozen at creation
-  machine?: MachineId; // #158: frozen at creation like workspace; absent = the local machine. Nothing sets or reads it until a remote machine exists
+  machine?: MachineId; // #158, #931: the machine its workspace is on, copied from workspaceMachines at its birth and frozen like workspace; absent = the local machine
   slug?: string; // task activities: from the first task's slugFor; names the worktree path, the branch template and the prompt file
   worktree?: string; branch?: string; worktreeGone?: true;
   local?: true; // runs in the workspace's checkout (#444), set by a start's popup

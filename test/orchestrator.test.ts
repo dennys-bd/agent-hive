@@ -2443,6 +2443,33 @@ test('setWorkspaces carries the machines of the workspaces not on local into the
   assert.deepEqual(state.workspaceMachines, { site: 'wsl:X' });
 });
 
+const onWsl = (): State => ({ ...base(0), workspaceMachines: { hive: 'wsl:X' } });
+const SAVED_LOCAL = { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {}, workspaceMachines: {} } satisfies HiveEvent;
+
+test('a start creates the activity with its workspace\'s machine; on a local workspace the activity has none (#931)', () => {
+  const { state, effects } = started(polled(onWsl(), [listed(1)]).state, 'board:item1');
+  assert.equal(work(state, 1)?.machine, 'wsl:X');
+  const spawn = effects.find((e) => e.type === 'spawn');
+  assert.equal(spawn?.type === 'spawn' ? spawn.activity.machine : undefined, 'wsl:X', 'the spawner gets the machine with the activity');
+  const local = started(polled(base(0), [listed(1)]).state, 'board:item1').state;
+  assert.equal(holds(local, 1, 'machine'), false, 'absent, never undefined');
+});
+
+test('a live activity keeps its machine: a second start finds it, and a save that moves the workspace to local does not move it (#931)', () => {
+  const live = born(polled(onWsl(), [listed(1)]).state, 1);
+  assert.equal(work(live, 1)?.machine, 'wsl:X', 'createActivity goes through ensureActivity');
+  const saved = reduce(live, SAVED_LOCAL).state;
+  const { state } = started(saved, 'board:item1');
+  assert.deepEqual([work(state, 1)?.id, work(state, 1)?.machine], [work(live, 1)?.id, 'wsl:X']);
+});
+
+test('a workspace\'s local activity is born with its machine; one on local has none (#931)', () => {
+  const { state } = reduce(base(0), { ...SAVED_LOCAL, workspaces: ['hive', 'site'], workspaceMachines: { site: 'wsl:X' } });
+  const localOf = (ws: string) => state.activities.find((a) => a.id === localActivityId(ws));
+  assert.equal(localOf('site')?.machine, 'wsl:X');
+  assert.equal('machine' in (localOf('hive') ?? {}), false);
+});
+
 test('setWorkspaces stores each workspace\'s command names and a later save replaces them, with no fill of its own for them (#300)', () => {
   const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: { hive: ['Run Frontend'], site: [] }, workspaceColors: {}, workspaceMachines: {} });
   assert.deepEqual(state.commands, { hive: ['Run Frontend'], site: [] });
