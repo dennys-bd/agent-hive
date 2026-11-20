@@ -1,6 +1,5 @@
 // POST /activities/:id/search/replace (#868): the busca pane's replace. The request only limits git's pathspec; the spans come from a fresh
 // git grep run at write time, so a line the file no longer holds as git printed it is skipped, never overwritten.
-import { join } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { decodeText } from './decode-text.js';
 import type { Machine } from './machine.js';
@@ -106,7 +105,7 @@ async function grepNow(machine: Machine, root: string, request: ReplaceRequest, 
   let spans = 0;
   let isOver = false;
   for (const [repo, paths] of groupByRepo(request.files, repos)) {
-    const cwd = repo === '' ? root : join(root, repo);
+    const cwd = repo === '' ? root : machine.paths.join(root, repo);
     const outcome = await runGrep(machine, cwd, grepArgs(cwd, request.query, paths), (line) => {
       spans += line.spans.length;
       isOver = spans > SEARCH_CAP;
@@ -130,7 +129,7 @@ export async function replaceFiles(machine: Machine, root: string, request: Repl
   const changed: ReplaceAnswer['changed'] = [];
   const skipped: ReplaceAnswer['skipped'] = [];
   for (const path of [...found.keys()].sort()) {
-    const outcome = await replaceOne(machine, join(root, ...path.split('/')), found.get(path) ?? [], replacement).catch((): ReplaceSkip => 'failed');
+    const outcome = await replaceOne(machine, machine.paths.join(root, ...path.split('/')), found.get(path) ?? [], replacement).catch((): ReplaceSkip => 'failed');
     if (typeof outcome === 'string') skipped.push({ path, reason: outcome });
     else changed.push({ ...outcome, path });
   }

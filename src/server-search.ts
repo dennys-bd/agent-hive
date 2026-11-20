@@ -1,7 +1,6 @@
 // The busca pane's search (#868): git grep over the activity's tree root and every nested repository under it, one process per repository,
 // read as NDJSON per file. The match colouring is how one process gives both the line and every span git's own ERE matched: -o prints the
 // match without its line. Every colour but the match's is pinned to normal (no escape at all), and the match's to an RGB no file plausibly holds.
-import { join } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { gitIn } from './git-status.js';
 import type { Machine, MachineChild } from './machine.js';
@@ -208,7 +207,7 @@ function collector(send: (line: SearchLine) => void, nested: readonly string[]) 
 // The files the search covered, the list the tree and ⌘P read; a nested repository that cannot list counts none
 async function countFiles(machine: Machine, root: string, repos: readonly string[]): Promise<number> {
   const counts = await Promise.all(['', ...repos].map(async (repo) => {
-    const listing = await gitIn(repo === '' ? root : join(root, repo), ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], machine.exec).catch(() => '');
+    const listing = await gitIn(repo === '' ? root : machine.paths.join(root, repo), ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], machine.exec).catch(() => '');
     return new Set(listing.split('\0').filter((entry) => entry !== '' && !entry.endsWith('/'))).size;
   }));
   return counts.reduce((sum, count) => sum + count, 0);
@@ -220,7 +219,7 @@ export async function searchTree(machine: Machine, root: string, query: SearchQu
   if (query.q === '') return send({ done: true, total: 0, files: 0, capped: false, repos });
   const out = collector(send, repos);
   for (const repo of ['', ...repos]) {
-    const cwd = repo === '' ? root : join(root, repo);
+    const cwd = repo === '' ? root : machine.paths.join(root, repo);
     const outcome = await runGrep(machine, cwd, grepArgs(cwd, query), (line) => out.add(repo, line), signal);
     if (signal.aborted) return;
     out.flush();

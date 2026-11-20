@@ -398,7 +398,7 @@ test('the undo goes on past a failed file and names the failed and the changed a
   await user.click(screen.getByRole('button', { name: 'substituir tudo' }));
   await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'substituir' }));
   await waitFor(() => expect(toast).toHaveBeenCalled());
-  (vi.mocked(toast).mock.calls[0]?.[1] as unknown as { action: { onClick(): void } }).action.onClick();
+  (vi.mocked(toast).mock.calls[0] as unknown as [string, { action: { onClick(): void } }])[1].action.onClick();
   await waitFor(() => expect(toast).toHaveBeenCalledWith('não desfeito em src/server.ts: o arquivo mudou no disco'));
   expect(toast.error).toHaveBeenCalledWith('não desfeito em src/daemon.ts: a escrita falhou');
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(3);

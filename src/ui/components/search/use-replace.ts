@@ -21,6 +21,7 @@ export function useReplace({ activityId, query, replacement, files, rerun }: Rep
   const [isConfirmOpen, setConfirmOpen] = useState(false);
   const clean = files.filter((f) => !dirty.has(f.file));
   const run = async (targets: SearchFileResult[], file?: string): Promise<void> => {
+    if (targets.length === 0) return; // the dialog can outlive its results: a query typed under it empties the list
     try {
       const answer: ReplaceAnswer = await replaceIn(activityId, { query, replacement, files: targets.map((f) => f.file) });
       showReplaced(answer, { file, isAll: file === undefined, onUndo: () => { void undoWithNotice(activityId, answer).then(rerun); } });
