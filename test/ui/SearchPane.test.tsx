@@ -171,3 +171,49 @@ test('the sidebar mounts the pane for the busca tab, in English too', async () =
   expect(screen.getByRole('textbox', { name: 'search in files' })).toHaveAttribute('placeholder', 'search');
   expect(await screen.findByText(/^searches the contents of the files in this worktree, the same ones/)).toBeInTheDocument();
 });
+
+const keyedPane = (onReplaceAll: () => void) => (
+  <FileOpenerContext.Provider value={openFile}>
+    <button type="button">outside</button>
+    <SearchPane target={target} isShown onReplaceAll={onReplaceAll} />
+  </FileOpenerContext.Provider>
+);
+
+test('with the focus in the pane Alt+C, Alt+W and Alt+R flip match case, whole word and regex', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(async () => done(end({ total: 0, files: 0 })));
+  render(keyedPane(vi.fn()));
+  await user.click(screen.getByRole('textbox', { name: 'buscar nos arquivos' }));
+  await user.keyboard('{Alt>}c{/Alt}{Alt>}w{/Alt}{Alt>}r{/Alt}');
+  for (const name of ['diferenciar maiúsculas', 'palavra inteira', 'regex']) {
+    expect(screen.getByRole('switch', { name })).toHaveAttribute('aria-checked', 'true');
+  }
+});
+
+test('with the focus outside the pane the same keys change nothing', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(async () => done(end({ total: 0, files: 0 })));
+  render(keyedPane(vi.fn()));
+  await user.click(screen.getByRole('button', { name: 'outside' }));
+  await user.keyboard('{Alt>}c{/Alt}{Alt>}w{/Alt}{Alt>}r{/Alt}');
+  for (const toggle of screen.getAllByRole('switch')) expect(toggle).toHaveAttribute('aria-checked', 'false');
+});
+
+test('Ctrl+Alt+Enter in the field replaces all once the search is done, and does nothing while it runs', async () => {
+  const user = userEvent.setup();
+  const onReplaceAll = vi.fn();
+  const s = stream(FILE);
+  fetchMock.mockImplementation(async () => s.res);
+  withQuery('daemonPort');
+  setSearchPane({ isReplaceOpen: true });
+  render(keyedPane(onReplaceAll));
+  await screen.findByRole('treeitem', { name: /daemon\.ts/ });
+  await user.click(screen.getByRole('textbox', { name: 'buscar nos arquivos' }));
+  await user.keyboard('{Control>}{Alt>}{Enter}{/Alt}{/Control}');
+  expect(onReplaceAll).not.toHaveBeenCalled();
+  s.push(end());
+  s.end();
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 resultados em 1 arquivo'));
+  await user.keyboard('{Control>}{Alt>}{Enter}{/Alt}{/Control}');
+  expect(onReplaceAll).toHaveBeenCalledOnce();
+});
