@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { pack, unpack } from '../src/remote/attachments.js';
-import { createMux, decode, encode, RemoteError, type Mux, type RequestFrame, type TextFrame } from '../src/remote/protocol.js';
+import { createMux, decode, encode, FIRST_STREAM_CHANNEL, REMOTE_PROTOCOL_VERSION, RemoteError, type Mux, type MuxStream, type RequestFrame, type TextFrame } from '../src/remote/protocol.js';
 
 const ALL = Uint8Array.from({ length: 256 }, (_, i) => i);
 
@@ -201,4 +201,107 @@ test('a malformed string, a stray binary frame, an answer to an id never sent, a
   ];
   for (const data of bad) assert.doesNotThrow(() => host.receive(data));
   assert.deepEqual(codes, bad.map(() => 'bad_frame'));
+});
+
+test('a matching hello reaches onHello with the peer\'s info, nothing waits for it, and a listener\'s throw reaches onError as internal (#936)', async () => {
+  const { host, machine } = pair();
+  machine.onRequest(1, () => 'early');
+  assert.equal(await host.request(1, 'x', null), 'early', 'a request before any hello goes out at once');
+  const infos: unknown[] = [];
+  host.onHello((info) => infos.push(info));
+  machine.hello({ platform: 'linux', relayPort: 4100 });
+  await settle();
+  assert.deepEqual(infos, [{ platform: 'linux', relayPort: 4100 }]);
+  const codes: string[] = [];
+  host.onError((err) => codes.push(err.code));
+  host.onHello(() => {
+    throw new Error('a listener fails');
+  });
+  assert.doesNotThrow(() => host.receive(JSON.stringify({ ch: 0, t: 'hello', version: REMOTE_PROTOCOL_VERSION, info: null })));
+  assert.deepEqual(codes, ['internal']);
+});
+
+test('a hello with another version closes both sides with version_mismatch, naming both versions, and reaches no onHello (#936)', async () => {
+  const { host, machine, sent } = pair();
+  const closes: Record<Side, (string | undefined)[]> = { host: [], machine: [] };
+  host.onClose((code) => closes.host.push(code));
+  machine.onClose((code) => closes.machine.push(code));
+  let heard = false;
+  host.onHello(() => {
+    heard = true;
+  });
+  const other = REMOTE_PROTOCOL_VERSION + 1;
+  host.receive(JSON.stringify({ ch: 0, t: 'hello', version: other, info: {} })); // as if the machine had sent it
+  await settle();
+  assert.deepEqual(closes, { host: ['version_mismatch'], machine: ['version_mismatch'] });
+  assert.equal(heard, false);
+  const bye = textFrames(sent, 'host').find((f) => f.t === 'bye');
+  assert.ok(bye?.t === 'bye' && bye.message?.includes(String(other)) && bye.message.includes(String(REMOTE_PROTOCOL_VERSION)), JSON.stringify(bye));
+});
+
+test('a stream opened on one side reaches onStream on the other, carries every byte value both ways, and end() reaches onEnd once (#936)', async () => {
+  const { host, machine } = pair();
+  const opened: MuxStream[] = [];
+  machine.onStream((stream) => opened.push(stream));
+  const out = host.openStream();
+  assert.equal(out.ch, FIRST_STREAM_CHANNEL);
+  assert.equal(host.openStream().ch, FIRST_STREAM_CHANNEL + 2, 'the host takes the odd channels');
+  assert.equal(machine.openStream().ch, FIRST_STREAM_CHANNEL + 1, 'the machine the even ones');
+  await settle();
+  const back = opened.find((stream) => stream.ch === out.ch)!;
+  const atMachine: number[][] = [];
+  const atHost: number[][] = [];
+  let ends = 0;
+  back.onData((bytes) => atMachine.push([...bytes]));
+  back.onEnd(() => {
+    ends += 1;
+  });
+  out.onData((bytes) => atHost.push([...bytes]));
+  out.write(ALL);
+  back.write(Uint8Array.from(ALL).reverse());
+  await settle();
+  assert.deepEqual(atMachine, [[...ALL]]);
+  assert.deepEqual(atHost, [[...ALL].reverse()]);
+  out.end();
+  out.end();
+  await settle();
+  assert.equal(ends, 1);
+  assert.throws(() => out.write(ALL), remote('link_closed'));
+});
+
+test('a text frame on a stream channel, a binary frame on a channel never opened, an open of this side\'s parity, an unknown end and a malformed string reach onError as bad_frame; the mux stays open (#936)', async () => {
+  const { host, machine } = pair();
+  const opened: MuxStream[] = [];
+  machine.onStream((stream) => opened.push(stream));
+  const codes: string[] = [];
+  machine.onError((err) => codes.push(err.code));
+  const out = host.openStream();
+  await settle();
+  const bad = [
+    JSON.stringify({ ch: out.ch, t: 'event', id: 1, data: null }),
+    encode({ ch: 9, bytes: ALL }),
+    JSON.stringify({ ch: 0, t: 'open', stream: 4 }), // even: the machine's own channels
+    JSON.stringify({ ch: 0, t: 'end', stream: 9 }),
+    '{"ch":',
+  ];
+  for (const data of bad) assert.doesNotThrow(() => machine.receive(data));
+  assert.deepEqual(codes, bad.map(() => 'bad_frame'));
+  const got: number[][] = [];
+  opened[0].onData((bytes) => got.push([...bytes]));
+  out.write(Uint8Array.of(1, 2));
+  await settle();
+  assert.deepEqual(got, [[1, 2]]);
+});
+
+test('close ends every open stream on both sides, and openStream after close throws link_closed (#936)', async () => {
+  const { host, machine } = pair();
+  const ended: Side[] = [];
+  machine.onStream((stream) => stream.onEnd(() => ended.push('machine')));
+  const out = host.openStream();
+  out.onEnd(() => ended.push('host'));
+  await settle();
+  host.close();
+  await settle();
+  assert.deepEqual(ended.sort(), ['host', 'machine']);
+  assert.throws(() => host.openStream(), remote('link_closed'));
 });

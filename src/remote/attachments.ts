@@ -1,5 +1,6 @@
 // The bytes inside a request, an event or an answer (#936): out as { $bin: i } plus that many binary frames, back as the Uint8Array. No
-// base64, so a 1 MiB readFile crosses as 1 MiB. Apart from protocol.ts for its length; free of node: as it is.
+// base64, so a 1 MiB readFile crosses as 1 MiB. Stream channels (the other way bytes cross) live here too. Apart from protocol.ts for its
+// length; free of node: as it is.
 type Plain = Record<string, unknown>;
 
 // only what JSON.parse builds and callers write by hand: a Date or a class instance keeps its own toJSON
@@ -41,4 +42,41 @@ export function unpack(value: unknown, bins: readonly Uint8Array[]): { value: un
   };
   const out = walk(value);
   return missing === undefined ? { value: out } : { error: `attachment ${missing} is not among the frame's ${bins.length}` };
+}
+
+export type StreamHandle = { readonly ch: number; write(bytes: Uint8Array): void; end(): void; onData(cb: (bytes: Uint8Array) => void): void; onEnd(cb: () => void): void };
+export type StreamState = { handle: StreamHandle; deliver(bytes: Uint8Array): void; finish(): void };
+
+// one stream channel; onEnd fires once, however the stream ended: its own end(), the peer's, or the mux closing. The caller builds the
+// error a write after the end throws, so this file needs no RemoteError (and no import cycle with protocol.ts)
+export function createStream(ch: number, write: (bytes: Uint8Array) => void, end: () => void, endedError: () => Error): StreamState {
+  const dataCbs: ((bytes: Uint8Array) => void)[] = [];
+  const endCbs: (() => void)[] = [];
+  let ended = false;
+  const finish = (): void => {
+    if (ended) return;
+    ended = true;
+    for (const cb of endCbs) cb();
+  };
+  const handle: StreamHandle = {
+    ch,
+    write: (bytes) => {
+      if (ended) throw endedError();
+      write(bytes);
+    },
+    end: () => {
+      if (ended) return;
+      end();
+      finish();
+    },
+    onData: (cb) => void dataCbs.push(cb),
+    onEnd: (cb) => void endCbs.push(cb),
+  };
+  return {
+    handle,
+    deliver: (bytes) => {
+      for (const cb of dataCbs) cb(bytes);
+    },
+    finish,
+  };
 }
