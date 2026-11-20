@@ -4,7 +4,7 @@ import { candidates, canOpenSession, leave, sessionsOf, canDeleteActivity, diffe
 import { canSchedule, canStart, effectiveLimits, extractPrUrl, initialState, isChildSession, isFree, reduce, type Reduced, WAITING_NOTIFICATIONS } from '../src/orchestrator.js';
 import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { activityOf, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfPr, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
+import { activityOf, bornMachine, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfPr, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
@@ -2461,6 +2461,10 @@ test('a live activity keeps its machine: a second start finds it, and a save tha
   const saved = reduce(live, SAVED_LOCAL).state;
   const { state } = started(saved, 'board:item1');
   assert.deepEqual([work(state, 1)?.id, work(state, 1)?.machine], [work(live, 1)?.id, 'wsl:X']);
+});
+
+test('a workspace named like an Object.prototype member is on the local machine, not on the inherited property (#931)', () => {
+  assert.deepEqual([bornMachine({ workspaceMachines: {} }, 'constructor'), bornMachine({ workspaceMachines: { toString: 'wsl:X' } }, 'toString')], [{}, { machine: 'wsl:X' }]);
 });
 
 test('a workspace\'s local activity is born with its machine; one on local has none (#931)', () => {

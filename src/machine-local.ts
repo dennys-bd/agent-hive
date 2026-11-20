@@ -18,7 +18,6 @@ export interface LocalMachineDeps extends Omit<LocalPtyDeps, 'env' | 'platform'>
   platform?: NodeJS.Platform; // process.platform unless a test injects one
 }
 
-
 const text = (value: unknown): string => (typeof value === 'string' ? value : Buffer.isBuffer(value) ? value.toString('utf8') : '');
 
 /** execFile's rejection (or a test fake's) as a MachineError, field for field, the original as its cause. */

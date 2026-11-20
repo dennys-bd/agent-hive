@@ -104,8 +104,8 @@ export const withRecord = (state: State, record: ActivityRecord): State =>
 
 /** The machine an activity born in `workspace` carries (#931): absent for a workspace on the local machine. Read once, at the birth. */
 export const bornMachine = (state: Pick<State, 'workspaceMachines'>, workspace: string): Pick<Activity, 'machine'> => {
-  const machine = state.workspaceMachines[workspace];
-  return machine === undefined ? {} : { machine };
+  // own keys only: a workspace may be named like an Object.prototype member (constructor, toString)
+  return Object.hasOwn(state.workspaceMachines, workspace) ? { machine: state.workspaceMachines[workspace] } : {};
 };
 
 /** Every workspace's local activity and record (#590, #629): one per name in `state.workspaces`, born when missing, removed with its

@@ -1369,7 +1369,7 @@ test('a workspace\'s machine is required: local or wsl:<distro>, and anything el
   const at = (extra: Record<string, unknown>) => github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', ...extra }] });
   for (const machine of ['local', 'wsl:Debian-13']) assert.equal(parseConfig(at({ machine })).comb.workspaces[0].machine, machine);
   const message = 'hive.config.json: "comb.workspaces[0].machine" must be "local" or "wsl:<distro>"';
-  for (const machine of [undefined, 'wsl:', 'wsl:a/b', 'wsl:a\\b', 'wsl:a\u0007b', 'wsl:a\u007fb', 'ssh:x', 'LOCAL', 7]) assert.throws(() => parseConfig(at({ machine })), { message }, JSON.stringify(machine));
+  for (const machine of [undefined, 'wsl:', 'wsl:a/b', 'wsl:a\\b', 'wsl:a\u0007b', 'wsl:a\u007fb', 'wsl:-u', 'ssh:x', 'LOCAL', 7]) assert.throws(() => parseConfig(at({ machine })), { message }, JSON.stringify(machine));
 });
 
 test('a wsl: workspace\'s path is checked as POSIX on every host: C:\\repo is refused and /home/u/repo accepted (#931)', () => {
