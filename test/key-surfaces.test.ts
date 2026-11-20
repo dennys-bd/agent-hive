@@ -31,6 +31,7 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
   'key stop src/ui/components/ProjectRow.tsx': { count: 1, reason: 'a click on the chevron; no key' },
   'key stop src/ui/components/TaskPicker.tsx': { count: 3, reason: 'Escape on window (stopPropagation leaves window\'s other listeners), a click, the chip\'s Enter' },
   'key stop src/ui/components/TerminalFind.tsx': { count: 1, reason: 'Enter, Escape and find on its own field, below window' },
+  'key stop src/ui/components/search/SearchResults.tsx': { count: 1, reason: 'a click on a file row\'s replace button, so the row does not toggle; no global shortcut' },
   'key stop src/ui/components/settings/ShortcutsTab.tsx': { count: 1, reason: 'the recording field, which the global listeners skip through isRecording' },
   'key stop src/ui/hooks/use-flow-view.ts': { count: 1, reason: 'the flow\'s ⇧1 on window\'s capture phase, after acting; a bare Shift key, no global shortcut' },
   'key stop src/ui/lib/dock-layout.ts': { count: 2, reason: 'onShortcutKey and onFixedKey themselves, after acting' },
