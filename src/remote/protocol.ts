@@ -1,84 +1,23 @@
-import { createStream, pack, unpack, type StreamState } from './attachments.js';
-
-export const REMOTE_PROTOCOL_VERSION = 1;
-export const CHANNEL = { control: 0, machine: 1, relay: 2 } as const;
-export const FIRST_STREAM_CHANNEL = 3;
-export const REMOTE_ERROR_CODES = ['link_closed', 'version_mismatch', 'unknown_method', 'cancelled', 'bad_frame', 'internal', 'not_supported'] as const;
-export type RemoteErrorCode = (typeof REMOTE_ERROR_CODES)[number];
-
-export type HelloFrame = { ch: 0; t: 'hello'; version: number; info: unknown };
-export type ByeFrame = { ch: 0; t: 'bye'; code?: string; message?: string };
-export type StreamFrame = { ch: 0; t: 'open' | 'end'; stream: number };
-export type RequestFrame = { ch: number; t: 'req'; id: number; method: string; params: unknown; bin?: number };
-export type EventFrame = { ch: number; t: 'event'; id: number; data: unknown; bin?: number };
-export type CancelFrame = { ch: number; t: 'cancel'; id: number };
-export type ResponseFrame =
-  | { ch: number; t: 'res'; id: number; ok: true; result: unknown; bin?: number }
-  | { ch: number; t: 'res'; id: number; ok: false; code: string; message: string; data?: unknown; bin?: number };
-export type TextFrame = HelloFrame | ByeFrame | StreamFrame | RequestFrame | EventFrame | CancelFrame | ResponseFrame;
-export type BinaryFrame = { ch: number; bytes: Uint8Array };
-
 // The mux of #138 section 5, on no transport (#936): frames out through `send`, frames in through `receive`. Pure and free of node: so the
-// distro's helper (4.3) and #162's browser link share it; bytes are Uint8Array, never Buffer.
-const CHANNEL_BYTES = 4;
-type Fields = Record<string, unknown>;
-const isRecord = (v: unknown): v is Fields => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
-const isString = (v: unknown): v is string => typeof v === 'string';
-const isOpt = (v: unknown, check: (x: unknown) => boolean): boolean => v === undefined || check(v);
-const isStream = (v: unknown): boolean => isUint(v) && v >= FIRST_STREAM_CHANNEL;
+// distro's helper (4.3) and #162's browser link share it; bytes are Uint8Array, never Buffer. Codec in frames.ts, attachments in
+// attachments.ts, stream channels in streams.ts; this file re-exports what importers use.
+import { pack, unpack } from './attachments.js';
+import {
+  CHANNEL, decode, encode, FIRST_STREAM_CHANNEL, isRecord, isString, REMOTE_PROTOCOL_VERSION, RemoteError,
+  type BinaryFrame, type ByeFrame, type CancelFrame, type EventFrame, type HelloFrame, type RequestFrame, type ResponseFrame, type StreamFrame, type TextFrame,
+} from './frames.js';
+import { createStream, type Guard, type MuxStream, type StreamState } from './streams.js';
 
-// what each `t` must carry; which channel a call may use is the mux's check
-const SHAPES: Record<TextFrame['t'], (f: Fields) => boolean> = {
-  hello: (f) => f.ch === CHANNEL.control && typeof f.version === 'number',
-  bye: (f) => f.ch === CHANNEL.control && isOpt(f.code, isString) && isOpt(f.message, isString),
-  open: (f) => f.ch === CHANNEL.control && isStream(f.stream),
-  end: (f) => f.ch === CHANNEL.control && isStream(f.stream),
-  req: (f) => isUint(f.id) && isString(f.method) && isOpt(f.bin, isUint),
-  event: (f) => isUint(f.id) && isOpt(f.bin, isUint),
-  cancel: (f) => isUint(f.id),
-  res: (f) => isUint(f.id) && isOpt(f.bin, isUint) && (f.ok === true || (f.ok === false && isString(f.code) && isString(f.message))),
-};
+export { CHANNEL, decode, encode, FIRST_STREAM_CHANNEL, MAX_ATTACHMENTS, REMOTE_ERROR_CODES, REMOTE_PROTOCOL_VERSION, RemoteError } from './frames.js';
+export type { BinaryFrame, ByeFrame, CancelFrame, EventFrame, HelloFrame, RemoteErrorCode, RequestFrame, ResponseFrame, StreamFrame, TextFrame } from './frames.js';
+export type { MuxStream } from './streams.js';
 
-export function encode(frame: TextFrame | BinaryFrame): string | Uint8Array {
-  if (!('bytes' in frame)) return JSON.stringify(frame);
-  const out = new Uint8Array(CHANNEL_BYTES + frame.bytes.length);
-  new DataView(out.buffer).setUint32(0, frame.ch);
-  out.set(frame.bytes, CHANNEL_BYTES);
-  return out;
-}
-
-export function decode(data: string | Uint8Array): TextFrame | BinaryFrame | { error: string } {
-  if (typeof data !== 'string') {
-    if (data.length < CHANNEL_BYTES) return { error: `a binary frame of ${data.length} bytes has no channel` };
-    return { ch: new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0), bytes: data.subarray(CHANNEL_BYTES) };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(data);
-  } catch {
-    return { error: 'a text frame that is not JSON' };
-  }
-  // Object.hasOwn: a `t` of "toString" names no shape
-  if (!isRecord(parsed) || !isUint(parsed.ch) || !isString(parsed.t) || !Object.hasOwn(SHAPES, parsed.t)) return { error: 'a text frame of no known type' };
-  if (!SHAPES[parsed.t as TextFrame['t']](parsed)) return { error: `a malformed ${parsed.t} frame` };
-  return parsed as TextFrame;
-}
-
-export class RemoteError extends Error {
-  readonly code: string;
-  readonly data?: unknown;
-  constructor(code: string, message: string, data?: unknown) {
-    super(message);
-    this.name = 'RemoteError';
-    this.code = code;
-    this.data = data;
-  }
-}
+export const MAX_OPEN_STREAMS = 256; // a peer must not grow this side's stream table without bound
+const MAX_ECHOED_METHOD = 200; // the peer's text is cut to these before it lands in an error shown or logged
+const MAX_FAILURE_TEXT = 1024;
 
 export interface RequestContext { signal: AbortSignal; emit(data: unknown): void }
 export type RequestHandler = (method: string, params: unknown, ctx: RequestContext) => unknown | Promise<unknown>;
-export interface MuxStream { readonly ch: number; write(bytes: Uint8Array): void; end(): void; onData(cb: (bytes: Uint8Array) => void): void; onEnd(cb: () => void): void }
 export interface Mux {
   request(ch: number, method: string, params: unknown, opts?: { signal?: AbortSignal; onEvent?: (data: unknown) => void }): Promise<unknown>;
   onRequest(ch: number, handler: RequestHandler): void;
@@ -95,7 +34,7 @@ export interface Mux {
 type PackedFrame = RequestFrame | EventFrame | ResponseFrame;
 type CallFrame = PackedFrame | CancelFrame;
 type Outcome = { ok: true; result: unknown } | { ok: false; code: string; message: string; data?: unknown };
-type Pending = { resolve: (value: unknown) => void; reject: (err: RemoteError) => void; onEvent?: (data: unknown) => void; detach: () => void };
+type Pending = { resolve: (value: unknown) => void; reject: (err: unknown) => void; onEvent?: (data: unknown) => void; detach: () => void };
 type RequestOpts = { signal?: AbortSignal; onEvent?: (data: unknown) => void };
 
 const linkClosed = (): RemoteError => new RemoteError('link_closed', 'the link is closed');
@@ -126,6 +65,8 @@ class MuxCore {
   private nextStream: number;
   private closed = false;
   private readonly streams = new Map<number, StreamState>();
+  // streams this side ended: the peer's end and any bytes it had in flight cross our end() and are dropped quietly until its end arrives
+  private readonly endedLocally = new Set<number>();
   private readonly pending = new Map<number, Pending>();
   private readonly running = new Map<number, AbortController>();
   private readonly handlers = new Map<number, RequestHandler>();
@@ -151,8 +92,16 @@ class MuxCore {
         reject(cancelled(signal));
       };
       signal?.addEventListener('abort', onAbort, { once: true });
-      this.pending.set(id, { resolve, reject, onEvent, detach: () => signal?.removeEventListener('abort', onAbort) });
-      this.sendPacked(params, (value, extra) => ({ ch, t: 'req', id, method, params: value, ...extra }));
+      const detach = (): void => signal?.removeEventListener('abort', onAbort);
+      this.pending.set(id, { resolve, reject, onEvent, detach });
+      try {
+        this.sendPacked(params, (value, extra) => ({ ch, t: 'req', id, method, params: value, ...extra }));
+      } catch (err) {
+        // the request never left: nothing will answer it, and a later abort must not send a cancel for it
+        this.pending.delete(id);
+        detach();
+        reject(err);
+      }
     });
   }
 
@@ -169,7 +118,7 @@ class MuxCore {
       else if ('bytes' in frame) this.onBinary(frame);
       else this.onText(frame);
     } catch (err) {
-      // a listener's own throw must not escape into the transport's read loop
+      // a bug of ours must not escape into the transport's read loop either
       this.report(err);
     }
   }
@@ -197,9 +146,10 @@ class MuxCore {
     };
     const sendEnd = (): void => {
       this.streams.delete(ch);
+      this.endedLocally.add(ch);
       this.sendText({ ch: CHANNEL.control, t: 'end', stream: ch });
     };
-    const state = createStream(ch, sendBytes, sendEnd, () => new RemoteError('link_closed', `stream ${ch} has ended`));
+    const state = createStream(ch, sendBytes, sendEnd, () => new RemoteError('link_closed', `stream ${ch} has ended`), this.guard);
     this.streams.set(ch, state);
     return state.handle;
   }
@@ -207,7 +157,7 @@ class MuxCore {
   private onHelloFrame({ version, info }: HelloFrame): void {
     // the mux checks, not each caller, so neither the helper (4.3) nor 5.3 can forget it
     if (version !== REMOTE_PROTOCOL_VERSION) this.shutdown('version_mismatch', true, `the peer speaks protocol version ${version}, this side ${REMOTE_PROTOCOL_VERSION}`);
-    else for (const cb of this.helloCbs) cb(info);
+    else for (const cb of this.helloCbs) this.guard(() => cb(info));
   }
 
   private onOpen(ch: number): void {
@@ -216,11 +166,16 @@ class MuxCore {
       this.fail(`the peer cannot open stream ${ch}`);
       return;
     }
+    if ([...this.streams.keys()].filter((open) => open % 2 === ch % 2).length >= MAX_OPEN_STREAMS) {
+      this.fail(`the peer holds ${MAX_OPEN_STREAMS} streams open already`);
+      return;
+    }
     const stream = this.addStream(ch);
-    for (const cb of this.streamCbs) cb(stream);
+    for (const cb of this.streamCbs) this.guard(() => cb(stream));
   }
 
   private onEnd(ch: number): void {
+    if (this.endedLocally.delete(ch)) return; // the peer's end crossed ours
     const stream = this.streams.get(ch);
     if (stream === undefined) {
       this.fail(`the end of stream ${ch}, which is not open`);
@@ -243,15 +198,16 @@ class MuxCore {
     for (const bytes of bins) this.send(encode({ ch: frame.ch, bytes }));
   }
 
-  private onBinary({ ch, bytes }: BinaryFrame) {
+  private onBinary({ ch, bytes }: BinaryFrame): void {
     if (ch >= FIRST_STREAM_CHANNEL) {
+      if (this.endedLocally.has(ch)) return;
       const stream = this.streams.get(ch);
       if (stream === undefined) this.fail(`a binary frame on stream ${ch}, which is not open`);
       else stream.deliver(bytes);
       return;
     }
     const waiting = this.awaiting.get(ch);
-    if (!isRequestChannel(ch) || waiting === undefined) return this.fail(`a binary frame on channel ${ch} with no frame waiting for it`);
+    if (!isRequestChannel(ch) || waiting === undefined) { this.fail(`a binary frame on channel ${ch} with no frame waiting for it`); return; }
     const bins = [...waiting.bins, bytes];
     if (bins.length < (waiting.frame.bin ?? 0)) {
       this.awaiting.set(ch, { frame: waiting.frame, bins });
@@ -261,11 +217,11 @@ class MuxCore {
     this.dispatch(waiting.frame, bins);
   }
 
-  private onText(frame: TextFrame) {
-    if (frame.ch >= FIRST_STREAM_CHANNEL) return this.fail(`a text frame on stream channel ${frame.ch}`);
+  private onText(frame: TextFrame): void {
+    if (frame.ch >= FIRST_STREAM_CHANNEL) { this.fail(`a text frame on stream channel ${frame.ch}`); return; }
     if (this.awaiting.delete(frame.ch)) this.fail(`a frame on channel ${frame.ch} before the attachments of the one before it`);
-    if (isControl(frame)) return this.onControl(frame);
-    if (!isRequestChannel(frame.ch)) return this.fail(`a ${frame.t} frame on channel ${frame.ch}`);
+    if (isControl(frame)) { this.onControl(frame); return; }
+    if (!isRequestChannel(frame.ch)) { this.fail(`a ${frame.t} frame on channel ${frame.ch}`); return; }
     if (frame.t !== 'cancel' && (frame.bin ?? 0) > 0) {
       this.awaiting.set(frame.ch, { frame, bins: [] });
       return;
@@ -280,13 +236,31 @@ class MuxCore {
     else this.onEnd(frame.stream);
   }
 
-  private dispatch(frame: CallFrame, bins: readonly Uint8Array[]) {
-    if (frame.t === 'cancel') return this.cancelRunning(frame.id);
+  private dispatch(frame: CallFrame, bins: readonly Uint8Array[]): void {
+    if (frame.t === 'cancel') { this.cancelRunning(frame.id); return; }
+    if (frame.t === 'req' && !this.isNewPeerId(frame.id)) return;
     const payload = unpack(payloadOf(frame), bins);
-    if ('error' in payload) return this.fail(payload.error);
+    if ('error' in payload) {
+      this.fail(payload.error);
+      // a caller that is told nothing would wait for ever
+      if (frame.t === 'req') this.answer(frame.ch, frame.id, { ok: false, code: 'bad_frame', message: payload.error });
+      return;
+    }
     if (frame.t === 'req') this.serve(frame, payload.value);
-    else if (frame.t === 'event') this.callOf(frame.id)?.onEvent?.(payload.value);
+    else if (frame.t === 'event') this.onEventOf(frame.id, payload.value);
     else this.settle(frame, payload.value);
+  }
+
+  // a request id is the peer's own parity and not one still running; anything else is dropped, not answered
+  private isNewPeerId(id: number): boolean {
+    const ok = id % 2 !== this.firstId % 2 && !this.running.has(id);
+    if (!ok) this.fail(`the request id ${id} is this side's own or already running`);
+    return ok;
+  }
+
+  private onEventOf(id: number, data: unknown): void {
+    const onEvent = this.callOf(id)?.onEvent;
+    if (onEvent !== undefined) this.guard(() => onEvent(data));
   }
 
   // an id this side sent but no longer waits for (cancelled) is a late answer, dropped quietly; one it never sent is a protocol error
@@ -303,12 +277,12 @@ class MuxCore {
     this.pending.delete(frame.id);
     entry.detach();
     if (frame.ok) entry.resolve(value);
-    else entry.reject(new RemoteError(frame.code, frame.message, value));
+    else entry.reject(new RemoteError(frame.code.slice(0, MAX_FAILURE_TEXT), frame.message.slice(0, MAX_FAILURE_TEXT), value));
   }
 
-  private serve({ ch, id, method }: RequestFrame, params: unknown) {
+  private serve({ ch, id, method }: RequestFrame, params: unknown): void {
     const handler = this.handlers.get(ch);
-    if (handler === undefined) return this.answer(ch, id, { ok: false, code: 'unknown_method', message: `no handler on channel ${ch} for ${method}` });
+    if (handler === undefined) { this.answer(ch, id, { ok: false, code: 'unknown_method', message: `no handler on channel ${ch} for ${method.slice(0, MAX_ECHOED_METHOD)}` }); return; }
     const controller = new AbortController();
     this.running.set(id, controller);
     // cancelled or closed: whatever the handler still emits or answers is dropped
@@ -326,9 +300,19 @@ class MuxCore {
       .then((outcome) => {
         if (!live()) return;
         this.running.delete(id);
-        this.answer(ch, id, outcome);
+        this.answerOrFail(ch, id, outcome);
       })
       .catch((err: unknown) => this.report(err));
+  }
+
+  // a result that cannot cross (a BigInt, a cycle) is answered as a failure, never left for the caller to wait on
+  private answerOrFail(ch: number, id: number, outcome: Outcome): void {
+    try {
+      this.answer(ch, id, outcome);
+    } catch (err) {
+      this.report(err);
+      this.answer(ch, id, { ok: false, code: 'internal', message: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   private answer(ch: number, id: number, outcome: Outcome): void {
@@ -363,14 +347,31 @@ class MuxCore {
     this.pending.clear();
     this.running.clear();
     this.awaiting.clear();
-    for (const stream of this.streams.values()) stream.finish();
+    this.endedLocally.clear();
+    const open = [...this.streams.values()];
     this.streams.clear();
-    for (const cb of this.closeCbs) cb(code);
+    for (const stream of open) stream.finish();
+    for (const cb of this.closeCbs) this.guard(() => cb(code));
   }
+
+  // runs one user callback: its throw is reported, never allowed to stop the receive or the teardown it sits in
+  private readonly guard: Guard = (run) => {
+    try {
+      run();
+    } catch (err) {
+      this.report(err);
+    }
+  };
 
   private report(err: unknown): void {
     const error = err instanceof RemoteError ? err : new RemoteError('internal', err instanceof Error ? err.message : String(err));
-    for (const cb of this.errorCbs) cb(error);
+    for (const cb of this.errorCbs) {
+      try {
+        cb(error);
+      } catch {
+        // onError is the last place a failure can go
+      }
+    }
   }
 
   private fail(message: string): void {

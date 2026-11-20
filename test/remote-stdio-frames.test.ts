@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createStdioDecoder, encodeStdioFrame } from '../src/remote/stdio-frames.js';
+import { createStdioDecoder, encodeStdioFrame, MAX_STDIO_FRAME_BYTES } from '../src/remote/stdio-frames.js';
 
 const ALL = Uint8Array.from({ length: 256 }, (_, i) => i);
 const TEXT = '{"ch":1,"t":"req","id":1,"method":"fs.readFile","params":"ação 🐝"}';
@@ -64,4 +64,28 @@ test('multi-byte UTF-8 split across chunks decodes whole, fed one byte at a time
   const d = decoder();
   for (const byte of encodeStdioFrame('ação 🐝')) d.push(Uint8Array.of(byte));
   assert.deepEqual(d.frames, ['ação 🐝']);
+});
+
+test('a leading BOM stays in the text, and a body over the cap is the sender\'s RangeError (#936)', () => {
+  const d = decoder();
+  d.push(encodeStdioFrame('\ufeffa'));
+  assert.deepEqual(d.frames, ['\ufeffa']);
+  assert.throws(() => encodeStdioFrame(new Uint8Array(MAX_STDIO_FRAME_BYTES)), RangeError);
+});
+
+test('a throwing onFrame does not escape push, reaches onError, and the next frame in the chunk is still delivered (#936)', () => {
+  const frames: (string | Uint8Array)[] = [];
+  const errors: string[] = [];
+  const { push } = createStdioDecoder(
+    (frame) => {
+      frames.push(frame);
+      if (frame === 'a') throw new Error('consumer fails');
+    },
+    (message) => errors.push(message),
+  );
+  assert.doesNotThrow(() => push(concat(encodeStdioFrame('a'), encodeStdioFrame('b'))));
+  assert.deepEqual(frames, ['a', 'b']);
+  assert.equal(errors.length, 1);
+  const quiet = createStdioDecoder(() => { throw new Error('x'); }, () => { throw new Error('y'); });
+  assert.doesNotThrow(() => quiet.push(encodeStdioFrame('a')));
 });

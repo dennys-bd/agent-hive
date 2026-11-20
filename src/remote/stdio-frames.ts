@@ -7,10 +7,12 @@ const HEADER_BYTES = LENGTH_BYTES + 1;
 const KIND_TEXT = 0;
 const KIND_BINARY = 1;
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+const decoder = new TextDecoder('utf-8', { ignoreBOM: true }); // a BOM is the text's own character, not the decoder's to eat
 
 export function encodeStdioFrame(data: string | Uint8Array): Uint8Array {
   const body = typeof data === 'string' ? encoder.encode(data) : data;
+  // the sender's bug, thrown here: the peer's decoder would refuse it and stop the whole link
+  if (body.length + 1 > MAX_STDIO_FRAME_BYTES) throw new RangeError(`a frame body of ${body.length} bytes is over the cap of ${MAX_STDIO_FRAME_BYTES}`);
   const frame = new Uint8Array(HEADER_BYTES + body.length);
   new DataView(frame.buffer).setUint32(0, body.length + 1);
   frame[LENGTH_BYTES] = typeof data === 'string' ? KIND_TEXT : KIND_BINARY;
@@ -90,7 +92,16 @@ export function createStdioDecoder(
     }
     if (chunks.size() < LENGTH_BYTES + length) return false;
     const body = chunks.take(LENGTH_BYTES + length).subarray(HEADER_BYTES);
-    onFrame(kind === KIND_TEXT ? decoder.decode(body) : body);
+    // a consumer's throw must not drop the frames after it in this chunk
+    try {
+      onFrame(kind === KIND_TEXT ? decoder.decode(body) : body);
+    } catch (err) {
+      try {
+        onError(`the frame consumer threw: ${err instanceof Error ? err.message : String(err)}`);
+      } catch {
+        // the last callback to fail has nowhere to report to
+      }
+    }
     return true;
   };
   return {
