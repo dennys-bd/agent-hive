@@ -74,6 +74,16 @@ async function emptyFolders(root: string, listing: string, files: readonly strin
 // git never lists .git; the filter is a guard, case-insensitive as tree-paths.ts's (APFS resolves `.GIT` to `.git`)
 const isGitEntry = (entry: string): boolean => entry.split('/').some((part) => part.toLowerCase() === '.git');
 
+/** The nested repositories under the tree's root (#868): every folder git lists as untracked, an ignored one included (the docs/ this
+ *  repository ignores), that holds .git, as emptyFolders tells one (HIVE-22). Relative, sorted. ponytail: one level, git collapses an untracked
+ *  folder to its outermost one, so a repository inside an untracked plain folder or inside a nested one is not found; walk each if one must be */
+export async function nestedRepos(machine: Machine, root: string): Promise<string[]> {
+  const listing = await gitIn(root, ['ls-files', '-z', '--others', '--directory'], machine.exec);
+  const folders = listing.split('\0').filter((entry) => entry.endsWith('/') && !isGitEntry(entry));
+  const holds = await Promise.all(folders.map((folder) => holdsGit(machine, join(root, folder))));
+  return folders.filter((_, i) => holds[i]).map((folder) => folder.slice(0, -1)).sort();
+}
+
 // --untracked-files=normal names an untracked folder once (`dir/`, #502): every listed entry under it is new, as -uall's per-file `??` marked
 // it, a nested repository's `dir/` entry included
 export function untrackedMarks(entries: readonly string[], untracked: readonly string[]): Record<string, GitMark> {
