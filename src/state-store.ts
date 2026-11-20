@@ -210,6 +210,7 @@ function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): Stat
     commands: {}, // overwritten by the config on boot (#300)
     semaphores: {}, // #798: never saved; the module rebuilds it free
     workspaceColors: {}, // idem (#78)
+    workspaceMachines: {}, // idem (#931)
     syncs: isJsonObject(parsed.syncs) ? Object.fromEntries(Object.entries(parsed.syncs).map(([name, sync]) => [name, syncOf(sync)])) : {}, // the keys are overwritten by the config on boot (#180)
     tasks,
     ...work,

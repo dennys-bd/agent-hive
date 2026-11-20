@@ -17,7 +17,7 @@ const VIEW: MemoryView = {
     { id: 'm-3', kind: 'avoid', description: 'never edit dist/ by hand', body: 'the lesson', origin: 'user', at: '2026-10-03T10:00:00.000Z', uses: 0 },
   ],
 };
-const ROW: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
+const ROW: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] };
 const lastAt = (): string => new Date(Date.now() - 2 * 3_600_000 - 300_000).toISOString();
 let stats: MemoryStats = { runs: 0, read: 0 };
 

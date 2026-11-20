@@ -39,7 +39,7 @@ async function harness(t: AfterHost, setup: string, run: Machine['run']): Promis
   };
   const store = createConsoleStore(() => 1000);
   const ptys = createPtyHost(NO_PTY);
-  const workspace: Workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', setup };
+  const workspace: Workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup };
   return { machine: fakeMachine({ exec, run }), run, deps: { log: { info: () => undefined }, dispatch, ptys, consoleStore: store }, workspace, worktree, gitDir, events, store, ptys };
 }
 

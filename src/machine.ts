@@ -23,7 +23,7 @@ export interface ExecOptions {
 /** Rejects with a MachineError. Assignable to Exec, so a sibling can pass machine.exec where an Exec is taken before it changes a signature. */
 export type MachineExec = (file: string, args: string[], opts?: ExecOptions) => Promise<{ stdout: string }>;
 
-export interface MachineErrorFields { code?: string | number; stderr?: string; stdout?: string; killed?: boolean }
+export interface MachineErrorFields { code?: string | number; stderr?: string; stdout?: string; killed?: boolean; reason?: string }
 
 /** A machine call's failure, with the fields wordsOf (fork.ts), CONFIG_LOCK and refuseUnmerged (worktree.ts) read off execFile's error today.
  * code: an errno string or an exit code. */
@@ -31,10 +31,12 @@ export class MachineError extends Error {
   static readonly TOO_LARGE = 'too_large'; // fs.readFile over its maxBytes
   static readonly NOT_FILE = 'not_file'; // fs.readFile of a FIFO, a device or a folder: its size says nothing, so the cap could not hold
   static readonly BAD_NAME = 'bad_name'; // pty.spawn with a ptyId or prompt name that is not one plain file name
+  static readonly UNAVAILABLE = 'machine_unavailable'; // #931: the registry has no machine for the id; reason says why
   readonly code: string | number | undefined;
   readonly stderr: string;
   readonly stdout: string;
   readonly killed: boolean;
+  readonly reason: string | undefined;
   constructor(message: string, fields: MachineErrorFields = {}, options?: ErrorOptions) {
     super(message, options);
     this.name = 'MachineError';
@@ -42,6 +44,7 @@ export class MachineError extends Error {
     this.stderr = fields.stderr ?? '';
     this.stdout = fields.stdout ?? '';
     this.killed = fields.killed ?? false;
+    this.reason = fields.reason;
   }
 }
 
@@ -148,7 +151,7 @@ export interface Machine {
 /** The path flavour of a machine's platform (#927): a distro's disk needs / even when the Hive runs on Windows. */
 export const pathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === 'win32' ? path.win32 : path.posix);
 
-/** Every machine the Hive knows (#158). Until node 8, for answers local for every activity, an unknown id included. */
+/** Every machine the Hive knows (#158). `for` answers `local` for no machine or `'local'`; for a `wsl:` id, the distro's machine when the registry can build one; for anything else, a machine that refuses every call (#931, machines.ts). */
 export interface Machines {
   local: Machine;
   for(activity: Pick<Activity, 'machine'>): Machine;

@@ -57,7 +57,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name
+export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string; machine?: string; reason?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name; #931: an unavailable machine's id and why
 
 export interface TaskRouteDeps {
   machineFor: MachineFor; // #158: the activity's machine; #159, #160 and #161 read it
@@ -103,7 +103,7 @@ function closeRefusal(state: State, itemId: string): Refusal | undefined {
 
 export const refuse = (res: Response, refusal: Refusal): void => {
   // #767: a failed create that left an issue says which, so the client does not retry it into a second one. #748: a gone workspace's code and name, which the page words; undefined drops out of the JSON
-  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }), ...(refusal.resetsAt === undefined ? {} : { resetsAt: refusal.resetsAt }) });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, machine: refusal.machine, reason: refusal.reason, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }), ...(refusal.resetsAt === undefined ? {} : { resetsAt: refusal.resetsAt }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */
@@ -308,7 +308,7 @@ function registerBaseRoute(app: Express, { machineFor, requireLive }: TaskRouteD
     const others = otherSlugs(current.state, activity);
     try {
       const orphanBranch = activity === undefined ? branchFor(current.runtime.config, task.item) : undefined; // #861: no activity: git's leftovers are an orphan
-      res.json(await baseOptions(machineFor(activity ?? {}), workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), orphanBranch));
+      res.json(await baseOptions(machineFor(activity ?? workspace), workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), orphanBranch));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken worktree list
     }

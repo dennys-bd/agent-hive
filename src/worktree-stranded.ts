@@ -8,7 +8,7 @@ import { detectNested } from './nested-check.js';
 import { samePath } from './same-path.js';
 import { slugFor, worktreeRows } from './tasks.js';
 import { removeTranscripts } from './transcript.js';
-import { MEMORY_CAP_MIN, WORKSPACE_PRESET_COLORS, type Activity, type Config, type DeleteActivityScope, type Exec, type Session, type Task, type Workspace, type WorktreeRow } from './types.js';
+import { LOCAL_MACHINE, MEMORY_CAP_MIN, WORKSPACE_PRESET_COLORS, type Activity, type Config, type DeleteActivityScope, type Exec, type Session, type Task, type Workspace, type WorktreeRow } from './types.js';
 import { gitOrWords } from './worktree-base.js';
 import { nestedStatus } from './worktree-nested.js';
 import { HIVE_DIR } from './hooks-settings.js';
@@ -62,7 +62,7 @@ export async function strandedRepo(activity: Activity, task: Task, exec: Exec, p
 /** A workspace standing in for the removed one (#746): just its name and the repo, so deleteActivityOnDisk runs unchanged. It has no
  * setup or teardown (they went with the workspace); the nested repos are what git finds ignored in the repo now. */
 async function standIn(name: string, repo: string, exec: Exec): Promise<Workspace> {
-  return { name, path: repo, env: {}, memoryCap: MEMORY_CAP_MIN, color: WORKSPACE_PRESET_COLORS[0], fork: null, nestedRepos: await detectNested(repo, [], exec), notNestedRepos: [], benchmarkPrIn: 'worktree' };
+  return { name, path: repo, env: {}, memoryCap: MEMORY_CAP_MIN, color: WORKSPACE_PRESET_COLORS[0], fork: null, nestedRepos: await detectNested(repo, [], exec), notNestedRepos: [], benchmarkPrIn: 'worktree', machine: LOCAL_MACHINE };
 }
 
 /** The stand-in workspace of a stranded activity whose repo git confirms, or undefined when there is nothing on disk to remove (a local

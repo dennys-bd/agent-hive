@@ -91,7 +91,7 @@ test('remotesOf reads git remote -v once per remote with the GitHub repository e
     return { stdout: urls[args.at(-1) ?? ''] ?? '' };
   };
   assert.deepEqual(await remotesOf(fakeMachine({ exec: exec }), '/app'), [{ name: 'origin', repository: 'me/app' }, { name: 'upstream', repository: 'acme/app' }, { name: 'mirror' }]);
-  const workspace: Workspace = { name: 'app', path: '/app', env: { NODE_ENV: 'development' }, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' };
+  const workspace: Workspace = { name: 'app', path: '/app', env: { NODE_ENV: 'development' }, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
   assert.deepEqual(await forkRepos(fakeMachine({ exec: exec }), workspace), REPOS);
   assert.deepEqual(await runEnv(fakeMachine({ exec: exec }), workspace), { GH_REPO: 'acme/app', NODE_ENV: 'development' });
   assert.deepEqual(await runEnv(fakeMachine({ exec: exec }), { ...workspace, fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }), { GH_REPO: 'me/app', NODE_ENV: 'development' });

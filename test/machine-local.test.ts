@@ -5,7 +5,7 @@ import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
 import path, { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { MachineError } from '../src/machine.js';
-import { createLocalMachine, createLocalMachines, LOCAL_DISK, localDisk } from '../src/machine-local.js';
+import { createLocalMachine, LOCAL_DISK, localDisk } from '../src/machine-local.js';
 import { runDetached } from '../src/machine-run.js';
 import { posixShell } from '../src/posix-shell.js';
 import type { Exec } from '../src/types.js';
@@ -71,11 +71,9 @@ test('info() reads the machine once: platform, PATH, the POSIX shell, CLAUDE_CON
   assert.equal(machine.info(), first);
 });
 
-test('until node 8 every activity is on the local machine, one with an unknown machine id included; its run is runDetached (#158)', () => {
-  const machines = createLocalMachines(deps());
-  assert.equal(machines.for({}), machines.local);
-  assert.equal(machines.for({ machine: 'AB:CD' }), machines.local);
-  assert.deepEqual([machines.local.id, machines.local.run === runDetached, machines.local.pty.has('nope')], ['local', true, false]);
+test('the local machine\'s id is local, its run is runDetached and its pty host knows no pty yet (#158)', () => {
+  const machine = createLocalMachine(deps());
+  assert.deepEqual([machine.id, machine.run === runDetached, machine.pty.has('nope')], ['local', true, false]);
 });
 
 test('localDisk is the local fs and the exec turned into MachineError: what createLocalMachine is built on (#159)', async () => {

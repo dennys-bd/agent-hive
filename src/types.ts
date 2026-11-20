@@ -666,8 +666,10 @@ export interface Task {
   columnWrite?: ColumnWrite; // set with every setColumn effect, cleared by the poll that confirms, overrides or outlives it (#889)
 }
 
-/** Where an activity's worktree and runs are (#158): `'local'`, the host itself, or a paired machine's certificate fingerprint (`AB:CD:…`). */
+/** Where an activity's worktree and runs are (#158): `'local'`, the host itself, or `'wsl:<distro>'` (#931); a paired machine's id stays #171's. */
 export type MachineId = string;
+export const LOCAL_MACHINE: MachineId = 'local';
+export const WSL_MACHINE_PREFIX = 'wsl:'; // #931: followed by the distro's name
 
 /** The work in progress inside a workspace (glossary: activity): a task's worktree and branch, or the checkout, and its run. Deleting the
  * activity removes it; its ActivityRecord (same id) stays. */
@@ -675,7 +677,7 @@ export interface Activity {
   id: string; // randomUUID() for a task's activity; `local:<workspace>` for a workspace's local activity
   kind: 'task' | 'local';
   workspace: string; // frozen at creation
-  machine?: MachineId; // #158: frozen at creation like workspace; absent = the local machine. Nothing sets or reads it until a remote machine exists
+  machine?: MachineId; // #158, #931: the machine its workspace is on, copied from workspaceMachines at its birth and frozen like workspace; absent = the local machine
   slug?: string; // task activities: from the first task's slugFor; names the worktree path, the branch template and the prompt file
   worktree?: string; branch?: string; worktreeGone?: true;
   local?: true; // runs in the workspace's checkout (#444), set by a start's popup
@@ -825,6 +827,7 @@ export interface State {
   workspaces: string[]; // the Comb's workspace names, from the config on boot and on every save (#179); what resolveWorkspace reads
   sourceWorkspaces: Record<string, string>; // source name → its default workspace (#179, #180), from the config on boot and on every save
   workspaceColors: Record<string, string>; // #78: the Comb's workspace colours by name, from the config like workspaces; never from state.json
+  workspaceMachines: Record<string, MachineId>; // #931: workspace name -> its machine, only for workspaces not on 'local'; from the config like workspaceColors; never from state.json
   commands: Record<string, string[]>; // workspace name → the names of the run commands enabled in it (#300, #511), from the config on boot and on every save: what the menu and the panel list; never the lines nor the env
   syncs: Record<string, SourceSync>; // each source's sync by name (#180), keys from the config on boot and on every save (setSources); its poll time, quota and last failure
   tasks: Task[]; // every task the Hive holds, in the Hive's order: the anchored tasks (pinned, running, unlisted) keep their index across polls, the rest follow the source
@@ -1427,6 +1430,7 @@ export interface Workspace {
   nestedRepos: string[]; // #653: required; relative paths of nested repos, each a git top level this workspace's git ignores (POST /settings checks it); [] = none
   notNestedRepos: string[]; // #653: required; paths the user said are not nested repos: never suggested again
   benchmarkPrIn: BenchmarkPrIn; // #477: required; where a benchmark run's PR is rebased and pushed from
+  machine: MachineId; // #931: required; 'local' or 'wsl:<distro>'; the machine path is on, written into each task activity at its birth
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit
@@ -1681,7 +1685,7 @@ export type HiveEvent =
   | { type: 'setKeepAwake'; on: boolean } // the footer's keep-awake toggle, or the daemon clearing it after the holder failed (#226)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
   | { type: 'setStages'; flows: Flow[] } // #134: the transitions travel with the stages; #564: in their flows, the reducer derives the flattened pair
-  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)
+  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string>; workspaceMachines: Record<string, MachineId> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78), and machine (#931)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
   | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }

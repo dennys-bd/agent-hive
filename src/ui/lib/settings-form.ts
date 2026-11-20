@@ -5,7 +5,7 @@ import { createInProblem } from '../../create-in.js';
 import { branchProblem, COMB_PREFIX, HIVE_SOURCE, DEFAULT_PREFIX, WORKSPACE_NAME, workspaceNameFor, isReservedSource } from '../../tasks.js';
 import { shortcutDef } from '../../shortcut-registry.js';
 import { collisions } from '../../shortcuts.js';
-import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
+import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, LOCAL_MACHINE, type MachineId, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
 import { timeoutMs } from '../../timeout.js';
 import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
@@ -35,7 +35,7 @@ export type { FlowDraft } from './settings-flows.js';
 // draft, only picks named fields), so move/remove never leaves a surviving row showing another row's stale text. Stages: settings-stages.ts (#515).
 // A workspace row of Settings › workspaces (#179, #511); id is its React key and what a command's workspaces hold, never sent. Its env
 // (#348) is edited in its card; setup and setupTimeout are its worktree setup (#299), teardown and teardownTimeout its worktree teardown (#654), the same way: as typed, an empty field sends no key. fork (#854) is the config's value as it is, edited by the repository section; baseBranch the workspace's own base, '' = the general one. memoryCap (#73) as typed, sent as a number. color (#78) as the config holds it, sent as is. nestedRepos (#653) one row per path, notNestedRepos as the config holds it. benchmarkPrIn (#477) as the config holds it, sent as is.
-export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string; color: string; nestedRepos: NestedRepoDraft[]; notNestedRepos: string[]; benchmarkPrIn: BenchmarkPrIn }
+export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string; color: string; nestedRepos: NestedRepoDraft[]; notNestedRepos: string[]; benchmarkPrIn: BenchmarkPrIn; machine: MachineId }
 /** A row of Settings › flow's sources list (#180); id is its React key and the key the stage drafts use, never sent. */
 export type { JiraDraft } from './settings-jira.js';
 export interface SourceDraft {
@@ -79,11 +79,11 @@ export interface SettingsDraft {
 export interface SettingsProblem { section: SettingsSection; message: string; transition?: string; stage?: string } // transition (#918): the draft id Settings selects on the chart; stage (#482): the stage draft it selects
 
 const DEFAULT_OWNER = '@me';
-export const emptyWorkspace = (rows: readonly { color: string }[] = []): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT), color: nextWorkspaceColor(rows), nestedRepos: [], notNestedRepos: [], benchmarkPrIn: BENCHMARK_PR_IN_NEW });
+export const emptyWorkspace = (rows: readonly { color: string }[] = []): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT), color: nextWorkspaceColor(rows), nestedRepos: [], notNestedRepos: [], benchmarkPrIn: BENCHMARK_PR_IN_NEW, machine: LOCAL_MACHINE });
 const workspaceDraft = (p: Workspace): WorkspaceDraft => ({
   ...emptyWorkspace(), name: p.name, path: p.path, env: envRows(p.env),
   setup: p.setup ?? '', setupTimeout: p.setupTimeout ?? '', teardown: p.teardown ?? '', teardownTimeout: p.teardownTimeout ?? '',
-  fork: p.fork, baseBranch: p.baseBranch ?? '', memoryCap: String(p.memoryCap), color: p.color, benchmarkPrIn: p.benchmarkPrIn,
+  fork: p.fork, baseBranch: p.baseBranch ?? '', memoryCap: String(p.memoryCap), color: p.color, benchmarkPrIn: p.benchmarkPrIn, machine: p.machine,
   nestedRepos: p.nestedRepos.map((path) => ({ id: crypto.randomUUID(), path })), notNestedRepos: p.notNestedRepos,
 });
 // A first setup's one row: the folder the Hive started in, named after it (#202, #179), else empty.
@@ -309,6 +309,7 @@ const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
   memoryCap: Number(p.memoryCap.trim()), // #73: always sent; only the memory dialog changes it, through a route that checks it (#115)
   color: p.color, // #78: always sent; the parser requires it
   benchmarkPrIn: p.benchmarkPrIn, // #477: always sent; the parser requires it
+  machine: p.machine, // #931: always sent; the parser requires it
   ...(p.baseBranch.trim() === '' ? {} : { baseBranch: p.baseBranch.trim() }),
   ...(p.setup.trim() === '' ? {} : { setup: p.setup }),
   ...(p.setupTimeout.trim() === '' ? {} : { setupTimeout: p.setupTimeout.trim() }),

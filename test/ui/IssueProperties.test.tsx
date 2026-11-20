@@ -18,7 +18,7 @@ const STATE: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
   ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }, { name: 'review', from: { roadmap: ['In review'] }, prompt: 'y' }], []),
   activities: [{ id: 'A1', kind: 'task', workspace: 'site', branch: 'hive/12-pager' }], activityRecords: [{ id: 'A1', taskIds: [TASK.item.itemId], sessions: [] }],
-  usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'], sourceWorkspaces: { roadmap: 'site' }, workspaceColors: {}, commands: {}, syncs: {},
+  usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'], sourceWorkspaces: { roadmap: 'site' }, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

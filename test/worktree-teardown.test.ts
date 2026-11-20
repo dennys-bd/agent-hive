@@ -33,7 +33,7 @@ async function harness(t: AfterHost, teardown: string, extra: Partial<Workspace>
   };
   const machine = fakeMachine({ exec, run: run ?? recorded });
   const deps: TeardownDeps = { log: { info: (line) => lines.push(line) } };
-  return { workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)', teardown, ...extra }, worktree, gitDir, deps, machine, git, runs, lines };
+  return { workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', teardown, ...extra }, worktree, gitDir, deps, machine, git, runs, lines };
 }
 
 const marked = (h: Harness): Promise<boolean> => access(join(h.gitDir, TEARDOWN_MARKER)).then(() => true, () => false);
