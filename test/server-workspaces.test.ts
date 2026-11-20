@@ -12,6 +12,7 @@ import { slugFor } from '../src/tasks.js';
 import { readyOn, workPath } from './fixtures/work.js';
 import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { POSIX_TEMP_REPO } from './posix-only.js';
 
 // Several workspaces per Comb (#179): two git repos, hive and site, behind one GitHub-shaped source whose listing a test fills.
 const ORPHAN = 'hive-9-gone'; // a worktree every repo's git lists under .hive/worktrees, owned by no task
@@ -275,4 +276,16 @@ test('GET /worktrees lists every workspace\'s worktrees, each row tagged with it
   two.calls.length = 0;
   assert.deepEqual(await json(postJson(`${two.base}/worktrees/site/${ORPHAN}/remove`, { force: true })), { removed: true });
   assert.ok(two.calls.length > 0 && two.calls.every((c) => c[2].startsWith(two.site.path)));
+});
+
+// The whole test is skipped on win32: saving the wsl: workspace is what every assertion stands on, and the lane's temp repo is a C:\ path
+test('a start on a workspace whose machine is unavailable answers 409 machine_unavailable with the machine and the reason, and dispatches nothing (#931)', { skip: POSIX_TEMP_REPO }, async (t) => {
+  const two = await startTwo(t, {}, 0);
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, { ...two.site, machine: 'wsl:X' }] })).status, 200);
+  two.listed.push(item('1', 'site'));
+  await two.server.poll();
+  const refused = await postJson(`${two.base}/tasks/board:I1/start`, { base: null });
+  assert.equal(refused.status, 409);
+  assert.deepEqual(await refused.json(), { error: 'machine wsl:X is unavailable: not_windows', code: 'machine_unavailable', machine: 'wsl:X', reason: 'not_windows' });
+  assert.deepEqual([two.workers.length, activityOf(two.server.getState()!, 'board:I1')], [0, undefined], 'nothing dispatched: no worker, no activity');
 });
