@@ -838,7 +838,8 @@ function firstSession(state: State, worker: Worker, id: string): State {
   const task = taskOfWorker(state, worker);
   const activity = activityOfWorker(state, worker);
   if (!task || !inFlow(task) || !activity || activity.sessionId !== undefined) return state;
-  return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), stageRunLaunch(stageOf(state.stages, task.stage), worker.launch)); // #907
+  const launch = stageRunLaunch(stageOf(state.stages, task.stage), worker.launch); // #907: what a resume from the list must run as again
+  return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), launch);
 }
 
 // #932: a free run that started with no id (a captured Codex) records its first SessionStart's where captureSession records Claude's, with its
