@@ -102,6 +102,44 @@ test('searchTree: the cap kills the process at SEARCH_CAP matches, skips the oth
   assert.deepEqual([killed, ran], [[ROOT], [ROOT]]);
 });
 
+test('searchTree: exactly SEARCH_CAP matches is not capped, and the nested repository is still searched (#868)', async () => {
+  const exact = Buffer.concat(Array.from({ length: SEARCH_CAP }, (_, i) => hit('a.ts', i + 1, 'x')));
+  const { machine, killed, ran } = grepMachine({ [ROOT]: { out: [exact] }, [DOCS]: { out: [] } }, withDocs());
+  const sent = await collect((send) => searchTree(machine, ROOT, Q, send, new AbortController().signal, () => undefined));
+  assert.deepEqual(sent.at(-1), { done: true, total: SEARCH_CAP, files: 1, capped: false, repos: ['docs'] });
+  assert.deepEqual([killed, ran], [[], [ROOT, DOCS]]);
+});
+
+test('searchTree: a match in the nested repository beyond a full root is what caps (#868)', async () => {
+  const exact = Buffer.concat(Array.from({ length: SEARCH_CAP }, (_, i) => hit('a.ts', i + 1, 'x')));
+  const { machine, ran } = grepMachine({ [ROOT]: { out: [exact] }, [DOCS]: { out: [hit('x.md', 1, 'x')], isHeld: true } }, withDocs());
+  const sent = await collect((send) => searchTree(machine, ROOT, Q, send, new AbortController().signal, () => undefined));
+  assert.deepEqual(sent.at(-1), { done: true, total: SEARCH_CAP, files: 1, capped: true, repos: ['docs'] });
+  assert.deepEqual(ran, [ROOT, DOCS]);
+});
+
+test('createGrepParser: a long line fed in small chunks is read once, not re-joined per chunk (#868)', () => {
+  const body = Buffer.alloc(8 * 1024 * 1024, 'a');
+  const record = Buffer.concat([Buffer.from('f.ts\x001\x00'), body, Buffer.from('\n')]);
+  const got: GrepLine[] = [];
+  const parser = createGrepParser((l) => got.push(l));
+  const started = performance.now();
+  for (let at = 0; at < record.length; at += 1024) parser.push(record.subarray(at, at + 1024));
+  assert.ok(performance.now() - started < 1500, 'quadratic on a long line');
+  assert.equal(got.length, 1);
+  assert.equal(got[0].raw.length, body.length);
+  assert.equal(got[0].file, 'f.ts');
+});
+
+test('toWireMatch: many spans on a long multibyte line map to UTF-16 in order (#868)', () => {
+  const unit = 'ação ';
+  const raw = Buffer.from(unit.repeat(1000) + 'x');
+  const spans: [number, number][] = Array.from({ length: 1000 }, (_, i) => [i * Buffer.byteLength(unit), i * Buffer.byteLength(unit) + 3]);
+  const match = toWireMatch({ file: 'f', line: 2, raw, spans });
+  assert.deepEqual(match.spans[999], [999 * unit.length, 999 * unit.length + 2]);
+  assert.deepEqual(match.spans[1], [unit.length, unit.length + 2]);
+});
+
 test('searchTree: git\'s fatal becomes the only line, { error }, and no other repository runs (#868)', async () => {
   const { machine, ran } = grepMachine({ [ROOT]: { err: "fatal: command line, 'a(': Unmatched ( or \\(\n", code: 128 } }, withDocs());
   const sent = await collect((send) => searchTree(machine, ROOT, Q, send, new AbortController().signal, () => undefined));

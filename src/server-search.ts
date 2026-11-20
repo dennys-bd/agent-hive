@@ -9,7 +9,7 @@ import { withMachinePath } from './machine-fs.js';
 import type { TaskRouteDeps } from './server-tasks.js';
 import { nestedRepos, treeMachine, treeRoot } from './server-tree.js';
 import { withoutHiveEnv } from './spawn.js';
-import { SEARCH_CAP, type SearchFileResult, type SearchLine, type SearchMatch, type SearchQuery } from './types.js';
+import { SEARCH_CAP, type SearchLine, type SearchMatch, type SearchQuery } from './types.js';
 import { wordsOf } from './worktree.js';
 
 export const MATCH_START = Buffer.from('\x1b[38;2;1;2;3m');
@@ -56,36 +56,67 @@ export function stripMatches(colored: Buffer): { raw: Buffer; spans: [number, nu
   return { raw: Buffer.concat(parts), spans };
 }
 
-/** Reads git grep -z's records, `path NUL line NUL text LF`, across chunks (#868). A name may hold a newline, so the fields are read in order. */
+/** Reads git grep -z's records, `path NUL line NUL text LF`, across chunks (#868). A name may hold a newline, so the fields are read in order.
+ *  The text's chunks are joined once, at its LF, and only the new chunk is searched for it: a long line costs its length, not its length per chunk. */
 export function createGrepParser(onLine: (line: GrepLine) => void): { push(chunk: Buffer): void } {
-  let pending = Buffer.alloc(0);
-  const record = (): boolean => {
-    const nameEnd = pending.indexOf(NUL);
-    const numberEnd = nameEnd < 0 ? -1 : pending.indexOf(NUL, nameEnd + 1);
-    const textEnd = numberEnd < 0 ? -1 : pending.indexOf(LF, numberEnd + 1);
-    if (textEnd < 0) return false;
-    const { raw, spans } = stripMatches(pending.subarray(numberEnd + 1, textEnd));
-    onLine({ file: pending.subarray(0, nameEnd).toString('utf8'), line: Number(pending.subarray(nameEnd + 1, numberEnd).toString('latin1')), raw, spans });
-    pending = pending.subarray(textEnd + 1);
-    return true;
+  let head: Buffer = Buffer.alloc(0); // the name and number of a record whose second NUL has not arrived
+  let fields: { file: string; line: number } | undefined; // set once the header is read: what follows is the text
+  let text: Buffer[] = [];
+  // returns what is left of `bytes` after the header, or undefined while the header is incomplete
+  const readHead = (bytes: Buffer): Buffer | undefined => {
+    const src = head.length === 0 ? bytes : Buffer.concat([head, bytes]);
+    const nameEnd = src.indexOf(NUL);
+    const numberEnd = nameEnd < 0 ? -1 : src.indexOf(NUL, nameEnd + 1);
+    if (numberEnd < 0) {
+      head = src;
+      return undefined;
+    }
+    fields = { file: src.subarray(0, nameEnd).toString('utf8'), line: Number(src.subarray(nameEnd + 1, numberEnd).toString('latin1')) };
+    head = Buffer.alloc(0);
+    return src.subarray(numberEnd + 1);
   };
   return {
     push(chunk) {
-      pending = Buffer.concat([pending, chunk]);
-      while (record());
+      let rest: Buffer | undefined = chunk;
+      while (rest !== undefined && rest.length > 0) {
+        if (fields === undefined) {
+          rest = readHead(rest);
+          continue;
+        }
+        const lf = rest.indexOf(LF);
+        if (lf < 0) {
+          text.push(rest);
+          return;
+        }
+        text.push(rest.subarray(0, lf));
+        onLine({ ...fields, ...stripMatches(Buffer.concat(text)) });
+        fields = undefined;
+        text = [];
+        rest = rest.subarray(lf + 1);
+      }
     },
   };
 }
 
-const utf16At = (raw: Buffer, byte: number): number => raw.subarray(0, byte).toString('utf8').length;
+/** Each byte offset of the ascending `offsets` as a UTF-16 offset into `raw`, decoding each stretch between two offsets once. */
+function utf16Offsets(raw: Buffer, offsets: readonly number[]): number[] {
+  let byte = 0;
+  let units = 0;
+  return offsets.map((offset) => {
+    units += raw.subarray(byte, offset).toString('utf8').length;
+    byte = offset;
+    return units;
+  });
+}
 
 /** A line as the pane reads it (#868): UTF-16 spans; no CR of a CRLF file; line 1's BOM dropped, as the editor holds it apart. */
 export function toWireMatch({ line, raw, spans }: GrepLine): SearchMatch {
   const decoded = raw.toString('utf8');
   const lead = line === 1 && decoded.startsWith(BOM) ? 1 : 0;
   const text = decoded.slice(lead).replace(/\r$/, '');
-  const at = (byte: number): number => Math.min(Math.max(utf16At(raw, byte) - lead, 0), text.length);
-  return { line, text, spans: spans.map(([start, end]) => [at(start), at(end)]) };
+  const units = utf16Offsets(raw, spans.flat());
+  const at = (index: number): number => Math.min(Math.max((units[index] ?? 0) - lead, 0), text.length);
+  return { line, text, spans: spans.map((_, i) => [at(2 * i), at(2 * i + 1)]) };
 }
 
 export function grepError(stderr: string): string {
@@ -136,15 +167,19 @@ export function runGrep(machine: Machine, cwd: string, args: string[], onLine: (
   });
 }
 
-// The results of the walk, a file at a time: a file is sent when the next one starts, and when its repository ends. The counters are the
-// closure's own; a file's result grows by spread
+// The results of the walk, a file at a time: a file is sent when the next one starts, and when its repository ends. The counters and the
+// current file's rows are the closure's own; what leaves it is a fresh result. A match beyond SEARCH_CAP is dropped and marks the search
+// capped, so a search of exactly SEARCH_CAP matches is not.
 function collector(send: (line: SearchLine) => void, nested: readonly string[]) {
-  let pending: SearchFileResult | undefined;
+  let current: { file: string; repo: string } | undefined;
+  let matches: SearchMatch[] = [];
   let total = 0;
   let files = 0;
+  let isCapped = false;
   const flush = (): void => {
-    if (pending !== undefined) send(pending);
-    pending = undefined;
+    if (current !== undefined) send({ ...current, matches });
+    current = undefined;
+    matches = [];
   };
   return {
     add(repo: string, line: GrepLine): boolean {
@@ -152,17 +187,21 @@ function collector(send: (line: SearchLine) => void, nested: readonly string[]) 
       if (match.spans.length === 0) return true; // an empty ERE match gives a line with nothing to mark
       const file = repo === '' ? line.file : `${repo}/${line.file}`;
       if (repo === '' && nested.some((folder) => file.startsWith(`${folder}/`))) return true; // the nested repository's own run reports it
-      if (pending?.file !== file) {
+      if (total >= SEARCH_CAP) {
+        isCapped = true;
+        return false;
+      }
+      if (current?.file !== file) {
         flush();
-        pending = { file, repo, matches: [] };
+        current = { file, repo };
         files += 1;
       }
-      pending = { ...pending, matches: [...pending.matches, match] };
+      matches.push(match);
       total += match.spans.length;
-      return total < SEARCH_CAP;
+      return true;
     },
     flush,
-    counts: () => ({ total, files }),
+    counts: () => ({ total, files, isCapped }),
   };
 }
 
@@ -188,10 +227,10 @@ export async function searchTree(machine: Machine, root: string, query: SearchQu
     if (outcome.kind === 'error' && repo === '') return send({ error: outcome.message });
     // Its regex passed the root's run: the failure is this repository's own (a gitdir gone), and the others still answer
     if (outcome.kind === 'error') warn(`search skipped the nested repository ${repo}`);
-    if (out.counts().total >= SEARCH_CAP) break;
+    if (out.counts().isCapped) break;
   }
-  const { total, files } = out.counts();
-  send({ done: true, total, files, capped: total >= SEARCH_CAP, repos, ...(total === 0 ? { searched: await countFiles(machine, root, repos) } : {}) });
+  const { total, files, isCapped } = out.counts();
+  send({ done: true, total, files, capped: isCapped, repos, ...(total === 0 ? { searched: await countFiles(machine, root, repos) } : {}) });
 }
 
 const TOGGLES = ['case', 'word', 'regex'] as const;

@@ -1042,7 +1042,7 @@ export interface SearchError { error: string }
 /** One NDJSON line of GET /activities/:id/search. */
 export type SearchLine = SearchFileResult | (SearchEnd & { done: true }) | SearchError;
 export interface ReplaceRequest { query: SearchQuery; replacement: string; files: string[] }
-export type ReplaceSkip = 'too_large' | 'not_text' | 'read_only' | 'changed';
+export type ReplaceSkip = 'too_large' | 'not_text' | 'read_only' | 'changed' | 'failed'; // failed: the read or the write threw (ENOENT, EACCES, a full disk)
 export interface ReplaceAnswer { changed: { path: string; previous: string; version: string; count: number }[]; skipped: { path: string; reason: ReplaceSkip }[] }
 /** The search's cap (#868, the design's 2,000): matches in total, across repositories. */
 export const SEARCH_CAP = 2_000;

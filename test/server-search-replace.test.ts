@@ -67,6 +67,52 @@ test('replaceFiles on a fake machine: each refusal named, the ok file written on
   assert.deepEqual(written.map(([path]) => path.slice(ROOT.length + 1)), ['ok.ts']);
 });
 
+test('replaceFiles: a file that throws is named failed and the files already written are still answered, so the undo exists (#868)', async () => {
+  const names = ['a.ts', 'boom.ts', 'denied.ts', 'z.ts'];
+  const { machine } = grepMachine({ [ROOT]: { out: names.map((name) => hit(name, 1, `a ${mark('port')}`)) } }, fakeMachine({ exec: async () => ({ stdout: '' }) }));
+  const fs = {
+    lstat: async () => statsOf('file'),
+    stat: async () => ({ size: 5, mode: 0o644 }),
+    readFile: async (path: string) => {
+      if (path.endsWith('denied.ts')) throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      return buf('a port');
+    },
+    writeAtomic: async (path: string, content: string) => {
+      if (path.endsWith('boom.ts')) throw new Error('ENOSPC');
+      return buf(content);
+    },
+  };
+  const wired = { ...machine, fs: { ...machine.fs, ...fs } } as unknown as Machine;
+  const answer = await replaceFiles(wired, ROOT, request(names));
+  assert.ok(!('error' in answer));
+  assert.deepEqual(answer.changed.map((c) => c.path), ['a.ts', 'z.ts']);
+  assert.deepEqual(answer.skipped, [{ path: 'boom.ts', reason: 'failed' }, { path: 'denied.ts', reason: 'failed' }]);
+});
+
+test('replaceFiles: more than SEARCH_CAP matches kills the grep, writes nothing and refuses with too_many_matches (#868)', async () => {
+  const many = Buffer.concat(Array.from({ length: SEARCH_CAP + 1 }, (_, i) => hit(`f${i}.ts`, 1, mark('port'))));
+  const { machine, killed } = grepMachine({ [ROOT]: { out: [many], isHeld: true } }, fakeMachine({ exec: async () => ({ stdout: '' }) }));
+  let writes = 0;
+  const wired = { ...machine, fs: { ...machine.fs, writeAtomic: async () => { writes += 1; return Buffer.alloc(0); } } } as unknown as Machine;
+  const answer = await replaceFiles(wired, ROOT, request(['a.ts']));
+  assert.ok('error' in answer);
+  assert.equal(answer.code, 'too_many_matches');
+  assert.deepEqual(killed, [ROOT]);
+  assert.equal(writes, 0);
+});
+
+test('replaceFiles: an aborted signal kills the grep and writes nothing (#868)', async () => {
+  const { machine, killed } = grepMachine({ [ROOT]: { out: [hit('a.ts', 1, mark('port'))], isHeld: true } }, fakeMachine({ exec: async () => ({ stdout: '' }) }));
+  let writes = 0;
+  const wired = { ...machine, fs: { ...machine.fs, writeAtomic: async () => { writes += 1; return Buffer.alloc(0); } } } as unknown as Machine;
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 20);
+  const answer = await replaceFiles(wired, ROOT, request(['a.ts']), controller.signal);
+  assert.ok('error' in answer);
+  assert.deepEqual(killed, [ROOT]);
+  assert.equal(writes, 0);
+});
+
 test('replaceFiles: a failing grep answers { error } and writes nothing (#868)', async () => {
   const { machine } = grepMachine({ [ROOT]: { err: 'fatal: bad pattern\n', code: 128 } }, fakeMachine({ fs: fakeFiles() }));
   let writes = 0;

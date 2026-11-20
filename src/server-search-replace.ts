@@ -15,6 +15,8 @@ import { wordsOf } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_SERVER_ERROR = 500;
+const HTTP_TOO_LARGE = 413;
+const TOO_MANY = 'too_many_matches';
 const OWNER_WRITE = 0o200;
 const LF = 0x0a;
 const BODY_MESSAGE = 'query.q, replacement and 1 to 2000 files are required';
@@ -95,30 +97,40 @@ function groupByRepo(files: readonly string[], repos: readonly string[]): Map<st
   return groups;
 }
 
-// What git finds now in the requested files, by wire path; git's reason when a run fails
-async function grepNow(machine: Machine, root: string, request: ReplaceRequest, repos: readonly string[]): Promise<Map<string, GrepLine[]> | { error: string }> {
+export type ReplaceRefusal = { error: string; code?: typeof TOO_MANY };
+
+// What git finds now in the requested files, by wire path; git's reason when a run fails. More than SEARCH_CAP spans stops the run: the
+// search shows no more, and a replace must not write what the user could not see.
+async function grepNow(machine: Machine, root: string, request: ReplaceRequest, repos: readonly string[], signal: AbortSignal): Promise<Map<string, GrepLine[]> | ReplaceRefusal> {
   const found = new Map<string, GrepLine[]>();
+  let spans = 0;
+  let isOver = false;
   for (const [repo, paths] of groupByRepo(request.files, repos)) {
     const cwd = repo === '' ? root : join(root, repo);
     const outcome = await runGrep(machine, cwd, grepArgs(cwd, request.query, paths), (line) => {
+      spans += line.spans.length;
+      isOver = spans > SEARCH_CAP;
+      if (isOver) return false;
       const path = repo === '' ? line.file : `${repo}/${line.file}`;
       found.set(path, [...(found.get(path) ?? []), line]);
       return true;
-    }, new AbortController().signal);
+    }, signal);
+    if (isOver) return { error: `more than ${SEARCH_CAP} matches in the files: narrow the search`, code: TOO_MANY };
     if (outcome.kind === 'error') return { error: outcome.message };
   }
-  return found;
+  return signal.aborted ? { error: 'replace aborted' } : found;
 }
 
-/** Re-greps the files and replaces what git reports (#868). The paths written are git's, joined to `root`, never the request's. */
-export async function replaceFiles(machine: Machine, root: string, request: ReplaceRequest): Promise<ReplaceAnswer | { error: string }> {
-  const found = await grepNow(machine, root, request, await nestedRepos(machine, root));
+/** Re-greps the files and replaces what git reports (#868). The paths written are git's, joined to `root`, never the request's. A file that
+ *  throws is answered as `failed` and the rest go on, so the files already written keep their undo. */
+export async function replaceFiles(machine: Machine, root: string, request: ReplaceRequest, signal: AbortSignal = new AbortController().signal): Promise<ReplaceAnswer | ReplaceRefusal> {
+  const found = await grepNow(machine, root, request, await nestedRepos(machine, root), signal);
   if (!(found instanceof Map)) return found;
   const replacement = Buffer.from(request.replacement, 'utf8');
   const changed: ReplaceAnswer['changed'] = [];
   const skipped: ReplaceAnswer['skipped'] = [];
   for (const path of [...found.keys()].sort()) {
-    const outcome = await replaceOne(machine, join(root, ...path.split('/')), found.get(path) ?? [], replacement);
+    const outcome = await replaceOne(machine, join(root, ...path.split('/')), found.get(path) ?? [], replacement).catch((): ReplaceSkip => 'failed');
     if (typeof outcome === 'string') skipped.push({ path, reason: outcome });
     else changed.push({ ...outcome, path });
   }
@@ -135,9 +147,11 @@ export function registerReplaceRoute(app: Express, { requireLive, machineFor }: 
     if (typeof root !== 'string') return void res.status(root.status).json({ error: root.message, code: root.code, workspace: root.workspace });
     const request = replaceRequestOf(req.body);
     if (request === undefined) return void res.status(HTTP_BAD_REQUEST).json({ error: BODY_MESSAGE });
+    const abort = new AbortController();
+    res.on('close', () => abort.abort()); // the client going away ends the grep; a finished response closes too, with nothing left to stop
     try {
-      const answer = await replaceFiles(treeMachine(current.state, id, machineFor), root, request);
-      if ('error' in answer) res.status(HTTP_BAD_REQUEST).json(answer);
+      const answer = await replaceFiles(treeMachine(current.state, id, machineFor), root, request, abort.signal);
+      if ('error' in answer) res.status(answer.code === TOO_MANY ? HTTP_TOO_LARGE : HTTP_BAD_REQUEST).json(answer);
       else res.json(answer);
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
