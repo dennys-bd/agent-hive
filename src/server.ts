@@ -121,6 +121,7 @@ import { registerViewStateRoutes } from './server-view-state.js';
 import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
+import { accountsRefusal } from './accounts-config.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachines } from './machine-local.js';
 import type { MachineFor, Machines } from './machine.js';
@@ -1237,7 +1238,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)); // all before any write (#278, #299, #653, #565)
+    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv)); // all before any write (#278, #299, #653, #565, #952)
     if (refusal) {
       res.status(refusal.status).json({ error: refusal.message });
       return;
