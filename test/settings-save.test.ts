@@ -5,7 +5,7 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedMessage, strandedTasks } from '../src/settings-save.js';
-import type { Flow, SourceConfig, Stage, Task } from '../src/types.js';
+import type { AccountsConfig, Flow, SourceConfig, Stage, Task } from '../src/types.js';
 import { CONFIG_FILE } from '../src/config.js';
 import { combConfig, GITHUB_ENTRY, workspacesAt } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -85,4 +85,13 @@ test('strandedTasks passes an empty flow\'s deletion, a flow rename and a stage 
 test('strandedMessage counts one task in the singular and several in the plural (#565)', () => {
   assert.match(strandedMessage('bug', 1), /^Flow "bug" holds 1 task and none of its stages survives/);
   assert.match(strandedMessage('bug', 3), /^Flow "bug" holds 3 tasks and none of its stages survives/);
+});
+
+test('configFrom saves the accounts a body sends and keeps the saved ones when it sends none; the parser still names a bad one (#952)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  await writeFile(join(home, CONFIG_FILE), JSON.stringify(combConfig({ flows: TWO, accounts: { claude: 'work' } })));
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE' })).accounts, { claude: 'work' }, 'an API caller that omits accounts');
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE', accounts: { github: 'me' } })).accounts, { github: 'me' });
+  assert.deepEqual((await configFrom(home, { prefix: 'HIVE', accounts: {} })).accounts, {}, '{} is every provider on the machine\'s login');
+  await assert.rejects(configFrom(home, { prefix: 'HIVE', accounts: { codex: 'x' } as unknown as AccountsConfig }), { message: 'hive.config.json: "accounts.codex" is not an account provider; one of: claude, copilot, github' });
 });

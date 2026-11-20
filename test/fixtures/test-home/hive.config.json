@@ -1,5 +1,6 @@
 {
   "mcp": { "off": [], "servers": [] },
+  "accounts": {},
   "comb": {
     "prefix": "TEST",
     "workspaces": [

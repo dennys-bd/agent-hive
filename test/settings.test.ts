@@ -5,7 +5,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CONFIG } from '../src/config.js';
-import { readCredentials } from '../src/credentials.js';
+import { readCredentials, saveClaudeCredential } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State, Flow } from '../src/types.js';
@@ -169,7 +169,7 @@ test('POST /settings writes the config with defaults and boots the runtime on th
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const { prefix, sources, flows, commands, hiveSource, createIn, ...rest } = BODY;
-  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(flatten(flows ?? []).stages).stages, transitions: chained(flatten(flows ?? []).stages).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
+  assert.deepEqual(JSON.parse(await readFile(configFile(home), 'utf8')), { ...DEFAULT_CONFIG, ...rest, accounts: {}, comb: { prefix, workspaces: workspacesAt(repo), sources, flows: [{ name: 'main', stages: chained(flatten(flows ?? []).stages).stages, transitions: chained(flatten(flows ?? []).stages).transitions }], commands, hiveSource, createIn } }, 'setup writes the one workspace: the folder the body named');
   await server.poll(); // the first poll runs in the background (#59); wait for it before reading tasks
   const state = server.getState();
   assert.equal(state?.workers.length, 0);
@@ -1313,6 +1313,31 @@ test('POST /settings writes mcp\'s defaults on a first save, keeps the saved mcp
   assert.equal(renamed.status, 400);
   assert.deepEqual(await json(renamed), { error: `hive.config.json: "mcp.servers": figma is scoped to ${WORKSPACE}, which no longer exists` });
   assert.deepEqual(await onDisk(), mcp, 'refused before the write');
+});
+
+test('POST /settings writes accounts {} on a first save and keeps the saved selection when the body has none (#952)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).accounts;
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), {}, 'a body without it, as the Settings form sends until #964');
+  assert.equal((await postSettings(base, { ...BODY, accounts: { github: 'me' } })).status, 200);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), { github: 'me' }, 'an omitted key keeps the saved selection');
+});
+
+test('POST /settings saves a Claude account that has a credential and GET /settings answers it; one without is a 400 naming accounts.claude, writing nothing (#952)', async (t) => {
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'accounts-cred-') };
+  const { base, home } = await start(t, 0, { credentialsEnv: env });
+  const refused = await postSettings(base, { ...BODY, accounts: { claude: 'work' } });
+  assert.equal(refused.status, 400);
+  assert.deepEqual(await json(refused), { error: '"accounts.claude" names no saved Claude account' });
+  await assert.rejects(stat(configFile(home)), 'nothing written');
+  await saveClaudeCredential('work', { token: 'fake-claude-token-1' }, env);
+  assert.equal((await postSettings(base, { ...BODY, accounts: { claude: 'work' } })).status, 200);
+  assert.deepEqual((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.accounts, { claude: 'work' });
+  const before = await readFile(configFile(home), 'utf8');
+  assert.equal((await postSettings(base, { ...BODY, accounts: { claude: 'home' } })).status, 400);
+  assert.equal(await readFile(configFile(home), 'utf8'), before, 'a refused save leaves the saved file as it was');
 });
 
 test('POST /settings refuses to delete a flow that holds tasks, naming it and the count, and deletes an empty one (#565)', async (t) => {

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { credentialsPath, jiraCredential, readCredentials, removeJiraCredential, renewJiraName, saveJiraCredential, writeCredentials } from '../src/credentials.js';
+import { claudeCredential, credentialsPath, jiraCredential, readCredentials, removeClaudeCredential, removeJiraCredential, renewJiraName, saveClaudeCredential, saveJiraCredential, writeCredentials } from '../src/credentials.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { assertMode } from './posix-only.js';
 
@@ -157,4 +157,42 @@ test('concurrent credential updates are serialized: a name renewal never writes 
   await saveJiraCredential('acme.example', { ...ANA, displayName: 'Ana Lima' }, env);
   await Promise.all([renewJiraName('acme.example', 'Ana L.', env), saveJiraCredential('acme.example', { ...ANA, token: 'fake-token-new', displayName: 'Ana L.' }, env)]);
   assert.deepEqual(await jiraCredential('acme.example', env), { ...ANA, token: 'fake-token-new', displayName: 'Ana L.' });
+});
+
+const WORK = { token: 'fake-claude-token-1' };
+const OTHER = { token: 'fake-claude-token-2' };
+const GITHUB = { token: 'gho_x', login: 'ana' };
+
+test('a claude credential round-trips by account name, own entries only, keeps every sibling key and is owner-only (#952)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({ github: GITHUB }, env);
+  assert.equal(await claudeCredential('work', env), undefined);
+  await saveClaudeCredential('work', WORK, env);
+  await saveClaudeCredential('other', OTHER, env);
+  assert.deepEqual(await claudeCredential('work', env), WORK);
+  assert.equal(await claudeCredential('toString', env), undefined, 'an inherited name is no account');
+  await assertMode(t, credentialsPath(env), OWNER_ONLY_FILE); // win32: no POSIX mode bits
+  assert.deepEqual(await readCredentials(env), { github: GITHUB, claude: { work: WORK, other: OTHER } });
+});
+
+test('a stored claude map keeps each well-formed account and drops a malformed entry in place; a map that is no object is dropped whole (#952)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({}, env);
+  const path = credentialsPath(env);
+  await writeFile(path, JSON.stringify({ github: GITHUB, claude: { work: WORK, bad1: { token: 7 }, bad2: 'x', bad3: {} } }));
+  assert.deepEqual(await readCredentials(env), { github: GITHUB, claude: { work: WORK } }, 'a non-string token must never reach an env var');
+  await writeFile(path, JSON.stringify({ github: GITHUB, claude: 'x' }));
+  assert.deepEqual(await readCredentials(env), { github: GITHUB });
+  await writeFile(path, JSON.stringify({ claude: ['x'] }));
+  assert.deepEqual(await readCredentials(env), {});
+});
+
+test('removeClaudeCredential leaves the other accounts and every other provider; an absent name writes nothing (#952)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({ github: GITHUB, jira: { 'a.atlassian.net': ANA }, claude: { work: WORK, other: OTHER } }, env);
+  await removeClaudeCredential('work', env);
+  assert.deepEqual(await readCredentials(env), { github: GITHUB, jira: { 'a.atlassian.net': ANA }, claude: { other: OTHER } });
+  await writeFile(credentialsPath(env), 'not json');
+  await removeClaudeCredential('work', env);
+  assert.equal(await readFile(credentialsPath(env), 'utf8'), 'not json', 'an unreadable file is never rewritten without its other logins');
 });

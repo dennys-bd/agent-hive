@@ -67,7 +67,7 @@ const CONFIG: Config = {
   consoleLines: 20000, // not the form default, so draftFrom visibly reads it (#353)
   fileIcons: { set: 'vscode', scope: 'folders', muted: true }, sidebarsPerView: { left: false, right: true, rightTab: false }, signals: { ...SIGNALS_DEFAULTS, onOpen: 'last' }, // not the form default, so draftFrom visibly reads it (#754, #727)
   editor: EDITOR_DEFAULTS,
-  reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
+  reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS, accounts: {},
 };
 const withSources = (sources: SourceConfig[]): Config => ({ ...CONFIG, comb: { ...CONFIG.comb, sources } });
 const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', epicDeleteActivity: false, switchAt: '', jira: EMPTY_JIRA };

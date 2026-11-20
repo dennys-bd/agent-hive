@@ -1437,3 +1437,17 @@ test('noWorkspaceFields names the code and the gone workspace, nothing for a tas
   assert.deepEqual(noWorkspaceFields({ workspace: 'site' }), { code: 'workspace_gone', workspace: 'site' });
   assert.equal(spawnFailureCode(noWorkspaceReason({ workspace: 'site' })), 'workspace_gone');
 });
+
+test('parseConfig requires accounts: an object of provider → non-empty name, kept as written, {} included; an unknown provider is refused by name, no default (#952)', () => {
+  const with_ = (accounts: unknown) => parseConfig(github({ accounts }));
+  for (const bad of [undefined, null, [], 'work']) {
+    assert.throws(() => with_(bad), { message: 'hive.config.json: "accounts" is required and must be an object with any of claude, copilot, github' }, String(bad));
+  }
+  assert.deepEqual(with_({}).accounts, {});
+  assert.deepEqual(with_({ claude: 'work', copilot: 'me', github: 'me' }).accounts, { claude: 'work', copilot: 'me', github: 'me' });
+  assert.deepEqual(with_({ claude: ' work ' }).accounts, { claude: ' work ' }, 'not trimmed: the name is a map key elsewhere');
+  for (const bad of ['', '  ', 1, null]) {
+    assert.throws(() => with_({ claude: bad }), { message: 'hive.config.json: "accounts.claude" must be a non-empty name' }, String(bad));
+  }
+  assert.throws(() => with_({ codex: 'x' }), { message: 'hive.config.json: "accounts.codex" is not an account provider; one of: claude, copilot, github' });
+});

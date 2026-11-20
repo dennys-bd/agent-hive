@@ -204,6 +204,8 @@ export interface Credentials {
   mcp?: Record<string, { value: string }>;
   /** A Jira Cloud login by bare site host (#816). */
   jira?: Record<string, { email: string; token: string; accountId: string; displayName?: string }>; // displayName: #820, what @me resolves to with no call
+  /** A `claude setup-token` token by account name (#952): the token carries no identity, so the user names it. */
+  claude?: Record<string, { token: string }>;
 }
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */
@@ -1458,6 +1460,12 @@ export type OperationId =
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
 export type Shortcuts = Partial<Record<OperationId, string | null>>;
 
+/** The providers an account is selected for (#952); #950 adds codex when it lands. AccountError's provider (#953) reuses it. */
+export const ACCOUNT_PROVIDERS = ['claude', 'copilot', 'github'] as const;
+export type AccountProvider = (typeof ACCOUNT_PROVIDERS)[number];
+/** The selected account per provider (#952); a member left out = the machine's login. Names and logins only, never a token. */
+export type AccountsConfig = Partial<Record<AccountProvider, string>>;
+
 export interface Config {
   auth?: AuthConfig; // required only by a github source (parseConfig); no default: a silent one would hide which transport is live
   comb: CombConfig;
@@ -1529,6 +1537,9 @@ export interface Config {
   reviewer: ReviewerConfig;
   /** The Hive's optional tools turned off and the external MCP servers (#333). Required; a first save writes MCP_DEFAULTS. */
   mcp: McpSettings;
+  /** The selected account per provider (#952). Required, no default, {} = the machine's login for every provider: a file from before the key
+   * is fixed by hand, with no prefill. */
+  accounts: AccountsConfig;
 }
 
 /** The viewer's settings (#513, #199), was #198's two) and its effective language (#242): the config's, else the system's, never absent. The
@@ -1961,6 +1972,9 @@ export interface SettingsBody {
   reviewer?: ReviewerConfig;
   /** The Hive's MCP settings (#333): the Settings form never sends it, the MCP routes do. */
   mcp?: McpSettings;
+  /** The account selection (#952): no form control until #964, so an API caller that omits it keeps the saved one and a first save writes {}.
+   * A Claude name needs a saved credential (accountsRefusal). */
+  accounts?: AccountsConfig;
   /** Old source name → new source name (#278). The form always sends it ({} when nothing was renamed); an API caller that omits it renames
    * nothing; a first setup ignores it. Never written to hive.config.json. */
   renames?: Record<string, string>;
