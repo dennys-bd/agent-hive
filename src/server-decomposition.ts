@@ -244,7 +244,7 @@ async function writeSource(deps: DecompositionRouteDeps, current: Live, goal: Go
   const address = delivery === undefined ? {} : { address: fileAddress(delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path) };
   const written = await writeSourceDecomposition({ source: chosen.source, record }, d, { goal: target, column: chosen.column, ...address }, recorded);
   if ('error' in written) return { status: written.status, message: written.error };
-  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
+  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record }, {
     checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, ...sourceDeliveryWords(goal.key, goal.task.item.title),
   }, recorded);
   if (delivered !== undefined) return { status: HTTP_BAD_GATEWAY, message: delivered };
@@ -292,7 +292,7 @@ async function write(base: DecompositionRouteDeps, current: Live, activityId: st
   };
   const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, tree, target, recorded);
   if ('error' in written) return refuseWrite(deps.log, goal.task.item.id, written, res);
-  const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
+  const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record }, {
     checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...githubDeliveryWords(repository, written.root),
   }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
