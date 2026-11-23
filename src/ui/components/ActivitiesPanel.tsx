@@ -145,11 +145,12 @@ function HiddenMarker({ count, isWaiting }: { count: number; isWaiting: boolean 
   );
 }
 
-// A task's own collapse (#913): the headers' chevron, in the row's gutter. A sibling of the row, since a button holds no button
-function TaskChevron({ name, isCollapsed, onToggle }: { name: string; isCollapsed: boolean; onToggle(): void }) {
+// A task's own collapse (#913): the headers' chevron, in the row's gutter. A sibling of the row, since a button holds no button. Its name
+// is fixed and leaves the task's title out, so a search for the row by its title finds the row alone; aria-expanded says the state
+function TaskChevron({ isCollapsed, onToggle }: { isCollapsed: boolean; onToggle(): void }) {
   return (
     <button
-      type="button" aria-expanded={!isCollapsed} aria-label={t(isCollapsed ? 'activities.expandTask' : 'activities.collapseTask', { name })}
+      type="button" aria-expanded={!isCollapsed} aria-label={t('activities.taskLines')}
       onClick={onToggle} className="absolute top-[9px] left-1.5 flex cursor-pointer text-muted-foreground hover:text-foreground"
     >
       <ChevronDownIcon className={`size-3 shrink-0 ${isCollapsed ? '-rotate-90' : ''}`} />
@@ -187,7 +188,7 @@ function ActivityEntry({ activity, isSelected, worktree, showWorktree, isCollaps
   );
   return (
     <div ref={entryRef} className={`relative flex flex-col rounded-md py-1.5 pr-2 pl-5 ${isSelected ? 'bg-muted' : 'hover:bg-accent/50'}`}>
-      {lines > 0 && onToggle && <TaskChevron name={taskLabel(task)} isCollapsed={isCollapsed} onToggle={onToggle} />}
+      {lines > 0 && onToggle && <TaskChevron isCollapsed={isCollapsed} onToggle={onToggle} />}
       {nav.menu ? nav.menu(task, row) : row}
       {lines > 0 && !isHidden && (
         <div className={`mt-1 ml-[2px] ${GUIDE}`}>

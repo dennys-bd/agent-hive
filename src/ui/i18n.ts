@@ -571,8 +571,7 @@ const en = {
   'activities.worker': 'worker',
   'activities.done': 'done', // #586: the done group in status and no-grouping modes
   'activities.summary': '{n} · {k} {status}', // #586: a collapsed workspace's count and those that wait on the user
-  'activities.collapseTask': 'Collapse {name}', // #913: a task's chevron, named after the task
-  'activities.expandTask': 'Expand {name}',
+  'activities.taskLines': 'lines', // #913: a task's chevron; aria-expanded says whether they show
   'activities.taskHidden': '{n} hidden lines', // #913: a collapsed task's marker, as a screen reader reads it
   'activities.taskHiddenOne': '{n} hidden line',
   'activities.clean': 'clean', // #586: a worktree with nothing changed and nothing ahead
@@ -581,8 +580,8 @@ const en = {
   'activities.groupBy.status': 'status',
   'activities.groupBy.none': 'no grouping',
   'activities.showWorktree': 'show worktree',
-  'activities.collapseTasks': 'collapse tasks', // #913: the workspace's ⋯, every task of it at once
-  'activities.expandTasks': 'expand tasks',
+  'activities.collapseTasks': 'collapse activities', // #913: the workspace's ⋯, every task of it at once
+  'activities.expandTasks': 'expand activities',
   'activities.removeWorkspace': 'remove workspace…',
   'activities.deleteAll': 'delete all…', // #586: done's action
   'activities.deleteAll.title': 'Delete done activities',
@@ -4150,8 +4149,7 @@ const pt: Record<MessageKey, string> = {
   'activities.worker': 'worker',
   'activities.done': 'finalizado', // #586: the done group in status and no-grouping modes
   'activities.summary': '{n} · {k} {status}', // #586: a collapsed workspace's count and those that wait on the user
-  'activities.collapseTask': 'Recolher {name}', // #913: a task's chevron, named after the task
-  'activities.expandTask': 'Expandir {name}',
+  'activities.taskLines': 'linhas', // #913: a task's chevron; aria-expanded says whether they show
   'activities.taskHidden': '{n} linhas ocultas', // #913: a collapsed task's marker, as a screen reader reads it
   'activities.taskHiddenOne': '{n} linha oculta',
   'activities.clean': 'limpa', // #586: a worktree with nothing changed and nothing ahead
@@ -4160,8 +4158,8 @@ const pt: Record<MessageKey, string> = {
   'activities.groupBy.status': 'status',
   'activities.groupBy.none': 'sem agrupamento',
   'activities.showWorktree': 'mostrar worktree',
-  'activities.collapseTasks': 'recolher tarefas', // #913: the workspace's ⋯, every task of it at once
-  'activities.expandTasks': 'expandir tarefas',
+  'activities.collapseTasks': 'recolher atividades', // #913: the workspace's ⋯, every task of it at once
+  'activities.expandTasks': 'expandir atividades',
   'activities.removeWorkspace': 'remover workspace…',
   'activities.deleteAll': 'excluir todas…', // #586: done's action
   'activities.deleteAll.title': 'Excluir atividades finalizadas',

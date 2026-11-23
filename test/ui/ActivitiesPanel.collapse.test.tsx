@@ -55,7 +55,8 @@ const props = (extra: Partial<ActivitiesPanelProps> = {}): ActivitiesPanelProps 
 });
 const group = (name: string): HTMLElement => screen.getByRole('region', { name });
 const row = (title: string): HTMLElement => screen.getByRole('button', { name: new RegExp(`^${title}`) });
-const chevron = (title: string): HTMLElement => screen.getByRole('button', { name: new RegExp(`^(Recolher|Expandir) ${title}$`) });
+// The chevron is the row's sibling in its block; its name is fixed, so the block tells one task's from another's
+const chevron = (title: string): HTMLElement => within(row(title).parentElement as HTMLElement).getByRole('button', { name: 'linhas' });
 // The session and terminal lines of a workspace, in order (#347)
 const lines = (workspace: string): string[] =>
   within(group(workspace)).queryAllByRole('button', { name: /^(claude|terminal)/ }).map((b) => b.textContent ?? '');
@@ -73,10 +74,8 @@ test('collapsing a task hides its session and terminal lines and marks how many 
   render(<ActivitiesPanel {...props()} />);
   expect(lines('hive')).toHaveLength(4); // task 1's three, then task 3's one
   expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'true');
-  expect(chevron('#1 Task 1')).toHaveAccessibleName('Recolher #1 Task 1');
   await user.click(chevron('#1 Task 1'));
   expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'false');
-  expect(chevron('#1 Task 1')).toHaveAccessibleName('Expandir #1 Task 1');
   expect(lines('hive')).toHaveLength(1); // task 3's alone
   expect(screen.queryByRole('button', { name: /^terminal 1/ })).not.toBeInTheDocument();
   // three: what expanding draws, not its two sessions plus its two terminals (#347)
@@ -116,18 +115,18 @@ const openMenu = async (user: ReturnType<typeof userEvent.setup>, name: string):
   await user.keyboard('{Enter}');
 };
 
-test('recolher tarefas collapses every task with lines in that workspace only; expandir tarefas opens them all (#913)', async () => {
+test('recolher atividades collapses every task with lines in that workspace only; expandir atividades opens them all (#913)', async () => {
   const user = userEvent.setup();
   render(<ActivitiesPanel {...props()} />);
   await openMenu(user, 'opções de hive');
-  await user.click(screen.getByRole('menuitem', { name: 'recolher tarefas' }));
+  await user.click(screen.getByRole('menuitem', { name: 'recolher atividades' }));
   expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'false');
   expect(chevron('#3 Task 3')).toHaveAttribute('aria-expanded', 'false');
   expect(chevron('#4 Task 4')).toHaveAttribute('aria-expanded', 'true'); // site keeps its own
   expect(lines('hive')).toEqual([]);
   expect(readView('activitiesView')).toMatchObject({ hive: { collapsedTasks: ['I1', 'I3'] } }); // task 2 has no lines to collapse
   await openMenu(user, 'opções de hive');
-  await user.click(screen.getByRole('menuitem', { name: 'expandir tarefas' }));
+  await user.click(screen.getByRole('menuitem', { name: 'expandir atividades' }));
   expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'true');
   expect(chevron('#3 Task 3')).toHaveAttribute('aria-expanded', 'true');
   expect(lines('hive')).toHaveLength(4);
