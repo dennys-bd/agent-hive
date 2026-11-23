@@ -4,8 +4,8 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { heldSession, taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
 import { writeRunFiles } from './spawn.js';
-import { AccountError, type AccountEnvAnswer, type AccountSeam, type RunAccountsStore } from './account-env.js';
-import { capturedReply, refusedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
+import { type AccountEnvAnswer, ACCOUNT_UNAVAILABLE, seamRefusalLine, type AccountSeam, type RunAccountsStore } from './account-env.js';
+import { capturedReply, isEnvLine, refusedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { MCP_SECRET_ENV } from './agents/codex.js';
 import { runners } from './agents/registry.js';
@@ -201,28 +201,36 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const unregister = async (answer: () => void): Promise<void> => {
       try {
         await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
+      } catch {
+        // Not rethrown: the shim must be answered, or its curl fails and it runs the agent unregistered on the machine's login (#953)
       } finally {
         await deps.dropRunTmp(runId); // #876: whatever the write below got to, even when the exit could not be dispatched
       }
       answer();
     };
+    const refused = (line: string) => (): void => void res.type('text/plain').send(refusedReply(line));
     const failed = (message: string) => (): void => refuse(res, { status: HTTP_SERVER_ERROR, message });
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
     const terminal = after.state.terminals.find((x) => x.terminalId === terminalId);
     const cwd = capturedCwd(form.cwd, terminal?.cwd) ?? terminal?.cwd ?? '';
-    let run: AgentRun;
     let account: AccountEnvAnswer;
     try {
       account = await deps.accountEnv({ agent }); // #953: before anything of the run's is recorded or written
       deps.runAccounts.set(runId, account.accounts);
+    } catch (err) {
+      return unregister(refused(seamRefusalLine(err)));
+    }
+    let run: AgentRun;
+    try {
       run = await captureRun(deps, after, worker, { runId, cwd, sessionId });
       await writeRunFiles(runners[agent].runFiles(run)); // #876: Copilot's instructions, under runTmpDir(runId), before the shim starts it
     } catch (err) {
-      return unregister(err instanceof AccountError ? () => void res.type('text/plain').send(refusedReply(err.message)) : failed(errorMessage(err)));
+      return unregister(failed(errorMessage(err)));
     }
     // #953: the account env first, so a runEnv line of the same name, exported after it, wins
     const reply = capturedReply(runId, [...Object.entries(account.env), ...replyEnv(deps, agent, run)], runners[agent].launch(run).flat());
-    if (reply === undefined) return unregister(failed(SPLIT_REPLY_MESSAGE));
+    // An account env the reply cannot carry (a bad name, a line break) is the account's refusal, not a 500: the shim would run unregistered on it
+    if (reply === undefined) return unregister(Object.entries(account.env).every(isEnvLine) ? failed(SPLIT_REPLY_MESSAGE) : refused(ACCOUNT_UNAVAILABLE));
     res.type('text/plain').send(reply);
   });
 }

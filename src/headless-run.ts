@@ -8,7 +8,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type AccountEnvDeps, AccountError, accountEnv } from './account-env.js';
+import { type AccountEnvDeps, AccountError, accountEnv, refusalLine } from './account-env.js';
 import { AGENTS } from './agents.js';
 import { agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
@@ -59,7 +59,7 @@ async function headlessAccount(agent: AgentId, deps: AccountEnvDeps): Promise<{ 
   try {
     return await accountEnv({ agent }, deps);
   } catch (err) {
-    if (err instanceof AccountError) return { failure: `account ${err.provider} ${err.code}`, detail: '' };
+    if (err instanceof AccountError) return { failure: refusalLine(err), detail: '' };
     throw err;
   }
 }

@@ -178,7 +178,7 @@ test('a headless run\'s env carries the runner\'s account env, under its own hea
 });
 
 test('a refused account fails the headless run before its folder exists: nothing runs, nothing is left (#953)', async (t) => {
-  t.mock.method(runners.claude, 'accountEnv', async () => { throw new AccountError('claude', 'missing', 'no token named work'); });
+  t.mock.method(runners.claude, 'accountEnv', async () => { throw new AccountError('claude', 'missing', 'not-a-real-token-953'); });
   const tmpRoot = await tempDir(t, 'headless-tmp-');
   // an empty PATH: had the run gone on, its failure would be the agent not found, never the account's
   assert.deepEqual(await runHeadless(input('claude'), { env: { PATH: '' }, tmpRoot, account: NO_ACCOUNTS }), { failure: 'account claude missing', detail: '' });

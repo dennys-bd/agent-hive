@@ -19,6 +19,15 @@ export class AccountError extends Error {
   }
 }
 
+/** The one line a refusal becomes wherever it leaves the process (#953): provider and code, never the reason, which is free-form text a
+ * provider could let a token into. The reason stays in the process. */
+export const refusalLine = (err: AccountError): string => `account ${err.provider} ${err.code}`;
+
+export const ACCOUNT_UNAVAILABLE = 'account unavailable';
+
+/** The shim's refusal line for whatever the seam threw: an AccountError's own line, any other error a fixed one, never its message. */
+export const seamRefusalLine = (err: unknown): string => (err instanceof AccountError ? refusalLine(err) : ACCOUNT_UNAVAILABLE);
+
 /** What each provider resolved to for one run; a member absent = the machine's login. Names only, never a token. */
 export type RunAccounts = AccountsConfig;
 export interface AccountEnvDeps { accounts: AccountsConfig; credentials(): Promise<Credentials> }

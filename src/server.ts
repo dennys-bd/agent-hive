@@ -122,7 +122,7 @@ import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { accountsRefusal } from './accounts-config.js';
-import { accountEnv, createRunAccounts, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
+import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
@@ -597,7 +597,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         if (closing) { log.info(`${describeEffect(effect)} dropped: closing`); return; }
         log.info(describeEffect(effect));
         // #696: awaited, so a wake answers its run once the pool holds it; a failure before the pty (its files) sleeps it again, the reason in the bar
-        await spawner.spawnTerminal(runtime, effect, size).catch((err: unknown) => dispatch({ type: 'spawnFailed', ptyId: effect.terminal.terminalId, message: errorMessage(err) }));
+        await spawner.spawnTerminal(runtime, effect, size).catch((err: unknown) => dispatch({ type: 'spawnFailed', ptyId: effect.terminal.terminalId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) }));
         return;
       case 'stageCommand': // #755: one command of a commands stage; its pty's end answers stageCommandEnded, so this awaits only its start
         if (closing) { log.info(`${describeEffect(effect)} dropped: closing`); return; }

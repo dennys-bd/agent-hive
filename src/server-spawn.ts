@@ -1,4 +1,4 @@
-import { ptyAccountEnv, type AccountSeam, type RunAccountsStore } from './account-env.js';
+import { AccountError, ptyAccountEnv, refusalLine, type AccountSeam, type RunAccountsStore } from './account-env.js';
 import type { Machine, MachineFor, RunInputs, RunSpec } from './machine.js';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
@@ -169,7 +169,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   const accountEnvOf = (ptyId: string, agent: AgentId | undefined, env: Record<string, string>): Promise<Record<string, string>> => ptyAccountEnv(deps, ptyId, agent, env);
   // A start that fails before its pty (#945): spawnFailed frees the worker with the reason; undefined, for the caller to return on
   const failed = async (ptyId: string, err: unknown): Promise<undefined> => {
-    await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) });
+    await dispatch({ type: 'spawnFailed', ptyId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) });
     return undefined;
   };
 
@@ -253,7 +253,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       cwd = await prepare(runtime, activity, task, ptyId);
       protocol = await readProtocolText(protocolPath); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
-      await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) });
+      await dispatch({ type: 'spawnFailed', ptyId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) });
       return;
     }
     // A Stop during the setup aborted it (abortSetup) and its exit freed the worker; one that landed right after the setup freed it too: no worker then.

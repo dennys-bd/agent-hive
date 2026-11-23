@@ -50,11 +50,11 @@ async function start(t: TestContext, env: Record<string, string> = {}, extra: Pa
 function refuseClaude(t: TestContext): void {
   t.mock.method(runners.claude, 'accountEnv', async (ctx: AccountCtx) => {
     await ctx.credentials();
-    throw new AccountError('claude', 'missing', 'no token named work');
+    throw new AccountError('claude', 'missing', `no token ${FAKE_TOKEN}`); // a reason that leaks, to prove it never leaves (#953)
   });
 }
 const noToken = (lines: readonly string[]): boolean => lines.every((line) => !line.includes(FAKE_TOKEN));
-const REFUSAL = 'account claude missing: no token named work';
+const REFUSAL = 'account claude missing'; // the code line only: the reason never leaves the process
 
 test('a stage run\'s env carries the runner\'s account env under the workspace\'s, which wins a shared name (#953)', async (t) => {
   t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { X: '1', Y: 'account' } }));
@@ -74,13 +74,14 @@ test('a session\'s env carries the account env too (#953)', async (t) => {
 
 test('a refused account on a task start is a spawn failure with its code: no pty, the reason in hive.log, never the token (#953)', async (t) => {
   refuseClaude(t);
-  const { base, workers, lines, records } = await start(t);
+  const { base, server, workers, lines, records } = await start(t);
   await postJson(`${base}/tasks/${TASK}/start`, { base: null });
   const codes = (): string[] => records.flatMap((r) => (r.event === 'run.spawn_failed' ? [r.code] : []));
   await waitFor(() => codes().length === 1);
   assert.deepEqual([codes(), workers.length], [['account_claude_missing'], 0]);
-  assert.ok(lines.some((line) => line.includes(`spawnFailed pty=`) && line.includes(REFUSAL)), 'the spawnFailed line');
+  assert.ok(lines.some((line) => line.includes(`spawnFailed pty=`) && line.endsWith(REFUSAL)), 'the spawnFailed line');
   assert.ok(noToken(lines));
+  assert.ok(!JSON.stringify(server.getState()).includes(FAKE_TOKEN), 'state holds no reason');
 });
 
 test('a refused account on a session fails its start: no pty, the reason in the bar and hive.log, never the token (#953)', async (t) => {
@@ -152,5 +153,42 @@ test('a refused account on the shim\'s register answers the refusal the shim exi
   const answer = await register(base, id);
   assert.deepEqual([answer.status, await answer.text()], [200, `refused\n${REFUSAL}`]);
   assert.equal(server.getState()?.workers.some((w) => w.terminalId === id), false);
+  assert.ok(noToken(lines));
+});
+
+const noCapture = (server: HiveServer, id: string): boolean => !server.getState()?.workers.some((w) => w.terminalId === id);
+const GENERIC_REFUSAL = 'refused\naccount unavailable';
+
+test('a plain error from the seam on the shim\'s register is a refusal too, with a fixed line and never its message (#953)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => { throw new Error(`boom ${FAKE_TOKEN}`); });
+  const { base, server, lines } = await start(t);
+  const id = await openShell(base);
+  const answer = await register(base, id);
+  assert.deepEqual([answer.status, await answer.text()], [200, GENERIC_REFUSAL]);
+  assert.ok(noCapture(server, id));
+  assert.ok(noToken(lines));
+});
+
+test('an account env the reply cannot carry is a refusal on the shim\'s register, not a 500 (#953)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { X: `a\nb ${FAKE_TOKEN}` } }));
+  const { base, server, lines } = await start(t);
+  const id = await openShell(base);
+  const answer = await register(base, id);
+  assert.deepEqual([answer.status, await answer.text()], [200, GENERIC_REFUSAL]);
+  assert.ok(noCapture(server, id));
+  assert.ok(noToken(lines));
+});
+
+test('a refusal still answers when the exit it dispatches fails (#953)', async (t) => {
+  refuseClaude(t);
+  const { log, lines } = fakeLog();
+  let armed = false;
+  // dispatch logs the event first, so a log that fails on the exit is a dispatch that fails on it
+  const failing = { ...log, debug: (message: string): void => { if (armed && message.startsWith('exit pty=')) throw new Error('log down'); log.debug(message); } };
+  const { base } = await start(t, {}, { log: failing });
+  const id = await openShell(base);
+  armed = true;
+  const answer = await register(base, id);
+  assert.deepEqual([answer.status, await answer.text()], [200, `refused\n${REFUSAL}`]);
   assert.ok(noToken(lines));
 });
