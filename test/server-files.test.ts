@@ -10,7 +10,7 @@ import type { Task, TaskFile, Exec, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import type { Machine } from '../src/machine.js';
-import { fakeMachine, fakeMachines, statsOf } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines, statsOf } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -37,7 +37,7 @@ const files = async (f: Files, id = 'local:1'): Promise<TaskFile[]> => (await hi
 async function startFiles(t: TestContext, saved: Task = task(), isDeleted = false, others: Task[] = [], result: Record<string, unknown> = RESULT, machine?: Machine): Promise<Files> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo); // the routes answer real paths: macOS's tmpdir is a symlink
-  const worktree = worktreePath(repo, SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(join(worktree, 'docs'), { recursive: true });
   await writeFile(join(worktree, 'docs', 'spec.md'), '# spec');
   const base0 = { ...initialState(0), localCount: 1, tasks: [saved, ...others] };

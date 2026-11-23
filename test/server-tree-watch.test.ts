@@ -11,6 +11,7 @@ import { startTree, task } from './fixtures/tree-server.js';
 import { workPath } from './fixtures/work.js';
 import { eventDuring, send } from './review-server.js';
 import { hiveFetch } from './secret-client.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // POST and DELETE /activities/:id/tree/watch (#502), over the tree routes' test server, with the tree watch faked unless said otherwise
 const LOCAL = `/activities/${encodeURIComponent(localActivityId('hive'))}`;
@@ -30,13 +31,13 @@ function recordingWatch(): { treeWatch: TreeWatch; calls: string[][] } {
 
 test('POST /activities/:id/tree/watch leases the root, a task\'s worktree as no checkout and a local activity\'s checkout as one; DELETE releases it, and the server\'s close closes the watch (#502)', async (t) => {
   const fake = recordingWatch();
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
   const path = workPath(f.server, 'local:1');
   assert.equal((await send(f.base, 'POST', `${path}/tree/watch`, { lease: 'L1' })).status, 204);
   assert.equal((await send(f.base, 'POST', `${LOCAL}/tree/watch`, { lease: 'L2' })).status, 204);
   assert.equal((await send(f.base, 'DELETE', `${path}/tree/watch/L1`)).status, 204);
   assert.deepEqual(fake.calls, [
-    ['lease', idOf(path), worktreePath(f.repo, 'hive-1-task'), 'L1', 'false', 'local'],
+    ['lease', idOf(path), worktreePath(HOST_PATHS, f.repo, 'hive-1-task'), 'L1', 'false', 'local'],
     ['lease', localActivityId('hive'), f.repo, 'L2', 'true', 'local'],
     ['release', idOf(path), 'L1'],
   ]);
@@ -46,7 +47,7 @@ test('POST /activities/:id/tree/watch leases the root, a task\'s worktree as no 
 
 test('POST /activities/:id/tree/watch refuses a missing, empty, non-string or longer than 64 characters lease with 400, leasing nothing (#502)', async (t) => {
   const fake = recordingWatch();
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
   const url = `${workPath(f.server, 'local:1')}/tree/watch`;
   for (const body of [{}, { lease: '' }, { lease: 7 }, { lease: 'x'.repeat(65) }]) {
     const res = await send(f.base, 'POST', url, body);
@@ -58,7 +59,7 @@ test('POST /activities/:id/tree/watch refuses a missing, empty, non-string or lo
 
 test('POST and DELETE /activities/:id/tree/watch refuse an unknown activity (404) and one with no worktree on disk (409), leasing nothing (#502)', async (t) => {
   const fake = recordingWatch();
-  const f = await startTree(t, (repo) => [task(1), task(2, { worktree: worktreePath(repo, 'hive-2-task'), worktreeGone: true })], { treeWatch: fake.treeWatch });
+  const f = await startTree(t, (repo) => [task(1), task(2, { worktree: worktreePath(HOST_PATHS, repo, 'hive-2-task'), worktreeGone: true })], { treeWatch: fake.treeWatch });
   for (const [id, status] of [['local:9', 404], ['local:1', 404], ['local:2', 409]] as const) {
     assert.equal((await send(f.base, 'POST', `${workPath(f.server, id)}/tree/watch`, { lease: 'L1' })).status, status, id);
     assert.equal((await send(f.base, 'DELETE', `${workPath(f.server, id)}/tree/watch/L1`)).status, status, id);
@@ -68,15 +69,15 @@ test('POST and DELETE /activities/:id/tree/watch refuse an unknown activity (404
 
 test('DELETE /activities/:id/tree/watch/:lease answers 204 for a lease it never had (#502)', async (t) => {
   const fake = recordingWatch();
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
   assert.equal((await send(f.base, 'DELETE', `${workPath(f.server, 'local:1')}/tree/watch/never`)).status, 204);
   assert.deepEqual(fake.calls, [['release', idOf(workPath(f.server, 'local:1')), 'never']]);
 });
 
 test('GET /activities/:id/tree/folder registers the nested repository a folder lies in with watchNested; a folder outside any registers nothing (#502, #1)', async (t) => {
   const fake = recordingWatch();
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
-  const wt = worktreePath(f.repo, 'hive-1-task');
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], { treeWatch: fake.treeWatch });
+  const wt = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
   await mkdir(join(wt, 'src'), { recursive: true });
   await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere');
@@ -88,9 +89,9 @@ test('GET /activities/:id/tree/folder registers the nested repository a folder l
 });
 
 test('a change in a leased worktree reaches /events as a named tree event for its activity (#502)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
   const path = workPath(f.server, 'local:1');
-  const wt = worktreePath(f.repo, 'hive-1-task');
+  const wt = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   assert.equal((await send(f.base, 'POST', `${path}/tree/watch`, { lease: 'L1' })).status, 204);
   const change = (await eventDuring(f.base, 'tree', async () => {
     await sleep(SETTLE_MS);
@@ -101,7 +102,7 @@ test('a change in a leased worktree reaches /events as a named tree event for it
 });
 
 test('POST /activities/:id/tree/watch answers 429 when the daemon holds too many leases, for a new id only (#502)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], {
     treeWatch: { lease: async () => { throw new TooManyLeasesError(); }, release: () => undefined, watchNested: async () => undefined, close: () => undefined },
   });
   const res = await send(f.base, 'POST', `${workPath(f.server, 'local:1')}/tree/watch`, { lease: 'L1' });

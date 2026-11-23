@@ -42,6 +42,7 @@ import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flatten } from '../src/flows.js';
 import { flowed } from './fixtures/main-flow.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // the workspace is per server: start() names its own repo (#202)
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -221,8 +222,8 @@ function listedGit(refuse?: string, stderr?: string): { exec: Exec; calls: strin
     const repo = args[1] as string;
     const listing = [
       `worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n`,
-      `worktree ${worktreePath(repo, TASK_SLUG)}\nHEAD 2222\nbranch refs/heads/${TASK_BRANCH}\n`,
-      `worktree ${worktreePath(repo, ORPHAN_SLUG)}\nHEAD 3333\nbranch refs/heads/${ORPHAN_BRANCH}\n`,
+      `worktree ${worktreePath(HOST_PATHS, repo, TASK_SLUG)}\nHEAD 2222\nbranch refs/heads/${TASK_BRANCH}\n`,
+      `worktree ${worktreePath(HOST_PATHS, repo, ORPHAN_SLUG)}\nHEAD 3333\nbranch refs/heads/${ORPHAN_BRANCH}\n`,
       'worktree /elsewhere/wt\nHEAD 4444\ndetached\n',
     ].join('\n');
     return { stdout: command[0] === 'worktree' && command[1] === 'list' ? listing : '' };
@@ -247,7 +248,7 @@ function localGit(slug: string, branch: string): { exec: Exec; calls: string[][]
         throw Object.assign(new Error(`Command failed: git ${command.join(' ')}`), { stderr: 'fatal: boom\n' });
       }
       const repo = args[1] as string;
-      const listing = `worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktreePath(repo, slug)}\nHEAD 2222\nbranch refs/heads/${branch}\n`;
+      const listing = `worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktreePath(HOST_PATHS, repo, slug)}\nHEAD 2222\nbranch refs/heads/${branch}\n`;
       return { stdout: command[0] === 'worktree' && command[1] === 'list' ? listing : '' };
     },
   };
@@ -403,7 +404,7 @@ test('a workspace a worker runs in cannot move: 409; once it stopped; then the s
   git.clear();
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   assert.equal(workers.length, 2);
-  assert.equal(workers[1].launch.cwd, worktreePath(other, TASK_SLUG), 'the task runs again, in the new repo');
+  assert.equal(workers[1].launch.cwd, worktreePath(HOST_PATHS, other, TASK_SLUG), 'the task runs again, in the new repo');
   assert.ok(git.calls.length > 0 && git.calls.every((c) => c[2].startsWith(other)), git.calls.map((c) => c.join(' ')).join('\n'));
 });
 
@@ -427,7 +428,7 @@ test('feedback on a task awaiting approval whose stage session is open in the us
   const { spawnPty, ptys } = fakePtys();
   // no worker for the automation: the only run is the user's own session
   const { repo, server, workers } = await start(t, idle({ ...BODY, flows: bodyFlows([{ ...STAGES[0], approval: true }] )}), log, {}, { spawnPty });
-  await readyOn(server, 'board:I1', { path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, base: null, local: false });
+  await readyOn(server, 'board:I1', { path: worktreePath(HOST_PATHS, repo, TASK_SLUG), branch: TASK_BRANCH, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') });
   const ptyId = server.getState()!.workers.find((s) => s.freeSession)!.runId!;
   const host = workers[0].options?.ptys;
@@ -456,7 +457,7 @@ test('a free session whose turn ended on overloaded backs off, and its retry typ
   const { log, lines } = fakeLog();
   const { spawnPty, ptys } = fakePtys();
   const { repo, server, workers } = await start(t, idle(), log, {}, { spawnPty });
-  await readyOn(server, 'board:I1', { path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, base: null, local: false });
+  await readyOn(server, 'board:I1', { path: worktreePath(HOST_PATHS, repo, TASK_SLUG), branch: TASK_BRANCH, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') });
   const ptyId = server.getState()!.workers.find((s) => s.freeSession)!.runId!;
   const host = workers[0].options?.ptys;
@@ -1262,8 +1263,8 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   assert.equal(listings.length, 0);
   // something to clean (#236): a task with nothing the scope covers just moves on. Not the rendered branch, so git's listing alone decides;
   // on disk, or the boot poll's gone-worktree check (still running in the background) drops it
-  await mkdir(worktreePath(repo, 'hive-1-from-ready'), { recursive: true });
-  await readyOn(server, 'board:I1', { path: worktreePath(repo, 'hive-1-from-ready'), branch: 'hive/elsewhere', base: null, local: false });
+  await mkdir(worktreePath(HOST_PATHS, repo, 'hive-1-from-ready'), { recursive: true });
+  await readyOn(server, 'board:I1', { path: worktreePath(HOST_PATHS, repo, 'hive-1-from-ready'), branch: 'hive/elsewhere', base: null, local: false });
   const activity = shortId(work0(server)?.id); // #629: what the deletion's answers name
   const item = { itemId: 'board:I1', source: 'board', id: '1', title: 'from Ready', body: '', url: 'https://github.com/acme/r/issues/1' };
   await server.dispatch({ type: 'poll', source: 'board', items: [{ item, column: 'In review' }] }); // the human moved it: done column, no after, due at once
@@ -1462,7 +1463,7 @@ test('GET /tasks/:id/bases lists the default, the other tasks that have a worktr
   await server.dispatch({ type: 'poll', source: 'board', items: [item('1', 'Ready'), item('2', 'Ready')] });
   await server.dispatch({ type: 'createActivity', taskId: 'board:I2' }); // #629: the other tasks are the other activities, task 2's with its worktree
   const main = `worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n`;
-  const at = (slug: string, branch: string): string => `worktree ${worktreePath(repo, slug)}\nHEAD 2222\nbranch refs/heads/${branch}\n`;
+  const at = (slug: string, branch: string): string => `worktree ${worktreePath(HOST_PATHS, repo, slug)}\nHEAD 2222\nbranch refs/heads/${branch}\n`;
   git.answers.listing = [main, at('hive-2-task-2', 'hive/2-task-2')].join('\n');
   assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), {
     hasWorktree: false,
@@ -1473,7 +1474,7 @@ test('GET /tasks/:id/bases lists the default, the other tasks that have a worktr
   });
   assert.equal(git.calls.some((c) => c[0] === 'fetch'), false, 'opening the popup never fetches');
   const own = slugFor(task0(server).item); // #629: with no activity yet, the slug its title gives (the poll above renamed it)
-  await mkdir(worktreePath(repo, own), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, own), { recursive: true });
   git.answers.listing = [main, at(own, 'hive/1-task-1'), at('hive-2-task-2', 'hive/2-task-2')].join('\n');
   assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), {
     hasWorktree: false, defaultRef: 'origin/main', tasks: [{ ref: 'hive/2-task-2', id: '2', title: 'Task 2' }], local: ['feature-x'], remote: ['origin/feature-y'],
@@ -1551,7 +1552,7 @@ test('POST /activities/:id/delete refuses an unknown task (404), a running one a
 test('POST /activities/:id/delete without a literal force checks what git would refuse, then runs the delete activity stage\'s git (no --force, branch -d), with the task marked deleting: a start or a second removal meanwhile is a 409; then the task forgets its worktree, branch and session id, its session moves to the main repo (#208), and it stays in its stage (#182, #210)', async (t) => {
   const git = listedGit();
   const { base, repo, server, workers } = await ranOnce(t, { exec: git.exec }); // stopped; red: nothing respawns
-  const worktree = worktreePath(repo, TASK_SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const session = work0(server)?.sessionId;
   git.clear();
@@ -1586,7 +1587,7 @@ test('POST /activities/:id/delete without a literal force checks what git would 
 test('POST /activities/:id/delete with a terminal open kills its pty and drops it from the terminals before git runs, then removes the worktree and the branch (#573)', async (t) => {
   const git = listedGit();
   const { base, repo, server, workers } = await ranOnce(t, { exec: git.exec }); // stopped with its worktree; red: nothing respawns
-  const worktree = worktreePath(repo, TASK_SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   await server.dispatch({ type: 'openTerminal', activityId: workId(server.getState()!, 'board:I1') });
   const [opened] = server.getState()!.terminals;
@@ -1606,7 +1607,7 @@ test('POST /activities/:id/delete with a terminal open kills its pty and drops i
 test('a refusal answers 200 { removed: false, refused } with the reason and removes nothing (the branch is not merged, so the worktree stays too); force: true then runs --force --force and branch -D, deletes the prompt file, and the task forgets its worktree and session id, its session moving to the main repo (#208) (#182, #210)', async (t) => {
   const git = listedGit('--is-ancestor'); // exit 1: the branch is not merged into HEAD
   const { base, home, repo, server } = await ranOnce(t, { exec: git.exec });
-  const worktree = worktreePath(repo, TASK_SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const before = task0(server);
   const ran = work0(server)?.sessionId; // #629: the activity's
@@ -1632,7 +1633,7 @@ test('a forced removal git fails answers 500 { error: unexpected }, logs git\'s 
   const git = listedGit('--force');
   const { log, lines } = fakeLog();
   const { base, repo, server } = await ranOnce(t, { exec: git.exec, log });
-  const worktree = worktreePath(repo, TASK_SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const before = task0(server);
   const res = await postJson(`${base}${workPath(server, 'board:I1')}/delete`, { force: true });
@@ -1646,7 +1647,7 @@ test('a removal git refuses for a reason the Hive does not know answers refused 
   const git = listedGit('remove', 'fatal: cannot remove a locked working tree\n'); // past every check: git refuses the remove itself
   const { log, lines } = fakeLog();
   const { base, repo, server } = await ranOnce(t, { exec: git.exec, log });
-  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, TASK_SLUG), { recursive: true });
   const before = task0(server);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: false, refused: { reason: 'unexpected' } });
   assert.ok(lines.includes('ERROR deleteActivity #1: fatal: cannot remove a locked working tree'), lines.join('\n'));
@@ -1657,7 +1658,7 @@ test('in a delete activity stage the delete-activity route finishes the stage\'s
   const git = listedGit('--is-ancestor'); // exit 1: the branch is not merged into HEAD, for the stage's delete activity and the button alike
   const stages: LegacyStage[] = [STAGES[0], { name: 'done', from: { board: ['In review'] }, onFinish: { board: [move('Done')] }, action: 'deleteActivity' }, { name: 'archive', from: { board: ['Done'] } }];
   const { base, repo, server } = await start(t, { ...BODY, flows: bodyFlows(stages) }, undefined, {}, { exec: git.exec }); // I1 runs in fila
-  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, TASK_SLUG), { recursive: true });
   const { runId: ptyId } = worker0(server);
   await hookEvent(base, ptyId!, { hook_event_name: 'SessionStart', cwd: repo });
   await markDone(server, ptyId!);
@@ -1692,7 +1693,7 @@ test('POST /activities/:id/delete follows the delete-activity scope (#236, #573)
   await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
-  const worktree = worktreePath(repo, TASK_SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const session = work0(server)!.sessionId!;
   const dir = transcriptDir(fakeMachine(), worktree);
@@ -1727,7 +1728,7 @@ test('with transcripts in scope a delete removes every record\'s transcripts, a 
   await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
-  const worktree = worktreePath(repo, TASK_SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await mkdir(worktree, { recursive: true });
   const kept = work0(server)!.sessionId!;
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: true });
@@ -1754,7 +1755,7 @@ test('POST /activities/:id/continue takes a deleted activity\'s record id: its k
   await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
-  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, TASK_SLUG), { recursive: true });
   const old = work0(server)!;
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/delete`)), { removed: true });
   assert.deepEqual(await json(postJson(`${base}/activities/${encodeURIComponent(old.id)}/continue`)), { ok: true });
@@ -1790,8 +1791,8 @@ test('GET /worktrees lists what git lists under .hive/worktrees with the owning 
   const { base, repo, server } = await ranOnce(t, { exec: git.exec }); // I1 stopped with its worktree
   const activityId = workId(server.getState()!, 'board:I1'); // #629: the route its removal posts to
   assert.deepEqual(await json(hiveFetch(`${base}/worktrees`)), [
-    { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, task: { id: 'board:I1', activityId, title: '#1 from Ready', removable: true }, nested: [] },
-    { workspace: 'hive', slug: ORPHAN_SLUG, path: worktreePath(repo, ORPHAN_SLUG), branch: ORPHAN_BRANCH, orphan: 'noTask', nested: [] },
+    { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(HOST_PATHS, repo, TASK_SLUG), branch: TASK_BRANCH, task: { id: 'board:I1', activityId, title: '#1 from Ready', removable: true }, nested: [] },
+    { workspace: 'hive', slug: ORPHAN_SLUG, path: worktreePath(HOST_PATHS, repo, ORPHAN_SLUG), branch: ORPHAN_BRANCH, orphan: 'noTask', nested: [] },
   ]);
   const broken = await start(t, BODY, undefined, {}, { exec: listedGit('list', 'fatal: not a git repository').exec });
   const res = await hiveFetch(`${broken.base}/worktrees`);
@@ -1820,7 +1821,7 @@ test('POST /worktrees/:slug/remove without a literal force runs the delete activ
   const git = listedGit();
   const { log, lines } = fakeLog();
   const { base, repo } = await start(t, BODY, log, {}, { exec: git.exec });
-  const path = worktreePath(repo, ORPHAN_SLUG);
+  const path = worktreePath(HOST_PATHS, repo, ORPHAN_SLUG);
   await mkdir(path, { recursive: true });
   git.clear();
   assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`, { force: 'yes' })), { removed: true }); // only a literal true forces
@@ -1841,7 +1842,7 @@ test('a refusal answers 200 { removed: false, refused } with the reason and remo
   const git = listedGit('--is-ancestor'); // exit 1: the branch is not merged into HEAD
   const { log, lines } = fakeLog();
   const { base, repo } = await start(t, BODY, log, {}, { exec: git.exec });
-  const path = worktreePath(repo, ORPHAN_SLUG);
+  const path = worktreePath(HOST_PATHS, repo, ORPHAN_SLUG);
   await mkdir(path, { recursive: true });
   git.clear();
   assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: { reason: 'unmerged', branch: ORPHAN_BRANCH, target: 'HEAD' } });
@@ -1863,7 +1864,7 @@ test('POST /worktrees/:workspace/:slug/remove answers a failure it has no reason
   const git = listedGit('remove', 'fatal: cannot remove a locked working tree\n');
   const { log, lines } = fakeLog();
   const { base, repo } = await start(t, BODY, log, {}, { exec: git.exec });
-  await mkdir(worktreePath(repo, ORPHAN_SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, ORPHAN_SLUG), { recursive: true });
   assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: { reason: 'unexpected' } });
   const forced = await postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`, { force: true });
   assert.deepEqual([forced.status, await forced.json()], [500, { error: 'unexpected' }]);
@@ -1875,7 +1876,7 @@ test('POST /worktrees/:workspace/:slug/remove answers a failure it has no reason
 test('a second removal of the same slug while git runs on the first answers 409 and runs no git (#181)', async (t) => {
   const git = listedGit();
   const { base, repo } = await start(t, BODY, fakeLog().log, {}, { exec: git.exec });
-  await mkdir(worktreePath(repo, ORPHAN_SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, ORPHAN_SLUG), { recursive: true });
   git.clear();
   const release = git.hold();
   const first = postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`, { force: true });
@@ -1891,7 +1892,7 @@ test('a forced removal git fails answers 500 { error: unexpected }, git\'s words
   const git = listedGit('--force');
   const { log, lines } = fakeLog();
   const { base, repo } = await start(t, BODY, log, {}, { exec: git.exec });
-  const path = worktreePath(repo, ORPHAN_SLUG);
+  const path = worktreePath(HOST_PATHS, repo, ORPHAN_SLUG);
   await mkdir(path, { recursive: true });
   const res = await postJson(`${base}/worktrees/hive/${ORPHAN_SLUG}/remove`, { force: true });
   assert.equal(res.status, 500);
@@ -2003,7 +2004,7 @@ test('POST /tasks/:id/open on any task with no worktree creates it first on the 
   assert.deepEqual(await unknown.json(), { error: 'nope: no such branch' });
   assert.deepEqual([work0(server)?.worktree, added(), workers.length], [undefined, [], 0], 'a refused base creates nothing and opens nothing');
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude', base: 'feature-x' })); // not manual: any task opens a session
-  const path = worktreePath(repo, 'hive-1-from-ready');
+  const path = worktreePath(HOST_PATHS, repo, 'hive-1-from-ready');
   assert.deepEqual(added()[0], ['worktree', 'add', '-b', 'hive/1-from-ready', '--', path, 'feature-x']);
   assert.deepEqual([work0(server)?.worktree, work0(server)?.branch, work0(server)?.base], [path, 'hive/1-from-ready', { ref: 'feature-x', tellWorker: false }]);
   assert.equal(workers.length, 1, 'then the claude session, and nothing else');
@@ -2028,14 +2029,14 @@ test('POST /tasks/:id/open checks a resume before any git: one it cannot offer i
   assert.equal(git.calls.some((c) => c[0] === 'worktree' && c[1] === 'add'), false, 'a bad request never reaches git');
   assert.equal(work0(server)?.worktree, undefined);
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
-  assert.deepEqual([work0(server)?.worktree, work0(server)?.base], [worktreePath(repo, 'hive-1-from-ready'), undefined], 'worktreeReady with base null: no saved base');
+  assert.deepEqual([work0(server)?.worktree, work0(server)?.base], [worktreePath(HOST_PATHS, repo, 'hive-1-from-ready'), undefined], 'worktreeReady with base null: no saved base');
   assert.equal(workers.length, 1);
 });
 
 test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a task with no worktree creates it on the default base, then opens the terminal through the pool and takes no worker; claude opens a free session in a session of its own (no prompt, no model, with the Hive\'s MCP), a second one is appended too, outside the cap, a held session is 409, the worker close kills it and the exit drops the worker for its resume (#164, #237, #459)', async (t) => {
   claudeConfigDir(t, await tempDir(t, 'claude-')); // #586: the run's transcript goes here, never under the real ~/.claude
   const { base, home, repo, server, workers } = await start(t, idle());
-  const worktree = worktreePath(repo, 'hive-1-from-ready');
+  const worktree = worktreePath(HOST_PATHS, repo, 'hive-1-from-ready');
   await postJson(`${base}/tasks/board:I1/auto`, { auto: false });
   assert.equal((await postJson(`${base}/config`, { maxConcurrent: 1 })).status, 200); // one free worker; the manual task stays out of the fill
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'zsh' })).status, 400);
@@ -2104,9 +2105,9 @@ test('POST /activities/:id/sessions/:session/open opens a listed session in a ma
   await refused('board:I1', s, 409, 'a worktree desta sessão não existe mais');
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
   await server.dispatch({ type: 'activityRemoved', activityId: workId(server.getState()!, 'board:I1') }); // the Hive removed it: the session moves to the main repo
-  await rm(join(transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
+  await rm(join(transcriptDir(fakeMachine(), worktreePath(HOST_PATHS, repo, TASK_SLUG)), `${s}.jsonl`)); // #586: ranOnce's run wrote it; this refusal is about one gone
   await refused('board:I1', s, 409, 'O histórico desta sessão não existe mais');
-  const from = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
+  const from = transcriptDir(fakeMachine(), worktreePath(HOST_PATHS, repo, TASK_SLUG));
   await mkdir(join(from, s), { recursive: true });
   await writeFile(join(from, `${s}.jsonl`), '{}\n');
   await opened(open('board:I1', s));
@@ -2138,7 +2139,7 @@ test('a blocked task opens a terminal, a new claude session and a listed session
 test('POST /tasks/:id/open on a manual task whose worktree is gone from disk refuses to resume a session there, and a new session creates the worktree again first (#208)', async (t) => {
   const git = refsGit();
   const { base, repo, server, workers } = await start(t, idle(), undefined, {}, { exec: git.exec });
-  const path = worktreePath(repo, TASK_SLUG);
+  const path = worktreePath(HOST_PATHS, repo, TASK_SLUG);
   await postJson(`${base}/tasks/board:I1/auto`, { auto: false });
   await readyOn(server, 'board:I1', { path, branch: TASK_BRANCH, base: null, local: false });
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
@@ -2169,7 +2170,7 @@ test('POST /tasks/:id/move-to moves a task with auto off to another Hive stage a
   await refused({ stage: 'nope' }, 400, 'etapa desconhecida');
   await postJson(`${base}/tasks/board:I1/auto`, { auto: false });
   await refused({ stage: 'fila' }, 409, 'tarefa já está nessa etapa');
-  await readyOn(server, 'board:I1', { path: worktreePath(repo, 'hive-1-from-ready'), branch: 'hive/1-from-ready', base: null, local: false });
+  await readyOn(server, 'board:I1', { path: worktreePath(HOST_PATHS, repo, 'hive-1-from-ready'), branch: 'hive/1-from-ready', base: null, local: false });
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' })).status, 200);
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/move-to`, { stage: 'review' })), { ok: true }); // the session is the user's own (#366)
   assert.deepEqual([task0(server).stage, task0(server).boardColumn, task0(server).auto], ['review', 'In review', false]);
@@ -2213,7 +2214,7 @@ test('POST /activities/:id/delete refuses while a manual Claude session runs in 
   const git = listedGit();
   const { base, repo, server, workers } = await start(t, idle(), undefined, {}, { exec: git.exec });
   await postJson(`${base}/tasks/board:I1/auto`, { auto: false });
-  await readyOn(server, 'board:I1', { path: worktreePath(repo, 'hive-1-from-ready'), branch: 'hive/1-from-ready', base: null, local: false });
+  await readyOn(server, 'board:I1', { path: worktreePath(HOST_PATHS, repo, 'hive-1-from-ready'), branch: 'hive/1-from-ready', base: null, local: false });
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
   assert.equal(workers.length, 1);
   const res = await postJson(`${base}${workPath(server, 'board:I1')}/delete`, { force: true });
@@ -2226,7 +2227,7 @@ test('POST /activities/:id/delete refuses while a manual Claude session runs in 
 test('a manual task whose worktree is being removed refuses open, terminal and claude, with atividade sendo excluída (#164, #182)', async (t) => {
   const { base, repo, server, workers } = await start(t, idle());
   await postJson(`${base}/tasks/board:I1/auto`, { auto: false });
-  await readyOn(server, 'board:I1', { path: worktreePath(repo, 'hive-1-from-ready'), branch: 'hive/1-from-ready', base: null, local: false });
+  await readyOn(server, 'board:I1', { path: worktreePath(HOST_PATHS, repo, 'hive-1-from-ready'), branch: 'hive/1-from-ready', base: null, local: false });
   await server.dispatch({ type: 'deletingActivity', activityId: workId(server.getState()!, 'board:I1') });
   for (const body of [{ kind: 'terminal' }, { kind: 'claude' }]) {
     const res = await postJson(`${base}/tasks/board:I1/open`, body);
@@ -2242,7 +2243,7 @@ test('removing a local task a manual Claude session holds is refused with tarefa
   const path = `${base}/tasks/${encodeURIComponent('local:1')}`;
   assert.deepEqual(await json(postJson(`${path}/auto`, { auto: false })), { ok: true });
   const slug = slugFor(server.getState()!.tasks.find((c) => c.created)!.item); // #629: the slug its activity gets
-  await readyOn(server, 'local:1', { path: worktreePath(repo, slug), branch: `hive/${slug}`, base: null, local: false });
+  await readyOn(server, 'local:1', { path: worktreePath(HOST_PATHS, repo, slug), branch: `hive/${slug}`, base: null, local: false });
   await opened(postJson(`${path}/open`, { kind: 'claude' }));
   const busy = await postJson(`${path}/close`);
   assert.equal(busy.status, 409);
@@ -2259,7 +2260,7 @@ test('POST /tasks/:id/close on a local task with a worktree removes the worktree
   assert.equal((await postJson(`${base}/tasks`, { title: 'Local', stage: 'fila' })).status, 201);
   const local = (): Activity | undefined => activityOf(server.getState()!, 'local:1'); // #629: the worktree and the mark are its activity's
   assert.equal(slugFor(server.getState()!.tasks.find((c) => c.created)!.item), 'hive-hive-1-local');
-  const worktree = worktreePath(repo, 'hive-hive-1-local');
+  const worktree = worktreePath(HOST_PATHS, repo, 'hive-hive-1-local');
   await mkdir(worktree, { recursive: true });
   await readyOn(server, 'local:1', { path: worktree, branch: 'hive/HIVE-1-local', base: null, local: false });
   const path = `${base}/tasks/${encodeURIComponent('local:1')}/close`;
@@ -2284,7 +2285,7 @@ test('POST /tasks/:id/close removes a created task\'s worktree whatever the dele
   const { base, repo, server, workers } = await start(t, idle(), undefined, {}, { exec: git.exec });
   assert.equal((await postJson(`${base}/tasks`, { title: 'Local', stage: 'fila' })).status, 201);
   const created = (): Task | undefined => server.getState()!.tasks.find((c) => c.created);
-  const worktree = worktreePath(repo, 'hive-hive-1-local');
+  const worktree = worktreePath(HOST_PATHS, repo, 'hive-hive-1-local');
   await mkdir(worktree, { recursive: true });
   await readyOn(server, 'local:1', { path: worktree, branch: 'hive/HIVE-1-local', base: null, local: false });
   await server.dispatch({ type: 'setDeleteActivity', deleteActivity: { ...server.getState()!.deleteActivity, session: false } });
@@ -2447,7 +2448,7 @@ test('a terminal goes through the pool with no worker: its launch is the user\'s
   const { launch } = workers[0];
   assert.deepEqual(
     [launch.terminal, launch.ptyId, launch.cwd, launchFlag(launch, '--mcp-config'), launch.promptPath],
-    [true, terminal.terminalId, worktreePath(repo, TASK_SLUG), undefined, undefined],
+    [true, terminal.terminalId, worktreePath(HOST_PATHS, repo, TASK_SLUG), undefined, undefined],
   );
   assert.equal(server.getState()!.workers.filter((s) => s.status !== 'empty').length, 0, 'a terminal holds no worker');
   assert.deepEqual(await json(postJson(`${base}/ptys/${terminal.terminalId}/stop`)), { ok: true });
@@ -2527,7 +2528,7 @@ test('a stage spawn records where it started; GET /activities/:id/restart previe
     ['reset', '--hard', HEAD_SHA], ['clean', '-fd'],
   ]);
   assert.equal(workers.length, 2, 'a new stage run');
-  assert.equal(workers[1].launch.cwd, worktreePath(repo, TASK_SLUG));
+  assert.equal(workers[1].launch.cwd, worktreePath(HOST_PATHS, repo, TASK_SLUG));
   assert.notEqual(plainArgs(workers[1].launch)[1], plainArgs(workers[0].launch)[1], 'in a new session');
 });
 
@@ -2638,7 +2639,7 @@ test('POST /activities/:id/sessions/:session/clear forgets that one session and 
   await waitFor(() => worker0(server).status === 'empty');
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1') }); // a second session, held by its free session
   const second = sessions0(server).at(-1)!.id;
-  const dir = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
+  const dir = transcriptDir(fakeMachine(), worktreePath(HOST_PATHS, repo, TASK_SLUG));
   await mkdir(dir, { recursive: true });
   for (const id of [first, second]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
   assert.equal((await clear('nope', first)).status, 404);
@@ -2658,7 +2659,7 @@ test('POST /activities/:id/sessions/:session/clear keeps the transcript when the
   await wrote(server, workers[0]);
   workers[0].handlers.onExit();
   await waitFor(() => work0(server)?.stopped === true);
-  const dir = transcriptDir(fakeMachine(), worktreePath(repo, TASK_SLUG));
+  const dir = transcriptDir(fakeMachine(), worktreePath(HOST_PATHS, repo, TASK_SLUG));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${session}.jsonl`), '{}\n');
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/sessions/${session}/clear`)), { ok: true });
@@ -2956,8 +2957,8 @@ test('a task that leaves with its worktree keeps its activity: GET /worktrees li
   await server.dispatch({ type: 'closeTask', taskId: 'board:I1' });
   assert.deepEqual([server.getState()!.tasks.length, server.getState()!.activities.filter((a) => a.kind === 'task').length], [0, 1]);
   const rows = await json<WorktreeRow[]>(hiveFetch(`${base}/worktrees`));
-  assert.deepEqual(rows.find((r) => r.slug === TASK_SLUG), { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, orphan: 'kept', nested: [] });
-  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  assert.deepEqual(rows.find((r) => r.slug === TASK_SLUG), { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(HOST_PATHS, repo, TASK_SLUG), branch: TASK_BRANCH, orphan: 'kept', nested: [] });
+  await mkdir(worktreePath(HOST_PATHS, repo, TASK_SLUG), { recursive: true });
   assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${TASK_SLUG}/remove`)), { removed: true });
   assert.equal(server.getState()!.activities.some((a) => a.kind === 'task'), false, 'worktreeGone let it go');
 });
@@ -3006,7 +3007,7 @@ test('POST /tasks/:id/start on a task outside the flow answers 409 naming the ru
     assert.deepEqual([res.status, await res.json()], [409, { error: 'the task is outside the flow: move it into a stage first' }], path);
   }
   const loose = server.getState()!.tasks.find((c) => c.item.itemId === 'local:1')!;
-  await readyOn(server, 'local:1', { path: worktreePath(repo, slugFor(loose.item)), branch: 'hive/HIVE-1-loose', base: null, local: false });
+  await readyOn(server, 'local:1', { path: worktreePath(HOST_PATHS, repo, slugFor(loose.item)), branch: 'hive/HIVE-1-loose', base: null, local: false });
   assert.equal((await postJson(`${base}/tasks/local:1/open`, { kind: 'claude' })).status, 200);
   assert.equal(server.getState()!.workers.filter((s) => s.freeSession).length, 1);
 });

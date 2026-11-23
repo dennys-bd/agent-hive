@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { activityParam, taskTarget } from './activity-routes.js';
+import type { MachineFor } from './machine.js';
 import { captureCheckpoint, restoreWorktree } from './checkpoints.js';
 import { restartPlan } from './restart.js';
 import { type LiveView, type Refusal, refuse, OUTSIDE_FLOW_MESSAGE, type TaskRouteDeps, workspaceOf } from './server-tasks.js';
@@ -37,7 +38,8 @@ export async function recordCheckpoint(deps: CheckpointDeps, { repo, activity, t
   if (!capturable(current)) return false;
   const n = nextCheckpoint(current.checkpoints);
   try {
-    const point = await captureCheckpoint(deps.machineFor(current), repo, taskDir(repo, current), current.slug ?? slugFor(task.item), n);
+    const machine = deps.machineFor(current);
+    const point = await captureCheckpoint(machine, repo, taskDir(machine.paths, repo, current), current.slug ?? slugFor(task.item), n);
     const checkpoint: Checkpoint = { n, stage, start: startOf(activity, stage, point.head), ...point, at: new Date().toISOString(), ended };
     await deps.dispatch({ type: 'checkpointCaptured', activityId: activity.id, checkpoint });
     return true;
@@ -51,7 +53,7 @@ export async function recordCheckpoint(deps: CheckpointDeps, { repo, activity, t
 // only ever selects among the numbers the activity keeps: nothing of it reaches git, the checkpoint's own (hex-checked) shas do.
 interface RestoreTarget { task: Task & { stage: string }; activity: Activity; checkpoint: Checkpoint; repo: string; worktree: string; branch: string; template: string }
 
-function restoreTarget(current: LiveView, activityId: string, n: string): RestoreTarget | Refusal {
+function restoreTarget(current: LiveView, activityId: string, n: string, machineFor: MachineFor): RestoreTarget | Refusal {
   const target = taskTarget(current.state, activityId);
   if ('status' in target) return target;
   const { task, activity } = target;
@@ -62,14 +64,14 @@ function restoreTarget(current: LiveView, activityId: string, n: string): Restor
   const workspace = workspaceOf(current.runtime.config, task);
   if ('status' in workspace) return workspace;
   const template = branchFor(current.runtime.config, task.item);
-  return { task, activity, checkpoint, repo: workspace.path, worktree: workDir(workspace.path, task, activity), branch: taskBranch(activity, template), template };
+  return { task, activity, checkpoint, repo: workspace.path, worktree: workDir(machineFor(activity).paths, workspace.path, task, activity), branch: taskBranch(activity, template), template };
 }
 
 // The dialog's preview (#619): Restart's plan for the checkpoint's head; git's words as a 409
 async function restorePreview(req: Request, res: Response, { requireLive, machineFor }: TaskRouteDeps): Promise<void> {
   const current = requireLive(res);
   if (!current) return;
-  const target = restoreTarget(current, activityParam(req), String(req.params.n));
+  const target = restoreTarget(current, activityParam(req), String(req.params.n), machineFor);
   if ('status' in target) return refuse(res, target);
   try {
     res.json({ ...(await restartPlan(machineFor(target.activity), target.repo, target.branch, target.template, target.checkpoint.head)), branch: target.branch });
@@ -84,7 +86,7 @@ async function restoreRun(req: Request, res: Response, deps: TaskRouteDeps): Pro
   const { requireLive, dispatch, machineFor, log } = deps;
   const current = requireLive(res);
   if (!current) return;
-  const target = restoreTarget(current, activityParam(req), String(req.params.n));
+  const target = restoreTarget(current, activityParam(req), String(req.params.n), machineFor);
   if ('status' in target) return refuse(res, target);
   const itemId = target.task.item.itemId;
   const busy = { status: HTTP_CONFLICT, message: RESTORE_REFUSED_MESSAGE };

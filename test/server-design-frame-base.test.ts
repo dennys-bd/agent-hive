@@ -16,6 +16,7 @@ import { fakeLog, tempHive } from './fakes.js';
 import { savedActivityId, withWork, workPath } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // GET /activities/:id/design-frame-base (#675) and the frame route under its tokens, over a real repository: the first commit is the task's
 // base (BASE_REF), the second changes the screen and its part, and the disk changes both again. Only the routes' git runs for real
@@ -67,7 +68,7 @@ async function startBaseFrames(t: TestContext): Promise<BaseFrames> {
   const repo = await realpath(made.repo);
   const git: Git = async (...args) =>
     (await run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args])).stdout.trim();
-  await commitDesign(worktreePath(repo, SLUG), git);
+  await commitDesign(worktreePath(HOST_PATHS, repo, SLUG), git);
   await saveState(made.home, withWork({ ...initialState(0), localCount: 1, tasks: [TASK] }, 'local:1', { id: savedActivityId(1), slug: SLUG, base: { ref: BASE_REF, tellWorker: false } }));
   const { log, lines } = fakeLog();
   const server = createServer({ secret: SECRET, home: made.home, exec, log });

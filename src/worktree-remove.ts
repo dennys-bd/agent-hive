@@ -23,7 +23,7 @@ export async function removeWorktree(
 ): Promise<void> {
   const { exec } = machine;
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
-  const path = worktreePath(repo, slugOfWork(activity));
+  const path = worktreePath(machine.paths, repo, slugOfWork(activity));
   const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, machine.paths);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
   await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
@@ -69,7 +69,7 @@ export async function cleanWorktree(
   { unmerged = 'refuse', nested = [], prs = [], log }: CleanOptions = {},
 ): Promise<void> {
   const { exec } = machine;
-  const path = worktreePath(repo, slugOfWork(activity));
+  const path = worktreePath(machine.paths, repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };
   const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, machine.paths);
   const present = listed !== undefined && (await exists(machine, path));

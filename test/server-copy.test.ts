@@ -14,7 +14,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { worktreePath } from '../src/worktree.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -77,7 +77,7 @@ async function twoActivities(t: TestContext, body: Omit<SettingsBody, 'workspace
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { ...body, workspaces: workspacesAt(repo) })).status, 200);
   for (const title of ['one', 'two']) await server.dispatch({ type: 'createTask', title, body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
-  for (const c of server.getState()!.tasks) await readyOn(server, c.item.itemId, { path: worktreePath(repo, slugFor(c.item)), branch: `hive/${slugFor(c.item)}`, base: null, local: false });
+  for (const c of server.getState()!.tasks) await readyOn(server, c.item.itemId, { path: worktreePath(HOST_PATHS, repo, slugFor(c.item)), branch: `hive/${slugFor(c.item)}`, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'local:1') });
   const [one, two] = ['local:1', 'local:2'].map((id) => activityOf(server.getState()!, id)!); // #629: the worktrees are the activities'
   const source = sessionsOf(server.getState()!, 'local:1')[0].id;

@@ -23,7 +23,7 @@ export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch, 
     const current = requireLive(res);
     if (!current) return;
     const id = req.params.id as string;
-    const root = treeRoot(current.state, current.runtime.config, id);
+    const root = treeRoot(current.state, current.runtime.config, id, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     const { lease } = (req.body ?? {}) as { lease?: unknown };
     if (!isLease(lease)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LEASE_BODY_MESSAGE });
@@ -39,7 +39,7 @@ export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch, 
   app.delete('/activities/:id/tree/watch/:lease', (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    const root = treeRoot(current.state, current.runtime.config, req.params.id as string, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     treeWatch.release(req.params.id as string, req.params.lease as string);
     res.status(HTTP_NO_CONTENT).end();

@@ -18,7 +18,7 @@ type Live = { state: State; runtime: Pick<Runtime, 'config'> };
 // The run to check, in the cwd `spawn` gave it: its worktree, or the user's checkout for a checkout task (taskDir). Nothing for a run with no
 // check to make: a terminal, a captured agent (its cwd is the user's, wherever they typed it), a local run (forgetUnopenedLocal's, #587), a run
 // with no session id (Codex before its SessionStart never recorded one), a task whose workspace left the config
-function runToCheck(state: State, config: Pick<Config, 'comb'>, ptyId: string): { cwd: string; id: string; agent: AgentId; activity: Activity } | undefined {
+function runToCheck(state: State, config: Pick<Config, 'comb'>, ptyId: string, machineFor: MachineFor): { cwd: string; id: string; agent: AgentId; activity: Activity } | undefined {
   const worker = state.workers.find((w) => w.runId === ptyId && w.status !== 'empty');
   if (worker === undefined || worker.terminalId !== undefined) return undefined;
   const id = runSessionId(state, worker);
@@ -26,7 +26,7 @@ function runToCheck(state: State, config: Pick<Config, 'comb'>, ptyId: string): 
   const task = taskOfWorker(state, worker);
   if (id === undefined || !isUuid(id) || activity?.kind !== 'task' || task === undefined) return undefined;
   const workspace = taskWorkspace(config, task);
-  return workspace && { cwd: taskDir(workspace.path, activity), id, agent: ranAgent(worker), activity };
+  return workspace && { cwd: taskDir(machineFor(activity).paths, workspace.path, activity), id, agent: ranAgent(worker), activity };
 }
 
 // The cwd as the Hive spelled it and as the agent may see it: a workspace reached through a symbolic link names another transcript dir once
@@ -42,7 +42,7 @@ export async function cwdsOf(cwd: string): Promise<string[]> {
 export async function exitEvent(live: Live | undefined, ptyId: string, machineFor: MachineFor): Promise<ExitEvent> {
   const plain: ExitEvent = { type: 'exit', ptyId };
   try {
-    const run = live && runToCheck(live.state, live.runtime.config, ptyId);
+    const run = live && runToCheck(live.state, live.runtime.config, ptyId, machineFor);
     if (run === undefined) return plain;
     const found = await findTranscript(machineFor(run.activity), await cwdsOf(run.cwd), run.id, run.agent);
     return found === undefined ? { ...plain, noTranscript: true } : plain;

@@ -39,7 +39,7 @@ type SessionEffect = Extract<Effect, { type: 'spawnSession' }>;
 
 // Where the user's own session runs (#164, #283, #587): a task's worktree or checkout, the main repo for a repo session (#208), a workspace's
 // checkout for a local session; in that workspace, whose env the launch resolves (#738, #854). The reason instead when it is gone.
-function sessionPlace(config: Runtime['config'], { activity, task, continues, repo }: SessionEffect): { cwd: string; slug: string; workspace: Workspace } | { refusal: string } {
+function sessionPlace(config: Runtime['config'], { activity, task, continues, repo }: SessionEffect, paths: Machine['paths']): { cwd: string; slug: string; workspace: Workspace } | { refusal: string } {
   if (activity.kind === 'local' || task === undefined) {
     const local = workspaceByName(config, activity.workspace);
     return local ? { cwd: local.path, slug: LOCAL_SLUG, workspace: local } : { refusal: `workspace "${activity.workspace}" não existe mais` };
@@ -47,7 +47,7 @@ function sessionPlace(config: Runtime['config'], { activity, task, continues, re
   const resolved = taskWorkspace(config, task);
   if (!resolved) return { refusal: noWorkspaceReason(task) };
   const inRepo = continues && repo === true; // its worktree was removed (#208); the effect says so, since it carries no state (#629)
-  return { cwd: inRepo ? resolved.path : taskDir(resolved.path, activity), slug: workSlug(activity, task), workspace: resolved };
+  return { cwd: inRepo ? resolved.path : taskDir(paths, resolved.path, activity), slug: workSlug(activity, task), workspace: resolved };
 }
 
 // A task's activity is born with its slug (#629); the task's own is what it would have been
@@ -124,8 +124,8 @@ async function pluginFolder(plugin: Pick<PluginRender, 'dir' | 'ready'>, workspa
 }
 
 // Where the user's own session runs and the plugin folder it loads (#317), or why it cannot start
-async function sessionRun(config: Runtime['config'], effect: SessionEffect, plugin: Pick<PluginRender, 'dir' | 'ready'>): Promise<{ cwd: string; slug: string; workspace: Workspace; pluginDir: string } | { refusal: string }> {
-  const place = sessionPlace(config, effect);
+async function sessionRun(config: Runtime['config'], effect: SessionEffect, plugin: Pick<PluginRender, 'dir' | 'ready'>, paths: Machine['paths']): Promise<{ cwd: string; slug: string; workspace: Workspace; pluginDir: string } | { refusal: string }> {
+  const place = sessionPlace(config, effect, paths);
   if ('refusal' in place) return place;
   const folder = await pluginFolder(plugin, place.workspace.name);
   return 'refusal' in folder ? folder : { ...place, ...folder };
@@ -171,7 +171,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const workspace = taskWorkspace(runtime.config, task);
     if (!workspace) return;
     try {
-      const commit = await recordStageStart(machineFor(activity), workspace.path, taskDir(workspace.path, activity), workSlug(activity, task));
+      const machine = machineFor(activity);
+      const commit = await recordStageStart(machine, workspace.path, taskDir(machine.paths, workspace.path, activity), workSlug(activity, task));
       if (commit) await dispatch({ type: 'stageStarted', activityId: activity.id, stage, commit });
     } catch (err) {
       log.error(`stage start #${task.item.id}: ${errorMessage(err)}`);
@@ -205,7 +206,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const controller = new AbortController();
     setups.set(ptyId, controller);
     try {
-      return await runTaskSetup(machine, { log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
+      return await runTaskSetup(machine, { log, dispatch, ptys, consoleStore, facts }, task, activity.id, workspace, taskDir(machine.paths, workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
     } catch (err) {
       throw controller.signal.aborted ? err : withReused(err, reused); // a Stop is no failure the branch could explain
     } finally {
@@ -265,7 +266,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const { worker: { runId: ptyId }, task, sessionId, continues, copy, prompt } = effect;
     if (!ptyId) return;
     const { config } = runtime;
-    const place = await sessionRun(config, effect, plugin); // #317: its folder too, before anything is recorded
+    const place = await sessionRun(config, effect, plugin, machineFor(effect.activity).paths); // #317: its folder too, before anything is recorded
     if ('refusal' in place) {
       await dispatch({ type: 'spawnFailed', ptyId, message: place.refusal });
       return;
@@ -333,8 +334,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       await dispatch({ type: 'spawnFailed', ptyId, message: `comando "${terminal.command}" não está habilitado no workspace ${workspace.name}` });
       return;
     }
-    const startDir = taskDir(workspace.path, activity);
     const machine = machineFor(activity);
+    const startDir = taskDir(machine.paths, workspace.path, activity);
     const env = await runEnv(machine, workspace); // #854: a fork's GH_REPO, resolved once per launch
     const where = found ? { cwd: startDir, env } : await keptLaunch(machine, terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({

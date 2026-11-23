@@ -17,7 +17,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, E
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { isFlavoured, ROUTE_SHA, startMachineRoutes } from './fixtures/machine-routes.js';
 
@@ -60,7 +60,7 @@ async function startBases(t: TestContext, isDeleted = false, isUnresolved = fals
   const repo = await realpath(made.repo);
   const git = async (...args: string[]): Promise<string> =>
     (await run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args], { env: { ...process.env, ...FIXED_DATES } })).stdout.trim();
-  const worktree = worktreePath(repo, SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await commitFiles(repo, worktree, git);
   const base0 = { ...initialState(0), localCount: 1, tasks: [TASK] };
   const state = isDeleted

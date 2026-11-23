@@ -15,7 +15,7 @@ import type { Task, Exec, Language, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, SLEEP_NOTICE_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 
@@ -96,12 +96,12 @@ interface Moving { base: string; wt: string; repo: string; outside: string; serv
 // Activity 1 has its worktree on disk with FILES; 2 has none; 3's is gone. `outside` is a folder out of the worktree: Finder's side.
 async function startMove(t: TestContext, systemLanguage?: Language, machine?: Machine): Promise<Moving> {
   const { home, repo } = await tempHive(t);
-  const wt = worktreePath(repo, 'hive-1-task');
+  const wt = worktreePath(HOST_PATHS, repo, 'hive-1-task');
   for (const [path, text] of Object.entries(FILES)) {
     await mkdir(join(wt, path, '..'), { recursive: true });
     await writeFile(join(wt, path), text);
   }
-  const tasks = [task(1, { worktree: wt }), task(2), task(3, { worktree: worktreePath(repo, 'hive-3-task'), worktreeGone: true })];
+  const tasks = [task(1, { worktree: wt }), task(2), task(3, { worktree: worktreePath(HOST_PATHS, repo, 'hive-3-task'), worktreeGone: true })];
   await saveState(home, savedTasks({ ...initialState(0), localCount: tasks.length }, tasks, SLUG_OF)); // #629: each worktree on its activity
   const server = createServer({ secret: SECRET, home, exec: noGit, systemLanguage, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);

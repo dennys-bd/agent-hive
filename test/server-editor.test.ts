@@ -14,7 +14,7 @@ import type { CustomFormatter, FileSaved, FileText, EditorConfig, FormatterState
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, EDITOR_FILE_MAX, FORMATTER_IDS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { writeCmdTwin } from './npm-server.js';
 import { tempDir } from './temp-dir.js';
@@ -40,7 +40,7 @@ interface Editor { base: string; repo: string; worktree: string; server: HiveSer
 async function startEditor(t: TestContext, { isDeleted = false, editor = EDITOR_DEFAULTS, machine }: { isDeleted?: boolean; editor?: EditorConfig; machine?: Machine } = {}): Promise<Editor> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo); // resolveActivityPath answers real paths: macOS's tmpdir is a symlink
-  const worktree = worktreePath(repo, SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(join(worktree, 'docs'), { recursive: true });
   await writeFile(join(worktree, 'docs', 'spec.md'), SPEC);
   const base0 = { ...initialState(0), localCount: 1, tasks: [TASK] };

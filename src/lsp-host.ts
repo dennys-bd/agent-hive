@@ -99,13 +99,13 @@ async function resolve(deps: LspHostDeps, activityId: string, id: string, binary
   if (!server.binaries.includes(binary)) return refused(`${id} has no binary ${binary}`);
   const target = liveTarget(live.state, activityId);
   if ('status' in target) return refused(target.message);
-  const folders = activityFolders(live.config, target);
+  const machine = deps.machineFor(target.activity); // #161: the folder and the process are the activity's machine's; the install stays on the host
+  const folders = activityFolders(live.config, target, machine.paths);
   if ('status' in folders) return refused(folders.message);
   const workspace = target.task ? taskWorkspace(live.config, target.task) : workspaceByName(live.config, target.activity.workspace);
   if (workspace === undefined) return refused('no workspace');
   if (!isOn(live.config.editor, id, workspace.name)) return { code: LSP_CLOSE.outOfScope, reason: `${id} is off in ${workspace.name}` };
   const env = { ...withoutHiveEnv(deps.env ?? process.env), ...workspace.env };
-  const machine = deps.machineFor(target.activity); // #161: the folder and the process are the activity's machine's; the install stays on the host
   const root = await machine.fs.realpath(folders.worktree ?? folders.workspace); // a server reports real paths: the page's URIs must match them
   const launch = await launchOf(deps, server, binary, root, env);
   if ('code' in launch) return launch;

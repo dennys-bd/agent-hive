@@ -1,4 +1,4 @@
-import { isAbsolute, join, posix, win32 } from 'node:path';
+import { isAbsolute, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { type Machine, pathsOf } from './machine.js';
 import { slugFor } from './tasks.js';
@@ -17,7 +17,7 @@ const LOCK_TRIES = 6;
 const LOCK_WAIT_MS = 50;
 
 /** Where a task's worker runs: the Hive's own folder, already excluded from git, and the only path the Hive ever creates or removes. */
-export const worktreePath = (repo: string, slug: string): string => join(repo, HIVE_DIR, WORKTREES_DIR, slug);
+export const worktreePath = (paths: Machine['paths'], repo: string, slug: string): string => paths.join(repo, HIVE_DIR, WORKTREES_DIR, slug);
 
 // A task's activity is born with its slug (ensureActivity) and the store drops one without (#629): a path git acts on is never the worktrees
 // folder itself
@@ -27,14 +27,14 @@ export function slugOfWork(activity: Pick<Activity, 'slug'>): string {
 }
 
 /** Where a task's runs happen: its workspace's own checkout for a local task (#444, #573), its worktree otherwise. */
-export const taskDir = (repo: string, activity: Pick<Activity, 'slug' | 'local'>): string =>
-  (activity.local ? repo : worktreePath(repo, slugOfWork(activity)));
+export const taskDir = (paths: Machine['paths'], repo: string, activity: Pick<Activity, 'slug' | 'local'>): string =>
+  (activity.local ? repo : worktreePath(paths, repo, slugOfWork(activity)));
 
 /** Where a task's work happens (#629): its live activity's directory, or, for a record of a deleted activity (or with none live), the worktree
  * the record's slug named, where a kept session's transcript still sits until its first open moves it to the main repo (#208). The title's slug
  * only for a record with none. */
-export const workDir = (repo: string, task: Task, activity: Activity | undefined, record?: Pick<ActivityRecord, 'id' | 'slug'>): string =>
-  (activity && (record === undefined || record.id === activity.id) ? taskDir(repo, activity) : worktreePath(repo, record?.slug ?? slugFor(task.item)));
+export const workDir = (paths: Machine['paths'], repo: string, task: Task, activity: Activity | undefined, record?: Pick<ActivityRecord, 'id' | 'slug'>): string =>
+  (activity && (record === undefined || record.id === activity.id) ? taskDir(paths, repo, activity) : worktreePath(paths, repo, record?.slug ?? slugFor(task.item)));
 
 /** What a spawn needs from the worktree step: where the worker runs, the `base: …` line to log when one was decided, and a fork's sync when
  * one ran for a worktree just made (#854). `reused` is the existing branch the worktree was added on as it was (#267); absent when the branch
@@ -84,7 +84,7 @@ export async function ensureWorktree(
   machine: Machine, repo: string, slug: string, branch: string, base: WorkspaceBase, chosen: string | undefined,
 ): Promise<PreparedWorktree> {
   const { exec } = machine;
-  const path = worktreePath(repo, slug);
+  const path = worktreePath(machine.paths, repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, machine.paths);
   if (listed !== undefined && (await exists(machine, path))) {
@@ -174,7 +174,7 @@ export async function listWorktrees(machine: Pick<Machine, 'exec'>, repo: string
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
     const listed = line.slice(WORKTREE_PREFIX.length);
     const slug = names.basename(listed);
-    const path = worktreePath(repo, slug);
+    const path = worktreePath(pathsOf(platform), repo, slug);
     return samePath(path, listed, pathsOf(platform)) ? [{ slug, path, branch: branchAt(porcelain, path, pathsOf(platform)) ?? null }] : [];
   });
 }
@@ -224,13 +224,13 @@ export async function baseOptions(
     base.branch === undefined ? remoteHead(git, base.remote, false) : Promise.resolve(base.branch), // read-only: never set-head here (#854)
   ]);
   const defaultRef = `${base.remote}/${branch}`;
-  const own = worktreePath(repo, slug);
+  const own = worktreePath(machine.paths, repo, slug);
   const adoptable = branchAt(porcelain, own, machine.paths) !== undefined && (await exists(machine, own));
   const orphan = orphanBranch === undefined ? undefined : await orphanOf(machine, repo, orphanBranch, adoptable, defaultRef);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
-    const ref = branchAt(porcelain, worktreePath(repo, other), machine.paths);
+    const ref = branchAt(porcelain, worktreePath(machine.paths, repo, other), machine.paths);
     return typeof ref === 'string' ? [{ ref, id, title }] : [];
   });
   const taken = new Set([branch, ...tasks.map((c) => c.ref)]);

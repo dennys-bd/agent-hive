@@ -5,6 +5,7 @@ import type { Exec } from '../src/types.js';
 import { ensureWorktree, worktreePath } from '../src/worktree.js';
 import { fakeMachine } from './fakes.js';
 import { tempDir } from './temp-dir.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 const SLUG = 'hive-7-fix';
 const BRANCH = 'hive/7-fix-the-login';
@@ -37,7 +38,7 @@ function racingGit(path: string, upstreamLocks: number, worktreeLeft = true): { 
 
 test('ensureWorktree keeps the worktree a concurrent git left without its upstream, and records the upstream once the config lock frees (#105)', async (t) => {
   const repo = await tempDir(t, 'lock-');
-  const path = worktreePath(repo, SLUG);
+  const path = worktreePath(HOST_PATHS, repo, SLUG);
   const { exec, calls } = racingGit(path, 2);
   assert.deepEqual(await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined), { path, line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   const upstream = calls.filter((c) => c.startsWith('branch --set-upstream-to='));
@@ -47,13 +48,13 @@ test('ensureWorktree keeps the worktree a concurrent git left without its upstre
 
 test('ensureWorktree still rejects with git\'s words when the config lock never frees (#105)', async (t) => {
   const repo = await tempDir(t, 'lock-');
-  const { exec } = racingGit(worktreePath(repo, SLUG), Number.POSITIVE_INFINITY);
+  const { exec } = racingGit(worktreePath(HOST_PATHS, repo, SLUG), Number.POSITIVE_INFINITY);
   await assert.rejects(ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined), /could not lock config file/);
 });
 
 test('ensureWorktree adds the worktree on the branch git made when the config lock aborted the add before the worktree, then records the upstream (#105)', async (t) => {
   const repo = await tempDir(t, 'lock-');
-  const path = worktreePath(repo, SLUG);
+  const path = worktreePath(HOST_PATHS, repo, SLUG);
   const { exec, calls } = racingGit(path, 1, false);
   assert.deepEqual(await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined), { path, line: 'base: origin/main (a1b2c3d)' , start: 'origin/main' });
   assert.deepEqual(calls.filter((c) => c.startsWith('worktree add')), [`worktree add -b ${BRANCH} -- ${path} origin/main`, `worktree add -- ${path} ${BRANCH}`]);

@@ -40,9 +40,9 @@ const unknownSource = (current: NonNullable<ReturnType<Deps['requireLive']>>, re
 };
 
 function plan(machineFor: MachineFor, current: NonNullable<ReturnType<Deps['requireLive']>>, from: SessionRef, to: SessionTarget): Planned | Refusal {
-  const found = sourceSide(current.state, current.runtime.config, from);
+  const found = sourceSide(current.state, current.runtime.config, from, machineFor);
   if ('status' in found) return found;
-  const target = targetSide(current.state, current.runtime.config, to, from);
+  const target = targetSide(current.state, current.runtime.config, to, from, machineFor);
   if ('status' in target) return target;
   // #161: one machine for both ends, the target activity's; a copy across two machines waits for #130
   const machine = machineFor(current.state.activities.find((a) => a.id === to.activityId) ?? {});

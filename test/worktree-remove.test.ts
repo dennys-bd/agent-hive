@@ -8,6 +8,7 @@ import { worktreePath } from '../src/worktree.js';
 import { fakeMachine } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { BRANCH, CLEAN_BRANCH, fakeExec, gone, listing, porcelain, repoWith, SLUG } from './worktree-fakes.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 const TASK = { slug: 'hive-7-fix' };
 const NOT_FOUND = "Command failed: git -C /r branch -D -- hive-7-fix\nerror: branch 'hive-7-fix' not found.\n";
@@ -28,7 +29,7 @@ test('lists, removes <repo>/.hive/worktrees/<slug> with --force twice, prunes, d
 test('removeWorktree deletes the prompt file through the machine\'s fs, after git (#159)', async (t) => {
   const repo = await tempDir(t, 'repo-');
   const promptsDir = await tempDir(t, 'prompts-');
-  const { exec, calls } = fakeExec({ listing: listing(repo, worktreePath(repo, TASK.slug)) });
+  const { exec, calls } = fakeExec({ listing: listing(repo, worktreePath(HOST_PATHS, repo, TASK.slug)) });
   const unlinked: string[] = [];
   const machine = fakeMachine({ exec, fs: { unlink: async (path) => { unlinked.push(path); } } });
   await removeWorktree(machine, repo, TASK, BRANCH, promptsDir);
@@ -48,7 +49,7 @@ test('the task never chooses the path or the branch: only the slug is read off i
 test('not listed by git (removed by hand, pruned): the remove is skipped, prune still runs and the branch the Hive rendered for the task goes; a prompt file already gone is not an error', async (t) => {
   const { repo, promptsDir, prompt } = await repoWith(t);
   await rm(prompt);
-  const { exec, calls } = fakeExec({ listing: listing(repo, worktreePath(repo, 'hive-7-fix-2')) });
+  const { exec, calls } = fakeExec({ listing: listing(repo, worktreePath(HOST_PATHS, repo, 'hive-7-fix-2')) });
   await removeWorktree(fakeMachine({ exec }), repo, TASK, BRANCH, promptsDir);
   assert.deepEqual(calls.map((c) => c.slice(3)), [['worktree', 'list', '--porcelain'], ['worktree', 'prune'], ['branch', '-D', '--', BRANCH]]);
 });
@@ -90,7 +91,7 @@ function cleanGit(repo: string, listed: string, branches: string[], refuse: Reco
   const exec: Exec = async (file, args) => {
     assert.equal(file, 'git');
     const command = args.slice(2);
-    const dir = command[0] === 'status' ? worktreePath(repo, SLUG) : repo;
+    const dir = command[0] === 'status' ? worktreePath(HOST_PATHS, repo, SLUG) : repo;
     assert.deepEqual(args.slice(0, 2), ['-C', dir], 'the status is read inside the worktree; every other command runs against the main checkout');
     calls.push(command);
     const key = command.slice(0, 2).join(' ');
@@ -109,7 +110,7 @@ const MERGE_CHECK = [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${CLEAN_BRANC
 
 async function cleanRepo(t: AfterHost, worktree: boolean): Promise<{ repo: string; path: string }> {
   const repo = await tempDir(t, 'wt-');
-  const path = worktreePath(repo, SLUG);
+  const path = worktreePath(HOST_PATHS, repo, SLUG);
   if (worktree) await mkdir(path, { recursive: true });
   return { repo, path };
 }
@@ -169,7 +170,7 @@ test('git refusing the remove (dirty) or the delete (unmerged) rejects with git\
 
 test('the path is always <repo>/.hive/worktrees/<slug>: the activity\'s worktree (a SessionStart cwd any local process can post) is display only, never read', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
-  for (const worktree of [repo, '/etc', worktreePath(repo, 'hive-other-task'), `${join(repo, '.hive', 'worktrees')}-evil/x`, undefined]) {
+  for (const worktree of [repo, '/etc', worktreePath(HOST_PATHS, repo, 'hive-other-task'), `${join(repo, '.hive', 'worktrees')}-evil/x`, undefined]) {
     const { exec, calls } = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH]);
     const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: SLUG, worktree, branch: CLEAN_BRANCH }; // #629: the worktree fields are the activity's
     await cleanWorktree(fakeMachine({ exec }), repo, activity, CLEAN_BRANCH);
@@ -327,7 +328,7 @@ test('a task a Restart moved to <branch>-r<n> is trusted like the template\'s ow
   await cleanWorktree(fakeMachine({ exec: clean.exec }), repo, { slug: SLUG, branch: variant }, CLEAN_BRANCH);
   assert.deepEqual(clean.calls.at(-1), ['branch', '-d', '--', variant]);
   const { repo: other, promptsDir } = await repoWith(t);
-  const { exec, calls } = fakeExec({ listing: listing(other, worktreePath(other, 'hive-7-fix-2')) });
+  const { exec, calls } = fakeExec({ listing: listing(other, worktreePath(HOST_PATHS, other, 'hive-7-fix-2')) });
   await removeWorktree(fakeMachine({ exec }), other, { slug: 'hive-7-fix', branch: `${BRANCH}-r2` }, BRANCH, promptsDir);
   assert.deepEqual(calls.at(-1)?.slice(3), ['branch', '-D', '--', `${BRANCH}-r2`]);
 });

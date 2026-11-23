@@ -78,7 +78,7 @@ export async function strandedWorkspace(activity: Activity, task: Task, exec: Ex
 export async function strandedTranscripts(machine: Machine, activity: Activity, task: Task, sessions: Session[], scope: DeleteActivityScope, log: Pick<Logger, 'debug' | 'error'>): Promise<void> {
   const repo = worktreeRepo(activity, task);
   if (!scope.transcripts || repo === undefined) return;
-  await removeTranscripts(machine, taskDir(repo, activity), repo, sessions, log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
+  await removeTranscripts(machine, taskDir(machine.paths, repo, activity), repo, sessions, log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
 type RowState = Parameters<typeof worktreeRows>[1];

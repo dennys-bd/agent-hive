@@ -13,7 +13,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { TaskTree, Config, Exec } from '../src/types.js';
 import { MACHINE_REMOTE, MACHINE_REMOTE_MESSAGE } from '../src/machine-fs.js';
 import { hiveFetch } from './secret-client.js';
-import { fakeFiles, fakeMachine, fakeMachines } from './fake-machine.js';
+import { HOST_PATHS, fakeFiles, fakeMachine, fakeMachines } from './fake-machine.js';
 import { isFlavoured, startMachineRoutes } from './fixtures/machine-routes.js';
 import { pathsOf } from '../src/machine.js';
 import { head, ignoredEntry, ordinary, renamed, statusText, untracked } from './fixtures/porcelain-v2.js';
@@ -52,18 +52,18 @@ test('inTreeOf names the folder in the wire\'s spelling, from win32 paths too, s
 });
 
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
   const res = await hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree`);
-  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), checkout: '.hive/worktrees/hive-1-task', files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
+  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(HOST_PATHS, f.repo, 'hive-1-task'), checkout: '.hive/worktrees/hive-1-task', files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
   for (const [file, args] of f.calls) {
     assert.equal(file, 'git');
-    assert.deepEqual(args.slice(0, 3), ['--no-optional-locks', '-C', worktreePath(f.repo, 'hive-1-task')]);
+    assert.deepEqual(args.slice(0, 3), ['--no-optional-locks', '-C', worktreePath(HOST_PATHS, f.repo, 'hive-1-task')]);
   }
 });
 
 // #629: a task with no activity (local:1, never opened) is no activity to address: 404, as an unknown one
 test('GET /activities/:id/tree and POST /activities/:id/reveal refuse an unknown activity (404) and one with no worktree on disk (409), running nothing', async (t) => {
-  const f = await startTree(t, (repo) => [task(1), task(2, { worktree: worktreePath(repo, 'hive-2-task'), worktreeGone: true })]);
+  const f = await startTree(t, (repo) => [task(1), task(2, { worktree: worktreePath(HOST_PATHS, repo, 'hive-2-task'), worktreeGone: true })]);
   for (const [id, status] of [['local:9', 404], ['local:1', 404], ['local:2', 409]] as const) {
     assert.equal((await hiveFetch(`${f.base}${workPath(f.server, id)}/tree`)).status, status, id);
     assert.equal((await postJson(`${f.base}${workPath(f.server, id)}/reveal`)).status, status, id);
@@ -72,9 +72,9 @@ test('GET /activities/:id/tree and POST /activities/:id/reveal refuse an unknown
 });
 
 test('POST /activities/:id/reveal shows the task\'s worktree with the platform\'s reveal command (#629, #658)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
   assert.equal((await postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`)).status, 204);
-  assert.deepEqual(f.calls, [revealCommand(process.platform, worktreePath(f.repo, 'hive-1-task'))]);
+  assert.deepEqual(f.calls, [revealCommand(process.platform, worktreePath(HOST_PATHS, f.repo, 'hive-1-task'))]);
 });
 
 // #633: a workspace's local activity, whose tree is the workspace's checkout (the temp git repo the setup saves as `hive`)
@@ -103,12 +103,12 @@ test('a local activity\'s diff and files still answer 409: only the tree routes 
 test('treeRoot resolves a local activity to its frozen workspace\'s checkout, and one whose workspace left the config to a 404 (#633)', () => {
   const config: Pick<Config, 'comb'> = { comb: { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources: [], flows: [], commands: [], hiveSource: true, createIn: 'hive' } };
   const state = withLocal(withLocal({ ...initialState(0), workspaces: ['hive', 'site'] }, 'hive'), 'site');
-  assert.equal(treeRoot(state, config, localActivityId('hive')), '/repo');
-  assert.deepEqual(treeRoot(state, config, localActivityId('site')), { status: 404, message: UNKNOWN_WORKSPACE_MESSAGE });
+  assert.equal(treeRoot(state, config, localActivityId('hive'), fakeMachines(fakeMachine()).for), '/repo');
+  assert.deepEqual(treeRoot(state, config, localActivityId('site'), fakeMachines(fakeMachine()).for), { status: 404, message: UNKNOWN_WORKSPACE_MESSAGE });
 });
 
 test('GET /activities/:id/tree answers a task\'s root relative to its workspace\'s checkout, and no checkout for a local run or a local activity, whose root is the checkout itself (#131)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') }), task(2, { worktree: repo, local: true })]);
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') }), task(2, { worktree: repo, local: true })]);
   const checkoutAt = async (path: string): Promise<string | undefined> => ((await (await hiveFetch(`${f.base}${path}/tree`)).json()) as TaskTree).checkout;
   assert.deepEqual(
     [await checkoutAt(workPath(f.server, 'local:1')), await checkoutAt(workPath(f.server, 'local:2')), await checkoutAt(LOCAL)],
@@ -117,9 +117,9 @@ test('GET /activities/:id/tree answers a task\'s root relative to its workspace\
 });
 
 test('GET /activities/:id/tree lists as folders the --directory entries no listed file sits under, moves a nested repository to the ignored folders, and answers its root (#818, HIVE-22)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
   const tree = (await (await hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree`)).json()) as TaskTree;
-  assert.deepEqual([tree.root, tree.folders, tree.ignored], [worktreePath(f.repo, 'hive-1-task'), ['empty'], IGNORED_ENTRIES]);
+  assert.deepEqual([tree.root, tree.folders, tree.ignored], [worktreePath(HOST_PATHS, f.repo, 'hive-1-task'), ['empty'], IGNORED_ENTRIES]);
   assert.deepEqual(f.calls.map(([, args]) => args.slice(7).join(' ')).sort(), [
     'ls-files -z --cached --others --exclude-standard',
     'ls-files -z --others --directory --exclude-standard',
@@ -156,8 +156,8 @@ test('taskTree marks A every listed entry under an untracked folder, a nested re
 });
 
 test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused, running no git (HIVE-22, #1)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
-  const wt = worktreePath(f.repo, 'hive-1-task');
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
+  const wt = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
   await writeFile(join(wt, 'docs', 'glossary.md'), 'g');
   await writeFile(join(wt, 'docs', 'README.md'), 'r');
@@ -177,8 +177,8 @@ test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sort
 });
 
 test('GET /activities/:id/tree/folder answers a nested repository\'s marks and ignored names from one status in that repository, limited to the folder; a folder with no repository above runs no git (#1)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
-  const wt = worktreePath(f.repo, 'hive-1-task');
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
+  const wt = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
   await mkdir(join(wt, 'src'), { recursive: true });
   await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
@@ -204,8 +204,8 @@ test('GET /activities/:id/tree/folder answers a nested repository\'s marks and i
 });
 
 test('POST /activities/:id/reveal with a path shows that item, by its real path; one outside the root or a bad path runs nothing (#818)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
-  const wt = worktreePath(f.repo, 'hive-1-task');
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
+  const wt = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   await mkdir(join(wt, 'src'), { recursive: true });
   await writeFile(join(wt, 'src', 'b.ts'), 'b');
   const reveal = (body: unknown): Promise<Response> => postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`, body);
@@ -228,7 +228,7 @@ test('untrackedMarks marks every entry under an untracked folder, a nested repos
 });
 
 test('POST /activities/:id/reveal on a machine that is not local answers 409 machine_remote and runs no reveal on the host (#160)', async (t) => {
-  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })], { machines: fakeMachines(fakeMachine({ id: 'AB:CD' })) });
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], { machines: fakeMachines(fakeMachine({ id: 'AB:CD' })) });
   const res = await postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`, { path: 'src/b.ts' });
   assert.deepEqual([res.status, await res.json()], [409, { error: MACHINE_REMOTE_MESSAGE, code: MACHINE_REMOTE }]);
   assert.deepEqual(f.calls, []);

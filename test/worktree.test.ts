@@ -18,11 +18,11 @@ import { BRANCH, CLEAN_BRANCH, fakeExec, listing, porcelain, repoWith, SLUG } fr
 import { tempDir } from './temp-dir.js';
 
 test('branchAt reads the branch of the listed worktree; detached is null; not listed is undefined', () => {
-  const text = listing('/r', worktreePath('/r', 'hive-7-fix'));
-  assert.equal(branchAt(text, worktreePath('/r', 'hive-7-fix'), HOST_PATHS), 'feat/x');
+  const text = listing('/r', worktreePath(HOST_PATHS, '/r', 'hive-7-fix'));
+  assert.equal(branchAt(text, worktreePath(HOST_PATHS, '/r', 'hive-7-fix'), HOST_PATHS), 'feat/x');
   assert.equal(branchAt(text, '/r', HOST_PATHS), 'main');
   assert.equal(branchAt(text, '/r/other', HOST_PATHS), null);
-  assert.equal(branchAt(text, worktreePath('/r', 'hive-7-fix-2'), HOST_PATHS), undefined, 'a prefix of a listed path is not that path');
+  assert.equal(branchAt(text, worktreePath(HOST_PATHS, '/r', 'hive-7-fix-2'), HOST_PATHS), undefined, 'a prefix of a listed path is not that path');
   assert.equal(branchAt('', '/r', HOST_PATHS), undefined);
 });
 
@@ -259,7 +259,7 @@ test('a task whose worktree already exists is adopted as is: a chosen base chang
 
 test('baseOptions: the default, the other tasks that have a worktree (git\'s branch there), the other local branches, and origin/* apart; nothing is fetched', async (t) => {
   const { repo } = await repoWith(t);
-  const parent = worktreePath(repo, 'hive-41-parent');
+  const parent = worktreePath(HOST_PATHS, repo, 'hive-41-parent');
   const listed = [`worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n`, `worktree ${parent}\nHEAD 2222\nbranch refs/heads/hive/41-parent\n`].join('\n');
   const { exec, calls } = baseGit({
     'worktree list': listed,
@@ -399,23 +399,23 @@ test('ensureCheckout rejects a start point starting with "-": switch -c would re
 });
 
 test('taskDir: the workspace\'s path for a checkout task, its worktree otherwise (#444)', () => {
-  assert.equal(taskDir('/repo', { slug: 'hive-7-fix' }), worktreePath('/repo', 'hive-7-fix'));
-  assert.equal(taskDir('/repo', { slug: 'hive-7-fix', local: true }), '/repo');
+  assert.equal(taskDir(HOST_PATHS, '/repo', { slug: 'hive-7-fix' }), worktreePath(HOST_PATHS, '/repo', 'hive-7-fix'));
+  assert.equal(taskDir(HOST_PATHS, '/repo', { slug: 'hive-7-fix', local: true }), '/repo');
 });
 
 test('listWorktrees keeps only the direct children of .hive/worktrees, with the branch git lists there (detached is null); the main checkout, a worktree elsewhere, a nested path and .hive/worktrees itself are skipped (#181)', async () => {
   const repo = '/r';
   const text = porcelain(repo, [
-    [worktreePath(repo, SLUG), CLEAN_BRANCH],
-    [worktreePath(repo, 'hive-9-detached')],
+    [worktreePath(HOST_PATHS, repo, SLUG), CLEAN_BRANCH],
+    [worktreePath(HOST_PATHS, repo, 'hive-9-detached')],
     ['/elsewhere/wt', 'feat/x'],
-    [join(worktreePath(repo, SLUG), 'nested'), 'feat/y'],
+    [join(worktreePath(HOST_PATHS, repo, SLUG), 'nested'), 'feat/y'],
     [join(repo, '.hive', 'worktrees'), 'feat/z'],
   ]);
   const { exec, calls } = fakeExec({ listing: text });
   assert.deepEqual(await listWorktrees(fakeMachine({ exec }), repo, process.platform), [
-    { slug: SLUG, path: worktreePath(repo, SLUG), branch: CLEAN_BRANCH },
-    { slug: 'hive-9-detached', path: worktreePath(repo, 'hive-9-detached'), branch: null },
+    { slug: SLUG, path: worktreePath(HOST_PATHS, repo, SLUG), branch: CLEAN_BRANCH },
+    { slug: 'hive-9-detached', path: worktreePath(HOST_PATHS, repo, 'hive-9-detached'), branch: null },
   ]);
   assert.deepEqual(calls, [['git', '-C', repo, 'worktree', 'list', '--porcelain']], 'one read-only listing');
 });
@@ -429,7 +429,7 @@ test('listWorktrees on win32 takes the c:/… git prints for the Hive\'s worktre
   const repo = 'C:\\repo';
   const text = porcelain('C:/repo', [[`c:/repo/.hive/worktrees/${SLUG}`, CLEAN_BRANCH], [`C:/elsewhere/${SLUG}`, 'feat/x']]);
   const { exec } = fakeExec({ listing: text });
-  assert.deepEqual(await listWorktrees(fakeMachine({ exec }), repo, 'win32'), [{ slug: SLUG, path: worktreePath(repo, SLUG), branch: CLEAN_BRANCH }]);
+  assert.deepEqual(await listWorktrees(fakeMachine({ exec }), repo, 'win32'), [{ slug: SLUG, path: worktreePath(pathsOf('win32'), repo, SLUG), branch: CLEAN_BRANCH }]);
 });
 
 // ---- a fork's start (#854) ----
@@ -562,7 +562,7 @@ test('on win32, with the real git, a worktree under .hive/worktrees is listed wi
   const repo = realpathSync.native(await tempDir(t, 'win-'));
   await realGit(repo, 'init', '--quiet', '-b', 'main');
   await realGit(repo, 'commit', '--quiet', '--allow-empty', '-m', 'root');
-  const path = worktreePath(repo, SLUG);
+  const path = worktreePath(HOST_PATHS, repo, SLUG);
   await realGit(repo, 'worktree', 'add', '--quiet', '-b', CLEAN_BRANCH, '--', path);
   assert.deepEqual(await listWorktrees(fakeMachine({ exec: realExec }), repo, process.platform), [{ slug: SLUG, path, branch: CLEAN_BRANCH }]);
   const calls: string[][] = [];

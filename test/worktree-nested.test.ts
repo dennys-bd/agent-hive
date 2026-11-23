@@ -11,6 +11,7 @@ import { cleanWorktree, removeWorktree } from '../src/worktree-remove.js';
 import { fakeMachine } from './fakes.js';
 import { ensureNestedWorktrees, nestedBaseName, type NestedObserver, type NestedWorkspace, prepareNested, switchNested } from '../src/worktree-nested.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // #653 with the real git: an outer repo that ignores docs/, with docs cloned from a bare origin, and each task's worktree of docs.
 
@@ -60,7 +61,7 @@ async function fixture(t: AfterHost, docsBranches: readonly string[] = ['main'])
 
 // The task's own worktree, made with git alone: the nested step runs right after it
 async function outerWorktree(outer: string, slug = SLUG, branch = BRANCH): Promise<string> {
-  const path = worktreePath(outer, slug);
+  const path = worktreePath(HOST_PATHS, outer, slug);
   await git(outer, 'worktree', 'add', '--quiet', '-b', branch, '--', path);
   return path;
 }
@@ -148,7 +149,7 @@ test('prepareNested starts a nested branch from the outer branch\'s upstream whe
   await git(f.outer, 'remote', 'add', 'origin', outerOrigin);
   await git(f.outer, 'push', '--quiet', 'origin', 'main', 'main:devtest');
   await git(f.outer, 'fetch', '--quiet', 'origin');
-  const reused = worktreePath(f.outer, SLUG);
+  const reused = worktreePath(HOST_PATHS, f.outer, SLUG);
   await git(f.outer, 'worktree', 'add', '--quiet', '--track', '-b', BRANCH, '--', reused, 'origin/devtest'); // a branch reused as it is: its upstream is where it started
   assert.deepEqual(await prepareNested(f.workspace, { path: reused }, BRANCH, false, 'origin', exec), ['docs: origin/devtest']);
   const other = { slug: 'hive-653-other', branch: 'hive/653-other' };

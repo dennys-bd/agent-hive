@@ -13,6 +13,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { bareTask, savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // The restore routes (#619) over a Comb with no source and no worker: one local task stopped in fila with its worktree, its stage start and one
 // checkpoint, saved in state.json before the first save. git is a fake that answers a clean worktree and records every call after -C <dir>.
@@ -23,7 +24,7 @@ const SLUG = 'hive-1-task';
 const A1: Checkpoint = { n: 1, stage: 'fila', start: START, head: START, commit: POINT, branch: '', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
 const fixture = (repo: string): WithWork => ({
   item: { itemId: 'local:1', id: 'HIVE-1', title: 'Task 1', body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive',
-  stopped: true, worktree: worktreePath(repo, SLUG), stageStart: { stage: 'fila', commit: START }, checkpoints: [A1],
+  stopped: true, worktree: worktreePath(HOST_PATHS, repo, SLUG), stageStart: { stage: 'fila', commit: START }, checkpoints: [A1],
 });
 const BRANCH = branchFor({}, bareTask(fixture('/r')).item);
 
@@ -37,7 +38,7 @@ const work = (f: Restores): Activity => activityOf(f.server.getState()!, 'local:
 
 async function startRestores(t: TestContext, extra: Partial<WithWork> = {}): Promise<Restores> {
   const { home, repo } = await tempHive(t);
-  await mkdir(worktreePath(repo, SLUG), { recursive: true }); // on disk, or the post-poll check marks it gone (#208)
+  await mkdir(worktreePath(HOST_PATHS, repo, SLUG), { recursive: true }); // on disk, or the post-poll check marks it gone (#208)
   await saveState(home, savedTasks({ ...initialState(0), localCount: 1 }, [{ ...fixture(repo), ...extra }], () => SLUG));
   const calls: string[][] = [];
   const raw: string[][] = [];

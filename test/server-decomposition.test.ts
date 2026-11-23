@@ -12,7 +12,7 @@ import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { ADD_PROJECT_ITEM, CREATE_ISSUE, CREATE_PULL_REQUEST, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
 import type { CombConfig, DecompositionPreview, Exec, HiveEvent, SourceConfig, State, Task } from '../src/types.js';
-import { fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { fakeGqlJson, fakeLog, GITHUB_ENTRY } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
@@ -42,7 +42,7 @@ interface Setup {
 
 async function routes(t: TestContext, setup: Setup = {}) {
   const repo = await realpath(await tempDir(t, 'hive-865-'));
-  const worktree = worktreePath(repo, SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(worktree, { recursive: true });
   await writeFile(join(worktree, 'decomposition.md'), setup.text ?? EXAMPLE);
   await writeFile(join(repo, 'outside.md'), EXAMPLE);

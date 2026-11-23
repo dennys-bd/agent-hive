@@ -12,7 +12,7 @@ import { createDesignFrameTokens, framePolicy, withBridge } from '../src/server-
 import { saveState } from '../src/state-store.js';
 import type { Task } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { fakeLog, tempHive } from './fakes.js';
 import { savedActivityId, withWork, workPath } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
@@ -70,7 +70,7 @@ interface Frames { base: string; port: number; repo: string; activity: string; l
 async function startFrames(t: TestContext, machine: Machine = fakeMachine()): Promise<Frames> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo); // locate answers real paths: macOS's tmpdir is a symlink
-  const worktree = worktreePath(repo, SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   const design = join(worktree, 'design');
   await mkdir(join(design, 'assets'), { recursive: true });
   await writeFile(join(design, 'home.hv.html'), DESIGN);

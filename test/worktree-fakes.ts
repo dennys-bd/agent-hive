@@ -32,7 +32,7 @@ export async function repoWith(t: AfterHost, options: { worktree?: boolean } = {
   const prompt = join(promptsDir, 'hive-7-fix.md');
   await mkdir(promptsDir);
   await writeFile(prompt, 'prompt');
-  const worktree = worktreePath(repo, 'hive-7-fix');
+  const worktree = worktreePath(HOST_PATHS, repo, 'hive-7-fix');
   if (options.worktree) await mkdir(worktree, { recursive: true });
   return { repo, promptsDir, prompt, worktree };
 }

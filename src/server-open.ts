@@ -179,7 +179,7 @@ async function openRechecked(deps: OpenRouteDeps, plan: WorktreePlan, open: Open
 // turn as the checks with no git before it. A local task never sets up (#444), nor does a folder already set up: those make it unmarked.
 async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, plan: WorktreePlan, open: OpenAsk, res: Response, machine: Machine): Promise<void> {
   if (!plan.place.local) {
-    const path = worktreePath(plan.workspace.path, plan.slug);
+    const path = worktreePath(machine.paths, plan.workspace.path, plan.slug);
     const isThere = await machine.fs.access(path).then(() => true, () => false); // #160: the worktree is on the task's machine
     if (!isThere) return openWithSetup(deps, current, task, plan, open, res);
     await clearTeardownMarker(machine, plan.workspace, path); // #654: a worktree brought back to life gets its teardown on the next removal

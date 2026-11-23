@@ -28,9 +28,9 @@ const refuse = (res: Response, refusal: Refusal): void => {
 interface TaskFolders { worktree?: string; workspace: string } // no worktree: a deleted activity's, so the main checkout
 
 /** Where a task's files resolve (#258): its worktree, or its workspace root once that is gone; a task with no workspace has neither (409). */
-function taskFolders(config: Pick<Config, 'comb'>, task: Task, activity: Activity | undefined): TaskFolders | Refusal {
+function taskFolders(config: Pick<Config, 'comb'>, task: Task, activity: Activity | undefined, paths: Machine['paths']): TaskFolders | Refusal {
   const workspace = taskWorkspace(config, task);
-  return workspace ? { ...(activity ? { worktree: workDir(workspace.path, task, activity) } : {}), workspace: workspace.path } : { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
+  return workspace ? { ...(activity ? { worktree: workDir(paths, workspace.path, task, activity) } : {}), workspace: workspace.path } : { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
 }
 
 /** Every string of the task's result, at any key, that resolves to a file (#258, #697): relative to its worktree (its workspace once the
@@ -44,8 +44,8 @@ async function taskFiles(result: Record<string, unknown>, folders: TaskFolders, 
 
 /** Where an activity's files resolve (#629): a task's folders, or a local activity's main checkout (#400), which has no worktree, so it is both.
  * The editor pane's routes resolve on the same folders (#717). */
-export function activityFolders(config: Pick<Config, 'comb'>, target: { activity?: Activity; task?: Task }): TaskFolders | Refusal {
-  if (target.task) return taskFolders(config, target.task, target.activity);
+export function activityFolders(config: Pick<Config, 'comb'>, target: { activity?: Activity; task?: Task }, paths: Machine['paths']): TaskFolders | Refusal {
+  if (target.task) return taskFolders(config, target.task, target.activity, paths);
   if (!target.activity) return { status: HTTP_NOT_FOUND, message: UNKNOWN_ACTIVITY_MESSAGE };
   const workspace = workspaceByName(config, target.activity.workspace);
   return workspace ? { worktree: workspace.path, workspace: workspace.path } : { status: HTTP_NOT_FOUND, message: UNKNOWN_WORKSPACE_MESSAGE };
@@ -89,10 +89,11 @@ export function registerFileRoutes(app: Express, deps: Pick<TaskRouteDeps, 'requ
     if ('status' in target) return refuse(res, target);
     const { task, activity } = target;
     if (!task) return refuse(res, activity ? { status: HTTP_CONFLICT, message: LOCAL_ACTIVITY_MESSAGE } : { status: HTTP_NOT_FOUND, message: UNKNOWN_ACTIVITY_MESSAGE });
-    const folders = taskFolders(current.runtime.config, task, activity);
+    const machine = deps.machineFor(activity ?? {});
+    const folders = taskFolders(current.runtime.config, task, activity, machine.paths);
     if ('status' in folders) return void res.json([]); // no workspace: no links. No IDE no longer matters: they open in the editor pane (#717)
     try {
-      res.json(await taskFiles(resultOf(current.state, task.item.itemId) ?? {}, folders, deps.machineFor(activity ?? {})));
+      res.json(await taskFiles(resultOf(current.state, task.item.itemId) ?? {}, folders, machine));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     }

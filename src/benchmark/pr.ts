@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '../log.js';
+import { pathsOf } from '../machine.js';
 import type { BenchRun, Experiment, Workspace } from '../types.js';
 import { worktreePath } from '../worktree.js';
 import { mergeArm } from './arm-config.js';
@@ -129,7 +130,7 @@ async function at<T>(step: BenchPrStep, work: () => Promise<T>): Promise<T> {
 interface Place { dir: string; leave(pushed: boolean): Promise<void> }
 
 async function enterWorktree(git: Run, input: PrInput): Promise<Place> {
-  const path = worktreePath(input.workspace.path, `${WORKTREE_PREFIX}${input.token}`);
+  const path = worktreePath(pathsOf(process.platform), input.workspace.path, `${WORKTREE_PREFIX}${input.token}`);
   await at('branch', () => git('git', hookless('worktree', 'add', '-b', input.branch, path, benchRef(input.token))));
   return {
     dir: path,

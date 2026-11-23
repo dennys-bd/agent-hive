@@ -64,9 +64,9 @@ export async function locate(current: Live, id: string, path: unknown, machineFo
   if (target.activity === undefined) return { status: HTTP_CONFLICT, message: DELETED_MESSAGE };
   if (typeof path !== 'string' || path === '') return { status: HTTP_BAD_REQUEST, message: PATH_MESSAGE };
   const { config } = current.runtime;
-  const folders = activityFolders(config, target);
-  if ('status' in folders) return folders;
   const machine = machineFor(target.activity);
+  const folders = activityFolders(config, target, machine.paths);
+  if ('status' in folders) return folders;
   const resolved = await resolveActivityPath({ ...folders, path, ...fileFs(machine) });
   if ('reason' in resolved) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
   const { activity, task } = target;

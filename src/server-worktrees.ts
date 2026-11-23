@@ -115,7 +115,7 @@ async function worktreeState({ task, activity }: Work, config: Pick<Config, 'com
   const { exec } = machine;
   const workspace = taskWorkspace(config, task);
   if (!workspace) return undefined;
-  const dir = taskDir(workspace.path, activity);
+  const dir = taskDir(machine.paths, workspace.path, activity);
   const git = async (...args: string[]): Promise<string> => (await exec('git', ['-C', dir, ...args])).stdout;
   const base = await diffBase(task, activity, workspaceBase(config, workspace), dir, 'worktree', exec);
   const status = await git('-c', 'core.fsmonitor=false', 'status', '--porcelain');

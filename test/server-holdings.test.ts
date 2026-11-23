@@ -10,6 +10,7 @@ import type { Activity, Config, Exec, State, Task, TaskPr, Worker, WorkspaceHold
 import { worktreePath } from '../src/worktree.js';
 import { WORKSPACE, workspacesAt } from './fakes.js';
 import { activityIdOf, withLocal, withWork } from './fixtures/work.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // The holdings of WORKSPACE (#750): local tasks local:<n>, each with its live activity in the workspace when a test gives it one, over a repo
 // no test touches (git is a fake, and no workspace here has nested repos).
@@ -17,7 +18,7 @@ const REPO = '/repo';
 const SLUG = (n: number): string => `hive-${n}-task`;
 const BRANCH = (n: number): string => `hive/${n}-task`;
 const TITLE = (n: number): string => `HIVE-${n} Task ${n}`;
-const ON_DISK = (n: number): Partial<Activity> => ({ worktree: worktreePath(REPO, SLUG(n)), branch: BRANCH(n) });
+const ON_DISK = (n: number): Partial<Activity> => ({ worktree: worktreePath(HOST_PATHS, REPO, SLUG(n)), branch: BRANCH(n) });
 const task = (n: number, extra: Partial<Task> = {}): Task => ({
   item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `Task ${n}`, body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: WORKSPACE, ...extra,
 });
@@ -56,7 +57,7 @@ interface World {
 }
 
 const listingOf = (worktrees: World['worktrees']): string => [`worktree ${REPO}`, 'HEAD 1111', 'branch refs/heads/main', '',
-  ...worktrees.flatMap(([slug, branch]) => [`worktree ${worktreePath(REPO, slug)}`, 'HEAD 2222', branch === null ? 'detached' : `branch refs/heads/${branch}`, ''])].join('\n');
+  ...worktrees.flatMap(([slug, branch]) => [`worktree ${worktreePath(HOST_PATHS, REPO, slug)}`, 'HEAD 2222', branch === null ? 'detached' : `branch refs/heads/${branch}`, ''])].join('\n');
 
 const gitFault = (fault: string): Error => Object.assign(new Error('Command failed: git'), { code: 128, stderr: `fatal: ${fault} broke\n` });
 
@@ -143,8 +144,8 @@ test('GET /workspaces/:name/holdings answers a task activity, its worktree, a ke
   assert.deepEqual(await read(serve(t, idle, fakeGit(world).exec).url()), [200, {
     activities: [{ ...held(1), removable: true }],
     worktrees: [
-      { workspace: WORKSPACE, slug: SLUG(1), path: worktreePath(REPO, SLUG(1)), branch: BRANCH(1), task: { id: 'local:1', activityId: activityIdOf('local:1'), title: TITLE(1), removable: true }, nested: [] },
-      { workspace: WORKSPACE, slug: SLUG(9), path: worktreePath(REPO, SLUG(9)), branch: BRANCH(9), orphan: 'kept', nested: [] },
+      { workspace: WORKSPACE, slug: SLUG(1), path: worktreePath(HOST_PATHS, REPO, SLUG(1)), branch: BRANCH(1), task: { id: 'local:1', activityId: activityIdOf('local:1'), title: TITLE(1), removable: true }, nested: [] },
+      { workspace: WORKSPACE, slug: SLUG(9), path: worktreePath(HOST_PATHS, REPO, SLUG(9)), branch: BRANCH(9), orphan: 'kept', nested: [] },
     ],
     branches: [{ slug: SLUG(1), branch: BRANCH(1), target: 'HEAD' }, { slug: SLUG(9), branch: BRANCH(9), target: 'HEAD' }],
     tasks: [],

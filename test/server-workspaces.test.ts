@@ -13,6 +13,7 @@ import { readyOn, workPath } from './fixtures/work.js';
 import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { POSIX_TEMP_REPO } from './posix-only.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // Several workspaces per Comb (#179): two git repos, hive and site, behind one GitHub-shaped source whose listing a test fills.
 const ORPHAN = 'hive-9-gone'; // a worktree every repo's git lists under .hive/worktrees, owned by no task
@@ -52,7 +53,7 @@ function twoGit(calls: string[][]): Exec {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
     calls.push([file, ...args]);
     const [, dir, command, sub] = args;
-    const listing = `worktree ${dir}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktreePath(dir, ORPHAN)}\nHEAD 3333\nbranch refs/heads/hive/9-gone\n`;
+    const listing = `worktree ${dir}\nHEAD 1111\nbranch refs/heads/main\n\nworktree ${worktreePath(HOST_PATHS, dir, ORPHAN)}\nHEAD 3333\nbranch refs/heads/hive/9-gone\n`;
     return { stdout: command === 'worktree' && sub === 'list' ? listing : '' };
   };
 }
@@ -96,7 +97,7 @@ test('each task spawns in its own workspace: the worktree is added with git -C <
   const two = await startTwo(t, {}, 2);
   two.listed.push(item('1', 'hive'), item('2', 'site'), item('3', 'site'));
   await two.server.poll();
-  assert.deepEqual(two.workers.map((w) => w.launch.cwd), [worktreePath(two.hive.path, 'hive-1-task-1'), worktreePath(two.site.path, 'hive-2-task-2')]);
+  assert.deepEqual(two.workers.map((w) => w.launch.cwd), [worktreePath(HOST_PATHS, two.hive.path, 'hive-1-task-1'), worktreePath(HOST_PATHS, two.site.path, 'hive-2-task-2')]);
   assert.equal(activityOf(two.server.getState()!, 'board:I3')?.workerId, undefined, 'two workers across both workspaces: the third waits'); // #629: the activity's
   assert.deepEqual(two.calls.filter((c) => c.includes('add')).map((c) => c[2]), [two.hive.path, two.site.path]);
 });
@@ -151,7 +152,7 @@ test('POST /tasks/:id/workspace sets a fresh task\'s workspace and the fill star
   }
   assert.deepEqual(await json(postJson(`${two.base}/tasks/board:I1/workspace`, { workspace: 'site' })), { ok: true });
   await waitFor(() => two.workers.length === 1);
-  assert.equal(two.workers[0].launch.cwd, worktreePath(two.site.path, 'hive-1-task-1'));
+  assert.equal(two.workers[0].launch.cwd, worktreePath(HOST_PATHS, two.site.path, 'hive-1-task-1'));
   const locked = await postJson(`${two.base}/tasks/board:I1/workspace`, { workspace: 'hive' });
   assert.equal(locked.status, 409);
   assert.deepEqual(await locked.json(), { error: 'delete the activity first' });
@@ -174,7 +175,7 @@ test('a task with no workspace: bases answers needsWorkspace, then the lists of 
   assert.deepEqual(await json(postJson(`${two.base}/tasks/board:I1/start`, { base: null, workspace: 'site' })), { ok: true });
   await waitFor(() => two.workers.length === 1);
   assert.equal(two.server.getState()?.tasks[0].workspace, 'site');
-  assert.equal(two.workers[0].launch.cwd, worktreePath(two.site.path, 'hive-1-task-1'));
+  assert.equal(two.workers[0].launch.cwd, worktreePath(HOST_PATHS, two.site.path, 'hive-1-task-1'));
 });
 
 test('POST /tasks takes a Comb workspace for the new task and refuses an unknown one with 400 (#179)', async (t) => {
@@ -191,7 +192,7 @@ test('a task whose workspace was removed reads as gone: bases and the terminal a
   two.listed.push(item('1', 'site'));
   await two.server.poll();
   await two.server.dispatch({ type: 'setAuto', taskId: 'board:I1', auto: false });
-  const worktree = worktreePath(two.site.path, 'hive-1-task-1');
+  const worktree = worktreePath(HOST_PATHS, two.site.path, 'hive-1-task-1');
   await mkdir(worktree, { recursive: true }); // on disk: the poll after the save must not drop it
   await readyOn(two.server, 'board:I1', { path: worktree, branch: 'hive/1-task-1', base: null, local: false });
   assert.equal(two.server.getState()?.tasks[0].workspace, 'site');
@@ -208,7 +209,7 @@ test('a task whose workspace left the config starts no run: an open with picks a
   two.listed.push(item('1', 'site'));
   await two.server.poll();
   await two.server.dispatch({ type: 'setAuto', taskId: 'board:I1', auto: false });
-  const worktree = worktreePath(two.site.path, 'hive-1-task-1');
+  const worktree = worktreePath(HOST_PATHS, two.site.path, 'hive-1-task-1');
   await mkdir(worktree, { recursive: true }); // on disk: the poll after the save must not drop it
   await readyOn(two.server, 'board:I1', { path: worktree, branch: 'hive/1-task-1', base: null, local: false });
   assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive] })).status, 200);
@@ -229,7 +230,7 @@ test('a task whose workspace was removed answers its files tree and a session op
   two.listed.push(item('1', 'site'));
   await two.server.poll();
   await two.server.dispatch({ type: 'setAuto', taskId: 'board:I1', auto: false });
-  const worktree = worktreePath(two.site.path, 'hive-1-task-1');
+  const worktree = worktreePath(HOST_PATHS, two.site.path, 'hive-1-task-1');
   await mkdir(worktree, { recursive: true }); // on disk: the poll after the save must not drop it
   await readyOn(two.server, 'board:I1', { path: worktree, branch: 'hive/1-task-1', base: null, local: false });
   await opened(postJson(`${two.base}/tasks/board:I1/open`, { kind: 'claude' }));
@@ -259,20 +260,20 @@ test('POST /tasks/:id/open on a manual task with no workspace is 400 choose a wo
   two.calls.length = 0;
   await opened(postJson(`${two.base}/tasks/board:I1/open`, { kind: 'terminal', base: null, workspace: 'site' }));
   const task = two.server.getState()!.tasks[0];
-  assert.deepEqual([task.workspace, activityOf(two.server.getState()!, 'board:I1')?.worktree], ['site', worktreePath(two.site.path, 'hive-1-task-1')]);
+  assert.deepEqual([task.workspace, activityOf(two.server.getState()!, 'board:I1')?.worktree], ['site', worktreePath(HOST_PATHS, two.site.path, 'hive-1-task-1')]);
   assert.ok(two.calls.every((c) => c[2].startsWith(two.site.path)));
 });
 
 test('GET /worktrees lists every workspace\'s worktrees, each row tagged with its workspace; the removal route takes the workspace, runs git there, and answers 404 for an unknown one (#179)', async (t) => {
   const two = await startTwo(t, {}, 0);
   assert.deepEqual(await json(hiveFetch(`${two.base}/worktrees`)), [
-    { workspace: 'hive', slug: ORPHAN, path: worktreePath(two.hive.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask', nested: [] },
-    { workspace: 'site', slug: ORPHAN, path: worktreePath(two.site.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask', nested: [] },
+    { workspace: 'hive', slug: ORPHAN, path: worktreePath(HOST_PATHS, two.hive.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask', nested: [] },
+    { workspace: 'site', slug: ORPHAN, path: worktreePath(HOST_PATHS, two.site.path, ORPHAN), branch: 'hive/9-gone', orphan: 'noTask', nested: [] },
   ]);
   const unknown = await postJson(`${two.base}/worktrees/nope/${ORPHAN}/remove`, { force: true });
   assert.equal(unknown.status, 404);
   assert.deepEqual(await unknown.json(), { error: 'unknown workspace' });
-  await mkdir(worktreePath(two.site.path, ORPHAN), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, two.site.path, ORPHAN), { recursive: true });
   two.calls.length = 0;
   assert.deepEqual(await json(postJson(`${two.base}/worktrees/site/${ORPHAN}/remove`, { force: true })), { removed: true });
   assert.ok(two.calls.length > 0 && two.calls.every((c) => c[2].startsWith(two.site.path)));

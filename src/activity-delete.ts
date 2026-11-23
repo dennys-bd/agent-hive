@@ -86,7 +86,7 @@ export async function deleteActivityOnDisk(
     await dropCheckpoints(machine, repo, activity.slug ?? slugFor(task.item)); // #619: every checkpoint's restore point goes with the activity; none is nothing
   }
   if (!scope.transcripts) return;
-  await removeTranscripts(machine, taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
+  await removeTranscripts(machine, taskDir(machine.paths, repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
     .catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 

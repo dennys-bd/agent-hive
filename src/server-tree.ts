@@ -123,7 +123,7 @@ export async function taskTree(machine: Machine, worktree: string): Promise<Task
 // The tree's root, also POST /activities/:id/tree/move's (#594). A task's folder on disk: its worktree, or its workspace's checkout for a
 // local run (#444), from the slug, never the activity's worktree path, which a hook posts. A local activity's root is its workspace's checkout
 // (#633), from the workspace frozen on the activity, never a request value (#400).
-export function treeRoot(state: State, config: Parameters<typeof taskWorkspace>[0], id: string): string | Refusal {
+export function treeRoot(state: State, config: Parameters<typeof taskWorkspace>[0], id: string, machineFor: MachineFor): string | Refusal {
   const target = liveTarget(state, id);
   if ('status' in target) return target;
   const { task, activity } = target;
@@ -131,7 +131,7 @@ export function treeRoot(state: State, config: Parameters<typeof taskWorkspace>[
   const workspace = taskWorkspace(config, task);
   if (!workspace) return { status: HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) };
   if (!canDiff(task, activity, 'worktree')) return { status: HTTP_CONFLICT, message: NO_WORKTREE_MESSAGE };
-  return taskDir(workspace.path, activity);
+  return taskDir(machineFor(activity).paths, workspace.path, activity);
 }
 
 /** The machine a tree route's root is on (#160): the live activity's. treeRoot has refused anything else already. */
@@ -159,7 +159,7 @@ function registerRevealRoute(app: Express, { exec, requireLive, machineFor }: Pi
     const current = requireLive(res);
     if (!current) return;
     const id = req.params.id as string;
-    const root = treeRoot(current.state, current.runtime.config, id);
+    const root = treeRoot(current.state, current.runtime.config, id, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     const machine = treeMachine(current.state, id, machineFor);
     if (!isLocal(machine)) return refuse(res, REMOTE_REFUSAL); // the file manager is this computer's; another machine's folder is not on it
@@ -216,7 +216,7 @@ function registerFolderRoute(app: Express, { requireLive, treeWatch, machineFor 
     const current = requireLive(res);
     if (!current) return;
     const id = req.params.id as string;
-    const root = treeRoot(current.state, current.runtime.config, id);
+    const root = treeRoot(current.state, current.runtime.config, id, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     const machine = treeMachine(current.state, id, machineFor);
     const { path } = req.query;
@@ -238,7 +238,7 @@ export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
   app.get('/activities/:id/tree', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
-    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    const root = treeRoot(current.state, current.runtime.config, req.params.id as string, deps.machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     try {
       const machine = treeMachine(current.state, req.params.id as string, deps.machineFor);

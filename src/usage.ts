@@ -50,7 +50,7 @@ export function isTranscriptPath(value: unknown): value is string {
  * cannot point the excerpt at any other file.
  */
 export function isWorkerTranscript(machine: Machine, value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, agent: AgentId, sessionId?: string): value is string {
-  return isTranscriptIn(machine, value, taskDir(repo, activity), agent, sessionId);
+  return isTranscriptIn(machine, value, taskDir(machine.paths, repo, activity), agent, sessionId);
 }
 
 /** An absolute `.jsonl` that `agent`'s runner owns for `cwd` (#924, #929): a local session's (#587) is its workspace's checkout. */
