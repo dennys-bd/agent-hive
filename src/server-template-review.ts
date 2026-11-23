@@ -94,7 +94,9 @@ async function runAndAnswer(res: Response, deps: TemplateReviewRouteDeps, id: st
     deps.log.warn(`review: ${id} bad answer: ${parsed.reason}: ${clip(result.answer)}`);
     return fail(res, HTTP_BAD_GATEWAY, MESSAGES.bad_answer, 'bad_answer');
   }
-  res.json({ annotations: parsed.annotations }); // the page's contract: the reasons a fix read as advice are hive.log's
+  const { annotations, demoted } = parsed;
+  if (demoted.length > 0) deps.log.warn(`review: ${id} ${demoted.length} fixes read as advice: ${demoted.join('; ')}`);
+  res.json({ annotations }); // the page's contract: the reasons a fix read as advice are hive.log's
 }
 
 /** POST /api/items/:id/review (#328, contract api.review), behind the server's host, secret and x-hive-ui gates. */

@@ -176,3 +176,14 @@ test('a reviewer with model null runs its agent\'s default model; a reviewer nam
   assert.deepEqual([status, body.code, body.error], [409, 'agent_unavailable', 'agent codex is disabled: enable it in Settings › execution › agents']);
   assert.equal(off.calls.length, 0);
 });
+
+test('a fix whose span is not in the posted text answers as an advice, one whose span is keeps its fix, and one review: warn line says how many and why (#981)', async (t) => {
+  const f = await reviewFixture(t);
+  const kept = { ...NOTE, line: 9, kind: 'fix', span: 'Never run the tests.', replacement: 'Skip the tests.' } as const;
+  const lost = { ...NOTE, line: 7, kind: 'fix', span: 'Run every test first.', replacement: 'Run the tests.' } as const;
+  const { base, lines } = await serve(t, f, async () => answer([kept, lost]));
+  const [status, body] = await review(base, BUILD, BODY);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.deepEqual(body, { annotations: [{ ...kept, source: 'agent' }, { ...NOTE, line: 7, source: 'agent', kind: 'advice' }] });
+  assert.deepEqual(lines.filter((l) => l.startsWith('WARN review:')), [`WARN review: ${BUILD} 1 fixes read as advice: line 7: the span is not on its line`]);
+});
