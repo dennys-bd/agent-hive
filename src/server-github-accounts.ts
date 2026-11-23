@@ -17,6 +17,7 @@ export interface GithubAccountRouteDeps {
   accounts: () => AccountsConfig | undefined; // the saved selection; undefined in setup mode
   log: Pick<Logger, 'info' | 'error'>;
   env?: NodeJS.ProcessEnv; // the store the device flow writes
+  queueSave: (save: () => Promise<void>) => Promise<void>; // a save that selects this login and the remove never interleave
 }
 
 // A gh that cannot be read leaves the machine out: the stored logins still answer
@@ -47,5 +48,5 @@ async function remove(req: Request<{ login: string }>, res: Response, deps: Gith
  *  works in setup mode. */
 export function registerGithubAccountRoutes(app: Express, deps: GithubAccountRouteDeps): void {
   app.get(ACCOUNTS_ROUTE, (_req: Request, res: Response) => list(res, deps));
-  app.delete(`${ACCOUNTS_ROUTE}/:login`, (req: Request<{ login: string }>, res: Response) => remove(req, res, deps));
+  app.delete(`${ACCOUNTS_ROUTE}/:login`, (req: Request<{ login: string }>, res: Response) => deps.queueSave(() => remove(req, res, deps)));
 }

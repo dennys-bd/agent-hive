@@ -1227,7 +1227,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     };
     res.json(status);
   });
-  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env }); // #959: the logins' list and remove, outside requireLive
   registerJiraRoutes(app, jiraDeps); // #817: next to the GitHub login, outside requireLive: the first Jira source is created in setup mode
   registerJiraSettingsRoutes(app, jiraDeps); // #821: the same, for what the form reads before the source is saved
 
@@ -1241,6 +1240,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   app.post('/settings', (req: Request, res: Response) => queueSave(() => saveSettings((req.body ?? {}) as Partial<SettingsBody>, res)));
+  // #959: the logins' list and remove, outside requireLive; a remove queues behind a save that may be selecting the login
+  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env, queueSave });
 
   async function saveSettings(body: Partial<SettingsBody>, res: Response, afterSave?: () => Promise<void>): Promise<void> {
     let config: Config;
@@ -1256,10 +1257,10 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.status(refusal.status).json({ error: refusal.message });
       return;
     }
-    // #959: the check below reads as the login the save selects; any failure after this puts the previous selection back
-    const switched = switchSelection(account, selectionOf(config));
     // An entry whose baked-in parts match the live runtime's keeps its instance, so a write already in flight keeps its chain (#180: per source).
     const sources = createSources(config, (spec) => sourceFactory(spec, itemStore), live && { config: live.runtime.config, sources: live.runtime.sources });
+    // #959: the check below reads as the login the save selects; any failure after this puts the previous selection back
+    const switched = switchSelection(account, selectionOf(config));
     try {
       await resolveSources(sources); // validates every source against the real one before the config is written; the message names the source
     } catch (err) {

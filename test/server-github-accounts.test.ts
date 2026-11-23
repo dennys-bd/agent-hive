@@ -20,7 +20,7 @@ async function routes(t: TestContext, machine: string, accounts: AccountsConfig 
   for (const login of ['bob', 'alice']) await saveGithubCredential(login, { token: `fake-${login}-token` }, env);
   const { log, lines } = fakeLog();
   const app = express();
-  registerGithubAccountRoutes(app, { account: createGithubAccount({ machine: machineAs(machine), env }), accounts: () => accounts, log, env });
+  registerGithubAccountRoutes(app, { account: createGithubAccount({ machine: machineAs(machine), env }), accounts: () => accounts, log, env, queueSave: (save) => save() });
   const server = app.listen(0);
   t.after(() => server.close());
   return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, env, lines };
