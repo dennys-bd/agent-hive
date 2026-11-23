@@ -46,3 +46,18 @@ test('accountsRefusal refuses an accounts.github or accounts.copilot naming no s
   for (const name of ['__proto__', 'toString']) assert.equal((await accountsRefusal({ github: name }, env))?.status, 400, name);
   assert.ok(!JSON.stringify(await accountsRefusal({ github: 'bob' }, env)).includes('fake-github-token-1'));
 });
+
+test('accountsRefusal checks only the members that differ from the saved selection: an unchanged name passes unread, even one the store lost (#964)', async (t) => {
+  const kept = { claude: 'work', github: 'me', copilot: 'me' };
+  assert.equal(await accountsRefusal(kept, UNREADABLE, kept), undefined, 'nothing changed: the store is never read');
+  const env = await storeWithWork(t);
+  assert.equal(await accountsRefusal({ claude: 'gone' }, env, { claude: 'gone' }), undefined, 'a stale name the save keeps: the run seam refuses the run (#953)');
+  assert.deepEqual(await accountsRefusal({ claude: 'home' }, env, { claude: 'work' }), REFUSED, 'a changed name not in the store');
+  assert.equal(await accountsRefusal({ claude: 'work' }, env, { claude: 'gone' }), undefined, 'a changed name the store has');
+  assert.deepEqual(
+    await accountsRefusal({ claude: 'gone', github: 'bob' }, env, { claude: 'gone' }),
+    { status: 400, message: '"accounts.github" names no saved GitHub login' },
+    'the unchanged member is skipped, the changed one checked',
+  );
+  assert.equal(await accountsRefusal({}, UNREADABLE, { claude: 'work' }), undefined, 'a member dropped for the machine\'s login names nothing');
+});
