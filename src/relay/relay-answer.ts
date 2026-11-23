@@ -1,8 +1,8 @@
 // The Hive's end of the hooks and MCP relay (#940): repeats what the machine's listener forwarded against the Hive's own server on
 // loopback, and streams the answer back as events. node:http, not fetch, because fetch cannot set Host.
 import { request as httpRequest } from 'node:http';
-import { isRecord, isString } from './frames.js';
-import { CHANNEL, RemoteError, type Mux, type RequestContext } from './protocol.js';
+import { isRecord, isString } from '../remote/frames.js';
+import { CHANNEL, RemoteError, type Mux, type RequestContext } from '../remote/protocol.js';
 import { isRelayHeaders, isRelayPath, relayableHeaders, type RelayHeaders } from './relay-headers.js';
 
 type RelayCall = { method: string; path: string; headers: RelayHeaders; body: Uint8Array };

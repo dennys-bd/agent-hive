@@ -4,8 +4,8 @@ import { createServer, request, type IncomingHttpHeaders, type Server } from 'no
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { CHANNEL } from '../src/remote/protocol.js';
-import { answerRelay } from '../src/remote/relay-answer.js';
-import { listenRelay, RELAY_MAX_BODY_BYTES } from '../src/remote/relay-listen.js';
+import { answerRelay } from '../src/relay/relay-answer.js';
+import { listenRelay, RELAY_MAX_BODY_BYTES } from '../src/relay/relay-listen.js';
 import { pair, remote, settle } from './remote-pair.js';
 
 type Seen = { method: string; url: string; headers: IncomingHttpHeaders; body: unknown };
@@ -146,7 +146,8 @@ test('the listener refuses a foreign Host, a path outside /hooks/, drops cookies
 
 test('a body over RELAY_MAX_BODY_BYTES gets 413 from the listener and never reaches the Hive (#940)', async () => {
   await withRelay((app) => app.post('/hooks/huge', (_req, res) => res.send('ok')), async ({ relayPort, seen }) => {
-    const reply = await call(relayPort, { method: 'POST', path: '/hooks/huge', headers: { 'content-type': 'application/json', 'content-length': String(RELAY_MAX_BODY_BYTES + 1) }, body: Buffer.alloc(RELAY_MAX_BODY_BYTES + 1, 0x61) });
+    // headers only: the declared length is what is refused, and writing 8 MiB into a socket the 413 closes races a reset on a loaded lane
+    const reply = await call(relayPort, { method: 'POST', path: '/hooks/huge', headers: { 'content-type': 'application/json', 'content-length': String(RELAY_MAX_BODY_BYTES + 1) } });
     assert.equal(reply.status, 413);
     await sleep(50);
     assert.equal(seen.length, 0);

@@ -2,8 +2,8 @@
 // to the Hive. No timeout and no buffering here: every hook's `curl -m` bounds a request, and a lost link loses the hook.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { isRecord } from './frames.js';
-import { CHANNEL, type Mux } from './protocol.js';
+import { isRecord } from '../remote/frames.js';
+import { CHANNEL, type Mux } from '../remote/protocol.js';
 import { isRelayHeaders, isRelayPath, relayableHeaders } from './relay-headers.js';
 
 export const RELAY_MAX_BODY_BYTES = 8 * 1024 * 1024;

@@ -1,5 +1,5 @@
 // Shared by both ends of the hooks and MCP relay (#940): which headers belong to one hop and what a header map must look like to cross.
-import { isRecord, isString } from './frames.js';
+import { isRecord, isString } from '../remote/frames.js';
 
 export type RelayHeaders = Record<string, string | string[]>;
 
