@@ -12,13 +12,14 @@ import { withBridge } from '../src/server-design-frame.js';
 import { SHORT_SHA } from '../src/tasks.js';
 import { toWire } from '../src/wire-path.js';
 import { worktreePath } from '../src/worktree.js';
-import type { Exec, SettingsBody, Task } from '../src/types.js';
+import type { Exec, FileText, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, EDITOR_FILE_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
+import { isFlavoured, ROUTE_SHA, startMachineRoutes } from './fixtures/machine-routes.js';
 
 // GET /activities/:id/file-base (#668) over a real repository: its first commit is the task's base (BASE_REF), its second changes
 // docs/spec.md, so HEAD and the task's base differ. Only the route's git runs for real; the boot's other commands answer nothing
@@ -155,3 +156,18 @@ test('the base is read with the activity\'s machine\'s git: a server whose own e
   const askBase = async (b: Bases): Promise<unknown> => (await hiveFetch(`${b.base}${workPath(b.server, 'local:1')}/file-base?${new URLSearchParams({ path: 'docs/spec.md', against: 'task' })}`)).json();
   assert.deepEqual(await askBase(await startBases(t, false, false, true)), await askBase(await startBases(t)));
 });
+
+for (const platform of ['linux', 'win32'] as const) {
+  test(`GET /activities/:id/file and /file-base on a fake ${platform} machine read the file at its own absolute path and ask git for it with /, whatever the host (#929)`, async (t) => {
+    const f = await startMachineRoutes(t, platform);
+    const query = `path=${encodeURIComponent('docs/agent/a.md')}`;
+    const file = await fetch(`${f.base}/file?${query}`);
+    assert.deepEqual([file.status, ((await file.json()) as FileText).text], [200, '# a']);
+    const base = await fetch(`${f.base}/file-base?${query}&against=head`);
+    assert.deepEqual([base.status, await base.json()], [200, { against: 'head', label: 'HEAD', text: '' }]);
+    assert.deepEqual(f.gitCalls[0], ['-C', f.at('docs', 'agent'), 'rev-parse', '--show-toplevel']);
+    assert.ok(f.gitCalls.some((args) => args.includes(`${ROUTE_SHA}:docs/agent/a.md`)), 'git\'s <commit>:<path> takes /');
+    assert.ok(f.fsCalls.includes(f.at('docs', 'agent', 'a.md')));
+    assert.ok(f.fsCalls.every((path) => isFlavoured(path, platform)), f.fsCalls.join(' '));
+  });
+}
