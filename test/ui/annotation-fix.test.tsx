@@ -27,5 +27,5 @@ test('fixOf answers a removal for unused, a default: null declaration for undecl
 });
 
 test('an agent annotation offers no fix: the agent sends none (#329)', () => {
-  expect(hasFix({ line: 1, severity: 'yellow', title: 'vague', body: 'say what runs', source: 'agent' })).toBe(false);
+  expect(hasFix({ line: 1, severity: 'yellow', title: 'vague', body: 'say what runs', source: 'agent', kind: 'advice' })).toBe(false);
 });

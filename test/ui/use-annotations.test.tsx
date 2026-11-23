@@ -117,7 +117,7 @@ test('two quick dismissals both succeed: the last write carries both keys and no
   expect(result.current.annotations.error).toBeUndefined();
 });
 
-const RUN_NOTE: AgentAnnotation = { line: 9, severity: 'yellow', title: 'says to run nothing in particular', body: 'name what runs', source: 'agent' };
+const RUN_NOTE: AgentAnnotation = { line: 9, severity: 'yellow', title: 'says to run nothing in particular', body: 'name what runs', source: 'agent', kind: 'advice' };
 
 test("the agent's annotations follow the lint's; dismissing one hides it, saving its key with agent in the check's place, and the next review keeps it hidden; it has no fix (#329)", async () => {
   const saves: SaveBody[] = [];

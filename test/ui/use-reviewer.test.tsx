@@ -15,7 +15,7 @@ const OTHER: Scope = { ...SCOPE, path: 'slicing.md' };
 // Lines: the title 1, a blank 2, "Run it." 3, "Ask {{ reviewer }}." 4
 const TEXT = '# new-build\n\nRun it.\nAsk {{ reviewer }}.\n';
 const EDITED = `${TEXT}More.\n`;
-const noteOn = (line: number, title = 'the two blocks contradict'): AgentAnnotation => ({ line, severity: 'yellow', title, body: 'both branches cannot hold at once', source: 'agent' });
+const noteOn = (line: number, title = 'the two blocks contradict'): AgentAnnotation => ({ line, severity: 'yellow', title, body: 'both branches cannot hold at once', source: 'agent', kind: 'advice' });
 const configOf = (when: ReviewerConfig['when'], extra: Partial<ReviewerConfig> = {}): ReviewerConfig => ({ ...REVIEWER_DEFAULTS, when, ...extra });
 const answer = (annotations: AgentAnnotation[]): Response => json({ annotations });
 

@@ -72,7 +72,7 @@ test("a template with two contradicting conditional blocks answers the run's ann
   const { base, calls, use } = await serve(t, f, async () => answer([NOTE]));
   const [status, body] = await review(base, BUILD, BODY);
   assert.equal(status, 200, JSON.stringify(body));
-  assert.deepEqual(body, { annotations: [{ ...NOTE, source: 'agent' }] });
+  assert.deepEqual(body, { annotations: [{ ...NOTE, source: 'agent', kind: 'advice' }] });
   assert.deepEqual([calls[0].agent, 'model' in calls[0], calls[0].schema], ['claude', false, REVIEW_SCHEMA], 'defaultAgent, the CLI\'s model');
   const { prompt } = calls[0];
   assert.ok(prompt.startsWith('You review the shipped way.\n\n'), 'the shipped reviewer\'s body comes first, without its header');

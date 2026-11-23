@@ -4,7 +4,6 @@
 import type { Express, Response } from 'express';
 import { z } from 'zod';
 import { agentRefusal, withDefaultModel } from './agents.js';
-import { fileLines } from './assist.js';
 import { isRefusal, mainFiles } from './custom-versions.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
 import type { ItemSources } from './item-sources.js';
@@ -38,7 +37,7 @@ export interface TemplateReviewRouteDeps extends Omit<AssistRouteDeps, 'requireL
   requireLive(res: Response): { runtime: { config: ReviewConfig } } | undefined;
 }
 
-interface Prepared { agent: AgentId; model?: string; prompt: string; lineCount: number }
+interface Prepared { agent: AgentId; model?: string; prompt: string; text: string } // text: the posted buffer, which a fix's span is checked against (#981)
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const clip = (text: string): string => text.slice(0, DETAIL_MAX);
@@ -77,7 +76,7 @@ async function prepare(res: Response, deps: TemplateReviewRouteDeps, sources: It
   const others = read.files.filter((file) => file.path !== body.path).map(({ path, text }) => ({ path, text }));
   const catalogue = await readCatalogue(sources);
   const prompt = reviewPrompt({ instructions: instructions.text, path: body.path, kind: read.item.kind, text: body.text, others, variables: variablesOf(read, body), catalogue });
-  return { ...withDefaultModel({ agent, ...(reviewer.model === null ? {} : { model: reviewer.model }) }, config), prompt, lineCount: fileLines(body.text).length }; // #482: null = the agent's default model
+  return { ...withDefaultModel({ agent, ...(reviewer.model === null ? {} : { model: reviewer.model }) }, config), prompt, text: body.text }; // #482: null = the agent's default model
 }
 
 async function runAndAnswer(res: Response, deps: TemplateReviewRouteDeps, id: string, run: Prepared, signal: AbortSignal): Promise<void> {
@@ -90,12 +89,12 @@ async function runAndAnswer(res: Response, deps: TemplateReviewRouteDeps, id: st
     deps.log.warn(`review: ${id} ${run.agent} run failed: ${result.failure}: ${clip(result.detail)}`);
     return fail(res, HTTP_BAD_GATEWAY, MESSAGES.run_failed, 'run_failed');
   }
-  const parsed = parseAnnotations(result.answer, run.lineCount);
+  const parsed = parseAnnotations(result.answer, run.text);
   if ('reason' in parsed) {
     deps.log.warn(`review: ${id} bad answer: ${parsed.reason}: ${clip(result.answer)}`);
     return fail(res, HTTP_BAD_GATEWAY, MESSAGES.bad_answer, 'bad_answer');
   }
-  res.json(parsed);
+  res.json({ annotations: parsed.annotations }); // the page's contract: the reasons a fix read as advice are hive.log's
 }
 
 /** POST /api/items/:id/review (#328, contract api.review), behind the server's host, secret and x-hive-ui gates. */
