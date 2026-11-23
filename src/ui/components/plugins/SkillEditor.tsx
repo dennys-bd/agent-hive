@@ -9,7 +9,7 @@ import { AssistFooter } from '@/components/plugins/AssistFooter';
 import { BlockMap, type MapGap } from '@/components/plugins/BlockMap';
 import { ChainCard } from '@/components/plugins/ChainCard';
 import { ConditionPopover } from '@/components/plugins/ConditionPopover';
-import { FileTabs } from '@/components/plugins/FileTabs';
+import { FileTabs, type FileTabsProps } from '@/components/plugins/FileTabs';
 import { type ChipPopover, type Reveal, TemplateText } from '@/components/plugins/TemplateText';
 import type { Annotations } from '@/hooks/use-annotations';
 import { type Assist, type AssistPick, useAssist } from '@/hooks/use-assist';
@@ -19,10 +19,11 @@ import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
 import { type LineSelection, proposalLook } from '@/lib/assist-view';
 import { appendLine, formVariables } from '@/lib/chain-draft';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
-import { blockAt, isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
+import { blockAt, type Chip, isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
 
 interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; workspaces: readonly string[]; fontFamily: string;
   pick: AssistPick; onPick(pick: AssistPick): void; // #331: the chip's pick, held by the dock
+  isMarginOpen: boolean; onMargin(isOpen: boolean): void; // #980: the margin's switch, the view's
 }
 interface BodyProps extends SkillEditorProps { item: CatalogueItem; read: ItemRead; path: string }
 const NOTE = 'border-b px-3 py-1 text-xs';
@@ -110,6 +111,17 @@ function Notes({ editor, annotations, workspace, failedLine }: { editor: ItemEdi
   );
 }
 
+// #980: the switch shows whenever the text's column would (chips or annotations), never under a preview; closing the margin closes an open
+// chip's popover with it, since its anchor goes with the column
+function marginOf({ annotations, isMarginOpen, onMargin }: BodyProps, chips: readonly Chip[], isPreview: boolean, popover?: ChipPopover): FileTabsProps['margin'] {
+  if (isPreview || (chips.length === 0 && annotations.list.length === 0)) return undefined;
+  const onToggle = (): void => {
+    if (isMarginOpen) popover?.onClose();
+    onMargin(!isMarginOpen);
+  };
+  return { isOpen: isMarginOpen, count: annotations.list.length, onToggle };
+}
+
 function EditorBody(props: BodyProps) {
   const { editor, annotations, item, read, path, fontFamily, workspaces } = props;
   const { isMd, parsed, map, workspace, preview, look } = useFileLook(props);
@@ -125,6 +137,7 @@ function EditorBody(props: BodyProps) {
   const { shown, decorations, isProposal } = useShownLook(look, assist, annotations.list);
   const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const forms = useChainForms({ editor, parsed, map, workspaces, isReadOnly: !canEdit, reveal: revealLine });
+  const margin = marginOf(props, shown.chips, isPreview, forms.popover);
   const selection = useRef<LineSelection>(undefined); // the text's last selection, which a request sends
   const modelKey = [item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0');
   // A new Monaco or a text no longer writable starts with no selection: the old one's lines are invisible now, and Monaco reports none
@@ -134,7 +147,7 @@ function EditorBody(props: BodyProps) {
     <section aria-label={item.name} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FileTabs
         files={read.files.map((file) => file.path)} open={path} isDirty={editor.isDirty} onOpen={editor.openFile} previewOf={workspace}
-        onAdd={item.kind === 'skill' && canEdit ? editor.newFile : undefined} mode={isMd && !isPreview ? editor.mode : undefined} onMode={editor.setMode}
+        onAdd={item.kind === 'skill' && canEdit ? editor.newFile : undefined} mode={isMd && !isPreview ? editor.mode : undefined} onMode={editor.setMode} margin={margin}
       />
       <Notes editor={editor} annotations={annotations} workspace={workspace} failedLine={preview?.ok === false ? preview.errors[0]?.line : undefined} />
       <div className="flex min-h-0 flex-1">
@@ -151,6 +164,7 @@ function EditorBody(props: BodyProps) {
           fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { line: shown.lineOf(reveal.line), n: reveal.n }}
           onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={(lines) => { selection.current = lines; }}
           annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf} onCaret={setCaret}
+          isMarginOpen={props.isMarginOpen} onDot={(annotation) => { props.onMargin(true); annotations.openAt(annotation); }}
         />
       </div>
       <AssistFooter assist={assist} pick={props.pick} onPick={props.onPick} workspace={workspaces[0]} isDisabled={!isWritable} onAsk={(request) => assist.ask(request, selection.current)} />
@@ -159,7 +173,7 @@ function EditorBody(props: BodyProps) {
 }
 
 /** A skill's or a specialist's item screen (#319, #323, handoff 11b, 11c, 11e, 11m): its files, the map and the text, or the preview of one
- * workspace; #327: the open file's annotations in the text. A specialist is one file: no "+", and its header stays in the text. #331: the footer that asks the agent, under the text. The body is keyed by item and file, so a switch starts with
+ * workspace; #327: the open file's annotations in the text; #980: the view's switch closes the margin, and a dot in the gutter reopens it with its card. A specialist is one file: no "+", and its header stays in the text. #331: the footer that asks the agent, under the text. The body is keyed by item and file, so a switch starts with
  * no pending reveal. */
 export function SkillEditor(props: SkillEditorProps) {
   const { item, read, path, hasFailed } = props.editor;

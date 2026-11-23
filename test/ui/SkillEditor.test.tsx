@@ -3,9 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { parseTemplate, renderTemplate } from '../../src/template';
 import { moveBlock } from '../../src/template-edit';
-import { setLanguage } from '@/i18n';
+import { setLanguage, t } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
-import { BUILD_TEXT, CATALOGUE, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems, withVersion } from './plugins-fixtures';
+import { BUILD_TEXT, CATALOGUE, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems, VARS_ORIGINAL, VARS_TEXT, withVersion } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -167,4 +167,40 @@ test('the caret raises its block on the map (#492)', async () => {
   expect(current()).toEqual(['11']);
   act(() => view().setPosition({ lineNumber: 17, column: 1 }));
   expect(current()).toEqual(['16']);
+});
+
+// VARS_TEXT with e2eCommand valued everywhere: one annotation left, reviewDepth unused on header line 6, shown at line 10 in visual mode;
+// the chain's chip sits at line 12
+const ONE_VARS = VARS_TEXT.replace('{ hive-site: pnpm e2e,', '{ agent-hive: pnpm e2e, hive-site: pnpm e2e,');
+const VARS_READS = { 'hive:new-build@mine': readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': ONE_VARS }), 'hive:new-build@': readOf('hive:new-build', null, { 'SKILL.md': VARS_ORIGINAL }) };
+const HEADLINE = 'variável não usada reviewDepth';
+const marginSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'margem das anotações' });
+
+test('the switch closes the margin, leaving a dot on the annotated line; a click on the dot reopens it with that card open; under ver como there is no switch (#980)', async () => {
+  const user = userEvent.setup();
+  stubItems(serverOf({ reads: VARS_READS }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  await waitFor(() => expect(marginSwitch()).toHaveAttribute('aria-checked', 'true'));
+  fireEvent.click(marginSwitch());
+  expect([marginSwitch().getAttribute('aria-checked'), marginSwitch().textContent]).toEqual(['false', 'anotações· 1']);
+  expect(screen.queryByRole('group', { name: 'anotações' })).not.toBeInTheDocument();
+  await waitFor(() => expect(view().decorations.filter((d) => d.options.glyphMarginClassName === 'template-glyph-yellow').map((d) => d.range.startLineNumber)).toEqual([10]));
+  act(() => view().clickGlyph(10));
+  expect(marginSwitch()).toHaveAttribute('aria-checked', 'true');
+  expect(within(screen.getByRole('group', { name: 'anotações' })).getByRole('article', { name: HEADLINE })).toHaveAttribute('data-open', 'true');
+  expect(view().position).toEqual({ lineNumber: 10, column: 1 });
+  await user.click(screen.getByRole('radio', { name: 'hive-site' }));
+  expect(screen.queryByRole('switch', { name: 'margem das anotações' })).not.toBeInTheDocument();
+});
+
+test("closing the margin closes an open chip's popover with it; it stays closed when the margin comes back (#980)", async () => {
+  stubItems(serverOf({ reads: VARS_READS }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  fireEvent.click(within(screen.getByRole('group', { name: 'condições' })).getAllByRole('button')[0]!);
+  expect(await screen.findByRole('dialog', { name: t('plugins.chain.popover') })).toBeInTheDocument();
+  fireEvent.click(marginSwitch());
+  fireEvent.click(marginSwitch());
+  expect(screen.queryByRole('dialog', { name: t('plugins.chain.popover') })).not.toBeInTheDocument();
 });
