@@ -108,7 +108,7 @@ import { registerLaunchOptionsRoute } from './launch-options.js';
 import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
-import { createClaudeAdd } from './claude-account.js';
+import { createClaudeAdd, setupTokenEnv } from './claude-account.js';
 import { registerClaudeAccountRoutes } from './server-claude-accounts.js';
 import { type JiraRouteDeps, registerJiraRoutes } from './server-jira.js';
 import { jiraColumns, jiraFilterOptions, registerJiraSettingsRoutes } from './server-jira-settings.js';
@@ -314,7 +314,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #955: claude setup-token in a pty of the daemon's own, never the host's, whose scrollback ring would keep the token. The env and the
   // binary are a worker's: what a child of the Hive must not inherit dropped, claude found where agentCommand finds it
   const claudeAdd = createClaudeAdd({
-    spawnPty: deps.spawnPty ?? NO_PTY, command: agentCommand('claude', process.platform, process.env), env: withoutHiveEnv(process.env), cwd: home, log,
+    spawnPty: deps.spawnPty ?? NO_PTY, command: agentCommand('claude', process.platform, process.env), env: setupTokenEnv(withoutHiveEnv(process.env)), cwd: home, log,
     save: (name, cred) => saveClaudeCredential(name, cred, deps.credentialsEnv),
   });
   const reviews = createReviewStore(home, (itemId) => live?.state.tasks.some((c) => taskId(c) === itemId) === true); // one file per task (#591)

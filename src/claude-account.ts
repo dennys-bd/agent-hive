@@ -26,6 +26,11 @@ export const plainScreen = (raw: string): string => raw.replace(SCREEN_CONTROLS,
 export const tokenFrom = (screen: string): string | undefined => TOKEN.exec(screen)?.[0];
 /** The sign-in link #965 shows whether or not the CLI could open a browser. */
 export const urlFrom = (screen: string): string | undefined => URL_RUN.exec(screen)?.[0];
+// A token or key the daemon itself was started with would outrank the browser sign-in the add is for
+const INHERITED_AUTH = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'];
+/** The env `claude setup-token` runs with: `env` without the Claude credentials it may carry. */
+export const setupTokenEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(env).filter(([key]) => !INHERITED_AUTH.includes(key)));
 export const trimmedName = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
 
 /** Why `raw` cannot name a new account; a body whose name is no string reads as empty. Compared without regard to case. */
@@ -79,6 +84,7 @@ function finish(s: AddState, f: Flow, next: Ended, log: ClaudeAddDeps['log'], de
 // Marked ended before the kill, since a pty may exit inside kill()
 function stop(f: Flow, log: ClaudeAddDeps['log']): void {
   f.isEnded = true;
+  f.screen = ''; // the token is in it; the pty's listeners keep this flow alive until the pty is collected
   clearTimeout(f.timer);
   try {
     f.pty?.kill();
@@ -123,18 +129,20 @@ function begin(s: AddState, deps: ClaudeAddDeps, name: string): ClaudeAddStatus 
   }
   f.pty = pty;
   s.flow = f;
-  pty.onData((chunk) => feed(s, deps, f, chunk));
-  pty.onExit(({ exitCode }) => {
-    if (f.isEnded) return;
-    f.isEnded = true; // no kill: the process is gone
-    clearTimeout(f.timer);
-    finish(s, f, { state: 'failed', name, reason: 'exited' }, deps.log, ` ${exitCode}`);
-  });
+  // armed before the listeners, so an exit inside onExit's registration still finds a timer to clear
   f.timer = setTimeout(() => {
     if (f.isEnded) return;
     stop(f, deps.log);
     finish(s, f, { state: 'failed', name, reason: 'timeout' }, deps.log);
   }, ADD_TIMEOUT_MS);
+  pty.onData((chunk) => feed(s, deps, f, chunk));
+  pty.onExit(({ exitCode }) => {
+    if (f.isEnded) return;
+    f.isEnded = true; // no kill: the process is gone
+    f.screen = '';
+    clearTimeout(f.timer);
+    finish(s, f, { state: 'failed', name, reason: 'exited' }, deps.log, ` ${exitCode}`);
+  });
   return pendingOf(f);
 }
 

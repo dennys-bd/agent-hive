@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ADD_TIMEOUT_MS, type ClaudeAdd, createClaudeAdd, CURSOR_ANSWER, nameRefusal, plainScreen, SETUP_TOKEN_COLS, SETUP_TOKEN_ROWS, tokenFrom, trimmedName, urlFrom,
+  ADD_TIMEOUT_MS, type ClaudeAdd, createClaudeAdd, CURSOR_ANSWER, nameRefusal, plainScreen, SETUP_TOKEN_COLS, SETUP_TOKEN_ROWS, setupTokenEnv, tokenFrom, trimmedName, urlFrom,
 } from '../src/claude-account.js';
 import { type ClaudeCredential, credentialsPath, readCredentials, saveClaudeCredential } from '../src/credentials.js';
 import { NO_PTY } from '../src/pty-host.js';
@@ -190,4 +190,9 @@ test('close kills a pending add (#955)', async (t) => {
   h.add.start('ana');
   h.add.close();
   assert.equal(h.ptys[0].killed, 1);
+});
+
+test('setupTokenEnv drops the Claude credentials the daemon may carry and keeps the rest (#955)', () => {
+  const env = setupTokenEnv({ PATH: '/bin', CLAUDE_CODE_OAUTH_TOKEN: 'x', ANTHROPIC_API_KEY: 'y', HOME: '/h' });
+  assert.deepEqual(env, { PATH: '/bin', HOME: '/h' });
 });
