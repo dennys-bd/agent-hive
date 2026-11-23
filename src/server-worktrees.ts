@@ -43,7 +43,7 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
  * holdings read (#750) answers the same rows, so the removal dialog removes them through the same routes. */
 export async function workspaceRows(machine: Pick<Machine, 'exec' | 'paths'>, workspace: Workspace, state: State): Promise<WorktreeRow[]> {
   const rows = worktreeRows(await listWorktrees(machine, workspace.path), state, workspace.name);
-  return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, machine.exec) })));
+  return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, machine.paths, machine.exec) })));
 }
 
 // The Settings tab's worktrees (#181). Read from git on demand and never kept in the state: the tab asks when it opens and after each
@@ -62,7 +62,7 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
       // while a row no task owns gives way to the stranded one, which knows its task
       const configured = perWorkspace.flat();
       const owned = new Set(configured.filter((row) => row.task !== undefined).map((row) => row.path));
-      const stranded = (await strandedRows(current.state, current.runtime.config, machine.exec)).filter((row) => !owned.has(row.path));
+      const stranded = (await strandedRows(current.state, current.runtime.config, machine.exec, machine.paths)).filter((row) => !owned.has(row.path));
       const strandedPaths = new Set(stranded.map((row) => row.path));
       res.json([...configured.filter((row) => !strandedPaths.has(row.path)), ...stranded]);
     } catch (err) {

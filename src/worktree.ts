@@ -139,13 +139,13 @@ async function retryLocked(run: () => Promise<string>, tries = 1): Promise<strin
  * where a worktree's would (defaultBase / chosenBase) and `line` says so. `nested` (#653): the workspace's nested repos, checked for uncommitted changes with the checkout itself; switchNested moves them after it. Every call goes through gitOrWords, so a refusal carries git's words.
  */
 export async function ensureCheckout(
-  machine: Pick<Machine, 'exec'>, repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, nested: readonly string[] = [],
+  machine: Pick<Machine, 'exec' | 'paths'>, repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, nested: readonly string[] = [],
 ): Promise<PreparedWorktree> {
   const { exec } = machine;
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   if ((await git('branch', '--show-current')).trim() === branch) return { path: repo }; // no switch: the task's own work in progress stays
   await refuseDirty(repo, exec);
-  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, exec, branch); // #653: no half-switched state; one already on the branch stays as it is
+  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, machine.paths, exec, branch); // #653: no half-switched state; one already on the branch stays as it is
   if (branch.startsWith('-')) throw new Error(`${branch}: a branch cannot start with "-"`); // switch would read it as an option
   if (await hasBranch(machine, repo, branch)) {
     await git('switch', branch);

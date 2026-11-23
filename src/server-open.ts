@@ -98,7 +98,7 @@ async function makeWorktree(deps: TaskRouteDeps, machine: Machine, current: Live
   const { path, sync, line, reused } = prepared;
   if (line) deps.log.info(line); // #267: the base and what became of an existing branch, as a spawn logs them
   if (sync) await deps.dispatch({ type: 'forkSynced', activityId, sync }); // #854: an open's worktree keeps its sync as a spawn's does
-  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, machine.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
+  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, machine.paths, machine.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
   if (run) await run.setUp(workspace, path).catch((err: unknown) => { throw withReused(err, reused); });
   await deps.dispatch({ type: 'worktreeReady', activityId, path, branch, base: place.base ?? null, local: place.local });
 }

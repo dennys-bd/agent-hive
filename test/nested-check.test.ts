@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { detectNested, nestedRepoProblem } from '../src/nested-check.js';
 import { tempDir } from './temp-dir.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // #653 with the real git: why a path cannot be a nested repo, and the ones the Hive suggests.
 
@@ -33,7 +34,7 @@ test('nestedRepoProblem names each cause in order: a bad path, no repository, no
   await git(lib, 'commit', '--quiet', '-m', 'lib');
   await git(ws, '-c', 'protocol.file.allow=always', 'submodule', 'add', '--quiet', lib, 'lib');
   const paths = ['../x', 'gone', 'src', 'docs/agent', 'lib', 'vendor', 'ee', 'docs'];
-  assert.deepEqual(await Promise.all(paths.map((path) => nestedRepoProblem(ws, path))), [
+  assert.deepEqual(await Promise.all(paths.map((path) => nestedRepoProblem(ws, path, HOST_PATHS))), [
     { cause: 'badPath' }, { cause: 'notRepo' }, { cause: 'notRepo' }, { cause: 'notTopLevel', root: 'docs' },
     { cause: 'submodule' }, { cause: 'tracked' }, { cause: 'notIgnored' }, undefined,
   ]);
@@ -46,6 +47,6 @@ test('detectNested finds the ignored folders that are git repositories, outside 
   for (const path of ['docs', 'site', '.hive/inner', 'ee']) await git(ws, 'init', '--quiet', path); // ee is not ignored
   await mkdir(join(ws, 'build'));
   await writeFile(join(ws, 'build', 'out.js'), '');
-  assert.deepEqual(await detectNested(ws, []), ['docs', 'site']);
-  assert.deepEqual(await detectNested(ws, ['docs']), ['site']);
+  assert.deepEqual(await detectNested(ws, [], HOST_PATHS), ['docs', 'site']);
+  assert.deepEqual(await detectNested(ws, ['docs'], HOST_PATHS), ['site']);
 });

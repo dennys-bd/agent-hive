@@ -37,7 +37,7 @@ export function registerNestedRoute(app: Express, deps: NestedRouteDeps): void {
     if (problem) return void res.status(HTTP_BAD_REQUEST).json({ error: problem });
     const listed = typeof repos === 'string' && repos !== '' ? repos.split(',') : [];
     try {
-      res.json(await readNestedRepos(path, await baseNameOf(path, config), listed));
+      res.json(await readNestedRepos(path, await baseNameOf(path, config), listed, LOCAL_DISK.paths));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: err instanceof Error ? err.message : String(err) });
     }
