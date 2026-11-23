@@ -163,6 +163,16 @@ test('loadState drops an agent\'s reading with the wrong shape and leaves the ke
   }
 });
 
+test('loadState keeps the saved accounts and reads a wrong shape as no key (#957)', async (t) => {
+  const dir = await tempDir(t, '');
+  await saveState(dir, { ...initialState(1), accounts: { claude: 'work', github: 'me' } });
+  assert.deepEqual((await loadState(dir)).accounts, { claude: 'work', github: 'me' });
+  for (const accounts of [5, 'work', null, [], { codex: 'x' }, { claude: 7 }, { claude: '' }]) {
+    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), accounts }));
+    assert.equal('accounts' in (await loadState(dir)), false, JSON.stringify(accounts));
+  }
+});
+
 test('loadState keeps each source\'s status in the shape the Hive writes, drops a field of any other shape, and forgets the pre-#180 lastPolledAt, boardQuota and boardProject', async (t) => {
   const dir = await tempDir(t, '');
   const quota = { limit: 5000, remaining: 320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
