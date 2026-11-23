@@ -41,8 +41,8 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 
 /** One workspace's GET /worktrees rows (#181, #653): git's listing, the task that owns each slug, and the nested worktrees in it. The
  * holdings read (#750) answers the same rows, so the removal dialog removes them through the same routes. */
-export async function workspaceRows(machine: Pick<Machine, 'exec'>, workspace: Workspace, state: State, platform: NodeJS.Platform): Promise<WorktreeRow[]> {
-  const rows = worktreeRows(await listWorktrees(machine, workspace.path, platform), state, workspace.name);
+export async function workspaceRows(machine: Pick<Machine, 'exec' | 'paths'>, workspace: Workspace, state: State): Promise<WorktreeRow[]> {
+  const rows = worktreeRows(await listWorktrees(machine, workspace.path), state, workspace.name);
   return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, machine.exec) })));
 }
 
@@ -56,7 +56,7 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
     const machine = machineFor({}); // no activity: the workspace's own, until node 9
     try {
       // every workspace, in config order (#179); a failure in any of them is the 500 with git's words
-      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map((workspace) => workspaceRows(machine, workspace, current.state, machine.info().platform)));
+      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map((workspace) => workspaceRows(machine, workspace, current.state)));
       // #747: then the stranded task activities' worktrees, under their removed workspace; each failure drops only its own rows. A configured
       // workspace that shares the repo lists the same folder: a live task's row wins (a stale activity must never post its delete there),
       // while a row no task owns gives way to the stranded one, which knows its task
@@ -187,8 +187,7 @@ async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps
   const { promptsDir } = before.runtime;
   let listed: Pick<WorktreeRow, 'slug' | 'branch'> | undefined;
   try {
-    const machine = deps.machineFor({});
-    listed = (await listWorktrees(machine, repo, machine.info().platform)).find((w) => w.slug === slug);
+    listed = (await listWorktrees(deps.machineFor({}), repo)).find((w) => w.slug === slug);
   } catch (err) {
     res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     return;

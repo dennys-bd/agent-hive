@@ -89,7 +89,7 @@ async function activityRows(state: RowState, activity: Activity, task: Task, exe
   const standIn = await strandedWorkspace(activity, task, exec);
   if (!standIn) return [];
   const slug = activity.slug ?? slugFor(task.item);
-  const listed = (await listWorktrees({ exec }, standIn.path, process.platform)).filter((w) => w.slug === slug);
+  const listed = (await listWorktrees({ exec, paths: pathsOf(process.platform) }, standIn.path)).filter((w) => w.slug === slug);
   return Promise.all(worktreeRows(listed, state, activity.workspace).map(async (row): Promise<WorktreeRow> =>
     ({ ...row, nested: await nestedStatus(standIn, row.path, exec), workspaceGone: true })));
 }

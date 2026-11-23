@@ -413,7 +413,7 @@ test('listWorktrees keeps only the direct children of .hive/worktrees, with the 
     [join(repo, '.hive', 'worktrees'), 'feat/z'],
   ]);
   const { exec, calls } = fakeExec({ listing: text });
-  assert.deepEqual(await listWorktrees(fakeMachine({ exec }), repo, process.platform), [
+  assert.deepEqual(await listWorktrees(fakeMachine({ exec }), repo), [
     { slug: SLUG, path: worktreePath(HOST_PATHS, repo, SLUG), branch: CLEAN_BRANCH },
     { slug: 'hive-9-detached', path: worktreePath(HOST_PATHS, repo, 'hive-9-detached'), branch: null },
   ]);
@@ -422,14 +422,14 @@ test('listWorktrees keeps only the direct children of .hive/worktrees, with the 
 
 test('listWorktrees rejects with git\'s own words (#181)', async () => {
   const { exec } = fakeExec({ failing: 'list', message: 'Command failed: git -C /r worktree list --porcelain', stderr: 'fatal: not a git repository\n' });
-  await assert.rejects(listWorktrees(fakeMachine({ exec }), '/r', process.platform), { message: 'fatal: not a git repository' });
+  await assert.rejects(listWorktrees(fakeMachine({ exec }), '/r'), { message: 'fatal: not a git repository' });
 });
 
 test('listWorktrees on win32 takes the c:/… git prints for the Hive\'s worktree and answers the native path; a worktree elsewhere with the same name is skipped (#640)', async () => {
   const repo = 'C:\\repo';
   const text = porcelain('C:/repo', [[`c:/repo/.hive/worktrees/${SLUG}`, CLEAN_BRANCH], [`C:/elsewhere/${SLUG}`, 'feat/x']]);
   const { exec } = fakeExec({ listing: text });
-  assert.deepEqual(await listWorktrees(fakeMachine({ exec }), repo, 'win32'), [{ slug: SLUG, path: worktreePath(pathsOf('win32'), repo, SLUG), branch: CLEAN_BRANCH }]);
+  assert.deepEqual(await listWorktrees(fakeMachine({ exec, info: { platform: 'win32' } }), repo), [{ slug: SLUG, path: worktreePath(pathsOf('win32'), repo, SLUG), branch: CLEAN_BRANCH }]);
 });
 
 // ---- a fork's start (#854) ----
@@ -564,12 +564,12 @@ test('on win32, with the real git, a worktree under .hive/worktrees is listed wi
   await realGit(repo, 'commit', '--quiet', '--allow-empty', '-m', 'root');
   const path = worktreePath(HOST_PATHS, repo, SLUG);
   await realGit(repo, 'worktree', 'add', '--quiet', '-b', CLEAN_BRANCH, '--', path);
-  assert.deepEqual(await listWorktrees(fakeMachine({ exec: realExec }), repo, process.platform), [{ slug: SLUG, path, branch: CLEAN_BRANCH }]);
+  assert.deepEqual(await listWorktrees(fakeMachine({ exec: realExec }), repo), [{ slug: SLUG, path, branch: CLEAN_BRANCH }]);
   const calls: string[][] = [];
   const recording: Exec = (file, args, opts) => { calls.push(args); return realExec(file, args, opts); };
   assert.deepEqual(await ensureWorktree(fakeMachine({ exec: recording }), repo, SLUG, CLEAN_BRANCH, { remote: 'origin', fork: null }, undefined), { path });
   assert.equal(calls.some((args) => args.includes('add')), false, 'adopted: no second worktree add');
   await cleanWorktree(fakeMachine({ exec: realExec }), repo, { slug: SLUG, branch: CLEAN_BRANCH }, CLEAN_BRANCH); // the delete activity's removal, never forced
-  assert.deepEqual(await listWorktrees(fakeMachine({ exec: realExec }), repo, process.platform), []);
+  assert.deepEqual(await listWorktrees(fakeMachine({ exec: realExec }), repo), []);
   assert.deepEqual([existsSync(path), await realGit(repo, 'branch', '--list', CLEAN_BRANCH)], [false, '']);
 });

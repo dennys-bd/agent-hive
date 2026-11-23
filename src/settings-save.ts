@@ -9,7 +9,6 @@ import { inFlow } from './tasks.js';
 import { parseSetup } from './setup-script.js';
 import { nestedProblemText, nestedRepoProblem } from './nested-check.js';
 import type { CombConfig, Config, Flow, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
-import { pathsOf } from './machine.js';
 import { LOCAL_DISK } from './machine-local.js';
 import { workspacePathProblem } from './worktree.js';
 
@@ -153,7 +152,7 @@ export function setupRefusal(next: Config): Refusal | undefined {
   for (const workspace of next.comb.workspaces) {
     for (const [key, prefix] of SCRIPTS) {
       try {
-        parseSetup(workspace[key] ?? '', { allowLoad: true, paths: pathsOf(process.platform) });
+        parseSetup(workspace[key] ?? '', { allowLoad: true, paths: LOCAL_DISK.paths });
       } catch (err) {
         return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: ${prefix}${(err as Error).message}` };
       }

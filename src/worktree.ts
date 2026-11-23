@@ -1,6 +1,5 @@
-import { isAbsolute, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { type Machine, pathsOf } from './machine.js';
+import type { Machine } from './machine.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
@@ -49,8 +48,8 @@ export const exists = (machine: Pick<Machine, 'fs'>, path: string): Promise<bool
  * worktree command runs `git -C <workspace>`. git answers the top level by its real path (/private/var on macOS), so both sides go
  * through realpath. Its callers without a machine hand LOCAL_DISK, the real git and disk: the settings save and the boot's proposal each run it once.
  */
-export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs'>, path: string): Promise<string | undefined> {
-  if (!isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;
+export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs' | 'paths'>, path: string): Promise<string | undefined> {
+  if (!machine.paths.isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;
   let top: string;
   try {
     top = (await machine.exec('git', ['-C', path, 'rev-parse', '--show-toplevel'])).stdout.trim();
@@ -167,15 +166,15 @@ export async function ensureCheckout(
  * (null = detached). A row's path is the Hive's own, never git's string (#640): git prints `C:/…` on Windows. Read-only; a failure
  * carries git's words.
  */
-export async function listWorktrees(machine: Pick<Machine, 'exec'>, repo: string, platform: NodeJS.Platform): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
+export async function listWorktrees(machine: Pick<Machine, 'exec' | 'paths'>, repo: string): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
   const porcelain = await gitOrWords(repo, ['worktree', 'list', '--porcelain'], machine.exec);
-  const names = platform === 'win32' ? win32 : posix; // a `C:/…` line's last name is its slug only for win32's basename
+  const { paths } = machine; // a `C:/…` line's last name is its slug only for win32's basename
   return porcelain.split('\n').flatMap((line) => {
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
     const listed = line.slice(WORKTREE_PREFIX.length);
-    const slug = names.basename(listed);
-    const path = worktreePath(pathsOf(platform), repo, slug);
-    return samePath(path, listed, pathsOf(platform)) ? [{ slug, path, branch: branchAt(porcelain, path, pathsOf(platform)) ?? null }] : [];
+    const slug = paths.basename(listed);
+    const path = worktreePath(paths, repo, slug);
+    return samePath(path, listed, paths) ? [{ slug, path, branch: branchAt(porcelain, path, paths) ?? null }] : [];
   });
 }
 
