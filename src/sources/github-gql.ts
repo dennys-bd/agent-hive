@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { githubLoginsStored } from '../credentials.js';
 import { resolveExec } from '../exec-path.js';
-import { defaultGithubToken } from '../github-account.js';
+import { defaultGithubToken, refusalOf, unauthorized, type SelectedGithub } from '../github-account.js';
 import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
@@ -82,6 +82,7 @@ export interface ApiGqlDeps {
   readToken?: () => Promise<string>; // the login binds a token it has not stored yet
   env?: NodeJS.ProcessEnv;
   onUnauthorized?: () => void; // cli (#503): a 401 drops the held token; the next poll reads it again
+  refusal?: () => Promise<string | undefined>; // #959: why a stored login's 401 happened, named in the rejection
 }
 
 /**
@@ -100,7 +101,7 @@ export function apiGql(deps: ApiGqlDeps = {}): Gql {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // no retry: the next poll is the retry
       redirect: 'manual', // the bearer never follows a redirect off the fixed host
     });
-    if (res.status === UNAUTHORIZED) deps.onUnauthorized?.();
+    if (res.status === UNAUTHORIZED) await unauthorized(deps, 'github api');
     if (!res.ok) throw new Error(`github api: HTTP ${res.status}`);
     const body: unknown = await res.json().catch(() => {
       throw new Error('github api: invalid JSON body'); // res.json() would quote the body
@@ -129,12 +130,13 @@ export function loggedGql(gql: Gql, log: Logger): Gql {
   };
 }
 
-export interface GqlForOptions { log?: Logger; ghToken?: GhToken; fetch?: typeof fetch }
+export interface GqlForOptions { log?: Logger; ghToken?: GhToken | SelectedGithub; fetch?: typeof fetch }
 
-// cli with the daemon's holder: gh is the credential only (#503). Without one (a caller that was not handed it) gh stays the transport
+// #959: with the account's holder both transports read as its login over HTTP, a stored login's 401 naming it. Without one (a caller that
+// was not handed it) cli stays on gh and api reads the only stored login
 function transportOf(auth: GithubAuth, { ghToken, fetch }: GqlForOptions): Gql {
-  if (auth === 'api') return apiGql({ fetch });
-  return ghToken ? apiGql({ fetch, readToken: ghToken.token, onUnauthorized: ghToken.invalidate }) : cliGql();
+  if (ghToken !== undefined) return apiGql({ fetch, readToken: ghToken.token, onUnauthorized: ghToken.invalidate, refusal: refusalOf(ghToken) });
+  return auth === 'api' ? apiGql({ fetch }) : cliGql();
 }
 
 /** The transport `auth.github` names, logged when the caller has a logger. The one place the choice is made. */

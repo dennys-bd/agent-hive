@@ -16,7 +16,8 @@ import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
 import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
-import { createGhToken, type GhToken } from './github-token.js';
+import { createGithubAccount, selectionOf, type GithubAccount } from './github-account.js';
+import { createGhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
 import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
@@ -221,8 +222,8 @@ export interface ServerDeps {
   usage?: UsageStore;
   /** #187: the read sync's login and transports; tests inject a fake, the default is accessFor with auth.github's transport. */
   readAccess?: () => Promise<ReadAccess | undefined>;
-  /** #503: the daemon's gh credential holder (login and token, in memory). Absent (tests, an embedded server): the server builds its own. */
-  ghToken?: GhToken;
+  /** #959: the daemon's GitHub account (the selected login and gh's own). Absent (tests, an embedded server): the server builds its own. */
+  githubAccount?: GithubAccount;
   /** #475: a benchmark run's home (benchmark.json): GET /benchmark-run, the viewer's writes and first terminal input recorded or, frozen, refused. */
   runMode?: RunMode;
   /** #955: the draw.io webapp's folder; tests inject a fixture. Absent: DRAWIO_ROOT, which a skipped fetch leaves missing (every answer a 404). */
@@ -291,7 +292,10 @@ function authFromQuery(query: Request['query']): AuthConfig {
 export function createServer(deps: ServerDeps): HiveServer {
   const { home } = deps;
   const log = deps.log ?? createLogger(home);
-  const ghToken = deps.ghToken ?? createGhToken(); // #503: one holder for the poll, Settings and the read sync
+  // #959: one account for the poll, Settings and the read sync; hive.ts used it before its boot adapters, so this is a no-op on the same config
+  const account = deps.githubAccount ?? createGithubAccount({ machine: createGhToken(), env: deps.githubLogin?.env });
+  if (deps.runtime) account.use(selectionOf(deps.runtime.config));
+  const ghToken = account.selected;
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
   const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
   const protocolFor = protocolRenderer(passages, log);
@@ -339,7 +343,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree });
-  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
+  // #959: the form may list with an auth it has not saved yet (setup in api): then the selection's holder would read as the wrong transport
+  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ...(auth === account.selection().auth ? { ghToken } : {}) }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later

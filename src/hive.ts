@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { detectAgents } from './agents.js';
 import { agentDirs } from './agents/command.js';
 import { createExec } from './exec-path.js';
-import { createGhToken, type GhToken } from './github-token.js';
+import { createGithubAccount, selectionOf, type GithubAccount, type SelectedGithub } from './github-account.js';
+import { createGhToken } from './github-token.js';
 import { moveEventsFiles } from './facts.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { parseConfig, predatesComb, readConfig, unnamedWorkspacePath, workspaceScope } from './config.js';
@@ -44,7 +45,7 @@ export interface BootOptions extends Pick<ServerDeps, 'readPlanLimits' | 'launch
 }
 
 /** What both modes' createServer get: the options plus this boot's secret (#467). */
-type BootDeps = Omit<BootOptions, 'locale' | 'posixShell'> & Pick<ServerDeps, 'secret' | 'usage'> & { ghToken: GhToken };
+type BootDeps = Omit<BootOptions, 'locale' | 'posixShell'> & Pick<ServerDeps, 'secret' | 'usage'> & { githubAccount: GithubAccount };
 
 export async function bootHive(home: string, options: BootOptions = {}): Promise<BootedHive> {
   const { posixShell: resolveShell = posixShell, ...rest } = options;
@@ -88,7 +89,7 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
   // writer appends to the moved file; under hive.lock, so no other daemon writes them meanwhile
   moveEventsFiles(home, log);
   const usage = await openUsageStore(home, log);
-  const deps: BootDeps = { ...given, agents, secret, usage, ghToken: createGhToken() };
+  const deps: BootDeps = { ...given, agents, secret, usage, githubAccount: createGithubAccount({ machine: createGhToken() }) };
   // #190: the model opens before the boot adapters, so each one stores its items there, a reused one included. #401: setup mode gets it too,
   // since the server wires it once: the first Settings save leaves setup mode in place, and its adapters and the read routes need it
   const readModel = await openModel(home, log);
@@ -114,11 +115,12 @@ async function bootMode(home: string, log: Logger, language: Language, deps: Boo
   if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, readModel, parsed.fallback, parsed.proposed);
   const { config } = parsed;
   log.setLevel(config.logLevel);
+  deps.githubAccount.use(selectionOf(config)); // #959: before the boot adapters resolve, so they read as the selected login
   // #282: a boot adapter's write answer names its issue row's repository to the open views, through the server once it exists
   const relay: Relay = { notify: () => undefined, refetch: async () => 'skipped' };
-  const items = readModel && bootItemStore(readModel, config, log, deps.ghToken, relay);
+  const items = readModel && bootItemStore(readModel, config, log, deps.githubAccount.selected, relay);
   // A test injects a source that needs no gh (#740); the daemon builds the real adapters
-  const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ghToken: deps.ghToken, ...(store === undefined ? {} : { items: store }) }));
+  const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ghToken: deps.githubAccount.selected, ...(store === undefined ? {} : { items: store }) }));
   const sources = createSources(config, (spec) => build(spec, items));
   let resolved: Map<string, Source>;
   try {
@@ -151,7 +153,7 @@ async function openModel(home: string, log: Logger): Promise<ReadModel | undefin
 // changes auth builds new adapters through the server's factory. notify: the server's readModel event, relayed (#282); refetch: the read
 // loop's, relayed the same way (#567)
 // ponytail: one accessFor per poll: in cli mode a stat of gh's hosts.yml, no process (#503)
-function bootItemStore(db: ReadModel, config: Config, log: Logger, ghToken: GhToken, relay: Relay): ItemStore {
+function bootItemStore(db: ReadModel, config: Config, log: Logger, ghToken: SelectedGithub, relay: Relay): ItemStore {
   return {
     db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { ghToken, log }))?.source,
     notify: (repository, kinds) => relay.notify(repository, kinds), refetch: (repository, number) => relay.refetch(repository, number),

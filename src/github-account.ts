@@ -109,3 +109,13 @@ export function switchSelection(account: GithubAccount, next: GithubSelection): 
   account.use(next);
   return { undo: () => account.use(previous), changed: previous.github !== next.github };
 }
+
+/** The holder's refusal when it is the account's selected login; undefined for gh's bare holder. */
+export const refusalOf = (holder: GhToken | SelectedGithub): SelectedGithub['refusal'] | undefined => ('refusal' in holder ? holder.refusal : undefined);
+
+/** A 401 (#503, #959): the held token is dropped, then a stored login's refusal rejects naming it. */
+export async function unauthorized(deps: { onUnauthorized?: () => void; refusal?: () => Promise<string | undefined> }, prefix: string): Promise<void> {
+  deps.onUnauthorized?.();
+  const why = await deps.refusal?.();
+  if (why !== undefined) throw new Error(`${prefix}: HTTP 401: ${why}`);
+}
