@@ -40,6 +40,13 @@ test('full: a chip per agent with plan limits; per window its label, a 56px bar,
   expect(within(chip).getByRole('button', { name: 'atualizar claude · lido há 2 min' })).toHaveAttribute('title', 'atualizar claude · lido há 2 min');
 });
 
+test('with a named Claude account the chip\'s title names it and the reading\'s source, and Claude has no ↻; codex keeps its own (#957)', () => {
+  render(<AgentUsage state={{ rateLimits: { claude }, accounts: { claude: 'work' } }} form="full" />);
+  const chip = screen.getByTitle('claude · conta work · 5h 5% · reinicia 1h39m · sem 92% · reinicia 5d3h · lido há 2 min · lido dos workers em execução');
+  expect(within(chip).queryByRole('button', { name: /^atualizar claude/ })).toBeNull();
+  expect(within(screen.getByTitle('codex · sem leitura')).getByRole('button', { name: 'atualizar codex · sem leitura' })).toBeInTheDocument();
+});
+
 test('an agent with plan limits and no reading still has its chip: its mark, sem leitura and its ↻ (#223)', () => {
   render(<AgentUsage state={{ rateLimits: { claude } }} form="full" />);
   const chip = screen.getByTitle('codex · sem leitura');

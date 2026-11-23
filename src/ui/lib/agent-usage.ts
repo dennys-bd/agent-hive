@@ -58,11 +58,14 @@ export function readAgo(at: string, now: number): string {
   return t('usage.ago.days', { n: Math.floor(age / DAY_MS) });
 }
 
-/** The chip's tooltip (handoff §3.1): `claude · 5h 5% · reinicia 1h39m · … · lido há 2 min`, or `codex · sem leitura`. */
-export function chipTitle(agent: AgentId, reading: RateLimits | undefined, now: number): string {
-  if (reading === undefined) return `${agent} · ${t('usage.noReading')}`;
+/** The chip's tooltip (handoff §3.1): `claude · 5h 5% · reinicia 1h39m · … · lido há 2 min`, or `codex · sem leitura`. With a named account
+ * (#957): `claude · conta work · … · lido dos workers em execução`, since only its workers read it. */
+export function chipTitle(agent: AgentId, reading: RateLimits | undefined, now: number, account?: string): string {
+  const named = account === undefined ? [agent] : [agent, t('usage.account', { name: account })];
+  const source = account === undefined ? [] : [t('usage.fromWorkers')];
+  if (reading === undefined) return [...named, t('usage.noReading'), ...source].join(' · ');
   const windows = usageWindows(reading, now).map((w) => `${w.short} ${w.percent}% · ${resetText(w)}`);
-  return [agent, ...windows, t('usage.read', { ago: readAgo(reading.at, now) })].join(' · ');
+  return [...named, ...windows, t('usage.read', { ago: readAgo(reading.at, now) }), ...source].join(' · ');
 }
 
 /** The ↻'s title: `atualizar claude · lido há 2 min`, or `· sem leitura` before the first reading. */

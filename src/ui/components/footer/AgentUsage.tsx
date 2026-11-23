@@ -31,18 +31,19 @@ function ChipBody({ reading, now, form }: { reading?: RateLimits; now: number; f
   ));
 }
 
-interface ChipProps { agent: AgentId; reading?: RateLimits; now: number; form: ChipForm; isOpen: boolean; isSpinning: boolean; onToggle(): void; onRefresh(agent: AgentId): void }
+interface ChipProps { agent: AgentId; reading?: RateLimits; account?: string; now: number; form: ChipForm; isOpen: boolean; isSpinning: boolean; onToggle(): void; onRefresh(agent: AgentId): void }
 
-// The toggle (mark and meters) and the agent's ↻ side by side in one border, so no button nests in another
-function UsageChip({ agent, reading, now, form, isOpen, isSpinning, onToggle, onRefresh }: ChipProps) {
-  const title = chipTitle(agent, reading, now);
+// The toggle (mark and meters) and the agent's ↻ side by side in one border, so no button nests in another. #957: a named account's reading
+// comes from its workers only, so there is nothing for a ↻ to read
+function UsageChip({ agent, reading, account, now, form, isOpen, isSpinning, onToggle, onRefresh }: ChipProps) {
+  const title = chipTitle(agent, reading, now, account);
   return (
     <div className={CHIP} title={title}>
       <button type="button" aria-label={title} aria-expanded={isOpen} onClick={onToggle} className="flex items-center gap-2">
         <AgentMark agent={agent} />
         <ChipBody reading={reading} now={now} form={form} />
       </button>
-      {form !== 'minimal' && <RefreshButton agent={agent} reading={reading} now={now} isSpinning={isSpinning} onRefresh={onRefresh} />}
+      {form !== 'minimal' && account === undefined && <RefreshButton agent={agent} reading={reading} now={now} isSpinning={isSpinning} onRefresh={onRefresh} />}
     </div>
   );
 }
@@ -70,7 +71,7 @@ function UsageGroupButton({ agents, readings, now, isOpen, onToggle }: GroupProp
   );
 }
 
-interface AgentUsageProps { state: Pick<State, 'rateLimits'>; form: UsageForm; agents?: readonly AgentId[] } // agents: the tests' seam
+interface AgentUsageProps { state: Pick<State, 'rateLimits' | 'accounts'>; form: UsageForm; agents?: readonly AgentId[] } // agents: the tests' seam
 
 /** The footer's usage group (#223): a chip per agent with plan limits, with or without a reading, or the group form's one button. It owns
  * the clock, the agents being read and whether the panel is open, so a chip's ↻ and the panel's spin together.
@@ -99,14 +100,16 @@ export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProp
       .finally(() => setRefreshing((current) => new Set([...current].filter((a) => !asked.includes(a)))));
   };
   const readings = shownReadings(state.rateLimits ?? {}, now);
+  // #957: only Claude's account decides whose windows the Hive keeps; a Copilot account leaves Copilot's own reading and ↻ as they are
+  const accounts: Partial<Record<AgentId, string>> = state.accounts?.claude === undefined ? {} : { claude: state.accounts.claude };
   return (
     <div data-usage-group="" className="flex shrink-0 items-center gap-2">
       {form === 'group'
         ? <UsageGroupButton agents={agents} readings={readings} now={now} isOpen={isOpen} onToggle={toggle} />
         : agents.map((agent) => (
-          <UsageChip key={agent} agent={agent} reading={readings[agent]} now={now} form={form} isOpen={isOpen} isSpinning={refreshing.has(agent)} onToggle={toggle} onRefresh={refresh} />
+          <UsageChip key={agent} agent={agent} reading={readings[agent]} account={accounts[agent]} now={now} form={form} isOpen={isOpen} isSpinning={refreshing.has(agent)} onToggle={toggle} onRefresh={refresh} />
         ))}
-      {isOpen && <UsagePanel agents={agents} readings={readings} now={now} refreshing={refreshing} onRefresh={refresh} onClose={close} />}
+      {isOpen && <UsagePanel agents={agents} readings={readings} accounts={accounts} now={now} refreshing={refreshing} onRefresh={refresh} onClose={close} />}
     </div>
   );
 }

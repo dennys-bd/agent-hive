@@ -130,6 +130,8 @@ const en = {
   'usage.resets': 'resets {time}',
   'usage.read': 'read {ago}',
   'usage.noReading': 'no reading',
+  'usage.account': 'account {name}', // #957: the selected Claude account, in the chip's tooltip and the panel's row
+  'usage.fromWorkers': 'read from running workers', // #957: with a named account, the Hive's own reading stops
   'usage.ago.now': 'just now',
   'usage.ago.minutes': '{n} min ago',
   'usage.ago.hours': '{n} h ago',
@@ -3698,6 +3700,8 @@ const pt: Record<MessageKey, string> = {
   'usage.resets': 'reinicia {time}',
   'usage.read': 'lido {ago}',
   'usage.noReading': 'sem leitura',
+  'usage.account': 'conta {name}',
+  'usage.fromWorkers': 'lido dos workers em execução',
   'usage.ago.now': 'agora',
   'usage.ago.minutes': 'há {n} min',
   'usage.ago.hours': 'há {n} h',

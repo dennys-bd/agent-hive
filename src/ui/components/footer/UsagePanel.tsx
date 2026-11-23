@@ -6,19 +6,21 @@ import { AgentMark, RefreshButton, UsageMeter } from '@/components/footer/UsageP
 import { t, tPlural } from '@/i18n';
 import { readAgo, resetText, usageWindows } from '@/lib/agent-usage';
 
-interface UsagePanelProps { agents: readonly AgentId[]; readings: PlanReadings; now: number; refreshing: ReadonlySet<AgentId>; onRefresh(agent?: AgentId): void; onClose(): void }
-interface RowProps { agent: AgentId; reading?: RateLimits; now: number; isSpinning: boolean; onRefresh(agent: AgentId): void }
+interface UsagePanelProps { agents: readonly AgentId[]; readings: PlanReadings; accounts: Partial<Record<AgentId, string>>; now: number; refreshing: ReadonlySet<AgentId>; onRefresh(agent?: AgentId): void; onClose(): void }
+interface RowProps { agent: AgentId; reading?: RateLimits; account?: string; now: number; isSpinning: boolean; onRefresh(agent: AgentId): void }
 
-// One agent: mark, name, the reading's age and its ↻; then a line per window whose bar fills the row
-function PanelRow({ agent, reading, now, isSpinning, onRefresh }: RowProps) {
+// One agent: mark, name, its named account (#957), the reading's age and its ↻; then a line per window whose bar fills the row. A named
+// account's reading comes from its workers only, so its row has no ↻
+function PanelRow({ agent, reading, account, now, isSpinning, onRefresh }: RowProps) {
   return (
     <li className="flex flex-col gap-1.5 px-3 py-2">
       <div className="flex items-center gap-2">
         <AgentMark agent={agent} />
         <span className="text-foreground">{agentName(agent)}</span>
+        {account !== undefined && <span className="text-muted-foreground">{t('usage.account', { name: account })}</span>}
         {reading !== undefined && <span className="text-muted-foreground">{t('usage.read', { ago: readAgo(reading.at, now) })}</span>}
         <span className="flex-1" />
-        <RefreshButton agent={agent} reading={reading} now={now} isSpinning={isSpinning} onRefresh={onRefresh} />
+        {account === undefined && <RefreshButton agent={agent} reading={reading} now={now} isSpinning={isSpinning} onRefresh={onRefresh} />}
       </div>
       {reading === undefined
         ? <span className="text-muted-foreground">{t('usage.noReading')}</span>
@@ -49,7 +51,7 @@ function useDismiss(ref: RefObject<HTMLDialogElement | null>, onClose: () => voi
 
 /** The usage panel (#223, handoff §3.2): flush with the window's left edge, above the footer, so only its top-right corner rounds. Every
  * agent with plan limits, its windows, resets and ↻; the place the reset times and ↻ stay within reach in the footer's smaller forms. */
-export function UsagePanel({ agents, readings, now, refreshing, onRefresh, onClose }: UsagePanelProps) {
+export function UsagePanel({ agents, readings, accounts, now, refreshing, onRefresh, onClose }: UsagePanelProps) {
   const ref = useRef<HTMLDialogElement>(null);
   useDismiss(ref, onClose);
   const title = t('usage.panel.title');
@@ -70,7 +72,7 @@ export function UsagePanel({ agents, readings, now, refreshing, onRefresh, onClo
       </div>
       <ul className="min-h-0 flex-1 overflow-y-auto">{/* the design system's thin scrollbar is global (index.css) */}
         {agents.map((agent) => (
-          <PanelRow key={agent} agent={agent} reading={readings[agent]} now={now} isSpinning={refreshing.has(agent)} onRefresh={onRefresh} />
+          <PanelRow key={agent} agent={agent} reading={readings[agent]} account={accounts[agent]} now={now} isSpinning={refreshing.has(agent)} onRefresh={onRefresh} />
         ))}
       </ul>
     </dialog>

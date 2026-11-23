@@ -43,6 +43,16 @@ test('a chip opens the panel: title, count, ↻ todos and ×; per agent its age,
   expect(within(codexRow).getByRole('button', { name: 'atualizar codex · sem leitura' })).toBeInTheDocument();
 });
 
+test('with a named Claude account the Claude row names it in muted text and has no ↻; the other rows keep theirs (#957)', async () => {
+  render(<AgentUsage state={{ rateLimits: { claude }, accounts: { claude: 'work' } }} form="full" />);
+  await userEvent.setup().click(chip());
+  const [claudeRow, codexRow] = within(screen.getByRole('dialog')).getAllByRole('listitem');
+  expect(claudeRow).toHaveTextContent('claudeconta worklido há 2 min');
+  expect(within(claudeRow).getByText('conta work')).toHaveClass('text-muted-foreground');
+  expect(within(claudeRow).queryByRole('button', { name: /^atualizar/ })).toBeNull();
+  expect(within(codexRow).getByRole('button', { name: 'atualizar codex · sem leitura' })).toBeInTheDocument();
+});
+
 test('↻ todos posts {} and spins every ↻, chip and panel alike, until the answer; the panel stays open (#223)', async () => {
   const user = userEvent.setup();
   render(<AgentUsage state={{ rateLimits: { claude } }} form="full" />);
