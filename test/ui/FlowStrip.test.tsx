@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRef } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { STRIP_WIDTH } from '@/components/FlowChart';
+import { SEGMENT_MIN, STRIP_WIDTH } from '@/components/FlowChart';
 import { FlowStrip, type StripSegment } from '@/components/FlowStrip';
 import type { Dragging } from '@/components/task-drag';
 import { setLanguage } from '@/i18n';
@@ -19,9 +19,9 @@ const STATE: State = withPointedWork({
 });
 const listed = vi.fn();
 const segmentOf = (stage: Stage): StripSegment => ({ stage, order: [], count: 0, rules: [], onFilter: () => {}, onClearFilter: () => {}, onList: () => listed(stage.name) });
-function Strip({ dragging, maxHeight = 240 }: { dragging?: Dragging; maxHeight?: number }) {
+function Strip({ dragging, maxHeight = 240, stages = STAGES }: { dragging?: Dragging; maxHeight?: number; stages?: readonly Stage[] }) {
   const drag = useRef<Dragging | undefined>(dragging);
-  return <FlowStrip segments={STAGES.map(segmentOf)} state={STATE} drag={drag} maxHeight={maxHeight} />;
+  return <FlowStrip segments={stages.map(segmentOf)} state={STATE} drag={drag} maxHeight={maxHeight} />;
 }
 const segment = (name: string): HTMLElement => screen.getByRole('group', { name: `${name}, vazia, recolhida` });
 // jsdom has no DragEvent: a plain event carrying what the handlers read, as Flow.test.tsx does
@@ -47,6 +47,19 @@ test('a strip is STRIP_WIDTH wide and STRIP_HEIGHT tall under maxHeight; each se
   unmount();
   const tall = render(<Strip maxHeight={800} />);
   expect(tall.container.querySelector<HTMLElement>('[data-strip]')!.style.height).toBe('300px');
+});
+
+// #1001: four segments splitting 300px cut each name to a letter; past two the strip grows to SEGMENT_MIN a segment, under maxHeight still
+test('a strip of more stages than STRIP_HEIGHT holds at SEGMENT_MIN grows to SEGMENT_MIN a segment, never past maxHeight (#1001)', () => {
+  const four: Stage[] = ['repro', 'fix', 'review', 'ship'].map((name) => ({ name, from: {} }));
+  const heightOf = (maxHeight: number): string => {
+    const { container, unmount } = render(<Strip stages={four} maxHeight={maxHeight} />);
+    const height = container.querySelector<HTMLElement>('[data-strip]')!.style.height;
+    unmount();
+    return height;
+  };
+  expect(heightOf(2000)).toBe(`${4 * SEGMENT_MIN}px`);
+  expect(heightOf(400)).toBe('400px');
 });
 
 test('a segment\'s ⋯ is the stage menu, with lista › first, which opens that stage\'s list panel (#914)', async () => {

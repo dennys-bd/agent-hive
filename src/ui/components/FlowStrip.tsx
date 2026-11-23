@@ -30,11 +30,11 @@ function Segment({ segment, state, drag, isFirst }: SegmentProps) {
   );
 }
 
-/** One or more empty stages collapsed (#914): STRIP_WIDTH wide, up to STRIP_HEIGHT tall, one segment per stage of equal height, top to bottom
+/** One or more empty stages collapsed (#914): STRIP_WIDTH wide, stripHeight tall (#1001), one segment per stage of equal height, top to bottom
  * the count, the name written down and the stage's ⋯. Not clipped, so a segment's drop tip shows beside it; the corner segments round instead. */
 export function FlowStrip({ segments, state, drag, maxHeight }: { segments: readonly StripSegment[]; state: State; drag: DragRef; maxHeight: number }) {
   return (
-    <div data-strip={segments[0]?.stage.name} style={{ width: STRIP_WIDTH, height: stripHeight(maxHeight) }} className="flex flex-col rounded-xl border bg-card">
+    <div data-strip={segments[0]?.stage.name} style={{ width: STRIP_WIDTH, height: stripHeight(maxHeight, segments.length) }} className="flex flex-col rounded-xl border bg-card">
       {segments.map((s, i) => <Segment key={s.stage.name} segment={s} state={state} drag={drag} isFirst={i === 0} />)}
     </div>
   );

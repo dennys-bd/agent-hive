@@ -11,8 +11,9 @@ import type { EmptyStages, FlowCanvas, LoopLabels, Loops } from '@/lib/flow-view
 export const NODE_WIDTH = 220; // #54: room for a task's ⊘ blocked line and its footer's status beside the button
 export const STRIP_WIDTH = 40; // #914: an empty stage, collapsed
 export const STRIP_HEIGHT = 300;
-/** A strip's height (#914): STRIP_HEIGHT, never past what a node may grow to. */
-export const stripHeight = (maxHeight: number): number => Math.min(STRIP_HEIGHT, maxHeight);
+export const SEGMENT_MIN = 120; // #1001: room for a segment's count, a usual stage name written down and its ⋯
+/** A strip's height (#914, #1001): STRIP_HEIGHT, grown so each of its `count` segments gets SEGMENT_MIN, never past what a node may grow to. */
+export const stripHeight = (maxHeight: number, count: number): number => Math.min(Math.max(STRIP_HEIGHT, count * SEGMENT_MIN), maxHeight);
 
 interface FlowChartProps {
   stages: readonly Stage[]; transitions: readonly Transition[];
@@ -24,12 +25,12 @@ interface FlowChartProps {
   emptyStages?: EmptyStages; isEmpty?(stage: string): boolean; renderStrip?(stages: readonly Stage[], maxHeight: number): ReactNode;
 }
 
-// A row entry as layoutFlow places it (#914): a node NODE_WIDTH wide; a strip STRIP_WIDTH wide and at most STRIP_HEIGHT tall, a merged one's
+// A row entry as layoutFlow places it (#914): a node NODE_WIDTH wide; a strip STRIP_WIDTH wide and stripHeight tall, a merged one's
 // forward arrow leaving its last segment's line
 function rowNode(entry: RowEntry, height: number): LayoutNode {
   if (!entry.isStrip) return { id: entry.id, width: NODE_WIDTH, height };
-  const tall = stripHeight(height);
   const count = entry.stages.length;
+  const tall = stripHeight(height, count);
   return { id: entry.id, width: STRIP_WIDTH, height: tall, ...(count > 1 ? { exit: segmentLine(tall, count, count - 1) } : {}) };
 }
 
