@@ -1,14 +1,15 @@
-// A workspace's view of the Activities tab (#586): how it groups, whether the worktree line shows, which groups are collapsed, and whether
-// the workspace itself is open. Kept in the daemon's view state (#484, #779) under activitiesView, one entry per workspace name, so a restart
-// and a new port keep it; sessionStorage died with the window. A removed workspace's entry stays: a few bytes, and pruning would need the
-// workspace list here.
+// A workspace's view of the Activities tab (#586): how it groups, whether the worktree line shows, which groups are collapsed, whether
+// the workspace itself is open, and which of its tasks are collapsed (#913). Kept in the daemon's view state (#484, #779) under activitiesView,
+// one entry per workspace name, so a restart and a new port keep it; sessionStorage died with the window. A removed workspace's entry stays,
+// and so does a gone task's id: a few bytes, and pruning would need the workspace and task lists here.
 import { useEffect, useState } from 'react';
 import { DONE_KEY, GROUP_MODES, type GroupMode } from '@/lib/activity-groups';
 import { readView, writeView } from '@/lib/view-state';
 
-export interface WorkspaceView { mode: GroupMode; showWorktree: boolean; collapsed: string[]; isOpen: boolean }
+export interface WorkspaceView { mode: GroupMode; showWorktree: boolean; collapsed: string[]; isOpen: boolean; collapsedTasks: string[] }
 
-export const DEFAULT_VIEW: WorkspaceView = { mode: 'stage', showWorktree: true, collapsed: [DONE_KEY], isOpen: true }; // done starts collapsed
+// done starts collapsed; every task starts open (#913), so no sidebar changes at once
+export const DEFAULT_VIEW: WorkspaceView = { mode: 'stage', showWorktree: true, collapsed: [DONE_KEY], isOpen: true, collapsedTasks: [] };
 
 type Views = Record<string, unknown>;
 
@@ -24,12 +25,13 @@ function readAll(): Views {
 // Field by field, since the stored JSON is not trusted: a value of the wrong shape falls back to its default rather than breaking the tab
 function viewOf(saved: unknown): WorkspaceView {
   if (!isViews(saved)) return DEFAULT_VIEW;
-  const { mode, showWorktree, collapsed, isOpen } = saved;
+  const { mode, showWorktree, collapsed, isOpen, collapsedTasks } = saved;
   return {
     mode: GROUP_MODES.includes(mode as GroupMode) ? (mode as GroupMode) : DEFAULT_VIEW.mode,
     showWorktree: typeof showWorktree === 'boolean' ? showWorktree : DEFAULT_VIEW.showWorktree,
     collapsed: isStrings(collapsed) ? collapsed : DEFAULT_VIEW.collapsed,
     isOpen: typeof isOpen === 'boolean' ? isOpen : DEFAULT_VIEW.isOpen,
+    collapsedTasks: isStrings(collapsedTasks) ? collapsedTasks : DEFAULT_VIEW.collapsedTasks,
   };
 }
 
