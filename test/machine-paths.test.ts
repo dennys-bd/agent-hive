@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { MachineFs, RunProcess } from '../src/machine.js';
 import type { Exec, Workspace } from '../src/types.js';
+import { excludeFromGit } from '../src/hooks-settings.js';
 import { ensureWorktree } from '../src/worktree.js';
 import { runSetup } from '../src/worktree-setup.js';
 import { fakeMachine, statsOf } from './fake-machine.js';
@@ -84,5 +85,23 @@ for (const side of STEP_SIDES) {
     assert.ok(touched.includes(side.worktree), 'the RUN ran in the worktree');
     assert.ok(touched.includes(side.marker), `the marker went to ${side.marker}`);
     assert.deepEqual(touched.filter((path) => path.includes(side.foreign)), [], "no path is joined the other platform's way");
+  });
+}
+
+const EXCLUDE_SIDES = [
+  { platform: 'linux', repo: '/r', info: '/r/.git/info', exclude: '/r/.git/info/exclude' },
+  { platform: 'win32', repo: 'C:\\r', info: 'C:\\r\\.git\\info', exclude: 'C:\\r\\.git\\info\\exclude' },
+] as const;
+
+for (const side of EXCLUDE_SIDES) {
+  test(`excludeFromGit on a ${side.platform} machine reads and appends that machine's .git/info/exclude, on any host (#928)`, async () => {
+    const touched: string[] = [];
+    const machine = fakeMachine({ info: { platform: side.platform }, fs: {
+      stat: async (path) => { touched.push(path); return statsOf('folder'); },
+      readFile: (async (path: string) => { touched.push(path); return ''; }) as unknown as MachineFs['readFile'],
+      appendFile: async (path, data) => { touched.push(`${path} << ${String(data)}`); },
+    } });
+    await excludeFromGit(machine, side.repo);
+    assert.deepEqual(touched, [side.info, side.exclude, `${side.exclude} << .hive/\n`]);
   });
 }
