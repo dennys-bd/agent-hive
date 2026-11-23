@@ -132,3 +132,43 @@ test('recolher tarefas collapses every task with lines in that workspace only; e
   expect(chevron('#3 Task 3')).toHaveAttribute('aria-expanded', 'true');
   expect(lines('hive')).toHaveLength(4);
 });
+
+const header = (workspace: string): HTMLElement => within(group(workspace)).getByRole('button', { name: workspace });
+const groupHeader = (workspace: string, name: string): HTMLElement =>
+  within(within(group(workspace)).getByRole('group', { name })).getByRole('button', { name: new RegExp(`^${name}`) });
+
+test('selecting a task in a closed workspace or a collapsed group opens both, keeps the task collapsed and scrolls its row into view, nearest (#913)', async () => {
+  const user = userEvent.setup();
+  const scrolled: Element[] = [];
+  vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this); });
+  const { rerender } = render(<ActivitiesPanel {...props()} />);
+  await user.click(chevron('#1 Task 1'));
+  await user.click(header('hive'));
+  expect(within(group('hive')).queryByText('#1 Task 1')).not.toBeInTheDocument();
+  rerender(<ActivitiesPanel {...props({ selected: 'I1' })} />);
+  expect(header('hive')).toHaveAttribute('aria-expanded', 'true');
+  expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'false'); // the task itself stays collapsed
+  await waitFor(() => expect(scrolled).toEqual([row('#1 Task 1').parentElement]));
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+  rerender(<ActivitiesPanel {...props({ selected: undefined })} />);
+  await user.click(groupHeader('hive', 'dev'));
+  expect(within(group('hive')).queryByText('#1 Task 1')).not.toBeInTheDocument();
+  rerender(<ActivitiesPanel {...props({ selected: 'I1' })} />);
+  expect(groupHeader('hive', 'dev')).toHaveAttribute('aria-expanded', 'true');
+  expect(within(group('hive')).getByText('#1 Task 1')).toBeInTheDocument();
+  await waitFor(() => expect(scrolled).toHaveLength(2));
+});
+
+test('collapsing the selected task\'s workspace or group keeps it closed, and a mount with it selected does not reopen it (#913)', async () => {
+  const user = userEvent.setup();
+  const { rerender, unmount } = render(<ActivitiesPanel {...props({ selected: 'I1' })} />);
+  await user.click(groupHeader('hive', 'dev'));
+  rerender(<ActivitiesPanel {...props({ selected: 'I1', activities: [...ALL] })} />); // a new list, the same selection
+  expect(groupHeader('hive', 'dev')).toHaveAttribute('aria-expanded', 'false');
+  await user.click(header('hive'));
+  rerender(<ActivitiesPanel {...props({ selected: 'I1', activities: [...ALL] })} />);
+  expect(header('hive')).toHaveAttribute('aria-expanded', 'false');
+  unmount();
+  render(<ActivitiesPanel {...props({ selected: 'I1' })} />);
+  expect(header('hive')).toHaveAttribute('aria-expanded', 'false');
+});

@@ -1,5 +1,5 @@
 import { ChevronDownIcon, GitBranchIcon, PlusIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from 'react';
 import { taskTotals } from '../../record-kit';
 import { taskLabel, resolveWorkspace } from '../../tasks';
 import { displayBinding } from '../../shortcuts';
@@ -101,6 +101,7 @@ function StatusLine({ status, isSleeping }: { status?: Status; isSleeping: boole
 type RowsProps = Pick<ActivitiesPanelProps, 'workers' | 'selected' | 'shown' | 'onSelect' | 'onOpenRun' | 'nav'> & { worktrees: Record<string, WorktreeState> };
 type EntryProps = Omit<RowsProps, 'selected' | 'worktrees'> & {
   activity: TaskActivity; isSelected: boolean; worktree?: WorktreeState; showWorktree: boolean; isCollapsed: boolean; onToggle?(): void;
+  entryRef?: Ref<HTMLDivElement>; // the selected entry's block, which a reveal scrolls to (#913)
 };
 
 // The sessions a task's guide line lists: a terminal running one of its live sessions draws it in its place, so it is not listed again (#347)
@@ -160,7 +161,7 @@ function TaskChevron({ name, isCollapsed, onToggle }: { name: string; isCollapse
 // block on a guide line, each opening its run (#492). Siblings, never nested: a button holds no button. The selected block takes the muted
 // fill whole. Only the selected activity's sessions can be the shown one, since the center shows the selected activity. Collapsed (#913), the
 // guide line goes and the row's marker says how many lines it hid
-function ActivityEntry({ activity, isSelected, worktree, showWorktree, isCollapsed, onToggle, workers, shown, onSelect, onOpenRun, nav }: EntryProps) {
+function ActivityEntry({ activity, isSelected, worktree, showWorktree, isCollapsed, onToggle, entryRef, workers, shown, onSelect, onOpenRun, nav }: EntryProps) {
   const { task } = activity;
   const id = task.item.itemId;
   const lines = lineCount(activity);
@@ -185,7 +186,7 @@ function ActivityEntry({ activity, isSelected, worktree, showWorktree, isCollaps
     </button>
   );
   return (
-    <div className={`relative flex flex-col rounded-md py-1.5 pr-2 pl-5 ${isSelected ? 'bg-muted' : 'hover:bg-accent/50'}`}>
+    <div ref={entryRef} className={`relative flex flex-col rounded-md py-1.5 pr-2 pl-5 ${isSelected ? 'bg-muted' : 'hover:bg-accent/50'}`}>
       {lines > 0 && onToggle && <TaskChevron name={taskLabel(task)} isCollapsed={isCollapsed} onToggle={onToggle} />}
       {nav.menu ? nav.menu(task, row) : row}
       {lines > 0 && !isHidden && (
@@ -198,17 +199,18 @@ function ActivityEntry({ activity, isSelected, worktree, showWorktree, isCollaps
 }
 
 // How a list draws its entries: the worktree line per the route (#586); collapsed per the workspace's view (#913), which the no-workspace
-// list has none of, so its entries get no chevron
-interface EntryView { showWorktree: boolean; collapsedTasks?: readonly string[]; onToggleTask?(id: string): void }
+// list has none of, so its entries get no chevron; and the ref a reveal scrolls to, on the selected entry only
+interface EntryView { showWorktree: boolean; collapsedTasks?: readonly string[]; onToggleTask?(id: string): void; selectedRef?: Ref<HTMLDivElement> }
 
 // One activity's block as its list renders it: selected per the tab, its worktree state per the route (#586)
-function entryOf({ selected, worktrees, ...rest }: RowsProps, { showWorktree, collapsedTasks = [], onToggleTask }: EntryView): (activity: TaskActivity) => ReactNode {
+function entryOf({ selected, worktrees, ...rest }: RowsProps, { showWorktree, collapsedTasks = [], onToggleTask, selectedRef }: EntryView): (activity: TaskActivity) => ReactNode {
   return (activity) => {
     const id = activity.task.item.itemId;
+    const isSelected = id === selected;
     return (
       <ActivityEntry
-        key={id} activity={activity} isSelected={id === selected} worktree={worktrees[id]} showWorktree={showWorktree}
-        isCollapsed={collapsedTasks.includes(id)} onToggle={onToggleTask && (() => onToggleTask(id))} {...rest}
+        key={id} activity={activity} isSelected={isSelected} worktree={worktrees[id]} showWorktree={showWorktree} isCollapsed={collapsedTasks.includes(id)}
+        onToggle={onToggleTask && (() => onToggleTask(id))} entryRef={isSelected ? selectedRef : undefined} {...rest}
       />
     );
   };
@@ -267,11 +269,37 @@ function LocalEntry({ name, branch, local, sessions, workers, selected, shown, o
 
 type GroupProps = RowsProps & { name: string; branch?: string | null; activities: TaskActivity[]; flows: Flow[]; localSessions: Session[]; local?: LocalActivity };
 
+interface RevealArgs { activities: TaskActivity[]; flows: Flow[]; view: WorkspaceView; setView(patch: Partial<WorkspaceView>): void }
+
+/** Selecting a task this workspace hides (#913), from ⌘P or a focus, opens the workspace and the task's group, never the task, then scrolls
+ * its row into view. Only a change of the selected id reveals: a mount does not, nor a change of the view or the list, so the selected task's
+ * workspace or group still collapses. Returns the ref the selected entry's block takes. */
+function useRevealSelected(selected: string | undefined, { activities, flows, view, setView }: RevealArgs): RefObject<HTMLDivElement | null> {
+  const entry = useRef<HTMLDivElement>(null);
+  const last = useRef(selected);
+  const [reveals, setReveals] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selected is the only trigger (#913): a change of the view or the list must not reveal again
+  useEffect(() => {
+    if (selected === last.current) return;
+    last.current = selected;
+    const key = groupActivities(activities, view.mode, flows).find((g) => g.items.some((a) => a.task.item.itemId === selected))?.key;
+    if (key === undefined || (view.isOpen && !view.collapsed.includes(key))) return;
+    setView({ isOpen: true, collapsed: view.collapsed.filter((k) => k !== key) });
+    setReveals((n) => n + 1);
+  }, [selected]);
+  // after the render that mounted the revealed row, so the ref holds it; jsdom has no scrollIntoView
+  useEffect(() => {
+    if (reveals > 0) entry.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [reveals]);
+  return entry;
+}
+
 const toggled = (keys: string[], key: string): string[] => (keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key]);
 
 // A workspace: its local activity first (#590), outside any stage or status group, then its task activities in the groups its ⋯ picks (#586)
 function WorkspaceGroup({ name, branch, activities, flows, localSessions, local, ...rows }: GroupProps) {
   const [view, setView] = useWorkspaceView(name);
+  const selectedRef = useRevealSelected(rows.selected, { activities, flows, view, setView });
   const toggle = (key: string): void => setView({ collapsed: toggled(view.collapsed, key) });
   // a task's collapse is part of the saved view too (#913), under its item id
   const toggleTask = (id: string): void => setView({ collapsedTasks: toggled(view.collapsedTasks, id) });
@@ -289,7 +317,7 @@ function WorkspaceGroup({ name, branch, activities, flows, localSessions, local,
           <LocalEntry name={name} branch={branch} local={local} sessions={localSessions} {...rows} />
           <ActivityGroupList
             groups={groupActivities(activities, view.mode, flows)} isFlat={view.mode === 'none'} collapsed={view.collapsed}
-            onToggle={toggle} entry={entryOf(rows, { showWorktree: view.showWorktree, collapsedTasks: view.collapsedTasks, onToggleTask: toggleTask })}
+            onToggle={toggle} entry={entryOf(rows, { showWorktree: view.showWorktree, collapsedTasks: view.collapsedTasks, onToggleTask: toggleTask, selectedRef })}
           />
         </>
       )}
