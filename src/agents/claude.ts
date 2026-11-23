@@ -91,6 +91,7 @@ export const claudeRunner: AgentRunner = {
   headlessAnswer: (stdout) => headlessAnswer(stdout),
   headlessPrompt: (prompt) => prompt, // the schema rides --json-schema
   headlessEnv: () => ({}),
+  accountEnv: async () => ({ env: {} }), // #953: the machine's login; #956 fills it
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
   runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
   runFiles: () => [], // its protocol rides --append-system-prompt-file

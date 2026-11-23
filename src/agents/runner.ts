@@ -2,11 +2,15 @@
 // agent's flags, files and formats only through it; the agent's facts (label, command, subcommands, planLimits) stay in agents.ts, which the
 // page reads too.
 import type { Machine } from '../machine.js';
-import type { HookPayload, LaunchArg, RateLimits } from '../types.js';
+import type { Credentials, HookPayload, LaunchArg, RateLimits } from '../types.js';
 import type { TranscriptTurn } from '../usage.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
 
 export type { LaunchArg };
+
+/** What a runner's accountEnv is given (#953): the name Config.accounts selects for the agent's provider (absent: the machine's login) and a
+ * reader of the credential store, called only by a runner that needs a token. */
+export interface AccountCtx { selected?: string; credentials(): Promise<Credentials> }
 
 /** An external server as a run receives it (#333): in scope, switched on, its header value resolved from credentials.json. */
 export type RunMcpServer =
@@ -69,6 +73,7 @@ export interface AgentRunner {
   headlessAnswer(stdout: string, answerFile: string | undefined): string | undefined; // #330: the final message's text; answerFile: answerPath's content
   headlessPrompt(prompt: string, schema: string): string; // #877: what goes on stdin; an agent with no schema flag (Copilot) asks for the schema's JSON in it
   headlessEnv(run: HeadlessRun): Record<string, string>; // #877: laid over the run's env before the agent is looked up (Copilot's own home in run.dir); {} = none
+  accountEnv(ctx: AccountCtx): Promise<{ env: Record<string, string>; account?: string }>; // #953: the run's account env and the account it names; { env: {} } = the machine's login
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
   runEnv(server: McpServer, run: AgentRun): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex); #873: the run, for a folder named after its pty id
   runFiles(run: AgentRun): { path: string; content: string }[]; // #873: absolute paths the spawn writes (0600, folders made) before the pty starts; [] = none
