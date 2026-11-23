@@ -1,14 +1,11 @@
-import { watch as fsWatch } from 'node:fs';
-import { lstat, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
 import { gitIn } from './git-status.js';
 import type { Logger } from './log.js';
-import type { Exec } from './types.js';
+import { type Machine, MachineError, type MachineWatcher } from './machine.js';
 import { toWire } from './wire-path.js';
 import { wordsOf } from './worktree.js';
 
-// One leased root's watch (#502): the tree, recursively, and its git's index and HEAD; pushes coalesced and capped; a grouped poll when
-// fs.watch fails.
+// One leased root's watch (#502), on the machine its activity is on (#935): the tree, recursively, and its git's index and HEAD; pushes
+// coalesced and capped; a grouped poll when the machine's watch fails.
 
 export const COALESCE_MS = 250; // a burst's changes gathered after its first
 export const MIN_PUSH_MS = 1_000; // at most one push a second per root: a build costs at most one read a second
@@ -19,6 +16,8 @@ const GIT_FILES = new Set(['index', 'HEAD']);
 const ROOT_GITDIR = '.git'; // a key no nested repository can have: git never names one .git
 const WORKTREES = '.hive/worktrees'; // the other activities' worktrees inside a workspace's checkout
 const GITDIR_LINE = /^gitdir:\s*(.+?)\s*$/m;
+export const GITDIR_FILE_MAX = 4096; // a gitdir: line is far under it; a .git file over it is no worktree's
+const NO_GITDIR = new Set<MachineError['code']>([MachineError.TOO_LARGE, MachineError.NOT_FILE]); // read as a missing .git: no gitdir
 
 /** What a changed path is worth to the page (#502): `git` for the root's own `.git/index` and `.git/HEAD` (a push with no paths), `drop`
  *  for any other `.git` path (every worker's git writes the main .git) and, under a checkout, for the other activities' worktrees. Pure. */
@@ -32,20 +31,14 @@ export function pathKind(path: string, isCheckout: boolean): PathKind {
   return isCheckout && (path === WORKTREES || path.startsWith(`${WORKTREES}/`)) ? 'drop' : 'path';
 }
 
-/** The gitdir a worktree's `.git` file names (#502), read with fs, no git; a relative one against the folder holding the file. Pure. */
-export function gitDirOf(dotGit: string, folder: string): string | undefined {
+/** The gitdir a worktree's `.git` file names (#502), read with fs, no git; a relative one against the folder holding the file, with the
+ *  machine's paths (#935). Pure. */
+export function gitDirOf(dotGit: string, folder: string, paths: Machine['paths']): string | undefined {
   const match = GITDIR_LINE.exec(dotGit);
-  return match === null ? undefined : resolve(folder, match[1]);
+  return match === null ? undefined : paths.resolve(folder, match[1]);
 }
 
-export interface Watcher { close(): void; on(event: 'error', listener: (err: Error) => void): unknown }
-export type WatchFn = (path: string, options: { recursive: boolean }, listener: (eventType: string, filename: string | null) => void) => Watcher;
-
-// persistent: false: a watch is never what keeps the daemon alive (spec: daemon shutdown); close() still closes each
-export const nodeWatch: WatchFn = (path, { recursive }, listener) =>
-  fsWatch(path, { recursive, persistent: false, encoding: 'utf8' }, (eventType, filename) => listener(eventType, filename));
-
-export interface RootDeps { log: Pick<Logger, 'warn' | 'debug'>; exec: Exec; watch: WatchFn; now(): number; push(paths: string[] | undefined): void; onFail(reason: string): void }
+export interface RootDeps { log: Pick<Logger, 'warn' | 'debug'>; machine: Machine; now(): number; push(paths: string[] | undefined): void; onFail(reason: string): void }
 export interface RootWatch { ready: Promise<void>; watchNested(repo: string): Promise<void>; close(): void }
 
 /** The changes gathered for one push (#502): COALESCE_MS after the first, never sooner than MIN_PUSH_MS after the last push; past PATHS_CAP,
@@ -91,7 +84,7 @@ export function createBatch(now: () => number, push: (paths: string[] | undefine
 // operations, and a nested repository's stage or commit only on focus (the outer status does not see it)
 export const FALLBACK_STATUS_ARGS = ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', '--ignored=matching'];
 
-function startFallback(root: string, { exec, log, push }: Pick<RootDeps, 'exec' | 'log' | 'push'>): { close(): void } {
+function startFallback(root: string, { machine, log, push }: Pick<RootDeps, 'machine' | 'log' | 'push'>): { close(): void } {
   let last: string | undefined;
   let isRunning = false;
   let isClosed = false;
@@ -99,7 +92,7 @@ function startFallback(root: string, { exec, log, push }: Pick<RootDeps, 'exec' 
     if (isRunning) return; // a slow git never stacks runs
     isRunning = true;
     try {
-      const output = await gitIn(root, FALLBACK_STATUS_ARGS, exec);
+      const output = await gitIn(root, FALLBACK_STATUS_ARGS, machine.exec);
       if (!isClosed && last !== undefined && output !== last) push(undefined);
       last = output;
     } catch (err) {
@@ -113,61 +106,71 @@ function startFallback(root: string, { exec, log, push }: Pick<RootDeps, 'exec' 
   return { close: () => { isClosed = true; clearInterval(timer); } };
 }
 
-/** The gitdir of the repository at `folder` (#502): its .git folder, or the one its .git file names (a worktree's); undefined without either. */
-export async function gitDirFor(folder: string): Promise<string | undefined> {
-  const dotGit = join(folder, '.git');
-  const stat = await lstat(dotGit).catch(() => undefined);
-  if (stat === undefined) return undefined;
-  return stat.isDirectory() ? dotGit : gitDirOf(await readFile(dotGit, 'utf8'), folder);
+// A .git file over GITDIR_FILE_MAX, or one that is not a regular file, names no gitdir, as a missing one does
+async function readDotGit(machine: Machine, dotGit: string): Promise<string | undefined> {
+  try {
+    return await machine.fs.readFile(dotGit, { maxBytes: GITDIR_FILE_MAX, encoding: 'utf8' });
+  } catch (err) {
+    if (err instanceof MachineError && NO_GITDIR.has(err.code)) return undefined;
+    throw err;
+  }
 }
 
-function treeListener(batch: { add(path: string | undefined): void }, isCheckout: boolean): (filename: string | null) => void {
+/** The gitdir of the repository at `folder` on `machine` (#502, #935): its .git folder, or the one its .git file names (a worktree's);
+ *  undefined without either. */
+export async function gitDirFor(machine: Machine, folder: string): Promise<string | undefined> {
+  const dotGit = machine.paths.join(folder, '.git');
+  const stat = await machine.fs.lstat(dotGit).catch(() => undefined);
+  if (stat === undefined) return undefined;
+  if (stat.isDirectory()) return dotGit;
+  const text = await readDotGit(machine, dotGit);
+  return text === undefined ? undefined : gitDirOf(text, folder, machine.paths);
+}
+
+function treeListener(batch: { add(path: string | undefined): void }, isCheckout: boolean, machine: Pick<Machine, 'info'>): (filename: string | null) => void {
   return (filename) => {
-    // a null name: the platform named nothing, so anything may have changed
-    const path = filename === null ? undefined : toWire(filename, process.platform);
+    // a null name: the platform named nothing, so anything may have changed. The separators are the machine's: a distro's are / on a
+    // Windows host (#935); info() is read here, and the unavailable machine, whose info() throws, never fires an event
+    const path = filename === null ? undefined : toWire(filename, machine.info().platform);
     const kind = path === undefined ? 'git' : pathKind(path, isCheckout);
     if (kind !== 'drop') batch.add(kind === 'git' ? undefined : path);
   };
 }
 
 export function createRootWatch(root: string, isCheckout: boolean, deps: RootDeps): RootWatch {
+  const { machine } = deps;
   const batch = createBatch(deps.now, deps.push);
-  const watchers = new Map<string, Watcher>(); // '' the tree, ROOT_GITDIR the root's gitdir, a nested repository's path its gitdir
+  const watchers = new Map<string, MachineWatcher>(); // '' the tree, ROOT_GITDIR the root's gitdir, a nested repository's path its gitdir
   let isClosed = false;
   let poll: { close(): void } | undefined;
   const isWatching = (): boolean => !isClosed && poll === undefined;
   const closeAll = (): void => { for (const watcher of watchers.values()) watcher.close(); watchers.clear(); batch.close(); };
   // Any failure of the tree's or the root gitdir's watch: one git status for the whole root instead, nested repositories included
-  const rootFailed = (err: unknown): void => {
+  const rootFailed = (err: MachineError): void => {
     if (!isWatching()) return;
     batch.flush(); // a change already seen is not lost to the switch
     closeAll();
     deps.onFail(wordsOf(err));
     poll = startFallback(root, deps);
   };
-  const open = (key: string, path: string, recursive: boolean, onEvent: (filename: string | null) => void, onError: (err: unknown) => void): void => {
-    try {
-      const watcher = deps.watch(path, { recursive }, (_eventType, filename) => onEvent(filename));
-      watcher.on('error', onError);
-      watchers.set(key, watcher);
-    } catch (err) {
-      onError(err);
-    }
+  // machine.watch never throws: a failure to start reaches onError after it returned, as a later one does (#935)
+  const open = (key: string, path: string, recursive: boolean, onEvent: (filename: string | null) => void, onError: (err: MachineError) => void): void => {
+    watchers.set(key, machine.watch(path, { recursive }, onEvent, onError));
   };
   // git replaces index and HEAD by renaming a lock over them: a watch on the folder survives that, one on the file goes dead after the first
   const onGitDir = (as: string | undefined) => (filename: string | null): void => {
     if (filename === null || GIT_FILES.has(filename)) batch.add(as);
   };
-  open('', root, true, treeListener(batch, isCheckout), rootFailed);
+  open('', root, true, treeListener(batch, isCheckout, machine), rootFailed);
   // A checkout's own .git folder is already inside the recursive watch; a .git file (a worktree used as the checkout) names a gitdir outside it
-  const ready = gitDirFor(root).then(
-    (dir) => { if (dir !== undefined && isWatching() && !(isCheckout && dir === join(root, '.git'))) open(ROOT_GITDIR, dir, false, onGitDir(undefined), rootFailed); },
+  const ready = gitDirFor(machine, root).then(
+    (dir) => { if (dir !== undefined && isWatching() && !(isCheckout && dir === machine.paths.join(root, '.git'))) open(ROOT_GITDIR, dir, false, onGitDir(undefined), rootFailed); },
     (err: unknown) => deps.log.debug(`tree watch: ${root}: no gitdir read: ${wordsOf(err)}`),
   );
   // Only an expanded nested repository is watched: #289's marks of a folder never opened stay as last read
   const watchNested = async (repo: string): Promise<void> => {
     if (!isWatching() || watchers.has(repo)) return;
-    const dir = await gitDirFor(join(root, repo)).catch(() => undefined);
+    const dir = await gitDirFor(machine, machine.paths.join(root, repo)).catch(() => undefined);
     if (dir === undefined || !isWatching() || watchers.has(repo)) return; // checked again: a second call may have opened it while this one read
     // A nested repository's failure costs only its own push: the tree's watch goes on, and the next folder read registers it again
     open(repo, dir, false, onGitDir(repo), (err) => {

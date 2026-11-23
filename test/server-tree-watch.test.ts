@@ -20,9 +20,9 @@ const idOf = (path: string): string => decodeURIComponent(path.slice('/activitie
 function recordingWatch(): { treeWatch: TreeWatch; calls: string[][] } {
   const calls: string[][] = [];
   const treeWatch: TreeWatch = {
-    lease: async (activityId, root, id, isCheckout) => { calls.push(['lease', activityId, root, id, String(isCheckout)]); },
+    lease: async (activityId, root, id, isCheckout, machine) => { calls.push(['lease', activityId, root, id, String(isCheckout), machine.id]); },
     release: (activityId, id) => { calls.push(['release', activityId, id]); },
-    watchNested: async (root, repo) => { calls.push(['watchNested', root, repo]); },
+    watchNested: async (machine, root, repo) => { calls.push(['watchNested', machine.id, root, repo]); },
     close: () => { calls.push(['close']); },
   };
   return { treeWatch, calls };
@@ -36,8 +36,8 @@ test('POST /activities/:id/tree/watch leases the root, a task\'s worktree as no 
   assert.equal((await send(f.base, 'POST', `${LOCAL}/tree/watch`, { lease: 'L2' })).status, 204);
   assert.equal((await send(f.base, 'DELETE', `${path}/tree/watch/L1`)).status, 204);
   assert.deepEqual(fake.calls, [
-    ['lease', idOf(path), worktreePath(f.repo, 'hive-1-task'), 'L1', 'false'],
-    ['lease', localActivityId('hive'), f.repo, 'L2', 'true'],
+    ['lease', idOf(path), worktreePath(f.repo, 'hive-1-task'), 'L1', 'false', 'local'],
+    ['lease', localActivityId('hive'), f.repo, 'L2', 'true', 'local'],
     ['release', idOf(path), 'L1'],
   ]);
   await f.server.close();
@@ -82,9 +82,9 @@ test('GET /activities/:id/tree/folder registers the nested repository a folder l
   await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere');
   const folder = (path: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder?path=${encodeURIComponent(path)}`);
   assert.equal((await folder('docs/agent')).status, 200);
-  assert.deepEqual(fake.calls, [['watchNested', wt, 'docs']]);
+  assert.deepEqual(fake.calls, [['watchNested', 'local', wt, 'docs']]);
   assert.equal((await folder('src')).status, 200);
-  assert.deepEqual(fake.calls, [['watchNested', wt, 'docs']]);
+  assert.deepEqual(fake.calls, [['watchNested', 'local', wt, 'docs']]);
 });
 
 test('a change in a leased worktree reaches /events as a named tree event for its activity (#502)', async (t) => {

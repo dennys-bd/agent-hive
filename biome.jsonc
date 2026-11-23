@@ -99,9 +99,9 @@
     // Pending: files a sibling node still has to move; each node deletes its own group
     {
       "includes": [
-        // unowned, 7.5 (#882): nested repos, tree watch, design parts and exit cwd on the machine
+        // unowned, 7.5 (#882): nested repos, design parts and exit cwd on the machine
         "src/worktree-nested.ts", "src/worktree-stranded.ts", "src/nested-check.ts", "src/server-nested.ts",
-        "src/tree-watch-root.ts", "src/design-parts.ts", "src/server-exit.ts",
+        "src/design-parts.ts", "src/server-exit.ts",
         // src/server.ts: exists' access and the config write, the host's own; #161 moved only its call sites, and no node owns the file
         "src/server.ts"
       ],

@@ -4,9 +4,9 @@ import { execFile, spawn } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { envValue } from './exec-path.js';
-import { type Machine, type MachineChild, MachineError, type MachineExec, type MachineInfo, type ProcessOptions, pathsOf } from './machine.js';
+import { type Machine, type MachineChild, type MachineExec, type MachineInfo, type ProcessOptions, pathsOf, toMachineError } from './machine.js';
 import { createLocalPty, type LocalPtyDeps } from './machine-local-pty.js';
-import { localFs } from './machine-local-fs.js';
+import { localFs, localWatch } from './machine-local-fs.js';
 import { runDetached } from './machine-run.js';
 import { posixShell } from './posix-shell.js';
 import { type AgentAvailability, type Exec, LOCAL_MACHINE } from './types.js';
@@ -16,19 +16,6 @@ export interface LocalMachineDeps extends Omit<LocalPtyDeps, 'env' | 'platform'>
   agents: readonly AgentAvailability[]; // what boot detected (#516); 7.4 detects per machine
   env?: NodeJS.ProcessEnv; // process.env unless a test injects one
   platform?: NodeJS.Platform; // process.platform unless a test injects one
-}
-
-const text = (value: unknown): string => (typeof value === 'string' ? value : Buffer.isBuffer(value) ? value.toString('utf8') : '');
-
-/** execFile's rejection (or a test fake's) as a MachineError, field for field, the original as its cause. */
-export function toMachineError(err: unknown): MachineError {
-  if (err instanceof MachineError) return err;
-  const fields: Record<string, unknown> = typeof err === 'object' && err !== null ? { ...err } : {};
-  const { code } = fields;
-  return new MachineError(err instanceof Error ? err.message : String(err), {
-    code: typeof code === 'string' || typeof code === 'number' ? code : undefined,
-    stderr: text(fields.stderr), stdout: text(fields.stdout), killed: fields.killed === true,
-  }, { cause: err });
 }
 
 // stdio left at its default, three pipes: spawn's type is then ChildProcessWithoutNullStreams
@@ -67,7 +54,7 @@ export function createLocalMachine(deps: LocalMachineDeps): Machine {
   const platform = deps.platform ?? process.platform;
   let read: MachineInfo | undefined; // nothing it holds changes while the Hive runs
   return {
-    id: LOCAL_MACHINE, ...localDisk(deps.exec), run: runDetached, process: localProcess, paths: pathsOf(platform),
+    id: LOCAL_MACHINE, ...localDisk(deps.exec), run: runDetached, process: localProcess, paths: pathsOf(platform), watch: localWatch,
     pty: createLocalPty({ ...deps, env, platform }),
     info: () => {
       read ??= infoOf(env, platform, deps.agents);

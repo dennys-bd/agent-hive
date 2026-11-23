@@ -225,7 +225,7 @@ function registerFolderRoute(app: Express, { requireLive, treeWatch, machineFor 
       const folder = await treeFolder(root, path, pathFs(machine));
       if (typeof folder !== 'string') return refuse(res, folder);
       // #502: an expanded nested repository's stage, commit and switch push; the watch ignores an unleased root
-      res.json(await folderEntries(machine, root, path, folder, (repo) => void treeWatch.watchNested(root, repo)));
+      res.json(await folderEntries(machine, root, path, folder, (repo) => void treeWatch.watchNested(machine, root, repo)));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
     }

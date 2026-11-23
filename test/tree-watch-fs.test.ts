@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createTreeWatch, MIN_PUSH_MS } from '../src/tree-watch.js';
 import type { TreeChange } from '../src/types.js';
+import { fakeMachine } from './fake-machine.js';
 import { gitAt, realExec } from './fixtures/tree-repo.js';
 import { tempDir } from './temp-dir.js';
 
@@ -31,13 +32,13 @@ test('on a real worktree an edit, git add, git commit and git switch each push a
   await gitAt(repo, 'worktree', 'add', '--quiet', '-b', 'feature', wt);
   const changes: TreeChange[] = [];
   const calls: string[][] = [];
+  const machine = fakeMachine({ exec: async (_file, args) => { calls.push(args); return { stdout: '' }; } });
   const tree = createTreeWatch({
     log: { warn: (line) => assert.fail(line), debug: () => undefined },
     notify: (change) => changes.push(change),
-    exec: async (_file, args) => { calls.push(args); return { stdout: '' }; },
   });
   t.after(() => tree.close());
-  await tree.lease('a-1', wt, 'L1', false);
+  await tree.lease('a-1', wt, 'L1', false, machine);
   await sleep(SETTLE_MS);
   changes.length = 0;
   const step = async (name: string, act: () => Promise<unknown>): Promise<TreeChange[]> => {

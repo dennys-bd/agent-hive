@@ -5,7 +5,7 @@ import { treeCheckout, treeMachine, treeRoot } from './server-tree.js';
 import { wordsOf } from './worktree.js';
 
 // The files sidebar's lease on its tree (#502): the page posts one per shown sidebar and renews it; the daemon watches that root while any
-// lease holds it. No value of the request picks the folder: treeRoot does, as for every tree route.
+// lease holds it. No value of the request picks the folder: treeRoot does, as for every tree route; the root is watched on its activity's machine (#935).
 
 export const LEASE_MAX_LENGTH = 64;
 export const LEASE_BODY_MESSAGE = 'lease must be a non-empty string of at most 64 characters';
@@ -29,7 +29,8 @@ export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch, 
     if (!isLease(lease)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LEASE_BODY_MESSAGE });
     try {
       // A checkout holds the other activities' worktrees under .hive/worktrees: treeCheckout tells it apart, as GET /tree does (#131)
-      await treeWatch.lease(id, root, lease, treeCheckout(current.state, current.runtime.config, id, root, treeMachine(current.state, id, machineFor)) === undefined);
+      const machine = treeMachine(current.state, id, machineFor);
+      await treeWatch.lease(id, root, lease, treeCheckout(current.state, current.runtime.config, id, root, machine) === undefined, machine);
       res.status(HTTP_NO_CONTENT).end();
     } catch (err) {
       res.status(err instanceof TooManyLeasesError ? HTTP_TOO_MANY : HTTP_SERVER_ERROR).json({ error: wordsOf(err) });

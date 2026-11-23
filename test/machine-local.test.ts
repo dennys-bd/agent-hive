@@ -146,3 +146,68 @@ test('the fake machines answer paths for the platform they were given (#927)', (
   assert.equal(fakeMachine({ info: { platform: 'win32' } }).paths, path.win32);
   assert.equal(fakeMachine({ info: { platform: 'linux' } }).paths, path.posix);
 });
+
+const WATCH_WAIT_MS = 5_000; // FSEvents, inotify and ReadDirectoryChangesW all answer well inside it; CI runners are slow
+const WRITE_EVERY_MS = 50;
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve)); // past the microtask a start-up failure is queued on
+
+// One watch's events and errors, and a promise kept on the first event that names `name`
+function hearing(name: string): { heard: Promise<void>; names: (string | null)[]; errors: MachineError[]; onEvent(filename: string | null): void; onError(err: MachineError): void } {
+  const names: (string | null)[] = [];
+  const errors: MachineError[] = [];
+  let hear = (): void => undefined;
+  const heard = new Promise<void>((resolve) => { hear = resolve; });
+  return {
+    heard, names, errors,
+    onEvent: (filename) => { names.push(filename); if (filename === name) hear(); },
+    onError: (err) => { errors.push(err); },
+  };
+}
+
+// Writes `file` every WRITE_EVERY_MS until `heard` is kept, false after WATCH_WAIT_MS. Linux arms a recursive watch some time after watch()
+// returns, so a single write could land before it. A failed write is retried on the next tick (Windows may hold the file a moment)
+function writeUntil(file: string, heard: Promise<void>): Promise<boolean> {
+  return new Promise((resolve) => {
+    let count = 0;
+    const writer = setInterval(() => { writeFile(file, String(count++)).catch(() => undefined); }, WRITE_EVERY_MS);
+    const timer = setTimeout(() => finish(false), WATCH_WAIT_MS);
+    function finish(isHeard: boolean): void {
+      clearInterval(writer);
+      clearTimeout(timer);
+      resolve(isHeard);
+    }
+    void heard.then(() => finish(true));
+  });
+}
+
+test('the local machine\'s watch reports a file written under the watched folder, and nothing after close() (#935)', async (t) => {
+  const dir = await tempDir(t, 'watch-');
+  const machine = createLocalMachine(deps());
+  const first = hearing('a.txt');
+  const watcher = machine.watch(dir, { recursive: true }, first.onEvent, first.onError);
+  t.after(() => watcher.close());
+  assert.ok(await writeUntil(join(dir, 'a.txt'), first.heard), `no event for a.txt within ${WATCH_WAIT_MS} ms`);
+  watcher.close();
+  const heardBefore = first.names.length;
+  // A second watch hearing the next write says the OS delivered it: the closed one must hear nothing of it
+  const second = hearing('b.txt');
+  const next = machine.watch(dir, { recursive: true }, second.onEvent, second.onError);
+  t.after(() => next.close());
+  assert.ok(await writeUntil(join(dir, 'b.txt'), second.heard), `no event for b.txt within ${WATCH_WAIT_MS} ms`);
+  assert.deepEqual([first.names.length, first.errors, second.errors], [heardBefore, [], []]);
+});
+
+test('a watch of a missing path reports ENOENT through onError once, after watch returned, and no event; close() before then suppresses it (#935)', async (t) => {
+  const missing = join(await tempDir(t, 'watch-'), 'gone');
+  const { watch } = createLocalMachine(deps());
+  const errors: MachineError[] = [];
+  const events: (string | null)[] = [];
+  watch(missing, { recursive: false }, (name) => events.push(name), (err) => errors.push(err));
+  assert.equal(errors.length, 0, 'watch never throws, and reports nothing before it returns');
+  await settle();
+  assert.deepEqual([errors.length, errors[0] instanceof MachineError, errors[0]?.code, events], [1, true, 'ENOENT', []]);
+  const suppressed: MachineError[] = [];
+  watch(missing, { recursive: false }, () => undefined, (err) => suppressed.push(err)).close();
+  await settle();
+  assert.deepEqual(suppressed, []);
+});

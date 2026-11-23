@@ -179,7 +179,7 @@ export interface Runtime {
 }
 
 export interface ServerDeps {
-  treeWatch?: TreeWatch; // #502: the files sidebar's watches; tests inject a recording fake, the default watches with node:fs
+  treeWatch?: TreeWatch; // #502: the files sidebar's watches; tests inject a recording fake, the default watches each root on its activity's machine (#935)
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
@@ -338,7 +338,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const machineFor: MachineFor = (activity) => machines.for(activity);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
-  const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree, exec });
+  const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree });
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
