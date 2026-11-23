@@ -1,9 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { TemplateText, type TemplateTextProps } from '@/components/plugins/TemplateText';
+import { type MarginAnnotations, TemplateText, type TemplateTextProps } from '@/components/plugins/TemplateText';
 import type { AgentAnnotation } from '../../src/reviewer';
 import { REVIEWER_DEFAULTS } from '../../src/types';
-import type { Annotations } from '@/hooks/use-annotations';
 import { setLanguage } from '@/i18n';
 import { FAKE_LINE_HEIGHT, FakeEditor, FakeModel, resetMonacoFakes } from './monaco-fake';
 
@@ -100,9 +99,9 @@ test('a note chip is plain text, not a button (#492)', async () => {
 });
 
 const agentAt = (line: number, severity: AgentAnnotation['severity']): AgentAnnotation => ({ line, severity, title: `t${line}${severity}`, body: 'b', source: 'agent' });
-const annotationsOf = (list: readonly AgentAnnotation[]): Annotations => ({
+const annotationsOf = (list: readonly AgentAnnotation[]): MarginAnnotations => ({
   list, review: { config: { ...REVIEWER_DEFAULTS, when: 'demand', version: 'strict' }, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
-  canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(),
+  canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(), passage: vi.fn(),
 });
 const glyphs = (view: FakeEditor) => view.decorations.filter((d) => d.options.glyphMarginClassName !== undefined).map((d) => [d.range.startLineNumber, d.options.glyphMarginClassName]);
 
@@ -126,4 +125,50 @@ test('with the margin closed the column is gone and each annotated line gets a d
   expect(screen.getByRole('group', { name: 'anotações' })).toBeInTheDocument();
   view.clickGlyph(3);
   expect(onDot).toHaveBeenCalledTimes(1);
+});
+
+const jumps = (view: FakeEditor) => view.decorations.filter((d) => d.options.className === 'template-jump').map((d) => [d.range.startLineNumber, d.options.isWholeLine]);
+
+test('a jump reveal paints its whole line until the caret moves, the text changes or another reveal comes; a plain reveal paints nothing (#982)', async () => {
+  const { rerender } = render(<TemplateText {...props()} />);
+  const view = await firstEditor();
+  rerender(<TemplateText {...props({ reveal: { line: 2, n: 1, isJump: true } })} />);
+  expect([view.position, jumps(view)]).toEqual([{ lineNumber: 2, column: 1 }, [[2, true]]]);
+  act(() => view.setPosition({ lineNumber: 3, column: 1 }));
+  expect(jumps(view)).toEqual([]);
+  rerender(<TemplateText {...props({ reveal: { line: 3, n: 2, isJump: true } })} />);
+  expect(jumps(view)).toEqual([[3, true]]);
+  act(() => view.model.type('a\nb\nc\nd\n'));
+  expect(jumps(view)).toEqual([]);
+  rerender(<TemplateText {...props({ reveal: { line: 1, n: 3, isJump: true } })} />);
+  expect(jumps(view)).toEqual([[1, true]]);
+  rerender(<TemplateText {...props({ reveal: { line: 2, n: 4 } })} />);
+  expect([view.position, jumps(view)]).toEqual([{ lineNumber: 2, column: 1 }, []]);
+});
+
+test("a jump selects nothing: the reveal's own move reports an empty selection (#982)", async () => {
+  const onSelection = vi.fn();
+  const { rerender } = render(<TemplateText {...props({ onSelection })} />);
+  const view = await firstEditor();
+  act(() => view.select({ startLineNumber: 1, startColumn: 1, endLineNumber: 2, endColumn: 2 }));
+  rerender(<TemplateText {...props({ onSelection, reveal: { line: 3, n: 1, isJump: true } })} />);
+  expect(onSelection).toHaveBeenLastCalledWith(undefined);
+});
+
+test('select sets whole lines once per n, reported through onSelection; one with no lines collapses the selection to its start (#982)', async () => {
+  const onSelection = vi.fn();
+  const { rerender } = render(<TemplateText {...props({ onSelection })} />);
+  const view = await firstEditor();
+  rerender(<TemplateText {...props({ onSelection, select: { lines: { startLine: 1, endLine: 2 }, n: 1 } })} />);
+  expect(view.selection).toEqual({ startLineNumber: 1, startColumn: 1, endLineNumber: 2, endColumn: 2 });
+  expect(onSelection).toHaveBeenLastCalledWith({ startLine: 1, endLine: 2 });
+  rerender(<TemplateText {...props({ onSelection, select: { lines: { startLine: 3, endLine: 3 }, n: 1 } })} />);
+  expect(view.selection).toEqual({ startLineNumber: 1, startColumn: 1, endLineNumber: 2, endColumn: 2 }); // the same n applies once
+  rerender(<TemplateText {...props({ onSelection, select: { n: 2 } })} />);
+  expect(view.selection).toEqual({ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 });
+  expect(onSelection).toHaveBeenLastCalledWith(undefined);
+  const last = view.getModel().getLineCount();
+  rerender(<TemplateText {...props({ onSelection, select: { lines: { startLine: last + 5, endLine: last + 9 }, n: 3 } })} />);
+  // a stale line past the end is clamped to the last line, never thrown on
+  expect(view.selection).toEqual({ startLineNumber: last, startColumn: 1, endLineNumber: last, endColumn: view.getModel().getLineMaxColumn(last) });
 });

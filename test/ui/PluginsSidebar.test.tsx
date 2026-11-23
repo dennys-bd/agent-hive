@@ -7,7 +7,7 @@ import { usePlugins } from '@/hooks/use-plugins';
 import { setLanguage } from '@/i18n';
 import type { PanelId } from '@/lib/dock-layout';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
-import { json, stubFetch, WORKSPACES } from './plugins-fixtures';
+import { CATALOGUE, json, OWN, stubFetch, WORKSPACES } from './plugins-fixtures';
 
 function Sidebar({ activate = vi.fn(), isShown = true }: { activate?: (id: PanelId) => void; isShown?: boolean }) {
   const plugins = usePlugins(true);
@@ -134,4 +134,28 @@ test("an item's update screen selects that item's row and its section, and shows
   expect(row('new-plan')).toHaveAttribute('aria-current', 'true');
   expect(screen.getByRole('button', { name: /^skills/ })).toHaveAttribute('aria-current', 'true');
   expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['hive', 'agent-hive', 'hive-site']);
+});
+
+test("a user-created item sits in a group of its own after hive, headed criadas por você with the hive group's dot; its dot keeps customized's look, titled criada por você (#983)", async () => {
+  stubFetch(undefined, () => [...CATALOGUE, OWN]);
+  render(<Sidebar />);
+  openItem();
+  await screen.findByRole('button', { name: /^release-check/ });
+  const groups = screen.getAllByRole('group');
+  expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['hive', 'criadas por você', 'agent-hive', 'hive-site']);
+  expect(groups[1]?.firstElementChild).toHaveTextContent(/^criadas por você$/);
+  expect(groups[1]?.firstElementChild?.querySelector('.bg-foreground')).toBeInTheDocument();
+  const dot = row('release-check').querySelector('[data-state]');
+  expect(dot).toHaveClass('bg-review');
+  expect(dot).toHaveAttribute('title', 'criada por você');
+});
+
+test('the own group and its dot read created by you in English (#983)', async () => {
+  setLanguage('en');
+  stubFetch(undefined, () => [...CATALOGUE, OWN]);
+  render(<Sidebar />);
+  openItem();
+  await screen.findByRole('button', { name: /^release-check/ });
+  expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['hive', 'created by you', 'agent-hive', 'hive-site']);
+  expect(row('release-check').querySelector('[data-state]')).toHaveAttribute('title', 'created by you');
 });

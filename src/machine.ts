@@ -119,6 +119,14 @@ export interface RunProcess {
 /** Never a rejection: failure says why a run did not end with 0. code: the exit code, a signal, timeout / stopped / too_large, or an errno. */
 export interface RunResult { code: number | string; stdout: Buffer; stderr: string; tail: string; failure?: string }
 
+const TAIL_LINES = 20; // worktree-steps.ts' tail, what a task's error shows of a RUN
+const TAIL_CHARS = 8192; // output with no newlines (a progress bar) is bounded too
+
+// A run's tail as its chunks arrive, and the one its RunResult carries: here, not in machine-run.ts, so the mux's client (#937) keeps an
+// aborted run's tail as runDetached does without importing node:child_process. +1: the last piece is the line still being written
+export const keepTail = (text: string): string => text.slice(-TAIL_CHARS).split('\n').slice(-(TAIL_LINES + 1)).join('\n');
+export const tailOf = (text: string): string => text.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
+
 /** An agent run's inputs: AgentRun without what the machine fills from its own disk and daemon, its plugin folders included (#947). */
 export type RunInputs = Omit<AgentRun, 'ptyId' | 'cwd' | 'port' | 'hooksPath' | 'mcpPath' | 'protocolPath' | 'protocolText' | 'pluginDir' | 'lspPluginDir'>;
 

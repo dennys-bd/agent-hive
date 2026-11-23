@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ListScreen } from '@/components/plugins/ListScreen';
 import { usePlugins } from '@/hooks/use-plugins';
 import { setLanguage } from '@/i18n';
-import { BASED_ON, itemOf, json, SECOND_ORIGIN, stubFetch, WORKSPACES } from './plugins-fixtures';
+import { BASED_ON, CATALOGUE, itemOf, json, OWN, SECOND_ORIGIN, stubFetch, WORKSPACES } from './plugins-fixtures';
 
 function List() {
   const plugins = usePlugins(true);
@@ -87,4 +87,27 @@ test('the hive group reads the plugin version when the catalogue read has one (#
   stubFetch(undefined, undefined, '0.2.0');
   render(<List />);
   expect(await within((await screen.findAllByRole('group'))[0] as HTMLElement).findByText('plugin hive 0.2.0')).toBeInTheDocument();
+});
+
+test('the user-created items get their own group after hive, headed criadas por você with no path, their state reading criada por você; the filter narrows neither (#983)', async () => {
+  const user = userEvent.setup();
+  stubFetch(undefined, () => [...CATALOGUE, OWN]);
+  render(<List />);
+  const row = await screen.findByRole('button', { name: /^release-check/ });
+  expect(groups()).toEqual(['hive', 'criadas por você', 'agent-hive', 'hive-site']);
+  const header = (screen.getAllByRole('group')[1] as HTMLElement).firstElementChild;
+  expect(header?.textContent).toBe('criadas por você');
+  expect(header?.querySelector('.font-mono')).toBeNull();
+  expect(Array.from(row.children)[2]).toHaveTextContent(/^criada por você$/);
+  await user.click(screen.getByRole('button', { name: 'only hive-site' }));
+  expect(groups()).toEqual(['hive', 'criadas por você', 'hive-site']);
+});
+
+test('the own group and its state read created by you in English (#983)', async () => {
+  setLanguage('en');
+  stubFetch(undefined, () => [...CATALOGUE, OWN]);
+  render(<List />);
+  const row = await screen.findByRole('button', { name: /^release-check/ });
+  expect(groups()).toEqual(['hive', 'created by you', 'agent-hive', 'hive-site']);
+  expect(Array.from(row.children)[2]).toHaveTextContent(/^created by you$/);
 });

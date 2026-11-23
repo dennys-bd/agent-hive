@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import type { CatalogueItem, ItemVersion, UpdateConflict, UpdatePreview } from '../../src/types';
+import type { CatalogueItem, DiffHunk, ItemVersion, UpdateChange, UpdateConflict, UpdatePreview } from '../../src/types';
 import { PluginsView } from '@/components/plugins/PluginsView';
 import { useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
@@ -19,15 +19,34 @@ const CONFLICT: UpdateConflict = {
   kind: 'conflict', id: 'reference/index.md#0', file: 'reference/index.md', heading: '## Index',
   base: ['| # | slice |'], mine: ['| # | slice | owner |'], hive: ['| # | slice | tests |'],
 };
+// #984: each clean row's diff, the Hive's original before and after, numbered as the screen's 11d draws them
+const INPUT_DIFF: DiffHunk[] = [{
+  header: '@@ -8,3 +8,3 @@',
+  lines: [
+    { kind: 'context', text: '## Input', old: 8, new: 8 }, { kind: 'del', text: 'Take the issue.', old: 9 },
+    { kind: 'add', text: 'Take the issue number.', new: 9 }, { kind: 'context', text: 'Stop when none is found.', old: 10, new: 10 },
+  ],
+}];
+const ROUTING_DIFF: DiffHunk[] = [{
+  header: '@@ -22,2 +22,3 @@',
+  lines: [
+    { kind: 'context', text: '## Model routing', old: 22, new: 22 }, { kind: 'del', text: 'plan-reviewer: opus', old: 23 },
+    { kind: 'add', text: 'plan-reviewer: sonnet', new: 23 }, { kind: 'add', text: 'tester: haiku', new: 24 },
+  ],
+}];
 const PREVIEW: UpdatePreview = {
   version: 'mine', from: '0.14', to: '0.15', token: 't1',
   changes: [
-    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take the issue number.'] },
-    { kind: 'clean', file: 'SKILL.md', heading: '## Model routing', removed: ['plan-reviewer: opus'], added: ['plan-reviewer: sonnet', 'tester: haiku'] },
+    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take the issue number.'], diff: INPUT_DIFF },
+    { kind: 'clean', file: 'SKILL.md', heading: '## Model routing', removed: ['plan-reviewer: opus'], added: ['plan-reviewer: sonnet', 'tester: haiku'], diff: ROUTING_DIFF },
     CONFLICT,
   ],
 };
 const HIVE = 'new from the hive';
+// #984: a workspace item's update, whose preview has no plugin versions; a binary row, whose diff is empty
+const SITE = itemOf('hive-site:deploy', { state: 'update available', versions: [updated('mine')], files: ['SKILL.md'] });
+const SITE_PREVIEW: UpdatePreview = { version: 'mine', token: 't1', changes: PREVIEW.changes.slice(0, 1) };
+const BINARY: UpdateChange = { kind: 'clean', file: 'logo.png', heading: 'logo.png', removed: [], added: [], diff: [] };
 
 interface Answers { catalogue?: CatalogueItem[]; preview?: () => Response; apply?: () => Response }
 /** fetch for the view: GET /api/items answers the catalogue, which turns to APPLIED after an apply that answers ok; GET …/update the preview. */
@@ -51,7 +70,7 @@ const posts = (mock: FetchMock): { token: string; choices: Record<string, string
 const reads = (mock: FetchMock, path: string): number => mock.mock.calls.filter(([p, init]) => p === path && init?.method !== 'POST').length;
 
 // The view as the dock mounts it, outside a header slot provider, so the head renders in place
-function View() {
+function View({ id = PLAN.id }: { id?: string }) {
   const plugins = usePlugins(true);
   const editor = useItemEditor(plugins);
   const annotations = useAnnotations(editor, plugins.items, WORKSPACES);
@@ -59,13 +78,13 @@ function View() {
   return (
     <>
       <PluginsView plugins={plugins} editor={editor} annotations={annotations} protocol={protocol} workspaces={WORKSPACES} fontFamily="monospace" pick={{ agent: 'claude', model: '' }} onPick={() => undefined} />
-      <button type="button" onClick={() => plugins.open({ kind: 'update', id: PLAN.id, version: 'mine' })}>open-update</button>
+      <button type="button" onClick={() => plugins.open({ kind: 'update', id, version: 'mine' })}>open-update</button>
     </>
   );
 }
-async function enter(user: User): Promise<void> {
-  render(<View />);
-  await screen.findByRole('button', { name: /^new-plan/ }); // the catalogue answered
+async function enter(user: User, id = PLAN.id, name = /^new-plan/): Promise<void> {
+  render(<View id={id} />);
+  await screen.findByRole('button', { name }); // the catalogue answered
   await user.click(screen.getByRole('button', { name: 'open-update' }));
 }
 async function openUpdate(user: User): Promise<HTMLElement> {
@@ -73,6 +92,9 @@ async function openUpdate(user: User): Promise<HTMLElement> {
   return screen.findByRole('list', { name: 'changes' });
 }
 const rows = (list: HTMLElement): HTMLElement[] => within(list).getAllByRole('listitem');
+const rowButton = (row: HTMLElement | undefined): HTMLElement => within(row!).getByRole('button');
+// #984: each line of an open diff as its number, sign and text
+const diffLines = (region: HTMLElement): string[] => Array.from(region.querySelectorAll('[data-mark]'), (line) => line.textContent ?? '');
 const isOnItem = (): boolean => document.querySelector('[data-plugins-screen]')?.getAttribute('data-plugins-screen') === 'item';
 
 beforeEach(() => setLanguage('en'));
@@ -240,4 +262,63 @@ test("the head's revert asks first, deletes the version, reads the catalogue aga
   await waitFor(() => expect(isOnItem()).toBe(true));
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE').map(([path]) => path)).toEqual(['/api/items/hive%3Anew-plan/versions/mine']);
   expect(reads(fetchMock, '/api/items')).toBe(2);
+});
+
+test("a clean row is a button that opens the Hive's diff under it, numbered and headed with both plugin versions, the file and the lines; a second click closes it (#984)", async () => {
+  const user = userEvent.setup();
+  stubUpdate();
+  const list = await openUpdate(user);
+  const input = rowButton(rows(list)[0]);
+  expect(input).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: 'diff of ## Input' })).not.toBeInTheDocument();
+  await user.click(input);
+  expect(input).toHaveAttribute('aria-expanded', 'true');
+  const region = screen.getByRole('region', { name: 'diff of ## Input' });
+  expect(input).toHaveAttribute('aria-controls', region.id);
+  expect(rows(list)[0]).toContainElement(region);
+  expect(region).toHaveTextContent(/^hive original 0\.14 → 0\.15SKILL\.md · lines 8–10/);
+  expect(diffLines(region)).toEqual(['8 ## Input', '9−Take the issue.', '9+Take the issue number.', '10 Stop when none is found.']);
+  await user.click(input);
+  expect(input).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: 'diff of ## Input' })).not.toBeInTheDocument();
+});
+
+test('in Portuguese the open diff is headed original da hive with linhas, and a binary row opens its one line (#984)', async () => {
+  setLanguage('pt');
+  const user = userEvent.setup();
+  stubUpdate({ preview: () => json({ ...PREVIEW, changes: [...PREVIEW.changes, BINARY] }) });
+  await enter(user);
+  const list = await screen.findByRole('list', { name: 'mudanças' });
+  await user.click(rowButton(rows(list)[1]));
+  const routing = screen.getByRole('region', { name: 'diff de ## Model routing' });
+  expect(routing).toHaveTextContent(/^original da hive 0\.14 → 0\.15SKILL\.md · linhas 22–24/);
+  expect(diffLines(routing)).toEqual(['22 ## Model routing', '23−plan-reviewer: opus', '23+plan-reviewer: sonnet', '24+tester: haiku']);
+  await user.click(rowButton(rows(list)[3]));
+  expect(screen.getByRole('region', { name: 'diff de logo.png' })).toHaveTextContent(/^arquivo binário, sem diff de texto$/);
+});
+
+test.each([
+  ['en', 'changes', 'diff of ## Input', /^workspace originalSKILL\.md · lines 8–10/],
+  ['pt', 'mudanças', 'diff de ## Input', /^original do workspaceSKILL\.md · linhas 8–10/],
+] as const)("in %s a workspace item's open diff is headed by the workspace's original, with no plugin versions (#984)", async (language, listName, regionName, header) => {
+  setLanguage(language);
+  const user = userEvent.setup();
+  stubUpdate({ catalogue: [SITE], preview: () => json(SITE_PREVIEW) });
+  await enter(user, SITE.id, /^deploy/);
+  const list = await screen.findByRole('list', { name: listName });
+  await user.click(rowButton(rows(list)[0]));
+  expect(screen.getByRole('region', { name: regionName })).toHaveTextContent(header);
+});
+
+test('a binary row opens its one line; a conflict row is no disclosure and its two sides and choices still render below (#984)', async () => {
+  const user = userEvent.setup();
+  stubUpdate({ preview: () => json({ ...PREVIEW, changes: [BINARY, CONFLICT] }) });
+  const list = await openUpdate(user);
+  const [binary, conflict] = rows(list);
+  await user.click(rowButton(binary));
+  expect(screen.getByRole('region', { name: 'diff of logo.png' })).toHaveTextContent(/^binary file, no text diff$/);
+  expect(within(conflict!).queryByRole('button')).not.toBeInTheDocument();
+  expect(conflict!.querySelector('[aria-expanded]')).toBeNull();
+  expect(screen.getByRole('region', { name: 'your version' })).toHaveTextContent('| # | slice | owner |');
+  expect(screen.getByRole('button', { name: 'keep mine' })).toHaveAttribute('aria-pressed', 'false');
 });

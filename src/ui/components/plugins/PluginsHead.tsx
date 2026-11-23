@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
-import { CHIP, STATE_LOOK } from '@/components/plugins/marks';
+import { CHIP, lookOf, STATE_LOOK } from '@/components/plugins/marks';
 import { OriginCard } from '@/components/plugins/OriginCard';
 import { ReviewerMenu } from '@/components/plugins/ReviewerMenu';
 import { VersionMenu } from '@/components/plugins/VersionMenu';
@@ -50,7 +50,7 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
 }
 
 interface ItemProps { item: CatalogueItem; editor: ItemEditor; annotations: Annotations; workspaces: readonly string[] }
-interface ItemHeadProps extends ItemProps { onUpdate(version: string): void }
+interface ItemHeadProps extends ItemProps { items: readonly CatalogueItem[]; onUpdate(version: string): void } // items: the callers' names (#983)
 
 // The handoff's mcp head: its "+ server" opens the screen's form through isCreating, as a list's "new skill" opens its field
 function McpHead({ plugins }: { plugins: Plugins }) {
@@ -86,8 +86,8 @@ function ItemActions({ item, editor, annotations, workspaces }: ItemProps) {
 }
 
 // #320, decision 14: the menu opens versions; the chip stays the way into a version's update, the first with one, in catalogue order
-function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadProps) {
-  const look = STATE_LOOK[item.state];
+function ItemHead({ item, items, editor, annotations, workspaces, onUpdate }: ItemHeadProps) {
+  const look = lookOf(item); // #983: a user-created item's chip reads "created by you"
   const updated = item.state === 'update available' ? item.versions.find((v) => v.updateAvailable) : undefined;
   const chip = updated === undefined
     ? <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>
@@ -102,7 +102,7 @@ function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadP
   const origins = originsOf(item);
   const metaLine = origins.length === 0 ? meta : <>{meta}{origins}</>;
   return (
-    <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
+    <Head title={item.name} isMono version={<VersionMenu item={item} items={items} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
       <ItemActions item={item} editor={editor} annotations={annotations} workspaces={workspaces} />
     </Head>
   );
@@ -153,6 +153,6 @@ export function PluginsHead({ plugins, editor, annotations, workspaces }: { plug
   if (screen.kind === 'protocol') return <Head title={t('plugins.section.protocol')} meta={t('plugins.protocol.meta')} />; // #337: no actions
   const item = plugins.items?.find((i) => i.id === screen.id);
   const onUpdate = (version: string): void => plugins.open({ kind: 'update', id: screen.id, version });
-  return item === undefined ? null : <ItemHead item={item} editor={editor} annotations={annotations} workspaces={workspaces} onUpdate={onUpdate} />;
+  return item === undefined ? null : <ItemHead item={item} items={plugins.items ?? []} editor={editor} annotations={annotations} workspaces={workspaces} onUpdate={onUpdate} />;
 }
 

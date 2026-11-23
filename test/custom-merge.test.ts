@@ -7,7 +7,7 @@ import { createCustomStore, type CustomStore } from '../src/custom-store.js';
 import { isRefusal, type StoreRefusal } from '../src/custom-versions.js';
 import { listFiles } from '../src/item-sources.js';
 import { findItem } from '../src/items-catalogue.js';
-import type { UpdatePreview } from '../src/types.js';
+import type { DiffLine, UpdatePreview } from '../src/types.js';
 import { BUILD, DEPLOY, type Fixture, fixture, put, REPO_SKILL, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import type { AfterHost } from './temp-dir.js';
@@ -20,6 +20,13 @@ const buildDir = (f: Fixture, ...rest: string[]): string => join(f.home, 'custom
 const codeOf = (value: object): string | undefined => (isRefusal(value) ? value.code : undefined);
 // A new Hive release: plugin.json says 0.2.0, and `files` (paths under the plugin) are what it changes
 const ship = (f: Fixture, files: Record<string, string>): Promise<void> => put(f.pluginSource, { '.claude-plugin/plugin.json': '{"name":"hive","version":"0.2.0"}', ...files });
+const ctx = (text: string, old: number, now = old): DiffLine => ({ kind: 'context', text, old, new: now });
+const del = (text: string, old: number): DiffLine => ({ kind: 'del', text, old });
+const add = (text: string, now: number): DiffLine => ({ kind: 'add', text, new: now });
+// The Hive's Output change in a skillDoc (base line 18, the last): one context line above it, as a clean row's diff shows it (#984)
+const OUTPUT_DIFF = [[ctx('', 17), del('A PR.', 18), add('A pull request.', 18)]];
+// #984: a clean change with its diff's hunks as their lines; git may follow a hunk's header with a function line of its own choosing
+const shown = (changes: UpdatePreview['changes']) => changes.map((change) => (change.kind === 'clean' ? { ...change, diff: change.diff.map((hunk) => hunk.lines) } : change));
 
 /** new-build shipped with SKILL.md = BASE (and the `extra` plugin files), and its version mine saved from the original with SKILL.md = `text`. */
 async function customized(t: AfterHost, text = MINE, extra: Record<string, string> = {}): Promise<{ f: Fixture; store: CustomStore }> {
@@ -81,7 +88,7 @@ test('a shipped change away from the edited lines previews as clean changes labe
   const answer = await preview(f);
   assert.deepEqual([answer.version, answer.from, answer.to], ['mine', '0.1.0', '0.2.0']);
   assert.match(answer.token, /^[0-9a-f]{64}$/);
-  assert.deepEqual(answer.changes, [{ kind: 'clean', file: 'SKILL.md', heading: '## Output', removed: ['A PR.'], added: ['A pull request.'] }]);
+  assert.deepEqual(shown(answer.changes), [{ kind: 'clean', file: 'SKILL.md', heading: '## Output', removed: ['A PR.'], added: ['A pull request.'], diff: OUTPUT_DIFF }]);
   assert.deepEqual(await snapshot(buildDir(f, 'mine')), before, "the version's files, the render's input, are unchanged");
   assert.equal((await preview(f)).token, answer.token, 'the same three inputs give the same token');
 });
@@ -98,26 +105,57 @@ test('an overlapping change previews one conflict with mine, hive and base, and 
 
 test('an added file is clean, an untouched removed file is clean, an edited removed file and a deleted changed file are whole-file conflicts (#324)', async (t) => {
   const { f } = await fileCases(t);
-  assert.deepEqual((await preview(f)).changes, [
+  assert.deepEqual(shown((await preview(f)).changes), [
     { kind: 'conflict', id: 'scripts/edited.sh#file', file: 'scripts/edited.sh', heading: 'scripts/edited.sh', mine: ['a mine'], hive: null, base: ['a'] },
     { kind: 'conflict', id: 'scripts/gone.sh#file', file: 'scripts/gone.sh', heading: 'scripts/gone.sh', mine: null, hive: ['g2'], base: ['g'] },
-    { kind: 'clean', file: 'scripts/new.sh', heading: 'scripts/new.sh', removed: [], added: ['n'] },
-    { kind: 'clean', file: 'scripts/run.sh', heading: 'scripts/run.sh', removed: ['echo hi'], added: [] },
+    { kind: 'clean', file: 'scripts/new.sh', heading: 'scripts/new.sh', removed: [], added: ['n'], diff: [[add('n', 1)]] },
+    { kind: 'clean', file: 'scripts/run.sh', heading: 'scripts/run.sh', removed: ['echo hi'], added: [], diff: [[del('echo hi', 1)]] },
   ]);
 });
 
 test('the main file pairs by role: a SKILL.md.liquid version merges against the shipped SKILL.md, an untouched SKILL.md against a shipped SKILL.md.liquid (#324)', async (t) => {
   const liquid = await liquidVersion(t);
-  assert.deepEqual((await preview(liquid.f)).changes, [{ kind: 'clean', file: 'SKILL.md.liquid', heading: '## Output', removed: ['A PR.'], added: ['A pull request.'] }]);
+  assert.deepEqual(shown((await preview(liquid.f)).changes), [{ kind: 'clean', file: 'SKILL.md.liquid', heading: '## Output', removed: ['A PR.'], added: ['A pull request.'], diff: OUTPUT_DIFF }]);
   const untouched = await untouchedMain(t);
-  assert.deepEqual((await preview(untouched.f)).changes, [{ kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take {{ issue }}.'] }]);
+  assert.deepEqual(shown((await preview(untouched.f)).changes), [
+    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take {{ issue }}.'], diff: [[ctx('', 8), del('Take the issue.', 9), add('Take {{ issue }}.', 9), ctx('', 10)]] },
+  ]);
 });
 
 test("a workspace item's version previews its repository's change, with no Hive versions (#324)", async (t) => {
   const { f } = await workspaceVersion(t);
   const answer = await preview(f, 'mine', DEPLOY);
   assert.deepEqual([answer.from, answer.to], [undefined, undefined]);
-  assert.deepEqual(answer.changes, [{ kind: 'clean', file: 'SKILL.md', heading: 'SKILL.md', removed: ['Deploy.'], added: ['Deploy now.'] }]);
+  assert.deepEqual(shown(answer.changes), [{ kind: 'clean', file: 'SKILL.md', heading: 'SKILL.md', removed: ['Deploy.'], added: ['Deploy now.'], diff: [[ctx('---', 4), del('Deploy.', 5), add('Deploy now.', 5)]] }]);
+});
+
+test("a clean change in a file the user never edited shows the Hive's own diff: one context line around it, numbered on both sides (#984)", async (t) => {
+  const { f } = await customized(t, BASE);
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.\nRead its comments.', 'A PR.') });
+  assert.deepEqual(shown((await preview(f)).changes), [
+    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: [], added: ['Read its comments.'], diff: [[ctx('Take the issue.', 9), add('Read its comments.', 10), ctx('', 10, 11)]] },
+  ]);
+});
+
+test("a clean change below the user's own edit shows the Hive's diff in base's and the shipped file's numbers, not the user's (#984)", async (t) => {
+  const { f } = await customized(t, skillDoc('Take the issue.\nAnd its title.', 'A PR.')); // the user's Output line is 19, base's 18
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.', 'A pull request.') });
+  assert.deepEqual(shown((await preview(f)).changes), [{ kind: 'clean', file: 'SKILL.md', heading: '## Output', removed: ['A PR.'], added: ['A pull request.'], diff: OUTPUT_DIFF }]);
+});
+
+test('two shipped changes in one file land each in its own row (#984)', async (t) => {
+  const { f } = await customized(t, BASE);
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue URL.', 'A pull request.') });
+  assert.deepEqual(shown((await preview(f)).changes), [
+    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take the issue URL.'], diff: [[ctx('', 8), del('Take the issue.', 9), add('Take the issue URL.', 9), ctx('', 10)]] },
+    { kind: 'clean', file: 'SKILL.md', heading: '## Output', removed: ['A PR.'], added: ['A pull request.'], diff: OUTPUT_DIFF },
+  ]);
+});
+
+test('a binary file the Hive changes is one clean row with no text diff (#984)', async (t) => {
+  const { f } = await customized(t, BASE, { 'skills/new-build/data.bin': 'a\0b\n' });
+  await ship(f, { 'skills/new-build/data.bin': 'a\0hive\n' });
+  assert.deepEqual((await preview(f)).changes, [{ kind: 'clean', file: 'data.bin', heading: 'data.bin', removed: [], added: [], diff: [] }]);
 });
 
 test('a version with no update, an unknown item or version, and an item the Hive no longer ships are refused (#324)', async (t) => {
@@ -203,7 +241,7 @@ test('a CRLF file keeps its line endings after apply (#324)', async (t) => {
   await store.saveFile(BUILD, 'mine', 'notes.md', crlf('ONE', 'five'));
   await ship(f, { 'skills/new-build/notes.md': crlf('one', 'FIVE') });
   const answer = await preview(f);
-  assert.deepEqual(answer.changes, [{ kind: 'clean', file: 'notes.md', heading: 'notes.md', removed: ['five'], added: ['FIVE'] }]);
+  assert.deepEqual(shown(answer.changes), [{ kind: 'clean', file: 'notes.md', heading: 'notes.md', removed: ['five'], added: ['FIVE'], diff: [[ctx('four', 4), del('five', 5), add('FIVE', 5)]] }]);
   await store.applyUpdate(BUILD, 'mine', answer.token, {});
   assert.equal(await readFile(buildDir(f, 'mine/files/notes.md'), 'utf8'), crlf('ONE', 'FIVE'));
 });
@@ -250,6 +288,7 @@ test('a change and a conflict carry the newest changelog note in (from, to] for 
   const changes = (await preview(f)).changes;
   assert.deepEqual(changes.map((c) => [c.kind, c.heading, c.note]), [['conflict', '## Input', 'takes the url'], ['clean', '## Output', 'says pull request']]);
   assert.deepEqual(changes[0]?.kind === 'conflict' ? changes[0].lines : undefined, { start: 9, end: 9 });
+  assert.deepEqual(changes[1]?.kind === 'clean' ? changes[1].diff.map((hunk) => hunk.lines) : undefined, OUTPUT_DIFF, "the clean row's diff skips the conflict's hunk");
 });
 
 test('without a note, or with a malformed changelog, the changes carry no note and the preview still answers; the bad file logs once (#492)', async (t) => {

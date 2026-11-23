@@ -25,6 +25,14 @@ export const CATALOGUE: CatalogueItem[] = [
   itemOf('agent-hive:release', { description: 'release notes' }),
 ];
 
+/** A user-created skill (#983): no original, its one version `mine` on agent-hive, called by new-spec. */
+export const OWN = itemOf('hive:release-check', {
+  description: 'checks the changelog', userCreated: true, state: 'customized',
+  versions: [versionOf('mine', { from: null, workspaces: ['agent-hive'] })], usage: [{ kind: 'caller', id: 'hive:new-spec' }],
+});
+/** OWN's main file: a header the editor folds, as the other reads' texts have. */
+export const OWN_TEXT = '---\nname: release-check\ndescription: checks the changelog\n---\nCheck the changelog.\n';
+
 export const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 /** fetch answering GET /api/items with `catalogue()` and `pluginVersion` (#492) and POST /api/items with `post`'s answer; any other path ok. */

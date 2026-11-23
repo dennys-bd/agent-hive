@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
-import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, SPEC_TEXT, stubItems, versionOf } from './plugins-fixtures';
+import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, OWN, OWN_TEXT, readOf, SPEC_TEXT, stubItems, versionOf } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -90,4 +90,14 @@ test("saving an original makes it customized: the chip and the saved time follow
   act(() => view().onSave());
   await waitFor(() => expect(within(head()).getByText('customizada')).toBeInTheDocument());
   expect(head()).toHaveTextContent('skills · salvo 14:31');
+});
+
+test("a user-created item's chip reads criada por você in customized's look, and its head offers no revert to the hive's original (#983)", async () => {
+  stubItems({ catalogue: [...CATALOGUE, OWN], reads: { ...READS, 'hive:release-check@mine': readOf('hive:release-check', 'mine', { 'SKILL.md': OWN_TEXT }) } });
+  render(<PluginsWindow />);
+  await open('release-check');
+  const chip = within(head()).getByRole('button', { name: 'mine' }).nextElementSibling;
+  expect(chip).toHaveTextContent(/^criada por você$/);
+  expect(chip).toHaveClass('border-review');
+  expect(revertButton()).not.toBeInTheDocument();
 });

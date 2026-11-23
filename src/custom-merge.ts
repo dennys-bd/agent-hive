@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import hostPaths, { dirname, join } from 'node:path';
+import { type FileTexts, rowDiffs } from './custom-merge-diff.js';
 import { diffTexts, type Hunk, mergeTexts, resolveMerge, type Segment } from './custom-merge-git.js';
 import { BASE_DIR, FILES_DIR, isRefusal, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
 import { isInside } from './ide.js';
@@ -13,7 +14,7 @@ import { childFolders, customRoot, type FileSet, HIVE_ORIGIN, type ItemSources, 
 import { findItem } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { type Changelog, noteFor, readChangelog } from './plugin-changelog.js';
-import type { CatalogueItem, ItemVersion, UpdateChange, UpdateChoice, UpdateConflict, UpdatePreview } from './types.js';
+import type { CatalogueItem, DiffHunk, ItemVersion, UpdateChange, UpdateChoice, UpdateConflict, UpdatePreview } from './types.js';
 
 const WHOLE = 'file'; // the id suffix of a whole-file conflict
 const HEADING = /^#{1,6}\s/;
@@ -28,10 +29,13 @@ interface Sides {
   base: Side;
   hive: Side;
 }
+// base and hive ride along for the preview's row diffs (#984); chosenBytes, the token and the apply never read them
 interface Merged {
   kind: 'merged';
   path: string;
   mine: Buffer | undefined;
+  base: Buffer | undefined;
+  hive: Buffer | undefined;
   result: Buffer | undefined; // undefined: the version ends up without the file
 }
 interface Whole {
@@ -45,6 +49,8 @@ interface Blocks {
   kind: 'blocks';
   path: string;
   mine: Buffer;
+  base: Buffer;
+  hive: Buffer;
   segments: Segment[];
 }
 type FileMerge = Merged | Whole | Blocks;
@@ -121,12 +127,12 @@ function paired(item: CatalogueItem, raw: Sides): Pick<Update, 'outPath'> & { si
 // One path: a side's absence or a file that is not UTF-8 decides it, and git merges three texts that all changed
 async function mergePath(dir: string, path: string, sides: Sides): Promise<FileMerge> {
   const [mine, base, hive] = [sides.mine.get(path), sides.base.get(path), sides.hive.get(path)];
-  if (same(hive, base) || same(mine, hive)) return { kind: 'merged', path, mine, result: mine };
-  if (same(mine, base)) return { kind: 'merged', path, mine, result: hive };
+  if (same(hive, base) || same(mine, hive)) return { kind: 'merged', path, mine, base, hive, result: mine };
+  if (same(mine, base)) return { kind: 'merged', path, mine, base, hive, result: hive };
   if (mine === undefined || base === undefined || hive === undefined || !isText(mine, base, hive)) return { kind: 'whole', path, mine, base, hive };
   const segments = await mergeTexts(dir, mine, base, hive);
-  if (segments.every((segment): segment is string => typeof segment === 'string')) return { kind: 'merged', path, mine, result: Buffer.from(segments.join('')) };
-  return { kind: 'blocks', path, mine, segments };
+  if (segments.every((segment): segment is string => typeof segment === 'string')) return { kind: 'merged', path, mine, base, hive, result: Buffer.from(segments.join('')) };
+  return { kind: 'blocks', path, mine, base, hive, segments };
 }
 
 // The three sides of a version's update and their merge, or why there is nothing to merge
@@ -147,10 +153,17 @@ async function loadUpdate(s: ItemSources, id: string, name: string, dir: string)
   return { item, version, shipped: raw.hive, token: tokenOf(raw), merges, outPath };
 }
 
-const clean = (file: string, mine: readonly string[], hunk: Hunk): Placed => ({
+const clean = (file: string, mine: readonly string[], hunk: Hunk, diff: DiffHunk[]): Placed => ({
   at: hunk.toAbove,
-  change: { kind: 'clean', file, heading: headingOf(mine, hunk.fromAbove, file), removed: hunk.removed, added: hunk.added },
+  change: { kind: 'clean', file, heading: headingOf(mine, hunk.fromAbove, file), removed: hunk.removed, added: hunk.added, diff },
 });
+
+// #984: each clean row of a file, with the Hive's own diff at its passage
+async function cleanRows(dir: string, file: string, texts: FileTexts, hunks: readonly Hunk[]): Promise<Placed[]> {
+  const lines = linesOf(texts.mine.toString('utf8'));
+  const diffs = await rowDiffs(dir, texts, hunks);
+  return hunks.map((hunk, n) => clean(file, lines, hunk, diffs[n]));
+}
 
 const wholeConflict = (merge: Whole): UpdateConflict => ({
   kind: 'conflict',
@@ -165,11 +178,10 @@ const wholeConflict = (merge: Whole): UpdateConflict => ({
 // A file with no conflict: its diff from the version's text, hunk by hunk
 async function mergedChanges(dir: string, merge: Merged): Promise<Placed[]> {
   if (same(merge.mine, merge.result)) return [];
-  // A file that is not UTF-8 has no lines to list: its change is the file as a whole
-  if (!isText(merge.mine, merge.result)) return [{ at: 0, change: { kind: 'clean', file: merge.path, heading: merge.path, removed: [], added: [] } }];
-  const mine = merge.mine ?? EMPTY;
-  const lines = linesOf(mine.toString('utf8'));
-  return (await diffTexts(dir, mine, merge.result ?? EMPTY)).map((hunk) => clean(merge.path, lines, hunk));
+  // A file that is not UTF-8 has no lines to list: its change is the file as a whole, and it has no text diff (#984)
+  if (!isText(merge.mine, merge.result)) return [{ at: 0, change: { kind: 'clean', file: merge.path, heading: merge.path, removed: [], added: [], diff: [] } }];
+  const texts: FileTexts = { mine: merge.mine ?? EMPTY, base: merge.base ?? EMPTY, hive: merge.hive ?? EMPTY, result: merge.result ?? EMPTY };
+  return cleanRows(dir, merge.path, texts, await diffTexts(dir, texts.mine, texts.result));
 }
 
 // Each conflict at its line in the text with every conflict kept as mine, labelled by the heading above it there
@@ -193,9 +205,9 @@ function conflictsOf(file: string, segments: readonly Segment[], kept: readonly 
 // A text git merged with conflicts: its clean changes are the diff from the version's text to the merge with every conflict kept as mine
 async function blockChanges(dir: string, merge: Blocks): Promise<Placed[]> {
   const kept = resolveMerge(merge.segments, () => 'mine');
-  const lines = linesOf(merge.mine.toString('utf8'));
-  const hunks = await diffTexts(dir, merge.mine, Buffer.from(kept));
-  return [...hunks.map((hunk) => clean(merge.path, lines, hunk)), ...conflictsOf(merge.path, merge.segments, linesOf(kept))];
+  const texts: FileTexts = { mine: merge.mine, base: merge.base, hive: merge.hive, result: Buffer.from(kept) };
+  const rows = await cleanRows(dir, merge.path, texts, await diffTexts(dir, merge.mine, texts.result));
+  return [...rows, ...conflictsOf(merge.path, merge.segments, linesOf(kept))];
 }
 
 async function changesOf(dir: string, merge: FileMerge): Promise<Change[]> {

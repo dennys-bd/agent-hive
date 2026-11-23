@@ -2,12 +2,12 @@ import { ArrowUpRightIcon } from 'lucide-react';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CatalogueItem, ItemKind } from '../../../types';
 import { displayBinding } from '../../../shortcuts.js';
-import { LEGEND, OriginMark, STATE_LOOK, StateDot } from '@/components/plugins/marks';
+import { LEGEND, lookOf, OriginMark, STATE_LOOK, StateDot } from '@/components/plugins/marks';
 import { Input } from '@/components/ui/input';
 import type { Plugins } from '@/hooks/use-plugins';
 import { t } from '@/i18n';
 import { isSettingsClosed, onShortcutKey, type PanelId } from '@/lib/dock-layout';
-import { basedOnTitle, countOf, groupsOf, isListSection, itemIdOf, KIND_OF, markOf, type PluginScreen, type Section, SECTIONS, sectionOfScreen } from '@/lib/plugins';
+import { basedOnTitle, countOf, groupLabel, groupsOf, isListSection, itemIdOf, KIND_OF, markOf, type PluginScreen, type Section, SECTIONS, sectionOfScreen } from '@/lib/plugins';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 
 export interface PluginsSidebarProps { plugins: Plugins; workspaces: readonly string[]; isShown: boolean; activate(id: PanelId): void }
@@ -36,22 +36,25 @@ function ItemRow({ item, isOpen, onOpen }: { item: CatalogueItem; isOpen: boolea
           {mark}{item.basedOn && <ArrowUpRightIcon aria-hidden="true" className="size-3 text-faint" />}
         </span>
       )}
-      <StateDot state={item.state} />
+      <StateDot state={item.state} label={lookOf(item).label} />
     </button>
   );
 }
 
-// The open section's items by origin (decision 7), searched as the user types (decision 4)
+// The open section's items by origin (decision 7), searched as the user types (decision 4); the own group under its own header (#983)
 function Groups({ plugins, items, kind, workspaces }: { plugins: Plugins; items: CatalogueItem[]; kind: ItemKind; workspaces: readonly string[] }) {
   const open = itemIdOf(plugins.screen); // an update screen marks its item's row (#325)
-  return groupsOf(items, kind, workspaces, plugins.query).map((group) => (
-    <fieldset key={group.origin} aria-label={group.origin} className="flex min-w-0 flex-col gap-px pt-1.5 pl-2">
-      <div className="flex items-center gap-1.5 px-2 pb-0.5 text-xs text-muted-foreground"><OriginMark origin={group.origin} />{group.origin}</div>
-      {group.items.map((item) => (
-        <ItemRow key={item.id} item={item} isOpen={item.id === open} onOpen={() => plugins.open({ kind: 'item', id: item.id })} />
-      ))}
-    </fieldset>
-  ));
+  return groupsOf(items, kind, workspaces, plugins.query).map((group) => {
+    const label = groupLabel(group);
+    return (
+      <fieldset key={label} aria-label={label} className="flex min-w-0 flex-col gap-px pt-1.5 pl-2">
+        <div className="flex items-center gap-1.5 px-2 pb-0.5 text-xs text-muted-foreground"><OriginMark origin={group.origin} />{label}</div>
+        {group.items.map((item) => (
+          <ItemRow key={item.id} item={item} isOpen={item.id === open} onOpen={() => plugins.open({ kind: 'item', id: item.id })} />
+        ))}
+      </fieldset>
+    );
+  });
 }
 
 interface SectionProps { section: Section; plugins: Plugins; workspaces: readonly string[]; isActive: boolean }

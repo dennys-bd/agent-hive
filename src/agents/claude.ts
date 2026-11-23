@@ -5,7 +5,8 @@ import { mcpConfigPattern } from '../hooks-settings.js';
 import { parseRateLimits, readPlanLimits } from './claude-limits.js';
 import { countMessages, ownsTranscript, readTranscript, sessionFiles, transcriptDir } from './claude-transcript.js';
 import { isRecord } from '../rate-limits.js';
-import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg } from './runner.js';
+import { AccountError } from '../account-env.js';
+import type { AccountCtx, AgentRun, AgentRunner, HeadlessRun, LaunchArg } from './runner.js';
 
 const MODEL_FLAG = '--model'; // what a stage's modelo is passed behind, as typed (#516)
 const PROTOCOL_FLAG = '--append-system-prompt-file'; // the Hive's protocol (#167): appended to Claude Code's own system prompt, never replacing it
@@ -62,6 +63,15 @@ const headless = (run: HeadlessRun): string[] => [
   '--disable-slash-commands', ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]),
 ];
 
+// #956: no selection is the machine's login, so the store is not read and nothing is set (an inherited token stays the user's). The token
+// is not checked before the spawn: Claude fails closed on a bad one (spike A7). The refusal carries no reason, so no name reaches a log
+async function claudeAccountEnv(ctx: AccountCtx): Promise<{ env: Record<string, string>; account?: string }> {
+  if (ctx.selected === undefined) return { env: {} };
+  const { claude } = await ctx.credentials();
+  if (claude === undefined || !Object.hasOwn(claude, ctx.selected) || claude[ctx.selected].token === '') throw new AccountError('claude', 'missing');
+  return { env: { CLAUDE_CODE_OAUTH_TOKEN: claude[ctx.selected].token }, account: ctx.selected };
+}
+
 // #330: -p --output-format json prints one result object. Under --json-schema the answer is its structured_output (an object, or its text);
 // without it, the text is its result. An error result is no answer
 function headlessAnswer(stdout: string): string | undefined {
@@ -91,7 +101,7 @@ export const claudeRunner: AgentRunner = {
   headlessAnswer: (stdout) => headlessAnswer(stdout),
   headlessPrompt: (prompt) => prompt, // the schema rides --json-schema
   headlessEnv: () => ({}),
-  accountEnv: async () => ({ env: {} }), // #953: the machine's login; #956 fills it
+  accountEnv: (ctx) => claudeAccountEnv(ctx),
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
   runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
   runFiles: () => [], // its protocol rides --append-system-prompt-file
