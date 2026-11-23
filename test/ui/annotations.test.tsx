@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { removeVariable } from '../../src/template-edit';
+import { CARD_HEIGHT } from '@/lib/annotation-layout';
 import { setLanguage } from '@/i18n';
 import { FAKE_LINE_HEIGHT, FakeEditor, resetMonacoFakes } from './monaco-fake';
 import { CATALOGUE, type ItemsServer, json, readOf, type SaveBody, stubItems, VARS_ORIGINAL, VARS_TEXT } from './plugins-fixtures';
@@ -12,6 +13,8 @@ vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule
 // the header (1–9) and the chain's markers (12, 14), so it sits at line 10; the chain's chip sits at line 12
 const ONE_VARS = VARS_TEXT.replace('{ hive-site: pnpm e2e,', '{ agent-hive: pnpm e2e, hive-site: pnpm e2e,');
 const HEADLINE = 'variável não usada reviewDepth';
+const BODY = 'reviewDepth está declarada mas o corpo nunca a usa.';
+const textMode = (): void => { fireEvent.click(within(screen.getByRole('group', { name: 'modo' })).getByRole('button', { name: 'texto' })); };
 const echo = (_id: string, body: SaveBody): Response => json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text }));
 const serverOf = (extra: Partial<ItemsServer> = {}): ItemsServer => ({
   catalogue: CATALOGUE,
@@ -30,7 +33,7 @@ beforeEach(() => {
   setLanguage('pt');
   resetMonacoFakes();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 test('an annotation underlines its line; on a header line in visual mode it sits at the first visible line, a note where a card would cover a chip; the note opens the card and Esc closes it (#327)', async () => {
   stubItems(serverOf());
@@ -115,4 +118,40 @@ test('the head counts the annotations: "next annotation" in its menu moves the t
   act(() => view().model.type(ONE_VARS.replace('  reviewDepth: { default: full }\n', '')));
   expect(within(head).getByRole('button', { name: 'revisor · nenhuma anotação' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'próxima anotação' })).toBeDisabled();
+});
+
+test("a closed card's text is a button that opens it whole, with its ×; × closes it, and Esc closes it again (#980)", async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open();
+  textMode(); // room for a card at the annotation's own line
+  const card = await within(margin()).findByRole('article', { name: HEADLINE });
+  const body = within(card).getByRole('button', { name: BODY });
+  expect([body.classList.contains('line-clamp-2'), card.style.height]).toEqual([true, `${CARD_HEIGHT}px`]);
+  expect(within(card).queryByRole('button', { name: 'fechar a anotação' })).not.toBeInTheDocument();
+  fireEvent.click(body);
+  expect(card).toHaveAttribute('data-open', 'true');
+  expect(within(card).queryByRole('button', { name: BODY })).not.toBeInTheDocument(); // open, the body is text to select
+  expect([within(card).getByText(BODY).classList.contains('line-clamp-2'), within(card).getByText(HEADLINE).classList.contains('truncate'), card.style.height]).toEqual([false, false, '']);
+  const close = within(card).getByRole('button', { name: 'fechar a anotação' });
+  expect(close).toHaveAttribute('title', 'fechar · Esc');
+  fireEvent.click(close);
+  expect(card).toHaveAttribute('data-open', 'false');
+  fireEvent.click(within(card).getByRole('button', { name: BODY }));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(card).toHaveAttribute('data-open', 'false');
+});
+
+test("an open card that would pass the margin column grows upward, its bottom on its line's bottom (#980)", async () => {
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200); // the margin column
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(150); // the open card, measured
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open();
+  textMode();
+  const card = await within(margin()).findByRole('article', { name: HEADLINE });
+  await waitFor(() => expect(card).toHaveStyle({ top: `${5 * FAKE_LINE_HEIGHT}px` }));
+  fireEvent.click(within(card).getByRole('button', { name: BODY }));
+  await waitFor(() => expect(card.style.bottom).toBe(`${200 - (5 * FAKE_LINE_HEIGHT + FAKE_LINE_HEIGHT)}px`));
+  expect(card.style.top).toBe('');
 });

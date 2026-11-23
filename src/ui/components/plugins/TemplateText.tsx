@@ -45,8 +45,9 @@ function toDecoration(d: Decoration): editor.IModelDeltaDecoration {
 
 // The editor over a model of its own, made per modelKey and disposed with it: the buffer is useItemEditor's, the model only shows it. The
 // latest props reach Monaco's listeners through a ref
-function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: TemplateTextProps): View | undefined {
+function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: TemplateTextProps): { view: View | undefined; lineHeight: number } {
   const [view, setView] = useState<View>();
+  const [lineHeight, setLineHeight] = useState(0);
   const latest = useRef(props);
   useEffect(() => { latest.current = props; });
   const { modelKey, path } = props;
@@ -65,12 +66,13 @@ function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: Templa
       // a text the props gave is not reported back as an edit
       const typing = model.onDidChangeContent(() => { if (model.getValue() !== latest.current.text) latest.current.onChange(model.getValue()); });
       const selecting = open.editor.onDidChangeCursorSelection(({ selection }) => latest.current.onSelection?.(selectedLines(selection)));
+      setLineHeight(open.editor.getOption(monaco.editor.EditorOption.lineHeight)); // #980: an open card that grows upward ends at its line's bottom
       setView(open.editor);
       dispose = () => { typing.dispose(); selecting.dispose(); open.dispose(); model.dispose(); };
     });
     return () => { live = false; dispose(); setView(undefined); };
   }, [host, modelKey, path]);
-  return view;
+  return { view, lineHeight };
 }
 
 // What the props say Monaco shows: the text, read-only and the font, the hidden lines, the marks, and the cursor of a map click
@@ -172,7 +174,8 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
  * line, as the text scrolls. */
 export function TemplateText(props: TemplateTextProps) {
   const host = useRef<HTMLDivElement>(null);
-  const view = useTemplateEditor(host, props);
+  const column = useRef<HTMLDivElement>(null);
+  const { view, lineHeight } = useTemplateEditor(host, props);
   useLook(view, props);
   useCaret(view, props.onCaret);
   const scrollTop = useScrollTop(view);
@@ -183,10 +186,13 @@ export function TemplateText(props: TemplateTextProps) {
     <div className="flex min-h-0 min-w-0 flex-1">
       <div ref={host} className="min-h-0 min-w-0 flex-1" />
       {(chips.length > 0 || marks.length > 0) && (
-        <div className="relative w-[230px] shrink-0 overflow-hidden border-l">
+        <div ref={column} className="relative w-[230px] shrink-0 overflow-hidden border-l">
           <Chips chips={chips} topOf={topOf} onChip={onChip} popover={popover} />
           {annotations && marks.length > 0 && (
-            <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
+            <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))}
+              // ponytail: the column's height is read at render, so a window resize alone does not re-place an open card; a ResizeObserver if that bites
+              lineHeight={lineHeight} columnHeight={column.current?.clientHeight ?? 0}
+            />
           )}
         </div>
       )}
