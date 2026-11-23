@@ -1,10 +1,11 @@
 import { XIcon } from 'lucide-react';
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { FindingKind } from '../../../reviewer';
 import type { LintAnnotation, LintCheck, Severity } from '../../../template-lint';
 import { Button } from '@/components/ui/button';
 import { type Annotations, checkOf, type EditorAnnotation, isAgent } from '@/hooks/use-annotations';
 import { type MessageKey, t } from '@/i18n';
-import { hasFix } from '@/lib/annotation-fix';
+import { kindOf } from '@/lib/annotation-fix';
 import { CARD_HEIGHT, layoutMargin, openPlacement } from '@/lib/annotation-layout';
 
 // A headline and a body per check: the lint's own title and body are English, so the card fills the viewer's language from the fields
@@ -26,6 +27,10 @@ const EDGE: Record<Severity, string> = {
 const NOTE_TEXT: Record<Severity, string> = { red: 'text-destructive', yellow: 'text-waiting' };
 const ENGINE_CHECKS: readonly LintCheck[] = ['parse', 'render']; // their title is the engine's message, shown as the card's detail
 
+// #981: every finding's kind after its title, in the agent tag's muted style; the copy says correção / conselho, the code fix / advice
+const KIND_TAG: Record<FindingKind, MessageKey> = { fix: 'plugins.annotations.kind.fix', advice: 'plugins.annotations.kind.advice' };
+const TAG = 'shrink-0 rounded border px-1 font-normal text-muted-foreground';
+
 const varsOf = (a: LintAnnotation): Record<string, string | number> => ({
   variable: a.variable ?? '', ref: a.ref ?? '', level: a.level ?? '', workspaces: (a.workspaces ?? []).join(', '),
 });
@@ -35,8 +40,11 @@ const keyOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.ti
 export const headlineOf = (a: EditorAnnotation): string => (isAgent(a) ? a.title : t(COPY[a.check].title, varsOf(a)));
 const bodyOf = (a: EditorAnnotation): string => (isAgent(a) ? a.body : t(COPY[a.check].body, varsOf(a)));
 
-interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number; canFix: boolean; lineHeight: number; columnHeight: number }
+/** The margin's annotations, with #982's entry point to the agent bar when the editor gives one: "ask the agent" needs it (#981). */
+type CardAnnotations = Annotations & { passage?(request: string, line: number): void };
+interface SlotProps { annotation: EditorAnnotation; annotations: CardAnnotations; top: number; canFix: boolean; lineHeight: number; columnHeight: number }
 type Place = Pick<SlotProps, 'top' | 'lineHeight' | 'columnHeight'>;
+interface DiffRow { sign: '−' | '+'; line: string; key: string }
 
 // #980: closed, the card is as tall as the layout reserves; open, it is its content's height, measured once drawn, placed by openPlacement
 function useCardPlace(isOpen: boolean, annotation: EditorAnnotation, { top, lineHeight, columnHeight }: Place) {
@@ -49,6 +57,44 @@ function useCardPlace(isOpen: boolean, annotation: EditorAnnotation, { top, line
   return { ref, style };
 }
 
+// '' is a deletion: it has no line to show
+const rowsOf = (sign: DiffRow['sign'], text: string): DiffRow[] =>
+  (text === '' ? [] : text.split('\n')).map((line, n) => ({ sign, line, key: `${sign}${n}` }));
+
+// #981: an open agent fix's before and after, as design-system.md draws a diff: foreground mono text, the span on diff-del, the replacement
+// on diff-add, the sign muted
+function FixDiff({ span, replacement }: { span: string; replacement: string }) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the proposed fix
+    <div role="group" aria-label={t('plugins.annotations.fixLabel')} className="flex flex-col overflow-hidden rounded border font-mono text-foreground">
+      {[...rowsOf('−', span), ...rowsOf('+', replacement)].map(({ sign, line, key }) => (
+        <span key={key} className={`whitespace-pre-wrap px-1.5 ${sign === '−' ? 'bg-diff-del' : 'bg-diff-add'}`}>
+          <span aria-hidden="true" className="inline-block w-3 text-muted-foreground">{sign}</span>{line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// #981: a fix offers apply, an agent advice hands its title and body to the agent bar with its line; neither while the text is read-only
+// (#331: the bar takes no request then, and applyEdit refuses a locked text). Dismiss stays on every card
+function CardActions({ annotation, annotations, canFix }: Pick<SlotProps, 'annotation' | 'annotations' | 'canFix'>) {
+  const kind = kindOf(annotation);
+  const { passage } = annotations;
+  const canAsk = canFix && isAgent(annotation) && kind === 'advice' && passage !== undefined;
+  return (
+    <span className="mt-auto flex gap-1.5">
+      {canFix && kind === 'fix' && <Button type="button" size="xs" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
+      {canAsk && (
+        <Button type="button" size="xs" variant="outline" onClick={() => passage?.(`${annotation.title}: ${annotation.body}`, annotation.line)}>
+          {t('plugins.annotations.askAgent')}
+        </Button>
+      )}
+      <Button type="button" size="xs" variant="outline" disabled={!annotations.canDismiss} onClick={() => annotations.dismiss(annotation)}>{t('plugins.annotations.dismiss')}</Button>
+    </span>
+  );
+}
+
 function Card({ annotation, annotations, canFix, ...place }: SlotProps) {
   const isOpen = annotations.open === annotation;
   const { ref, style } = useCardPlace(isOpen, annotation, place);
@@ -59,8 +105,9 @@ function Card({ annotation, annotations, canFix, ...place }: SlotProps) {
     >
       <span className="flex min-w-0 items-center gap-1.5 font-semibold">
         <span className={isOpen ? 'min-w-0' : 'truncate'}>{headlineOf(annotation)}</span>
-        {/* #329: the issue's "marked as the agent's", after the title (#492); the severity stays the card's one colour */}
-        {isAgent(annotation) && <span className="shrink-0 rounded border px-1 font-normal text-muted-foreground">{t('plugins.annotations.agent')}</span>}
+        {/* #329: the issue's "marked as the agent's", after the title (#492), then the kind (#981); the severity stays the card's one colour */}
+        {isAgent(annotation) && <span className={TAG}>{t('plugins.annotations.agent')}</span>}
+        <span className={TAG}>{t(KIND_TAG[kindOf(annotation)])}</span>
         {isOpen && (
           <Button type="button" size="icon-xs" variant="ghost" aria-label={t('plugins.annotations.close')} title={t('plugins.annotations.closeHint')} onClick={annotations.close} className="ml-auto shrink-0">
             <XIcon />
@@ -72,10 +119,8 @@ function Card({ annotation, annotations, canFix, ...place }: SlotProps) {
         ? <p className="cursor-text text-soft">{bodyOf(annotation)}</p>
         : <button type="button" onClick={() => annotations.openAt(annotation)} className="line-clamp-2 cursor-pointer text-left text-soft hover:text-foreground">{bodyOf(annotation)}</button>}
       {!isAgent(annotation) && ENGINE_CHECKS.includes(annotation.check) && <p title={annotation.title} className="truncate font-mono text-muted-foreground">{annotation.title}</p>}
-      <span className="mt-auto flex gap-1.5">
-        {canFix && hasFix(annotation) && <Button type="button" size="xs" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
-        <Button type="button" size="xs" variant="outline" disabled={!annotations.canDismiss} onClick={() => annotations.dismiss(annotation)}>{t('plugins.annotations.dismiss')}</Button>
-      </span>
+      {isOpen && isAgent(annotation) && annotation.kind === 'fix' && <FixDiff span={annotation.span} replacement={annotation.replacement} />}
+      <CardActions annotation={annotation} annotations={annotations} canFix={canFix} />
     </article>
   );
 }
@@ -94,7 +139,7 @@ function Note({ annotation, annotations, top }: SlotProps) {
 /** The margin's annotations (#327, handoff 11b): a card where it covers nothing, else a one-line note that opens it. The open one is always a
  * card, drawn over the rest, whole and growing upward near the column's end (#980); × or Esc closes it. `tops[i]` is `annotations.list[i]`'s top, as the chips' are theirs. #331: no fix while the text
  * is read-only (the agent working or proposing, the read-only original). */
-interface MarginProps { annotations: Annotations; tops: readonly number[]; chipTops: readonly number[]; canFix?: boolean; lineHeight: number; columnHeight: number }
+interface MarginProps { annotations: CardAnnotations; tops: readonly number[]; chipTops: readonly number[]; canFix?: boolean; lineHeight: number; columnHeight: number }
 export function AnnotationMargin({ annotations, tops, chipTops, canFix = true, lineHeight, columnHeight }: MarginProps) {
   const { list, open, close } = annotations;
   useEffect(() => {
