@@ -402,7 +402,7 @@ export async function writeTranscript(cwd: string, sessionId: string): Promise<s
 }
 
 /** What a test gives a fake machine (#159): each part replaces the default. */
-export interface FakeMachineParts { exec?: Exec; fs?: Partial<MachineFs>; run?: Machine['run']; pty?: Partial<MachinePty>; info?: Partial<MachineInfo>; process?: Machine['process'] }
+export interface FakeMachineParts { exec?: Exec; fs?: Partial<MachineFs>; run?: Machine['run']; pty?: Partial<MachinePty>; info?: Partial<MachineInfo>; process?: Machine['process']; watch?: Machine['watch'] }
 
 // A pty side that spawns nothing: the rest is a fake PtyHost's, so an adopt or a subscribe still works
 function idlePty(): MachinePty {
@@ -415,13 +415,16 @@ function idlePty(): MachinePty {
   };
 }
 
+// A watch that never fires (#935): a test that needs events or errors passes its own
+const IDLE_WATCH: Machine['watch'] = () => ({ close: () => undefined });
+
 /** A Machine for a test (#159): fake-machine.ts' local machine (the real disk, the given exec turned into MachineError, an exec not given
  * answering '', the facts read from process.env at the first info()), with a pty that spawns nothing unless one is given and each given part
- * over it. */
+ * over it, and a watch that never fires unless one is given. */
 export function fakeMachine(parts: FakeMachineParts = {}): Machine {
   const base = localMachine(parts.exec === undefined ? {} : { exec: parts.exec });
   return {
-    ...base, fs: { ...base.fs, ...parts.fs }, run: parts.run ?? base.run, pty: { ...idlePty(), ...parts.pty },
+    ...base, fs: { ...base.fs, ...parts.fs }, run: parts.run ?? base.run, pty: { ...idlePty(), ...parts.pty }, watch: parts.watch ?? IDLE_WATCH,
     info: () => ({ ...base.info(), ...parts.info }), paths: parts.info?.platform === undefined ? base.paths : pathsOf(parts.info.platform),
     ...(parts.process === undefined ? {} : { process: parts.process }),
   };

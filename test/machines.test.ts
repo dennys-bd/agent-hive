@@ -60,3 +60,18 @@ test('the unavailable machine: run and every fs method reject, readLines on its 
     [false, undefined, false, false, false, undefined],
   );
 });
+
+test('the unavailable machine\'s watch reports machine_unavailable through onError after it returned, and no event; close() first suppresses it (#935)', async () => {
+  const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+  const machine = unavailableMachine('wsl:X', 'not_windows');
+  const errors: unknown[] = [];
+  machine.watch('/home/u/repo', { recursive: true }, () => assert.fail('no event'), (err) => errors.push(err));
+  assert.deepEqual(errors, []);
+  await settle();
+  assert.equal(errors.length, 1);
+  assert.ok(unavailable('not_windows')(errors[0]));
+  const suppressed: unknown[] = [];
+  machine.watch('/home/u/repo', { recursive: true }, () => undefined, (err) => suppressed.push(err)).close();
+  await settle();
+  assert.deepEqual(suppressed, []);
+});

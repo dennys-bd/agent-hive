@@ -1,5 +1,5 @@
 // The machine (#158, node 7.1 of #157): where a task's disk, processes and ptys are. The host's own is the local machine (machine-local.ts);
-// node 8 adds an actor's, reached over the link. Types only, but MachineError and pathsOf: a remote machine's failure arrives as data and is
+// node 8 adds an actor's, reached over the link. Types only, but MachineError, toMachineError and pathsOf: a remote machine's failure arrives as data and is
 // rebuilt as one, so a caller reads the same fields whichever machine failed. The fs and child_process types are imported as types only, and
 // node:path for pathsOf, which is why this file is on biome.jsonc's host-only list.
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -137,6 +137,22 @@ export interface RunSpec {
   lent?: Record<string, string>; // merged into the env last; never written to a file or a log
 }
 
+const text = (value: unknown): string => (typeof value === 'string' ? value : Buffer.isBuffer(value) ? value.toString('utf8') : '');
+
+/** execFile's rejection (or a test fake's) as a MachineError, field for field, the original as its cause. */
+export function toMachineError(err: unknown): MachineError {
+  if (err instanceof MachineError) return err;
+  const fields: Record<string, unknown> = typeof err === 'object' && err !== null ? { ...err } : {};
+  const { code } = fields;
+  return new MachineError(err instanceof Error ? err.message : String(err), {
+    code: typeof code === 'string' || typeof code === 'number' ? code : undefined,
+    stderr: text(fields.stderr), stdout: text(fields.stdout), killed: fields.killed === true,
+  }, { cause: err });
+}
+
+/** A watch's handle (#935): close() is idempotent, and after it neither callback fires. */
+export interface MachineWatcher { close(): void }
+
 export interface Machine {
   id: MachineId;
   fs: MachineFs;
@@ -146,6 +162,9 @@ export interface Machine {
   pty: MachinePty;
   info(): MachineInfo;
   readonly paths: path.PlatformPath; // #927: every path on this machine's disk is joined and compared with it, never with the host's node:path
+  /** Watches path on this machine's disk (#935). Never throws: a failure, at the start or later, reaches onError once, after which
+   *  nothing fires; nothing fires after close(). filename is relative to path, in the machine's separators, null when the OS named none. */
+  watch(path: string, options: { recursive: boolean }, onEvent: (filename: string | null) => void, onError: (err: MachineError) => void): MachineWatcher;
 }
 
 /** The path flavour of a machine's platform (#927): a distro's disk needs / even when the Hive runs on Windows. */

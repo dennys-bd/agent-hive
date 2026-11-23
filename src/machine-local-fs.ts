@@ -1,12 +1,12 @@
-// The local machine's disk (#158, split out by #161): node:fs/promises as MachineFs, with readFile's cap, writeAtomic and readLines. A file
+// The local machine's disk (#158, split out by #161): node:fs/promises as MachineFs, with readFile's cap, writeAtomic and readLines, and the watch (#935). A file
 // of its own so a host-only reader (codex-limits.ts: the account's plan limits) takes the host's disk without importing machine-local.ts,
 // whose pty half reaches agents/registry.ts and back: that cycle would read localFs before it is defined.
 import { randomBytes } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, type FSWatcher, watch as fsWatch } from 'node:fs';
 import { access, appendFile, chmod, copyFile, cp, link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { MachineError, type MachineFs } from './machine.js';
+import { type Machine, MachineError, type MachineFs, toMachineError } from './machine.js';
 import { replaceFile } from './replace-file.js';
 
 const MODE_BITS = 0o7777;
@@ -65,4 +65,26 @@ async function writeAtomic(file: string, contents: string): Promise<Buffer> {
 
 export const localFs: MachineFs = {
   stat, lstat, realpath, access, readdir, readFile: readCapped, readLines, writeFile, writeAtomic, mkdir, mkdtemp, rename, rm, cp, copyFile, link, chmod, unlink, appendFile,
+};
+
+/** The local machine's watch (#935): node's fs.watch behind Machine.watch's contract. persistent: false, as #502's was: a watch is never
+ *  what keeps the daemon alive. */
+export const localWatch: Machine['watch'] = (path, { recursive }, onEvent, onError) => {
+  let isClosed = false;
+  let watcher: FSWatcher | undefined;
+  const fail = (err: unknown): void => {
+    if (isClosed) return; // at most once, and never after close()
+    isClosed = true;
+    watcher?.close();
+    onError(toMachineError(err));
+  };
+  try {
+    watcher = fsWatch(path, { recursive, persistent: false, encoding: 'utf8' }, (_eventType, filename) => {
+      if (!isClosed) onEvent(filename);
+    });
+    watcher.on('error', fail);
+  } catch (err) {
+    queueMicrotask(() => fail(err)); // ENOSPC, ENOENT: after watch returned, as a remote watch's start-up failure arrives
+  }
+  return { close: () => { isClosed = true; watcher?.close(); } };
 };

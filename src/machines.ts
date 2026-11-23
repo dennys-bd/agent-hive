@@ -23,8 +23,14 @@ export function unavailableMachine(id: MachineId, reason: string): Machine {
     spawn: fail, has: () => false, pid: () => undefined, write: () => false, resize: () => false, kill: () => false,
     subscribe: () => undefined, adopt: () => {}, forget: () => {},
   };
+  // As a remote watch's start-up failure (#935): on the next microtask, unless close() ran first, so the root falls back to its poll
+  const watch: Machine['watch'] = (_path, _options, _onEvent, onError) => {
+    let isClosed = false;
+    queueMicrotask(() => { if (!isClosed) onError(error()); });
+    return { close: () => { isClosed = true; } };
+  };
   // paths: a distro's disk is Linux; an unknown id has no disk to join paths on, and every call of it fails anyway
-  return { id, fs, pty, exec: reject, run: reject, process: fail, info: fail, paths: pathsOf('linux') };
+  return { id, fs, pty, exec: reject, run: reject, process: fail, info: fail, paths: pathsOf('linux'), watch };
 }
 
 const buildFor = (id: MachineId, { platform, wsl }: MachinesDeps): Machine => {
