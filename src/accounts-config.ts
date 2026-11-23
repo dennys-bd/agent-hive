@@ -20,12 +20,20 @@ export function parseAccounts(raw: unknown): AccountsConfig | string {
   return { ...raw } as AccountsConfig;
 }
 
-/** Why a save cannot take its Claude account (#952): the store has no credential by that name (400). Checked only when the body carries a
- * Claude name, so an unrelated save never fails on a selection made earlier, and never on boot: a token removed after the save is the run
- * seam's to refuse (#953). The message names the key, never the token. */
+const noGithubLogin = (key: 'github' | 'copilot'): string => `"accounts.${key}" names no saved GitHub login`;
+// own entries only: __proto__ and toString name nothing
+const isStored = (map: object, name: string | undefined): boolean => name === undefined || Object.hasOwn(map, name);
+
+/** Why a save cannot take its accounts (#952, #959): the store has no Claude credential, or no GitHub login, by that name (400). Copilot runs
+ * on a GitHub login. Checked only when the body carries a name, so an unrelated save never fails on a selection made earlier, and never on
+ * boot: a token removed after the save is the run seam's to refuse (#953). The message names the key, never the token. */
 export async function accountsRefusal(accounts: AccountsConfig | undefined, env?: NodeJS.ProcessEnv): Promise<Refusal | undefined> {
-  const name = accounts?.claude;
-  if (name === undefined) return undefined;
-  const { claude } = await readCredentials(env);
-  return claude !== undefined && Object.hasOwn(claude, name) ? undefined : { status: HTTP_BAD_REQUEST, message: NO_CLAUDE_ACCOUNT };
+  const { claude: claudeName, github: githubName, copilot: copilotName } = accounts ?? {};
+  if (claudeName === undefined && githubName === undefined && copilotName === undefined) return undefined;
+  const { claude = {}, github = {} } = await readCredentials(env);
+  const checks: [boolean, string][] = [
+    [isStored(claude, claudeName), NO_CLAUDE_ACCOUNT], [isStored(github, githubName), noGithubLogin('github')], [isStored(github, copilotName), noGithubLogin('copilot')],
+  ];
+  const message = checks.find(([ok]) => !ok)?.[1];
+  return message === undefined ? undefined : { status: HTTP_BAD_REQUEST, message };
 }

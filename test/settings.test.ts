@@ -5,7 +5,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CONFIG } from '../src/config.js';
-import { readCredentials, saveClaudeCredential } from '../src/credentials.js';
+import { readCredentials, saveClaudeCredential, saveGithubCredential } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { createGithubAccount, type GithubAccount } from '../src/github-account.js';
 import type { GhToken } from '../src/github-token.js';
@@ -1326,7 +1326,9 @@ test('POST /settings writes mcp\'s defaults on a first save, keeps the saved mcp
 });
 
 test('POST /settings writes accounts {} on a first save and keeps the saved selection when the body has none (#952)', async (t) => {
-  const { base, home } = await start(t);
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'accounts-cred-') };
+  await saveGithubCredential('me', { token: 'fake-github-token-1' }, env); // #959: a GitHub login must be stored to be selected
+  const { base, home } = await start(t, 0, { credentialsEnv: env, githubLogin: { env } });
   const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).accounts;
   assert.equal((await postSettings(base, BODY)).status, 200);
   assert.deepEqual(await onDisk(), {}, 'a body without it, as the Settings form sends until #964');

@@ -1,5 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { saveGithubCredential } from '../src/credentials.js';
 import { createGithubAccount, type GithubAccount } from '../src/github-account.js';
@@ -112,4 +114,15 @@ test('GET /settings/github/auth answers gh\'s login with nothing selected in cli
   const body = await (await hiveFetch(`${h.base}/settings/github/auth`)).text();
   assert.deepEqual(JSON.parse(body), { connected: true, login: 'alice' });
   assert.ok(!body.includes('fake-alice-token'), body);
+});
+
+test('POST /settings with accounts.github or accounts.copilot naming no stored login is a 400 naming the key, writing nothing (#959)', async (t) => {
+  const h = await start(t);
+  for (const key of ['github', 'copilot'] as const) {
+    const res = await save(h, { [key]: 'carol' });
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { error: `"accounts.${key}" names no saved GitHub login` });
+  }
+  await assert.rejects(stat(join(h.home, 'hive.config.json')), 'nothing written');
+  assert.equal(h.kicks(), 0);
 });
