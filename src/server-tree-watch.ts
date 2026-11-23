@@ -29,7 +29,8 @@ export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch, 
     if (!isLease(lease)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LEASE_BODY_MESSAGE });
     try {
       // A checkout holds the other activities' worktrees under .hive/worktrees: treeCheckout tells it apart, as GET /tree does (#131)
-      await treeWatch.lease(id, root, lease, treeCheckout(current.state, current.runtime.config, id, root) === undefined, treeMachine(current.state, id, machineFor));
+      const machine = treeMachine(current.state, id, machineFor);
+      await treeWatch.lease(id, root, lease, treeCheckout(current.state, current.runtime.config, id, root, machine) === undefined, machine);
       res.status(HTTP_NO_CONTENT).end();
     } catch (err) {
       res.status(err instanceof TooManyLeasesError ? HTTP_TOO_MANY : HTTP_SERVER_ERROR).json({ error: wordsOf(err) });

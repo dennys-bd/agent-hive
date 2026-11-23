@@ -14,6 +14,7 @@ import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github-pages.js';
 import type { GhRateLimit } from './sources/github-queries.js';
 import type { Config, Exec, RepoIssues, SourceQuota, State } from './types.js';
+import { pathsOf } from './machine.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -82,7 +83,7 @@ function contextOf(deps: RepoRouteDeps): RepoContext {
 async function listed(ctx: RepoContext, res: Response): Promise<{ state: State; refs: RepoRef[] } | undefined> {
   const live = ctx.deps.requireLive(res);
   if (!live) return undefined;
-  return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, { exec: ctx.deps.exec }) };
+  return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, { exec: ctx.deps.exec, paths: pathsOf(process.platform) }) }; // the host's git, so the host's paths
 }
 
 // The repository a route's :owner/:name names, one listRepositories gives, with its ref (#186: an original's role and pair), or undefined

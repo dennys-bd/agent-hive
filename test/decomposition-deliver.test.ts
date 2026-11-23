@@ -14,7 +14,7 @@ const PATH = 'agent/specs/2026-10-11-site-decomposition.md';
 
 // git as the checkout read meets it: `answers` by subcommand; a missing one throws, as git does outside a checkout
 // `ignore` is check-ignore's exit code: 0 ignored, 1 not (the default), else a failure. Like git 2.50, check-ignore refuses --literal-pathspecs
-function checkoutGit(answers: Partial<Record<'rev-parse' | 'get-url' | 'branch', string>>, ignore = 1) {
+function checkoutGit(answers: Partial<Record<'rev-parse' | 'get-url' | 'branch', string>>, ignore = 1, platform: NodeJS.Platform = 'linux') {
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, ...args]);
@@ -28,13 +28,13 @@ function checkoutGit(answers: Partial<Record<'rev-parse' | 'get-url' | 'branch',
     if (answer === undefined) throw Object.assign(new Error('Command failed'), { stderr: 'fatal: not a git repository\n' });
     return { stdout: `${answer}\n` };
   };
-  return { calls, exec: fakeMachine({ exec }).exec };
+  return { calls, machine: fakeMachine({ exec, info: { platform } }) };
 }
 const FULL = { 'rev-parse': '/docs-repo', 'get-url': 'git@github.com:acme/docs.git', branch: 'hive/7-site' };
 
 test('fileCheckout reads the toplevel from the file\'s folder, then that checkout\'s origin and branch; the path is relative to it (#936)', async () => {
-  const { calls, exec } = checkoutGit(FULL);
-  assert.deepEqual(await fileCheckout(exec, FILE), { toplevel: '/docs-repo', repository: 'acme/docs', branch: 'hive/7-site', path: PATH, ignored: false });
+  const { calls, machine } = checkoutGit(FULL);
+  assert.deepEqual(await fileCheckout(machine, FILE), { toplevel: '/docs-repo', repository: 'acme/docs', branch: 'hive/7-site', path: PATH, ignored: false });
   assert.deepEqual(calls, [
     ['git', '-C', '/docs-repo/agent/specs', 'rev-parse', '--show-toplevel'],
     ['git', '-C', '/docs-repo', 'remote', 'get-url', 'origin'],
@@ -44,19 +44,19 @@ test('fileCheckout reads the toplevel from the file\'s folder, then that checkou
 });
 
 test('check-ignore runs without --literal-pathspecs, which it refuses: a file with glob characters still reads (#544)', async () => {
-  const { exec } = checkoutGit(FULL);
-  assert.equal((await fileCheckout(exec, '/docs-repo/agent/specs/[a]*?.md')).ignored, false);
+  const { machine } = checkoutGit(FULL);
+  assert.equal((await fileCheckout(machine, '/docs-repo/agent/specs/[a]*?.md')).ignored, false);
 });
 
 test('fileCheckout marks a file git ignores (exit 0), and a check-ignore failure other than exit 1 is an error (#936)', async () => {
-  assert.equal((await fileCheckout(checkoutGit(FULL, 0).exec, FILE)).ignored, true);
-  await assert.rejects(fileCheckout(checkoutGit(FULL, 128).exec, FILE), { message: 'fatal: bad' });
+  assert.equal((await fileCheckout(checkoutGit(FULL, 0).machine, FILE)).ignored, true);
+  await assert.rejects(fileCheckout(checkoutGit(FULL, 128).machine, FILE), { message: 'fatal: bad' });
 });
 
 test('fileCheckout refuses a file in no checkout, a checkout off GitHub and a detached HEAD, with fixed words (#936)', async () => {
-  await assert.rejects(fileCheckout(checkoutGit({}).exec, FILE), { message: 'the decomposition file is in no git checkout' });
-  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, 'get-url': 'https://gitlab.com/acme/docs.git' }).exec, FILE), { message: 'the decomposition file\'s checkout has no GitHub origin' });
-  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, branch: '' }).exec, FILE), { message: 'the decomposition file\'s checkout is on no branch: nothing to push' });
+  await assert.rejects(fileCheckout(checkoutGit({}).machine, FILE), { message: 'the decomposition file is in no git checkout' });
+  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, 'get-url': 'https://gitlab.com/acme/docs.git' }).machine, FILE), { message: 'the decomposition file\'s checkout has no GitHub origin' });
+  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, branch: '' }).machine, FILE), { message: 'the decomposition file\'s checkout is on no branch: nothing to push' });
 });
 
 const TARGET: DeliverTarget = {
@@ -190,11 +190,10 @@ test('deliveryRefusal: the default branch, a file that is not .md and a recorded
   assert.equal(deliveryRefusal({ ...ignored, path: 'agent/notes.txt' }, 'main', {}), undefined, 'and neither does the extension');
 });
 
-const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
-
-test('on win32 fileCheckout answers the file\'s path in its checkout with / only (#641)', WIN32_ONLY, async () => {
-  const { exec } = checkoutGit({ ...FULL, 'rev-parse': 'C:\\docs-repo' });
-  assert.equal((await fileCheckout(exec, 'C:\\docs-repo\\agent\\specs\\x.md')).path, 'agent/specs/x.md');
+test('fileCheckout on a win32 machine reads the toplevel from the file\'s folder and answers its path in its checkout with / only, on every OS (#641, #929)', async () => {
+  const { calls, machine } = checkoutGit({ ...FULL, 'rev-parse': 'C:\\docs-repo' }, 1, 'win32');
+  assert.equal((await fileCheckout(machine, 'C:\\docs-repo\\agent\\specs\\x.md')).path, 'agent/specs/x.md');
+  assert.deepEqual(calls[0], ['git', '-C', 'C:\\docs-repo\\agent\\specs', 'rev-parse', '--show-toplevel']);
 });
 
 test('the GitHub write\'s words are today\'s, byte for byte; the hive write\'s name the goal\'s ref and title (#783)', () => {
@@ -228,15 +227,15 @@ test('a delivery commits and opens its PR with the words it is given: the hive\'
 
 test('fileCheckout tells a file the hive can keep local apart: no checkout and an origin off GitHub throw OffGithubError with their words, the second with the path in its checkout; a detached HEAD does not (#783)', async () => {
   const offGithub = (message: string, path?: string) => (err: unknown): boolean => err instanceof OffGithubError && err.message === message && err.path === path;
-  await assert.rejects(fileCheckout(checkoutGit({}).exec, FILE), offGithub('the decomposition file is in no git checkout'));
-  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, 'get-url': 'https://gitlab.com/acme/docs.git' }).exec, FILE), offGithub('the decomposition file\'s checkout has no GitHub origin', PATH));
-  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, branch: '' }).exec, FILE), (err: unknown) => !(err instanceof OffGithubError));
+  await assert.rejects(fileCheckout(checkoutGit({}).machine, FILE), offGithub('the decomposition file is in no git checkout'));
+  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, 'get-url': 'https://gitlab.com/acme/docs.git' }).machine, FILE), offGithub('the decomposition file\'s checkout has no GitHub origin', PATH));
+  await assert.rejects(fileCheckout(checkoutGit({ ...FULL, branch: '' }).machine, FILE), (err: unknown) => !(err instanceof OffGithubError));
 });
 
 test('readDelivery answers the checkout and its repository\'s default branch, or the error it met, and never throws (#783)', async () => {
   const { gql } = fakeGqlJson(() => ({ repository: { id: 'RD', defaultBranchRef: { name: 'main' } } }));
-  assert.deepEqual(await readDelivery(checkoutGit(FULL).exec, gql, FILE), { delivery: { checkout: TARGET.checkout, docs: { id: 'RD', defaultBranch: 'main' } } });
-  const none = await readDelivery(checkoutGit({}).exec, gql, FILE);
+  assert.deepEqual(await readDelivery(checkoutGit(FULL).machine, gql, FILE), { delivery: { checkout: TARGET.checkout, docs: { id: 'RD', defaultBranch: 'main' } } });
+  const none = await readDelivery(checkoutGit({}).machine, gql, FILE);
   assert.ok('error' in none && none.error instanceof OffGithubError);
 });
 

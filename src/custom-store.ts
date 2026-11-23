@@ -3,7 +3,7 @@
 // render) only after a write that happened. The Hive never writes to the shipped plugin; in a workspace's repository it only creates a new
 // item's stub under `.claude/` (#313) and never commits it.
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import hostPaths, { dirname, join } from 'node:path';
 import { applyUpdate, recoverStaging, type UpdateChoices } from './custom-merge.js';
 import { BASE_DIR, FILES_DIR, isName, isRefusal, isVersionName, mainFiles, NAME_MESSAGE, ORIGINAL, PATH_MESSAGE, parseVersionJson, refusal, safeFilePath, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
 import { isInside } from './ide.js';
@@ -50,7 +50,7 @@ const hiveVersionOf = async (s: ItemSources, ref: ItemRef): Promise<{ hiveVersio
 // The last guard before the disk: names and ids are checked already, and a folder outside <home>/custom/ is never written
 function storeDir(s: ItemSources, ref: ItemRef, version: string): string {
   const dir = versionDir(s.home, ref, version);
-  if (!isInside(customRoot(s.home), dir)) throw new Error(`${dir} is outside the custom store`);
+  if (!isInside(customRoot(s.home), dir, hostPaths)) throw new Error(`${dir} is outside the custom store`);
   return dir;
 }
 
@@ -246,7 +246,7 @@ async function createWorkspaceItem(s: ItemSources, kind: ItemKind, name: string,
   if (workspace === undefined) return refusal('unknown_workspace', `no workspace ${origin}`);
   const root = join(workspace.path, '.claude');
   const file = kind === 'skill' ? join(root, 'skills', name, 'SKILL.md') : join(root, 'agents', `${name}.md`);
-  if (!isInside(root, file)) throw new Error(`${file} is outside ${root}`);
+  if (!isInside(root, file, hostPaths)) throw new Error(`${file} is outside ${root}`);
   const ref: ItemRef = { origin, kind, name };
   // One name per origin, across kinds; a skill folder with no SKILL.md yet still holds its name on disk
   const isTaken = (await resolveRef(s, ref)) !== undefined || (await exists(itemDir(s.home, ref))) || (kind === 'skill' && (await exists(dirname(file))));

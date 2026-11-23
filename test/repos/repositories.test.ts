@@ -93,3 +93,14 @@ test('a nested repo on GitHub follows its workspace\'s repositories, role nested
     { repository: 'me/ex-docs', workspace: 'ex', role: 'nested', pair: 'ex/excalidraw' },
   ]);
 });
+
+test('a nested repo\'s checkout is joined with the machine\'s paths: a win32 machine asks git in C:\\code\\hive\\docs on every OS (#929)', async () => {
+  const asked: string[] = [];
+  const winExec: Exec = async (_file, args) => {
+    asked.push(String(args[1]));
+    return { stdout: 'git@github.com:acme/hive.git\n' };
+  };
+  const comb: CombConfig = { ...COMB, workspaces: [{ ...workspace('hive'), path: 'C:\\code\\hive', nestedRepos: ['docs'] }] };
+  await listRepositories({ comb }, initialState(0), fakeMachine({ exec: winExec, info: { platform: 'win32' } }));
+  assert.deepEqual(asked, ['C:\\code\\hive', 'C:\\code\\hive\\docs']);
+});

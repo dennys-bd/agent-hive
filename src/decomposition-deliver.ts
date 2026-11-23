@@ -1,10 +1,10 @@
 // Where a decomposition's file lives, and its delivery (#936): the git checkout that holds the file (the goal's worktree, or a docsRepo's,
 // wherever it sits), the GitHub repository of its origin, its current branch and the file's path in it. What the Design: links point at and
 // where the delivery commits, pushes and opens its PR. A file git ignores is delivered by no PR: it stays local (#741). Git through execFile with argv arrays.
-import { dirname, relative } from 'node:path';
 import { PR_KEY } from './decomposition.js';
 import { readRepository, type WriteDeps } from './decomposition-write.js';
 import { ownerName } from './repos/github-repos.js';
+import type { Machine } from './machine.js';
 import { originRepository } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { CREATE_PULL_REQUEST, type CreatePullRequestData, OPEN_PULL_REQUEST, type OpenPullRequestData } from './sources/github-queries.js';
@@ -24,15 +24,19 @@ export class OffGithubError extends Error {
   }
 }
 
+/** The machine a decomposition's file is on (#929): git runs there, and the file's path is read in its flavour. */
+export type DeliveryMachine = Pick<Machine, 'exec' | 'paths' | 'info'>;
+
 /** The checkout of `file`, a real absolute path (#936), learned from the file itself: the Hive keeps no copy of the conventions. No checkout,
  * an origin off GitHub or a detached HEAD is refused with fixed words before anything is written; #783: the first two as OffGithubError. */
-export async function fileCheckout(exec: Exec, file: string): Promise<FileCheckout> {
+export async function fileCheckout(machine: DeliveryMachine, file: string): Promise<FileCheckout> {
+  const { exec, paths } = machine;
   const git = async (cwd: string, ...args: string[]): Promise<string> => (await exec('git', ['-C', cwd, ...args])).stdout.trim();
   // git answers the toplevel with its symlinks resolved, as the file's real path is, so the relative path holds
-  const toplevel = await git(dirname(file), 'rev-parse', '--show-toplevel').catch(() => '');
+  const toplevel = await git(paths.dirname(file), 'rev-parse', '--show-toplevel').catch(() => '');
   if (toplevel === '') throw new OffGithubError('the decomposition file is in no git checkout');
-  const path = toWire(relative(toplevel, file), process.platform); // #641: the Design: links and git's pathspecs take /
-  const repository = await originRepository({ exec }, toplevel);
+  const path = toWire(paths.relative(toplevel, file), machine.info().platform); // #641: the Design: links and git's pathspecs take /
+  const repository = await originRepository(machine, toplevel);
   if (repository === undefined) throw new OffGithubError('the decomposition file\'s checkout has no GitHub origin', path); // #783: the hive keeps it local, here
   const branch = await git(toplevel, 'branch', '--show-current');
   if (branch === '') throw new Error('the decomposition file\'s checkout is on no branch: nothing to push');
@@ -77,9 +81,9 @@ export interface Delivery { checkout: FileCheckout; docs: { id: string; defaultB
 /** The delivery, or the error that stopped reading it (#783): read once per request and handed to both targets, each reading the error its own way. */
 export type DeliveryRead = { delivery: Delivery } | { error: unknown };
 
-export async function readDelivery(exec: Exec, gql: GqlJson, file: string): Promise<DeliveryRead> {
+export async function readDelivery(machine: DeliveryMachine, gql: GqlJson, file: string): Promise<DeliveryRead> {
   try {
-    const checkout = await fileCheckout(exec, file);
+    const checkout = await fileCheckout(machine, file);
     return { delivery: { checkout, docs: await readRepository(gql, checkout.repository) } };
   } catch (error) {
     return { error };

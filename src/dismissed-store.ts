@@ -2,7 +2,7 @@
 // item's version folders, never inside one: a version's files are delivered, a dismissal is the editor's own. The catalogue lists folders
 // only, so the file is never read as a version.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import hostPaths, { dirname, join } from 'node:path';
 import { isInside } from './ide.js';
 import { customRoot, itemDir, type ItemKey } from './item-sources.js';
 import type { Logger } from './log.js';
@@ -21,7 +21,7 @@ const isKeys = (value: unknown): value is string[] => Array.isArray(value) && va
 // The custom store's last guard: a file outside <home>/custom/ is never read or written
 function fileOf(home: string, key: ItemKey): string {
   const file = join(itemDir(home, key), DISMISSED_FILE);
-  if (!isInside(customRoot(home), file)) throw new Error(`${file} is outside the custom store`);
+  if (!isInside(customRoot(home), file, hostPaths)) throw new Error(`${file} is outside the custom store`);
   return file;
 }
 

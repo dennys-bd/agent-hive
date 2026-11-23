@@ -5,7 +5,7 @@ import { isUtf8 } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import hostPaths, { dirname, join } from 'node:path';
 import { diffTexts, type Hunk, mergeTexts, resolveMerge, type Segment } from './custom-merge-git.js';
 import { BASE_DIR, FILES_DIR, isRefusal, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
 import { isInside } from './ide.js';
@@ -275,7 +275,7 @@ export async function recoverStaging(home: string): Promise<void> {
       for (const version of await childFolders(join(staging, origin, name))) {
         const old = join(staging, origin, name, version, OLD);
         const target = versionDir(home, { origin, name }, version);
-        if (isInside(customRoot(home), target) && !(await exists(target)) && (await exists(old))) {
+        if (isInside(customRoot(home), target, hostPaths) && !(await exists(target)) && (await exists(old))) {
           await mkdir(dirname(target), { recursive: true });
           await rename(old, target);
         }
@@ -289,7 +289,7 @@ export async function recoverStaging(home: string): Promise<void> {
 // the swap leaves the version as it was; a crash between the renames is undone by recoverStaging
 async function swapIn(s: ItemSources, update: Update, files: Side): Promise<void> {
   const target = versionDir(s.home, update.item, update.version.name);
-  if (!isInside(customRoot(s.home), target)) throw new Error(`${target} is outside the custom store`);
+  if (!isInside(customRoot(s.home), target, hostPaths)) throw new Error(`${target} is outside the custom store`);
   const work = workDir(s, update);
   const fresh = join(work, randomUUID());
   try {

@@ -1,6 +1,5 @@
-import { join, posix, relative, win32 } from 'node:path';
 import type { Express, Request, Response } from 'express';
-import type { Machine, MachineFor } from './machine.js';
+import { type Machine, type MachineFor, pathsOf } from './machine.js';
 import { canDiff } from './task-runs.js';
 import { taskWorkspace, noWorkspaceReason, noWorkspaceFields, workspaceByName } from './config.js';
 import type { TaskRouteDeps, Refusal } from './server-tasks.js';
@@ -50,23 +49,23 @@ export function repoViewOf(status: string, inRepo: string, children: FolderEntri
   return { marks: Object.fromEntries([...childMarks, ...goneMarks]), ignored: [...children.folders, ...children.files].filter(isIgnored).sort() };
 }
 
-const holdsGit = (machine: Machine, folder: string): Promise<boolean> => machine.fs.access(join(folder, '.git')).then(() => true, () => false);
+const holdsGit = (machine: Machine, folder: string): Promise<boolean> => machine.fs.access(machine.paths.join(folder, '.git')).then(() => true, () => false);
 
 /** The nested repository a folder of the tree lies in (#1): the nearest folder holding .git (a directory, or a worktree's file) from `folder`
  *  up, so a repository inside a nested one answers for its own files. The tree's root is left out: its own git already marks the tree.
  *  Relative to `root`, as `folder` is ('' is the root); undefined outside any. */
-export async function nestedRepoOf(root: string, folder: string, hasGit: (folder: string) => Promise<boolean>): Promise<string | undefined> {
+export async function nestedRepoOf(root: string, folder: string, hasGit: (folder: string) => Promise<boolean>, paths: Machine['paths']): Promise<string | undefined> {
   const candidates = folder === '' ? [] : folder.split('/').map((_, i, parts) => parts.slice(0, i + 1).join('/')).reverse();
-  const holds = await Promise.all(candidates.map((candidate) => hasGit(join(root, candidate))));
+  const holds = await Promise.all(candidates.map((candidate) => hasGit(paths.join(root, candidate))));
   return candidates.find((_, i) => holds[i]);
 }
 
 // The --directory listing's folders no listed file sits under (#818), relative, without their trailing /: the empty ones, and the nested
 // repositories (they hold .git), which the tree shows as ignored folders (HIVE-22). ponytail: git lists a folder that holds only empty
 // folders as its outermost one, and a folder of ignored files as a folder: the tree shows either as empty; a per-folder walk if that ever misleads
-async function emptyFolders(root: string, listing: string, files: readonly string[], hasGit: (folder: string) => Promise<boolean>): Promise<{ empty: string[]; nested: string[] }> {
+async function emptyFolders(root: string, listing: string, files: readonly string[], hasGit: (folder: string) => Promise<boolean>, paths: Machine['paths']): Promise<{ empty: string[]; nested: string[] }> {
   const candidates = listing.split('\0').filter((entry) => entry.endsWith('/') && !files.some((file) => file.startsWith(entry)));
-  const isNested = await Promise.all(candidates.map((entry) => hasGit(join(root, entry))));
+  const isNested = await Promise.all(candidates.map((entry) => hasGit(paths.join(root, entry))));
   const folders = candidates.map((entry) => entry.slice(0, -1));
   return { empty: folders.filter((_, i) => !isNested[i]), nested: folders.filter((_, i) => isNested[i]) };
 }
@@ -80,7 +79,7 @@ const isGitEntry = (entry: string): boolean => entry.split('/').some((part) => p
 export async function nestedRepos(machine: Machine, root: string): Promise<string[]> {
   const listing = await gitIn(root, ['ls-files', '-z', '--others', '--directory'], machine.exec);
   const folders = listing.split('\0').filter((entry) => entry.endsWith('/') && !isGitEntry(entry));
-  const holds = await Promise.all(folders.map((folder) => holdsGit(machine, join(root, folder))));
+  const holds = await Promise.all(folders.map((folder) => holdsGit(machine, machine.paths.join(root, folder))));
   return folders.filter((_, i) => holds[i]).map((folder) => folder.slice(0, -1)).sort();
 }
 
@@ -117,7 +116,7 @@ export async function taskTree(machine: Machine, worktree: string): Promise<Task
   // An unmerged path lists once per stage; an untracked nested repo lists as `dir/`, a folder git will not look into, so it is no file
   const entries = [...new Set(listed.split('\0'))].filter((path) => path !== '');
   const files = entries.filter((path) => !path.endsWith('/') && !deleted.has(path));
-  const { empty, nested } = await emptyFolders(worktree, directories, files, (folder) => holdsGit(machine, folder));
+  const { empty, nested } = await emptyFolders(worktree, directories, files, (folder) => holdsGit(machine, folder), machine.paths);
   return { root: worktree, ...(branch === undefined ? {} : { branch }), files, marks: { ...marks, ...untrackedMarks(entries, untracked) }, folders: empty, ignored: ignoredOf(ignored, nested) };
 }
 
@@ -144,12 +143,12 @@ export function treeMachine(state: State, id: string, machineFor: MachineFor): M
 // #131: the tree's root as a session or a terminal at the main checkout reaches it (`.hive/worktrees/<slug>`), resolved as treeRoot resolves
 // a task's. Undefined when the root is the checkout itself: a local activity (#633) or a task's local run (#444), whose copy would be the
 // relative path again
-export function treeCheckout(state: State, config: Parameters<typeof taskWorkspace>[0], id: string, root: string): string | undefined {
+export function treeCheckout(state: State, config: Parameters<typeof taskWorkspace>[0], id: string, root: string, machine: Pick<Machine, 'paths' | 'info'>): string | undefined {
   const target = liveTarget(state, id);
   if ('status' in target || !target.task) return undefined;
   const workspace = taskWorkspace(config, target.task);
   // The page joins it with '/' (#641: toWire)
-  const checkout = workspace === undefined ? '' : toWire(relative(workspace.path, root), process.platform);
+  const checkout = workspace === undefined ? '' : toWire(machine.paths.relative(workspace.path, root), machine.info().platform);
   return checkout === '' ? undefined : checkout;
 }
 
@@ -190,7 +189,7 @@ async function diskEntries(machine: Machine, folder: string): Promise<FolderEntr
 // The folder the query names, relative to the tree's root, in the wire's spelling: nestedRepoOf splits on `/`, and win32's relative gives `docs\agent`.
 // '' is the root. Real paths on macOS need not start with the root as written, so the query's path is resolved against it.
 export function inTreeOf(root: string, path: string, platform: NodeJS.Platform): string {
-  const flavour = platform === 'win32' ? win32 : posix;
+  const flavour = pathsOf(platform);
   return toWire(flavour.relative(root, flavour.resolve(root, path)), platform);
 }
 
@@ -201,12 +200,12 @@ export function inTreeOf(root: string, path: string, platform: NodeJS.Platform):
 async function folderEntries(machine: Machine, root: string, path: string, folder: string, onNested: (repo: string) => void): Promise<FolderEntries> {
   const children = await diskEntries(machine, folder);
   const inTree = inTreeOf(root, path, machine.info().platform);
-  const repo = await nestedRepoOf(root, inTree, (f) => holdsGit(machine, f));
+  const repo = await nestedRepoOf(root, inTree, (f) => holdsGit(machine, f), machine.paths);
   if (repo === undefined) return children;
   onNested(repo);
   const inRepo = inTree === repo ? '' : inTree.slice(repo.length + 1);
   // A broken nested repository (a gitdir gone, dubious ownership) must not empty the folder: it reads as HIVE-22 showed it, dimmed
-  const status = await gitIn(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], machine.exec).catch(() => undefined);
+  const status = await gitIn(machine.paths.join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], machine.exec).catch(() => undefined);
   return status === undefined ? children : { ...children, repo: repoViewOf(status, inRepo, children) };
 }
 
@@ -242,8 +241,9 @@ export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
     if (typeof root !== 'string') return refuse(res, root);
     try {
-      const tree = await taskTree(treeMachine(current.state, req.params.id as string, deps.machineFor), root);
-      const checkout = treeCheckout(current.state, current.runtime.config, req.params.id as string, root);
+      const machine = treeMachine(current.state, req.params.id as string, deps.machineFor);
+      const tree = await taskTree(machine, root);
+      const checkout = treeCheckout(current.state, current.runtime.config, req.params.id as string, root, machine);
       res.json(checkout === undefined ? tree : { ...tree, checkout });
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: err instanceof Error ? err.message : String(err) });

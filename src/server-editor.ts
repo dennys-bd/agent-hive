@@ -3,7 +3,6 @@
 // worktree (the workspace once it is gone), a symlink to its target. A deleted activity has no activity space to hold the pane: refused.
 // The text routes: UTF-8 text only, up to EDITOR_FILE_MAX bytes: a lossy decode would corrupt the file on save.
 import { createHash } from 'node:crypto';
-import { extname } from 'node:path';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { activityParam, keptTarget } from './activity-routes.js';
 import { decodeText } from './decode-text.js';
@@ -100,20 +99,21 @@ async function withText(req: Request, res: Response, current: Live, machineFor: 
   answer(read, String(req.query.path));
 }
 
-const imageType = (path: unknown): string | undefined => IMAGE_TYPES[extname(String(path)).toLowerCase()];
+const imageType = (path: unknown, paths: Machine['paths']): string | undefined => IMAGE_TYPES[paths.extname(String(path)).toLowerCase()];
 
 // An image's bytes (#498), read once on its machine under IMAGE_MAX: what the image route sends and the version hashes
 const readImage = (located: Located): Promise<Buffer | Refusal> => located.machine.fs.readFile(located.file, { maxBytes: IMAGE_MAX }).catch(readRefusal);
 
 // file-version: an image path's version is the hash of any bytes, any size, for its tab's reload (#498); a text path keeps the text read's
-// 413 / 415, so a text pane whose file grew past the cap or turned binary sees no new version it could never reload
+// 413 / 415, so a text pane whose file grew past the cap or turned binary sees no new version it could never reload. Located first: the
+// path's type is read with its machine's paths (#929)
 async function fileVersion(req: Request, res: Response, current: Live, machineFor: MachineFor): Promise<void> {
-  if (imageType(req.query.path) === undefined) return withText(req, res, current, machineFor, ({ bytes }) => { res.json({ version: sha256(bytes) }); });
   const located = await locate(current, activityParam(req), req.query.path, machineFor);
   if ('status' in located) return refuse(res, located);
-  const bytes = await readImage(located);
-  if (!Buffer.isBuffer(bytes)) return refuse(res, bytes);
-  res.json({ version: sha256(bytes) });
+  const isImage = imageType(req.query.path, located.machine.paths) !== undefined;
+  const read = isImage ? await readImage(located) : await readText(located.machine, located.file);
+  if ('status' in read) return refuse(res, read);
+  res.json({ version: sha256(Buffer.isBuffer(read) ? read : read.bytes) });
 }
 
 // decision 10 of #498: an <img> never runs an SVG's scripts, and sandbox keeps them from running if the URL is ever opened as a page
@@ -124,7 +124,7 @@ const IMAGE_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': '
 async function sendImage(req: Request, res: Response, current: Live, machineFor: MachineFor): Promise<void> {
   const located = await locate(current, activityParam(req), req.query.path, machineFor);
   if ('status' in located) return refuse(res, located);
-  const type = imageType(req.query.path);
+  const type = imageType(req.query.path, located.machine.paths);
   if (type === undefined) return refuse(res, { status: HTTP_UNSUPPORTED, message: BINARY_MESSAGE });
   const bytes = await readImage(located);
   if (!Buffer.isBuffer(bytes)) return refuse(res, bytes);
@@ -143,13 +143,13 @@ function saveBody(raw: unknown): SaveBody | undefined {
 const DRAWIO_EXTENSION = '.drawio';
 // #956: draw.io's own XML is the file's canonical form; a formatter would reflow what the diagram pane writes back, and a ⌘S in the editor
 // pane must not reformat it either
-const isDrawio = (file: string): boolean => extname(file).toLowerCase() === DRAWIO_EXTENSION;
+const isDrawio = (file: string, paths: Machine['paths']): boolean => paths.extname(file).toLowerCase() === DRAWIO_EXTENSION;
 
 // #749, #780, #956: the formatter's run when the pane asked for it and format on save covers the workspace; undefined sends the text as typed, always for a .drawio
 function formatted(located: Located, body: SaveBody, consoleStore: Store, editor: EditorConfig): Promise<FormatOutcome | undefined> {
   const { workspace } = located;
   const isOn = editor.formatOnSave.enabled && workspace !== undefined && inScope(editor.formatOnSave.workspaces, workspace.name);
-  if (!body.format || !isOn || workspace === undefined || isDrawio(located.file)) return Promise.resolve(undefined);
+  if (!body.format || !isOn || workspace === undefined || isDrawio(located.file, located.machine.paths)) return Promise.resolve(undefined);
   return formatForSave(editor, body.text, { machine: located.machine, cwd: located.folder, file: located.file, workspace, label: `${located.label} · ${body.path}`, consoleStore });
 }
 

@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
 import { activityOf, localActivityId } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { initialState, reduce } from '../src/orchestrator.js';
@@ -9,7 +8,6 @@ import { capturedCwd } from '../src/terminal-runs.js';
 import type { AgentId, HiveEvent, Session, State } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
 import { flowed } from './fixtures/main-flow.js';
-import { tempDir } from './temp-dir.js';
 
 test('capturedCwd keeps an absolute folder on one line inside the terminal\'s own, and nothing else (#932)', () => {
   assert.deepEqual(
@@ -109,11 +107,7 @@ test('a resumed capture whose first SessionStart names a session another live ru
   assert.deepEqual(released.workers.filter((w) => w.sessionId === S1).map((w) => w.runId), [live.runId]);
 });
 
-const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
-
-test('on win32 capturedCwd keeps a native folder inside the terminal\'s own and drops one past it (#641)', WIN32_ONLY, async (t) => {
-  const root = await tempDir(t, 'wire-cwd-');
-  assert.equal(capturedCwd(join(root, 'src'), root), join(root, 'src'));
-  assert.equal(capturedCwd(root, root), root);
-  assert.equal(capturedCwd(join(root, '..', 'x'), root), undefined);
+test('capturedCwd reads the flavour off the terminal\'s root, on every OS: /repo/sub under /repo kept and /other refused; C:\\repo\\sub under C:\\repo kept, C:\\other and C:\\repo\\..\\x refused (#929)', () => {
+  assert.deepEqual(['/repo/sub', '/repo', '/other'].map((cwd) => capturedCwd(cwd, '/repo')), ['/repo/sub', '/repo', undefined]);
+  assert.deepEqual(['C:\\repo\\sub', 'C:\\repo', 'C:\\other', 'C:\\repo\\..\\x', '/repo/sub'].map((cwd) => capturedCwd(cwd, 'C:\\repo')), ['C:\\repo\\sub', 'C:\\repo', undefined, undefined, undefined]);
 });

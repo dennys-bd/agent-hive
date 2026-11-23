@@ -4,7 +4,7 @@ import { access, mkdir, readdir, readFile, realpath, symlink, writeFile } from '
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { MACHINE_REMOTE, MACHINE_REMOTE_MESSAGE, moveFs } from '../src/machine-fs.js';
-import type { Machine } from '../src/machine.js';
+import { type Machine, pathsOf } from '../src/machine.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { freeName, MOVE_BODY_MESSAGE, type MoveFs, moveItems } from '../src/server-move.js';
 import { ABSOLUTE_MOVE_MESSAGE, FOLDER_MISSING_MESSAGE, GIT_MESSAGE, MISSING_FILE_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
@@ -57,7 +57,7 @@ test('a move across volumes (EXDEV) copies each item, then removes the original 
       await disk.rm(path);
     },
   };
-  assert.deepEqual(await moveItems({ root, sources: ['a.txt', 'folder'], into: 'sub', copy: false, suffix: 'copy' }, fs), { moved: ['sub/a.txt', 'sub/folder'], from: ['a.txt', 'folder'] });
+  assert.deepEqual(await moveItems({ root, sources: ['a.txt', 'folder'], into: 'sub', copy: false, suffix: 'copy', platform: process.platform }, fs), { moved: ['sub/a.txt', 'sub/folder'], from: ['a.txt', 'folder'] });
   assert.deepEqual(calls, ['rename', 'cp', 'rm', 'rename', 'cp', 'rm']);
   assert.equal(await readFile(join(root, 'sub/a.txt'), 'utf8'), 'a');
   assert.equal(await readFile(join(root, 'sub/folder/b.txt'), 'utf8'), 'b');
@@ -69,7 +69,7 @@ test('any other rename failure rejects with its own words and copies nothing (#5
   await mkdir(join(root, 'sub'));
   await writeFile(join(root, 'a.txt'), 'a');
   const fs: MoveFs = { ...disk, rename: async () => { throw fsError('EACCES', 'EACCES: permission denied'); } };
-  await assert.rejects(moveItems({ root, sources: ['a.txt'], into: 'sub', copy: false, suffix: 'copy' }, fs), /EACCES: permission denied/);
+  await assert.rejects(moveItems({ root, sources: ['a.txt'], into: 'sub', copy: false, suffix: 'copy', platform: process.platform }, fs), /EACCES: permission denied/);
   assert.deepEqual([await exists(join(root, 'a.txt')), await exists(join(root, 'sub/a.txt'))], [true, false]);
 });
 
@@ -247,7 +247,7 @@ test('a copy that fails across volumes removes the half-copied destination; a so
     cp: async () => { throw new Error('ENOSPC: no space left'); },
     rm: async (path) => { removed.push(path); },
   };
-  const job = { root, sources: ['a.txt'], into: 'sub', copy: false, suffix: 'copy' };
+  const job = { root, sources: ['a.txt'], into: 'sub', copy: false, suffix: 'copy', platform: process.platform };
   await assert.rejects(moveItems(job, failingCp), /ENOSPC: no space left/);
   assert.equal(removed.length, 1);
   assert.match(removed[0] as string, /sub[\\/]a\.txt$/);
@@ -308,6 +308,24 @@ test('on win32 a drop answers moved and an inside from with / only; a Finder fil
   await mkdir(join(root, 'docs', 'old'), { recursive: true });
   await writeFile(join(root, 'src', 'deep', 'a.ts'), 'a');
   await writeFile(join(outside, 'f.txt'), 'f');
-  const done = await moveItems({ root, sources: ['src/deep/a.ts', join(outside, 'f.txt')], into: 'docs/old', copy: true, suffix: 'copy' }, disk);
+  const done = await moveItems({ root, sources: ['src/deep/a.ts', join(outside, 'f.txt')], into: 'docs/old', copy: true, suffix: 'copy', platform: 'win32' }, disk);
   assert.deepEqual(done, { moved: ['docs/old/a.ts', 'docs/old/f.txt'], from: ['src/deep/a.ts', join(outside, 'f.txt')] });
+});
+
+test('a drop on a fake win32 volume answers moved and from with /, on every OS (#929)', async () => {
+  const win32 = pathsOf('win32');
+  const root = 'C:\\root';
+  const held = new Set([root, win32.join(root, 'src'), win32.join(root, 'src', 'a.ts'), win32.join(root, 'docs')]);
+  const stat = async (path: string): Promise<{ isDirectory(): boolean }> => {
+    if (!held.has(path)) throw fsError('ENOENT', `ENOENT: ${path}`);
+    return { isDirectory: () => !path.endsWith('.ts') };
+  };
+  const renames: string[][] = [];
+  const fs: MoveFs = {
+    paths: win32, stat, realpath: async (path) => { await stat(path); return path; },
+    rename: async (from, to) => { renames.push([from, to]); }, cp: async () => undefined, rm: async () => undefined,
+  };
+  const job = { root, sources: ['src/a.ts'], into: 'docs', copy: false, suffix: 'copy', platform: 'win32' as const };
+  assert.deepEqual(await moveItems(job, fs), { moved: ['docs/a.ts'], from: ['src/a.ts'] });
+  assert.deepEqual(renames, [[win32.join(root, 'src', 'a.ts'), win32.join(root, 'docs', 'a.ts')]]);
 });
