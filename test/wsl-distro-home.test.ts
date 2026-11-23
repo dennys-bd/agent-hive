@@ -30,6 +30,13 @@ function memoryDisk(initial: Record<string, string> = {}) {
       return o.encoding === undefined ? f.data : f.data.toString(o.encoding);
     },
     async rm(p: string) { ops.push({ kind: 'rm', path: p }); files.delete(p); },
+    async rename(from: string, to: string) {
+      const f = files.get(from);
+      if (f === undefined) throw enoent(from);
+      ops.push({ kind: 'write', path: to }); // a rename over a file is its write, as far as a caller sees
+      files.delete(from);
+      files.set(to, f);
+    },
     async readdir(p: string, o?: { withFileTypes: true; recursive?: boolean }) {
       const rel = under(p).map((f) => f.slice(p.length + 1));
       if (o === undefined) return [...new Set(rel.map((r) => r.split('/')[0]))];
@@ -103,7 +110,7 @@ const pluginFiles = { [`${PLUGIN}/plugin.json`]: 'a', [`${PLUGIN}/skills/x/SKILL
 const DEST = `${HOME}/plugins/ws`;
 
 const copy = (distro: Machine, host: Machine) => distroPluginDir(distro, host, plugins, 'ws');
-const writes = (d: ReturnType<typeof memoryDisk>) => d.ops.filter((o) => o.kind === 'write').map((o) => o.path).sort();
+const writes = (d: ReturnType<typeof memoryDisk>) => d.ops.filter((o) => o.kind === 'write' && !o.path.endsWith('.hive-new')).map((o) => o.path).sort();
 
 test('distroPluginDir copies every non-dot file once and answers the distro folder', async () => {
   const { distro, host, distroDisk } = setup(pluginFiles);
@@ -136,4 +143,65 @@ test('distroPluginDir treats an unparsable manifest as empty and refuses a dot w
   assert.ok(distroDisk.files.has(`${DEST}/plugin.json`));
   await assert.rejects(distroPluginDir(distro, host, plugins, '.x'));
   await assert.rejects(distroPluginDir(distro, host, plugins, ''));
+});
+
+test('prepareDistroHome repairs a drifted mode on a file whose text already matches', async () => {
+  const { distro, host, distroDisk } = setup();
+  await prepareDistroHome(distro, host, opts);
+  const secret = distroDisk.files.get(`${HOME}/hive.secret`);
+  assert.ok(secret !== undefined);
+  secret.mode = 0o644;
+  await prepareDistroHome(distro, host, opts);
+  assert.equal(distroDisk.files.get(`${HOME}/hive.secret`)?.mode, 0o600);
+});
+
+test('prepareDistroHome refuses a relay port that is not a port', async () => {
+  const { distro, host } = setup();
+  await assert.rejects(prepareDistroHome(distro, host, { ...opts, relayPort: Number.NaN }));
+  await assert.rejects(prepareDistroHome(distro, host, { ...opts, relayPort: 70_000 }));
+});
+
+test('distroPluginDir never removes a path a crafted manifest key points outside the plugin folder', async () => {
+  const { distro, host, distroDisk } = setup(pluginFiles);
+  const hash = 'ab'.repeat(32);
+  const manifest = { '../../hive.secret': hash, '..': hash, '': hash, 'a\\b': hash };
+  distroDisk.files.set(`${DEST}/.hive-manifest.json`, { data: Buffer.from(JSON.stringify(manifest)), mode: 0o600 });
+  await copy(distro, host);
+  assert.deepEqual(distroDisk.ops.filter((o) => o.kind === 'rm'), []);
+});
+
+test('distroPluginDir replaces a file that became a folder', async () => {
+  const { distro, host, distroDisk, hostDisk } = setup(pluginFiles);
+  await copy(distro, host);
+  hostDisk.files.delete(`${PLUGIN}/plugin.json`);
+  hostDisk.files.set(`${PLUGIN}/plugin.json/inner`, { data: Buffer.from('i'), mode: 0o644 });
+  await copy(distro, host);
+  const ops = distroDisk.ops.map((o) => `${o.kind} ${o.path}`);
+  assert.ok(ops.indexOf(`rm ${DEST}/plugin.json`) < ops.indexOf(`mkdir ${DEST}/plugin.json`));
+  assert.equal(distroDisk.text(`${DEST}/plugin.json/inner`), 'i');
+});
+
+test('distroPluginDir from a win32 host writes /-separated distro paths and manifest keys', async () => {
+  const root = 'C:\\h\\plugins\\ws';
+  const files = new Map([[`${root}\\plugin.json`, 'a'], [`${root}\\skills\\x\\SKILL.md`, 'b'], [`${root}\\.codex\\c.md`, 'c']]);
+  const hostFs = {
+    async readdir(p: string) {
+      return [...files.keys()].filter((f) => f.startsWith(`${p}\\`)).map((f) => {
+        const i = f.lastIndexOf('\\');
+        return { name: f.slice(i + 1), parentPath: f.slice(0, i), isFile: () => true };
+      });
+    },
+    async readFile(p: string) {
+      const text = files.get(p);
+      if (text === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      return Buffer.from(text);
+    },
+  };
+  const distroDisk = memoryDisk();
+  const distro = fakeMachine({ fs: distroDisk.fs, info: { platform: 'linux', homedir: '/home/u' } });
+  const host = fakeMachine({ fs: hostFs as unknown as Partial<MachineFs>, info: { platform: 'win32', homedir: 'C:\\h' } });
+  await distroPluginDir(distro, host, { dir: () => root }, 'ws');
+  assert.equal(distroDisk.text(`${DEST}/skills/x/SKILL.md`), 'b');
+  assert.ok(distroDisk.ops.every((o) => !o.path.includes('\\')));
+  assert.deepEqual(Object.keys(JSON.parse(distroDisk.text(`${DEST}/.hive-manifest.json`) ?? '{}')).sort(), ['plugin.json', 'skills/x/SKILL.md']);
 });

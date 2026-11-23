@@ -14,12 +14,14 @@ export interface DistroHome { root: string; hooksPath: string; secretFile: strin
 const HOME_PARTS = ['.config', 'agent-hive', 'wsl'];
 const PRIVATE_DIR = 0o700;
 const PRIVATE_FILE = 0o600;
-const SHIM_DIR = 0o755; // the shims are on PATH for the distro's other users' tools too, as the host's command-shims are
+const SHIM_DIR = 0o755; // BIN_MODE, as the host's command-shims; the 0700 root above it is what keeps other users out
 const SHIM_FILE = 0o755;
 const SECRET_LINE = /^x-hive-secret: [0-9a-f]{64}$/; // the header line daemon-files writes, which curl reads with -H @file
 const TEXT_MAX = 1 << 20;
 const PLUGIN_FILE_MAX = 16 << 20;
 const MANIFEST = '.hive-manifest.json';
+const SHA256 = /^[0-9a-f]{64}$/;
+const PORT_MAX = 65_535;
 
 const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex');
 
@@ -31,8 +33,10 @@ async function readOrUndefined(machine: Machine, path: string): Promise<string |
   }
 }
 
-/** Writes `text` only when the file differs; chmod too, since a mode given to writeFile applies only to a new file. */
+/** Writes `text` only when the file differs. The mode is set first on a file already there, so a drifted mode is repaired even when the text
+ * matches, and a new secret never lands under an old, wider mode; again after a write, since writeFile's mode is narrowed by the umask. */
 async function putText(machine: Machine, path: string, text: string, mode: number): Promise<void> {
+  await machine.fs.chmod(path, mode).catch(() => undefined); // missing: the write below creates it
   if (await readOrUndefined(machine, path) === text) return;
   await machine.fs.writeFile(path, text, { mode });
   await machine.fs.chmod(path, mode);
@@ -60,6 +64,7 @@ async function syncShims(distro: Machine, host: Machine, dir: string, names: rea
 
 /** Makes the distro's Hive folder match what the host wants there, and answers its paths. */
 export async function prepareDistroHome(distro: Machine, host: Machine, opts: DistroHomeOptions): Promise<DistroHome> {
+  if (!Number.isInteger(opts.relayPort) || opts.relayPort < 1 || opts.relayPort > PORT_MAX) throw new Error('relay port out of range'); // it is rendered into hooks.json's shell lines
   if (!SECRET_LINE.test(opts.secretLine)) throw new Error('secret line is not an x-hive-secret header'); // never echoed: it is the secret
   opts.shimWords.forEach(checkedWord); // before any write: a refused call leaves the folder as it was
   const { paths } = distro;
@@ -79,40 +84,67 @@ async function hostFiles(host: Machine, dir: string): Promise<string[]> {
   return rels.filter((rel) => !rel.split('/').some((seg) => seg.startsWith('.'))).sort();
 }
 
-async function readManifest(distro: Machine, path: string): Promise<Record<string, string>> {
+// A manifest key is data from the distro's disk: only a plain relative path under the plugin folder may reach a write or an rm
+const isPluginRel = (rel: string): boolean =>
+  !rel.includes('\\') && !rel.includes('\0') && rel.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+
+async function readManifest(distro: Machine, path: string): Promise<Map<string, string>> {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(await readOrUndefined(distro, path) ?? '');
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, string> : {};
+    parsed = JSON.parse(await readOrUndefined(distro, path) ?? '');
   } catch {
-    return {}; // unparsable: copy everything
+    return new Map(); // missing or unparsable: copy everything
   }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return new Map();
+  const entries = Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === 'string' && SHA256.test(e[1]) && isPluginRel(e[0]));
+  return new Map(entries);
 }
 
-/** Copies the workspace's rendered plugin into the distro, by hash, and answers the distro folder. The manifest goes last, so a copy cut
- * short is redone the next time. */
+// One copy per distro folder at a time: a Settings save during a launch would otherwise interleave writes and leave a manifest naming
+// content that is not on disk, which the next diff would trust
+const queues = new WeakMap<Machine, Map<string, Promise<unknown>>>();
+function serialised<T>(machine: Machine, key: string, run: () => Promise<T>): Promise<T> {
+  const byKey = queues.get(machine) ?? new Map<string, Promise<unknown>>();
+  queues.set(machine, byKey);
+  const next = (byKey.get(key) ?? Promise.resolve()).then(run, run);
+  byKey.set(key, next.catch(() => undefined));
+  return next;
+}
+
+// tmp + rename: a running agent reading a skill mid-copy sees the old file or the new one, never half
+async function putFile(distro: Machine, target: string, data: Buffer): Promise<void> {
+  const dir = distro.paths.dirname(target);
+  await ensureDir(distro, dir, PRIVATE_DIR);
+  const tmp = distro.paths.join(dir, `.${distro.paths.basename(target)}.hive-new`);
+  await distro.fs.writeFile(tmp, data);
+  await distro.fs.rename(tmp, target);
+}
+
+async function syncPlugin(distro: Machine, host: Machine, hostDir: string, dest: string): Promise<void> {
+  const manifestPath = distro.paths.join(dest, MANIFEST);
+  const old = await readManifest(distro, manifestPath);
+  const rels = await hostFiles(host, hostDir);
+  // Removed files first: a file that became a folder (or the reverse) would otherwise block its own replacement
+  const gone = [...old.keys()].filter((rel) => !rels.includes(rel));
+  await Promise.all(gone.map((rel) => distro.fs.rm(distro.paths.join(dest, rel), { force: true })));
+  const fresh = new Map<string, string>();
+  for (const rel of rels) {
+    const data = await host.fs.readFile(host.paths.join(hostDir, ...rel.split('/')), { maxBytes: PLUGIN_FILE_MAX });
+    fresh.set(rel, sha256(data));
+    if (old.get(rel) !== fresh.get(rel)) await putFile(distro, distro.paths.join(dest, rel), data);
+  }
+  const same = gone.length === 0 && [...fresh].every(([rel, hash]) => old.get(rel) === hash);
+  if (same) return;
+  await ensureDir(distro, dest, PRIVATE_DIR);
+  await distro.fs.writeFile(manifestPath, `${JSON.stringify(Object.fromEntries(fresh), null, 2)}\n`); // last: a copy cut short is redone
+}
+
+/** Copies the workspace's rendered plugin into the distro, by hash, and answers the distro folder. */
 export async function distroPluginDir(distro: Machine, host: Machine, plugins: Pick<PluginRender, 'dir'>, workspace: string): Promise<string> {
   const name = encodeURIComponent(workspace);
   if (name === '' || name.startsWith('.')) throw new Error('workspace name outside the plugins folder');
   const hostDir = plugins.dir(workspace);
   const dest = distro.paths.join(distroRoot(distro), 'plugins', name);
-  const manifestPath = distro.paths.join(dest, MANIFEST);
-  const old = await readManifest(distro, manifestPath);
-  const fresh: Record<string, string> = {};
-  let changed = false;
-  for (const rel of await hostFiles(host, hostDir)) {
-    const data = await host.fs.readFile(host.paths.join(hostDir, ...rel.split('/')), { maxBytes: PLUGIN_FILE_MAX });
-    fresh[rel] = sha256(data);
-    if (old[rel] === fresh[rel]) continue;
-    const target = distro.paths.join(dest, rel);
-    await ensureDir(distro, distro.paths.dirname(target), PRIVATE_DIR);
-    await distro.fs.writeFile(target, data);
-    changed = true;
-  }
-  const gone = Object.keys(old).filter((rel) => !(rel in fresh));
-  await Promise.all(gone.map((rel) => distro.fs.rm(distro.paths.join(dest, rel), { force: true })));
-  if (changed || gone.length > 0) {
-    await ensureDir(distro, dest, PRIVATE_DIR);
-    await distro.fs.writeFile(manifestPath, `${JSON.stringify(fresh, null, 2)}\n`);
-  }
+  await serialised(distro, dest, () => syncPlugin(distro, host, hostDir, dest));
   return dest;
 }
