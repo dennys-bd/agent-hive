@@ -64,7 +64,7 @@ test('both transports treat a non-empty errors array as a failure, even with par
 test('githubLoginName answers only the login, never the token, and undefined when nobody is stored', async (t) => {
   const env = { XDG_CONFIG_HOME: await tempDir(t, 'gql-') };
   assert.equal(await githubLoginName(env), undefined);
-  await writeCredentials({ github: { token: TOKEN, login: 'ana' } }, env);
+  await writeCredentials({ github: { ana: { token: TOKEN } } }, env);
   assert.equal(await githubLoginName(env), 'ana');
 });
 
@@ -73,7 +73,7 @@ test('apiGql without a stored token rejects with the instruction, and a non-2xx 
   const { doFetch, calls } = fakeFetch(json(OK_BODY));
   await assert.rejects(apiGql({ fetch: doFetch, env })(VIEWER), { message: NO_TOKEN_MESSAGE });
   assert.equal(calls.length, 0, 'no call without a token');
-  await writeCredentials({ github: { token: TOKEN, login: 'ana' } }, env);
+  await writeCredentials({ github: { ana: { token: TOKEN } } }, env);
   assert.deepEqual(await apiGql({ fetch: doFetch, env })(VIEWER), { viewer: { login: 'ana' } });
   assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Bearer ${TOKEN}`, 'read per call from the store');
   await assert.rejects(bound(fakeFetch(json({ message: TOKEN }, 401)).doFetch)(VIEWER), { message: 'github api: HTTP 401' });

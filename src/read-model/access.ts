@@ -25,7 +25,9 @@ export async function accessFor(auth: GithubAuth, deps: AccessDeps): Promise<Rea
     if (login === '') return undefined;
     return { source: sourceOf(GITHUB_HOST, login), rest: httpRest({ token: ghToken.token, onUnauthorized: ghToken.invalidate, fetch }), gql: gqlFor('cli', { log, ghToken, fetch }) };
   }
-  const { github } = await (deps.credentials ?? (() => readCredentials()))();
-  if (github === undefined || github.token === '' || github.login === '') return undefined;
-  return { source: sourceOf(GITHUB_HOST, github.login), rest: httpRest({ token: async () => github.token, fetch }), gql: gqlFor('api', { log, fetch }) };
+  const github = (await (deps.credentials ?? (() => readCredentials()))()).github ?? {};
+  const logins = Object.keys(github);
+  if (logins.length !== 1) return undefined; // one stored login reads as before; the account (#959) names the several case
+  const [login] = logins;
+  return { source: sourceOf(GITHUB_HOST, login), rest: httpRest({ token: async () => github[login].token, fetch }), gql: gqlFor('api', { log, fetch }) };
 }

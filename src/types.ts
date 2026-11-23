@@ -199,7 +199,8 @@ export type Gql = (query: string, variables?: Record<string, string | number | b
 
 /** What the credential store holds, one key per provider. Never leaves the process except as an Authorization header. */
 export interface Credentials {
-  github?: { token: string; login: string };
+  /** A GitHub login's token by login (#959): the device flow's and gh's browser login's (#960). */
+  github?: Record<string, { token: string }>;
   /** An external MCP server's header value by server name (#333). */
   mcp?: Record<string, { value: string }>;
   /** A Jira Cloud login by bare site host (#816). */

@@ -65,7 +65,7 @@ test('api: a sync round runs no gh at all (#503)', async (t) => {
   const db = await tempModel(t);
   const { exec, runs } = countingGh();
   const ghToken = holder(exec);
-  const credentials = async () => ({ github: { token: `test-${randomUUID()}`, login: 'bia' } });
+  const credentials = async () => ({ github: { bia: { token: `test-${randomUUID()}` } } });
   const errors = await twoRounds(db, () => accessFor('api', { ghToken, credentials, fetch: fakeGithub().doFetch }));
   assert.deepEqual(errors, []);
   assert.deepEqual(runs, []);

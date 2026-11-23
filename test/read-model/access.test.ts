@@ -58,7 +58,7 @@ test('cli: no login in hosts.yml is no access (#503)', async () => {
 test('api: the source is the stored login, and REST sends the stored token as the bearer; the holder is never read (#503)', async () => {
   const token = `test-${randomUUID()}`;
   const { doFetch, headers } = answering(304);
-  const access = await accessFor('api', { ghToken: NO_HOLDER, credentials: async () => ({ github: { token, login: 'bia' } }), fetch: doFetch });
+  const access = await accessFor('api', { ghToken: NO_HOLDER, credentials: async () => ({ github: { bia: { token } } }), fetch: doFetch });
   assert.equal(access?.source, SOURCE);
   await access?.rest(PATH, 'W/"e"');
   assert.equal(headers[0]?.Authorization, `Bearer ${token}`);

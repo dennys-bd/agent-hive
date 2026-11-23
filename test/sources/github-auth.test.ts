@@ -74,7 +74,7 @@ test('authorization_pending waits the interval and retries; the access token is 
   assert.equal(token.length, 3);
   assert.deepEqual(token[0].body, { client_id: CLIENT_ID, device_code: 'DC1', grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
   assert.equal(fake.calls.at(-1)?.url, 'https://api.github.com/graphql', 'the login comes from viewer, not from the token response');
-  assert.deepEqual(await readCredentials(d.env), { github: { token: TOKEN, login: 'ana' } });
+  assert.deepEqual(await readCredentials(d.env), { github: { ana: { token: TOKEN } } });
 });
 
 test('slow_down widens the interval by 5 s, and the code expiring rejects saying so', async (t) => {
@@ -108,4 +108,16 @@ test('valid JSON that is not an object (null, an array) is a clean "github login
   const d = await deps(t, fakeGithub([]));
   await assert.rejects(requestDeviceCode({ ...d, fetch: (async () => json(null)) as unknown as typeof fetch }), /github login: HTTP 200$/);
   await assert.rejects(requestDeviceCode({ ...d, fetch: (async () => json([])) as unknown as typeof fetch }), /github login: HTTP 200$/);
+});
+
+test('two device flows as alice and bob leave two logins; a second flow as alice replaces her token only (#959)', async (t) => {
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'login-'), HIVE_GITHUB_CLIENT_ID: CLIENT_ID };
+  const flow = async (login: string, token: string): Promise<void> => {
+    const fake = fakeGithub([{ access_token: token }], json({ data: { viewer: { login } } }));
+    assert.equal(await loginToGithub(() => {}, { ...(await deps(t, fake)), env }), login);
+  };
+  await flow('alice', 'gho_alice_first');
+  await flow('bob', 'gho_bob');
+  await flow('alice', 'gho_alice_second');
+  assert.deepEqual(await readCredentials(env), { github: { alice: { token: 'gho_alice_second' }, bob: { token: 'gho_bob' } } });
 });

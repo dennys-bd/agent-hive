@@ -1108,7 +1108,7 @@ test('POST /settings/github/login answers the code at once and the auth route re
     return status.connected ? status : undefined;
   });
   assert.deepEqual(connected, { connected: true, login: 'ana' });
-  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_secret', login: 'ana' } });
+  assert.deepEqual(await readCredentials(env), { github: { ana: { token: 'gho_secret' } } });
   const body = await (await hiveFetch(`${base}/settings/github/auth`)).text();
   assert.ok(!body.includes('gho_secret'), body);
 });
@@ -1167,11 +1167,11 @@ test('a second login replaces the first: its poll stops (no further calls) and a
   });
   assert.deepEqual(connected, { connected: true, login: 'ana' });
   assert.equal(secondTokenCalls, 1, 'the second flow authorized on its first poll, undelayed by the first');
-  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_second', login: 'ana' } }, 'the second flow, not the first, won the store');
+  assert.deepEqual(await readCredentials(env), { github: { ana: { token: 'gho_second' } } }, 'the second flow, not the first, won the store');
   releaseFirst?.(); // let the first flow's stuck fetch resolve, arriving after its own abort
   await sleep(50); // give its .then a turn to (not) run
   assert.equal(firstTokenCalls, 2, 'the aborted flow made no further poll after the second login started');
-  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_second', login: 'ana' } }, 'the late, aborted token never overwrote the store');
+  assert.deepEqual(await readCredentials(env), { github: { ana: { token: 'gho_second' } } }, 'the late, aborted token never overwrote the store');
   assert.deepEqual(await json<GithubAuthStatus>(hiveFetch(`${started.base}/settings/github/auth`)), { connected: true, login: 'ana' }, 'nor the reported status');
 });
 

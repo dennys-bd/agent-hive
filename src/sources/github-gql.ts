@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readCredentials } from '../credentials.js';
+import { githubLoginsStored } from '../credentials.js';
 import { resolveExec } from '../exec-path.js';
+import { defaultGithubToken } from '../github-account.js';
 import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
@@ -11,7 +12,7 @@ const GH_MAX_BUFFER = 20 * 1024 * 1024;
 const API_URL = 'https://api.github.com/graphql';
 const FETCH_TIMEOUT_MS = 10_000;
 const QUERY_MAX = 200; // the GraphQL query is long; the head names the call, the rest is noise
-export const NO_TOKEN_MESSAGE = 'no GitHub token: run `hive login` or connect in settings';
+export { NO_TOKEN_MESSAGE } from '../github-account.js'; // #959: moved beside the rule; fork.ts's tests import it from here
 
 /** The `gh` runner: argv, and what goes to its stdin (#592), → stdout. cliGql and cliGqlJson use it. */
 export type Exec = (args: string[], input?: string) => Promise<string>;
@@ -68,16 +69,10 @@ export function cliGqlJson(exec: Exec = ghExec): GqlJson {
   return async (query, variables) => unwrap(JSON.parse(await exec(['api', 'graphql', '--input', '-'], JSON.stringify({ query, variables }))));
 }
 
-/** The stored GitHub account, or undefined when nobody logged in. Kept private: `storedToken` is the only reason to
- * hold the token, and a type-level guarantee beats trusting every future caller to destructure `login` only. */
-async function readGithubCredentials(env?: NodeJS.ProcessEnv): Promise<{ token: string; login: string } | undefined> {
-  const { github } = await readCredentials(env);
-  return github?.token ? github : undefined;
-}
-
-/** The stored GitHub account's name, or undefined when nobody logged in. What GET /settings/github/auth reports: never the token. */
+/** The stored login GET /settings/github/auth reports, never the token: the only one, undefined with none or several. Until #959's routes read the account. */
 export async function githubLoginName(env?: NodeJS.ProcessEnv): Promise<string | undefined> {
-  return (await readGithubCredentials(env))?.login;
+  const logins = await githubLoginsStored(env);
+  return logins.length === 1 ? logins[0] : undefined;
 }
 
 const UNAUTHORIZED = 401;
@@ -89,19 +84,13 @@ export interface ApiGqlDeps {
   onUnauthorized?: () => void; // cli (#503): a 401 drops the held token; the next poll reads it again
 }
 
-async function storedToken(env?: NodeJS.ProcessEnv): Promise<string> {
-  const stored = await readGithubCredentials(env);
-  if (!stored) throw new Error(NO_TOKEN_MESSAGE); // makes resolveFields fail on boot, which reopens setup with the reason
-  return stored.token;
-}
-
 /**
  * The Hive's own transport. The token is read per call and exists only inside it: no log line, no error message and no
  * rejection value ever carries it, and a non-2xx rejects with the status alone, never with the body.
  */
 export function apiGql(deps: ApiGqlDeps = {}): Gql {
   const doFetch = deps.fetch ?? globalThis.fetch;
-  const readToken = deps.readToken ?? (() => storedToken(deps.env));
+  const readToken = deps.readToken ?? (() => defaultGithubToken(deps.env));
   return async (query, variables) => {
     const token = await readToken();
     const res = await doFetch(API_URL, {
