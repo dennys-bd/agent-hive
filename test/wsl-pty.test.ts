@@ -30,6 +30,7 @@ function distroDisk() {
   const dirs = new Set([CWD]);
   const files = new Map<string, string>();
   const removed: string[] = [];
+  const writes = new Map<string, { mode: unknown; flag: unknown; afterRm: boolean }>();
   const fs: Partial<MachineFs> = {
     stat: async (p) => {
       if (!dirs.has(p)) throw new MachineError(`ENOENT ${p}`, { code: 'ENOENT' });
@@ -37,14 +38,16 @@ function distroDisk() {
     },
     mkdir: async (p) => { dirs.add(p); return undefined; },
     chmod: async () => undefined,
-    writeFile: async (p, data) => { files.set(p, String(data)); },
+    writeFile: async (p, data, o) => {
+      writes.set(p, { mode: o?.mode, flag: o?.flag, afterRm: removed.includes(p) });
+      files.set(p, String(data));
+    },
     rm: async (p) => { removed.push(p); files.delete(p); dirs.delete(p); },
   };
-  return { dirs, files, removed, fs };
+  return { dirs, files, removed, writes, fs };
 }
 
-function setup(over: Partial<WslPtyDeps> = {}) {
-  const disk = distroDisk();
+function setup(over: Partial<WslPtyDeps> = {}, disk = distroDisk()) {
   const machine = fakeMachine({ fs: disk.fs, info: { platform: 'linux', homedir: DISTRO_HOME, tmpdir: '/tmp', path: '/usr/bin:/bin' } });
   const fake = fakePtys();
   const deps: WslPtyDeps = {
@@ -120,12 +123,69 @@ test('a terminal spawns the distro shell in its cwd, with no shims, prompt or en
   await pty.spawn({ ptyId: 'T1', slug: 'hive-1-task', workspace: 'acme', cwd: CWD, terminal: true }, HANDLERS).started;
   const spawned = fake.ptys[0];
   assert.ok(spawned);
-  assert.equal(spawned.args[4], 'PATH=/usr/bin:/bin');
+  assert.equal(spawned.args[4], `PATH=/usr/bin:/bin:${DISTRO_HOME}/.local/bin`);
   const line = spawned.args.at(-1) ?? '';
   assert.ok(line.startsWith(`cd '${CWD}' && `));
   assert.ok(line.includes(`"\${SHELL:-sh}"`));
   assert.equal(spawned.options.env.CLAUDE_ENV_FILE, undefined);
   assert.equal(disk.files.size, 0);
+});
+
+test('an agent other than Claude is refused with not_supported before any write', async () => {
+  const { disk, fake, pty } = setup();
+  await assert.rejects(pty.spawn(agentSpec({ agent: { id: 'copilot', run: RUN } }), HANDLERS).started, { code: 'not_supported' });
+  assert.equal(disk.files.size, 0);
+  assert.equal(disk.dirs.size, 1, 'no folder made');
+  assert.equal(fake.ptys.length, 0);
+});
+
+test('a lent value named WSLENV or Path rejects started and leaves nothing on the disk', async () => {
+  for (const name of ['WSLENV', 'Path']) {
+    const { disk, fake, pty } = setup();
+    await assert.rejects(pty.spawn(agentSpec({ lent: { [name]: 'x' } }), HANDLERS).started, { code: MachineError.BAD_NAME });
+    assert.deepEqual([...disk.files.keys()], []);
+    assert.deepEqual([...disk.dirs], [CWD]);
+    assert.equal(fake.ptys.length, 0);
+  }
+});
+
+test('a start that fails after its writes removes the run files it wrote', async () => {
+  const fail: WslPtyDeps['ptys'] = { ...createPtyHost(fakePtys().spawnPty), spawn: () => { throw new Error('no pty'); } };
+  const { disk, pty } = setup({ ptys: fail });
+  await assert.rejects(pty.spawn(agentSpec({ protocol: 'End with hive_done.' }), HANDLERS).started, /no pty/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual([...disk.files.keys()], []);
+  assert.ok(disk.removed.includes(`${ROOT}/prompts/P1.protocol.md`));
+});
+
+test('a leftover file is removed before the write, so the new one is made with its own mode', async () => {
+  const { disk, pty } = setup();
+  await pty.spawn(agentSpec(), HANDLERS).started;
+  assert.deepEqual(disk.writes.get(`${ROOT}/prompts/P1.mcp.json`), { mode: 0o600, flag: 'wx', afterRm: true });
+  assert.deepEqual(disk.writes.get(`${ROOT}/prompts/hive-1-task.md`), { mode: 0o600, flag: 'wx', afterRm: true });
+});
+
+test('a temp folder whose chmod fails is still removed', async () => {
+  const disk = distroDisk();
+  disk.fs.chmod = async (p) => { if (p.startsWith('/tmp/')) throw new Error('chmod failed'); };
+  const { pty } = setup({}, disk);
+  await assert.rejects(pty.spawn(agentSpec(), HANDLERS).started, /chmod failed/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(disk.removed.some((p) => p.startsWith('/tmp/') && p.endsWith('/P1')));
+});
+
+test('a kill before started resolves, whether the start succeeds or fails', async () => {
+  const { fake, pty } = setup();
+  const handle = pty.spawn(agentSpec(), HANDLERS);
+  const killed = handle.kill();
+  await handle.started;
+  fake.ptys[0]?.exit(0);
+  await killed;
+  assert.equal(fake.ptys[0]?.killed, 1);
+  const refused = pty.spawn(agentSpec({ ptyId: 'P2', cwd: '/nowhere' }), HANDLERS);
+  const none = refused.kill();
+  await assert.rejects(refused.started);
+  assert.equal(await none, undefined);
 });
 
 test('a cwd that does not exist rejects started and spawns nothing', async () => {
@@ -151,24 +211,39 @@ test('exit removes the run temp folder and env file, reports once, and a kill re
   assert.equal(pty.pid('P1'), undefined);
 });
 
-// What subscribers of a pty spawned as `file` receive, over withoutConptyTitle, for the chunks it emits
-function received(file: string, chunks: string[]): string {
+// What subscribers of a pty spawned as `file` receive, over withoutConptyTitle, for the chunks it emits, then its exit when asked
+function received(file: string, chunks: string[], isExit = false): string {
   const fake = fakePtys();
   const host = createPtyHost(withoutConptyTitle(fake.spawnPty));
   host.spawn('X', [file], HOST_CWD, {});
   const data: string[] = [];
   host.subscribe('X', (d) => data.push(d), () => {});
   for (const chunk of chunks) fake.ptys[0]?.emit(chunk);
+  if (isExit) fake.ptys[0]?.exit(0);
   return data.join('');
 }
+
+// What a real ConPTY sends first: its screen setup, the title naming the program, then the cursor shown
+const CONPTY_HEAD = '\x1b[?25l\x1b[2J\x1b[m\x1b[H';
+const CONPTY_TITLE = '\x1b]0;C:\\WINDOWS\\system32\\wsl.exe\x07';
 
 test('the ConPTY title naming wsl.exe never reaches subscribers, even split across chunks', () => {
   assert.equal(received(WSL[0] ?? 'wsl.exe', ['\x1b]0;C:\\WINDOWS\\system32\\wsl.exe\x07hello']), 'hello');
   assert.equal(received('wsl.exe', ['\x1b]0', ';C:\\Windows\\WSL.EXE', '\x1b\\', 'hi']), 'hi');
 });
 
-test('another pty title, or a later one, passes through', () => {
+test('the title after ConPTY screen setup is dropped and every byte around it kept', () => {
+  assert.equal(received('wsl.exe', [`${CONPTY_HEAD}${CONPTY_TITLE}\x1b[?25h$ `]), `${CONPTY_HEAD}\x1b[?25h$ `);
+  assert.equal(received('wsl.exe', [CONPTY_HEAD, CONPTY_TITLE.slice(0, 9), CONPTY_TITLE.slice(9), 'ok']), `${CONPTY_HEAD}ok`);
+});
+
+test('only the first wsl.exe title goes; another pty or another title passes through', () => {
   assert.equal(received('/bin/sh', ['\x1b]0;wsl.exe\x07x']), '\x1b]0;wsl.exe\x07x');
   assert.equal(received('wsl.exe', ['\x1b]0;vim\x07x']), '\x1b]0;vim\x07x');
-  assert.equal(received('wsl.exe', ['a\x1b]0;wsl.exe\x07']), 'a\x1b]0;wsl.exe\x07');
+  assert.equal(received('wsl.exe', [CONPTY_TITLE, 'a', CONPTY_TITLE]), `a${CONPTY_TITLE}`);
+  assert.equal(received('wsl.exe', ['x'.repeat(4096), CONPTY_TITLE]), `${'x'.repeat(4096)}${CONPTY_TITLE}`);
+});
+
+test('a title still open when the pty exits reaches subscribers before the exit', () => {
+  assert.equal(received('wsl.exe', ['a\x1b]0;C:\\wsl.ex'], true), 'a\x1b]0;C:\\wsl.ex');
 });
