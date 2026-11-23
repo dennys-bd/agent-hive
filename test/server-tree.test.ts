@@ -14,6 +14,8 @@ import type { TaskTree, Config, Exec } from '../src/types.js';
 import { MACHINE_REMOTE, MACHINE_REMOTE_MESSAGE } from '../src/machine-fs.js';
 import { hiveFetch } from './secret-client.js';
 import { fakeFiles, fakeMachine, fakeMachines } from './fake-machine.js';
+import { isFlavoured, startMachineRoutes } from './fixtures/machine-routes.js';
+import { pathsOf } from '../src/machine.js';
 import { head, ignoredEntry, ordinary, renamed, statusText, untracked } from './fixtures/porcelain-v2.js';
 import { withLocal, workPath } from './fixtures/work.js';
 import { IGNORED_ENTRIES, postJson, startTree, task } from './fixtures/tree-server.js';
@@ -31,13 +33,14 @@ test('repoViewOf marks the folder\'s direct child files as the outer tree does, 
 });
 
 test('nestedRepoOf answers the nearest folder holding .git from the read folder up, a repository inside a nested one for its own files, the tree\'s root left out (#1)', async () => {
-  const repos = new Set([join('/wt'), join('/wt', 'docs'), join('/wt', 'docs', 'vendor', 'lib')]);
+  const linux = pathsOf('linux');
+  const repos = new Set(['/wt', '/wt/docs', '/wt/docs/vendor/lib']);
   const hasGit = async (folder: string): Promise<boolean> => repos.has(folder);
-  assert.equal(await nestedRepoOf('/wt', 'docs', hasGit), 'docs');
-  assert.equal(await nestedRepoOf('/wt', 'docs/agent/specs', hasGit), 'docs');
-  assert.equal(await nestedRepoOf('/wt', 'docs/vendor/lib/src', hasGit), 'docs/vendor/lib');
-  assert.equal(await nestedRepoOf('/wt', 'node_modules/x', hasGit), undefined);
-  assert.equal(await nestedRepoOf('/wt', '', hasGit), undefined);
+  assert.equal(await nestedRepoOf('/wt', 'docs', hasGit, linux), 'docs');
+  assert.equal(await nestedRepoOf('/wt', 'docs/agent/specs', hasGit, linux), 'docs');
+  assert.equal(await nestedRepoOf('/wt', 'docs/vendor/lib/src', hasGit, linux), 'docs/vendor/lib');
+  assert.equal(await nestedRepoOf('/wt', 'node_modules/x', hasGit, linux), undefined);
+  assert.equal(await nestedRepoOf('/wt', '', hasGit, linux), undefined);
 });
 
 test('inTreeOf names the folder in the wire\'s spelling, from win32 paths too, so nestedRepoOf splits docs\\agent on / (#655)', () => {
@@ -241,3 +244,16 @@ test('nestedRepos: the untracked folders, the ignored ones included, that hold .
   assert.deepEqual(await nestedRepos(machine, '/wt'), ['docs', 'vendor/lib']);
   assert.deepEqual(calls.map((args) => args.slice(7)), [['ls-files', '-z', '--others', '--directory']]);
 });
+
+for (const platform of ['linux', 'win32'] as const) {
+  test(`GET /activities/:id/tree and /tree/folder on a fake ${platform} machine answer / relative paths and reach its fs with its own absolute paths, whatever the host (#929)`, async (t) => {
+    const f = await startMachineRoutes(t, platform);
+    const tree = (await (await fetch(`${f.base}/tree`)).json()) as TaskTree;
+    assert.deepEqual([tree.root, tree.files, tree.folders, tree.checkout], [f.at(), ['docs/agent/a.md'], ['empty'], undefined]);
+    const folder = await fetch(`${f.base}/tree/folder?path=${encodeURIComponent('docs/agent')}`);
+    assert.deepEqual([folder.status, await folder.json()], [200, { files: ['a.md'], folders: [] }]);
+    assert.ok(f.fsCalls.includes(f.at('empty', '.git')), 'the empty folder\'s probe joins with the machine\'s separator');
+    assert.ok(f.fsCalls.includes(f.at('docs', 'agent', '.git')), 'so does the nested repository\'s');
+    assert.ok(f.fsCalls.length > 0 && f.fsCalls.every((path) => isFlavoured(path, platform)), f.fsCalls.join(' '));
+  });
+}

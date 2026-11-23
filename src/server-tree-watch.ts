@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
 import { TooManyLeasesError } from './tree-watch.js';
-import { treeCheckout, treeRoot } from './server-tree.js';
+import { treeCheckout, treeMachine, treeRoot } from './server-tree.js';
 import { wordsOf } from './worktree.js';
 
 // The files sidebar's lease on its tree (#502): the page posts one per shown sidebar and renews it; the daemon watches that root while any
@@ -18,7 +18,7 @@ const refuse = (res: Response, refusal: Refusal): void => { res.status(refusal.s
 const isLease = (value: unknown): value is string => typeof value === 'string' && value !== '' && value.length <= LEASE_MAX_LENGTH;
 
 /** POST /activities/:id/tree/watch (`{ lease }`) and DELETE /activities/:id/tree/watch/:lease (#502); 204 both, an unknown lease's DELETE too; 429 for a new lease past MAX_LEASES. */
-export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch }: Pick<TaskRouteDeps, 'requireLive' | 'treeWatch'>): void {
+export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch, machineFor }: Pick<TaskRouteDeps, 'requireLive' | 'treeWatch' | 'machineFor'>): void {
   app.post('/activities/:id/tree/watch', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -29,7 +29,7 @@ export function registerTreeWatchRoutes(app: Express, { requireLive, treeWatch }
     if (!isLease(lease)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LEASE_BODY_MESSAGE });
     try {
       // A checkout holds the other activities' worktrees under .hive/worktrees: treeCheckout tells it apart, as GET /tree does (#131)
-      await treeWatch.lease(id, root, lease, treeCheckout(current.state, current.runtime.config, id, root) === undefined);
+      await treeWatch.lease(id, root, lease, treeCheckout(current.state, current.runtime.config, id, root, treeMachine(current.state, id, machineFor)) === undefined);
       res.status(HTTP_NO_CONTENT).end();
     } catch (err) {
       res.status(err instanceof TooManyLeasesError ? HTTP_TOO_MANY : HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
