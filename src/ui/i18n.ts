@@ -2547,6 +2547,9 @@ const en = {
   'plugins.mode.label': 'mode',
   'plugins.mode.visual': 'visual',
   'plugins.mode.text': 'text',
+  'plugins.margin.label': 'annotations',
+  'plugins.margin.switch': 'annotations margin',
+  'plugins.margin.count': '· {count}',
   // #320: the version menu
   'plugins.version.menu': 'versions',
   'plugins.version.header': 'versions of {name}',
@@ -6063,6 +6066,9 @@ const pt: Record<MessageKey, string> = {
   'plugins.mode.label': 'modo',
   'plugins.mode.visual': 'visual',
   'plugins.mode.text': 'texto',
+  'plugins.margin.label': 'anotações',
+  'plugins.margin.switch': 'margem das anotações',
+  'plugins.margin.count': '· {count}',
   // #320: the version menu
   'plugins.version.menu': 'versões',
   'plugins.version.header': 'versões de {name}',

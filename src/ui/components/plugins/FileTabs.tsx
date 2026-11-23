@@ -1,4 +1,4 @@
-import { PlusIcon } from 'lucide-react';
+import { MessageSquareIcon, PlusIcon } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { deliveredName } from '../../../template';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ export interface FileTabsProps {
   files: readonly string[]; open: string; isDirty(path: string): boolean; onOpen(path: string): void;
   onAdd?(path: string): Promise<MessageKey | undefined>; // absent: no "+" (a specialist, the preview)
   mode?: EditorMode; onMode?(mode: EditorMode): void; // absent: no toggle (a file with no map, the preview)
+  margin?: { isOpen: boolean; count: number; onToggle(): void }; // #980: absent, no switch (no chips and no annotations, the preview)
   previewOf?: string; // the "view as" workspace (decision 26)
 }
 
@@ -50,8 +51,8 @@ const labelOf = (path: string, previewOf?: string): string => (previewOf === und
 const TAB = 'flex shrink-0 items-center gap-1.5 border-r px-3 font-mono text-muted-foreground hover:text-foreground aria-selected:bg-card aria-selected:text-foreground aria-selected:shadow-[inset_0_-2px_0_var(--foreground)]';
 
 /** The skill's file tabs (#319, handoff 11b): the folder's files filling the bar with the dirty dot, "+" and its name field, the visual | text
- * toggle on the right, or the preview's line in its place (#492). */
-export function FileTabs({ files, open, isDirty, onOpen, onAdd, mode, onMode, previewOf }: FileTabsProps) {
+ * toggle on the right, the margin's switch before it (#980), or the preview's line in its place (#492). */
+export function FileTabs({ files, open, isDirty, onOpen, onAdd, mode, onMode, margin, previewOf }: FileTabsProps) {
   const [isAdding, setAdding] = useState(false);
   return (
     <div className="flex h-8 shrink-0 items-stretch border-b text-xs">
@@ -67,9 +68,19 @@ export function FileTabs({ files, open, isDirty, onOpen, onAdd, mode, onMode, pr
         ? <span className="flex items-center px-2"><NewFileField onAdd={onAdd} onClose={() => setAdding(false)} /></span>
         : <Button type="button" variant="ghost" aria-label={t('plugins.file.new')} className="h-auto rounded-none px-3" onClick={() => setAdding(true)}><PlusIcon className="size-3" /></Button>)}
       {previewOf !== undefined && <span className="ml-auto flex items-center whitespace-nowrap px-4 text-muted-foreground">{t('plugins.preview.label', { workspace: previewOf })}</span>}
+      {/* #980: closes the margin column; closed, it counts the annotations whose dots the gutter keeps */}
+      {margin && (
+        <button
+          type="button" role="switch" aria-checked={margin.isOpen} aria-label={t('plugins.margin.switch')} onClick={margin.onToggle}
+          className={`mr-1 ml-auto flex items-center gap-1.5 self-center whitespace-nowrap rounded-[5px] border px-2 py-px hover:bg-accent ${margin.isOpen ? 'bg-card text-foreground' : 'text-muted-foreground'}`}
+        >
+          <MessageSquareIcon className="size-3" />{t('plugins.margin.label')}
+          {!margin.isOpen && <span className="text-muted-foreground">{t('plugins.margin.count', { count: margin.count })}</span>}
+        </button>
+      )}
       {mode && onMode && (
         // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the toggle
-        <div role="group" aria-label={t('plugins.mode.label')} className="mr-3 ml-auto flex items-center self-center rounded-md border bg-card p-0.5">
+        <div role="group" aria-label={t('plugins.mode.label')} className={`mr-3 flex items-center self-center rounded-md border bg-card p-0.5 ${margin ? '' : 'ml-auto'}`}>
           {MODES.map((m) => (
             <button key={m} type="button" aria-pressed={m === mode} onClick={() => onMode(m)} className="rounded-sm px-2 py-0.5 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground">{t(MODE_LABEL[m])}</button>
           ))}

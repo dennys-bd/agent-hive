@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { FileTabs } from '@/components/plugins/FileTabs';
+import { FileTabs, type FileTabsProps } from '@/components/plugins/FileTabs';
 import { setLanguage } from '@/i18n';
 
 const FILES = ['SKILL.md.liquid', 'slicing.md'];
@@ -51,4 +51,24 @@ test('a tab reads its basename with the full path as its title; the open one is 
   const tab = screen.getByRole('tab', { name: 'run.sh' });
   expect(tab).toHaveAttribute('title', 'scripts/run.sh');
   expect(tab).toHaveClass('aria-selected:bg-card');
+});
+
+test('the margin switch: none without margin; open it reads anotações, checked; closed it adds the count, · 0 too; a click toggles; before the mode toggle; English too (#980)', () => {
+  const onToggle = vi.fn();
+  const tabs = (margin?: FileTabsProps['margin']) => <FileTabs files={FILES} open="SKILL.md.liquid" isDirty={() => false} onOpen={vi.fn()} mode="visual" onMode={vi.fn()} margin={margin} />;
+  const { rerender } = render(tabs());
+  expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  rerender(tabs({ isOpen: true, count: 3, onToggle }));
+  const toggle = screen.getByRole('switch', { name: 'margem das anotações' });
+  expect([toggle.textContent, toggle.getAttribute('aria-checked')]).toEqual(['anotações', 'true']);
+  expect(toggle.nextElementSibling).toBe(screen.getByRole('group', { name: 'modo' }));
+  fireEvent.click(toggle);
+  expect(onToggle).toHaveBeenCalledTimes(1);
+  rerender(tabs({ isOpen: false, count: 3, onToggle }));
+  expect([toggle.textContent, toggle.getAttribute('aria-checked')]).toEqual(['anotações· 3', 'false']);
+  rerender(tabs({ isOpen: false, count: 0, onToggle }));
+  expect(toggle.textContent).toBe('anotações· 0');
+  setLanguage('en');
+  rerender(tabs({ isOpen: false, count: 3, onToggle }));
+  expect(screen.getByRole('switch', { name: 'annotations margin' })).toHaveTextContent('annotations· 3');
 });
