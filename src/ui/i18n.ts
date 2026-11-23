@@ -2585,6 +2585,8 @@ const en = {
   'plugins.version.createFailed': 'could not create the version',
   'plugins.version.renameFailed': 'could not rename the version',
   'plugins.version.useFailed': 'could not change the version in use',
+  // #983: deleting a version, or a user-created item with its last
+  'plugins.delete.failed': 'could not delete {version}',
   // #320: the based-on link and its card
   'plugins.origin.link': 'based on {name}',
   'plugins.origin.title': 'based on',
@@ -6115,6 +6117,8 @@ const pt: Record<MessageKey, string> = {
   'plugins.version.createFailed': 'não foi possível criar a versão',
   'plugins.version.renameFailed': 'não foi possível renomear a versão',
   'plugins.version.useFailed': 'não foi possível trocar a versão em uso',
+  // #983: deleting a version, or a user-created item with its last
+  'plugins.delete.failed': 'não foi possível excluir {version}',
   // #320: the based-on link and its card
   'plugins.origin.link': 'baseada em {name}',
   'plugins.origin.title': 'baseada em',

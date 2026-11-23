@@ -3,10 +3,11 @@ import { needsLiquid, parseTemplate } from '../../template';
 import type { ChainSpec } from '../../template-condition';
 import { type EditResult, insertChain, moveBlock, removeChain, replaceChain } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
+import { useBuffers } from '@/hooks/use-buffers';
 import { type Plugins, statusOf } from '@/hooks/use-plugins';
 import type { MessageKey } from '@/i18n';
 import { getJson, sendJson } from '@/lib/api';
-import { HIVE_ORIGIN, mainPathOf, versionToOpen } from '@/lib/plugins';
+import { HIVE_ORIGIN, mainPathOf, sectionOf, versionToOpen } from '@/lib/plugins';
 import type { EditorMode } from '@/lib/template-view';
 
 /** The skill editor's state (#319, #320): held by usePluginsDock, in the always-mounted dock, so it outlives the view. */
@@ -22,7 +23,7 @@ export interface ItemEditor {
   // #320, decisions 11–13: a version from the open one, the open one renamed, a workspace moved onto it; undefined: done. Not `useIn`: the
   // hooks lint reads editor.useIn() in a menu's onSelect as a hook call
   createVersion(name: string): Promise<MessageKey | undefined>; renameVersion(name: string): Promise<MessageKey | undefined>;
-  assignTo(workspace: string): Promise<MessageKey | undefined>;
+  assignTo(workspace: string): Promise<MessageKey | undefined>; deleteVersion(): Promise<MessageKey | undefined>; // #983: its last takes a user-created item
   insertChain(line: number, spec: ChainSpec): EditResult; replaceChain(line: number, spec: ChainSpec): EditResult; removeChain(line: number): EditResult; // #322: on the open buffer
   mode: EditorMode; setMode(mode: EditorMode): void;
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
@@ -36,7 +37,7 @@ export interface ItemEditor {
 }
 /** What applyEdit takes: a template edit's result, or a whole new text (#331: an accepted proposal). */
 export type WriteResult = { ok: true; text: string } | Extract<EditResult, { ok: false }>;
-type Writes = Pick<ItemEditor, 'save' | 'newFile' | 'revert' | 'createVersion' | 'renameVersion' | 'assignTo'>;
+type Writes = Pick<ItemEditor, 'save' | 'newFile' | 'revert' | 'createVersion' | 'renameVersion' | 'assignTo' | 'deleteVersion'>;
 
 interface Note { id: string; error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string }
 interface WriteContext {
@@ -45,7 +46,7 @@ interface WriteContext {
   settle(version: string | null, path: string, sent: string): void; // the open file's buffer after a save, under the version and path saved
   moveVersion(to: string): void; dropVersion(): void; // the open version's read and buffers, renamed or gone
   carryBuffers(to: string): void; // the open version's unsaved buffers only, onto another version
-  openVersion(version: string | null): void;
+  openVersion(version: string | null): void; openList(): void; // openList: the item's section, once its last version took the item (#983)
 }
 
 const LIQUID = '.liquid';
@@ -62,13 +63,6 @@ const itemUrl = (id: string): string => `/api/items/${encodeURIComponent(id)}`;
 const readUrl = (id: string, version: string | null): string => (version === null ? itemUrl(id) : `${itemUrl(id)}?${new URLSearchParams({ version })}`);
 const versionUrl = (id: string, version: string): string => `${itemUrl(id)}/versions/${encodeURIComponent(version)}`;
 const isItemRead = (value: unknown): value is ItemRead => typeof value === 'object' && value !== null && Array.isArray((value as Partial<ItemRead>).files);
-
-// Every key under `from` moved under `to`, or dropped without one: a renamed version's buffers follow it, a reverted one's go
-const rekey = <T>(record: Readonly<Record<string, T>>, from: string, to?: string): Record<string, T> =>
-  Object.fromEntries(Object.entries(record).flatMap(([key, value]): [string, T][] => {
-    if (!key.startsWith(from)) return [[key, value]];
-    return to === undefined ? [] : [[`${to}${key.slice(from.length)}`, value]];
-  }));
 
 // The open version's read, once per item and version: a later visit keeps it, as it keeps the buffers over it (#320, decision 10)
 function useReads(item: CatalogueItem | undefined, version: string | null) {
@@ -91,18 +85,6 @@ function useReads(item: CatalogueItem | undefined, version: string | null) {
     return () => { live = false; };
   }, [id, key, version, isSettled, put]);
   return { read: key === undefined ? undefined : reads[key], hasFailed: key !== undefined && failed.includes(key), put, moveRead };
-}
-
-function useBuffers() {
-  const [buffers, setBuffers] = useState<Readonly<Record<string, string>>>({});
-  const set = useCallback((key: string, text: string): void => setBuffers((prev) => ({ ...prev, [key]: text })), []);
-  // A save's settling: the buffer sent goes back to the read; one typed in while the save flew stays dirty, under the file's new key
-  const settle = useCallback((from: string, to: string, sent: string): void => setBuffers((prev) => {
-    const { [from]: typed, ...rest } = prev;
-    return typed === undefined || typed === sent ? rest : { ...rest, [to]: typed };
-  }), []);
-  const rekeyBuffers = useCallback((from: string, to?: string): void => setBuffers((prev) => rekey(prev, from, to)), []);
-  return { buffers, set, settle, rekeyBuffers };
 }
 
 // Decision 9: the version the menu chose, per item; one the catalogue no longer lists falls back to #319's openVersionOf
@@ -175,20 +157,24 @@ async function createFile(c: WriteContext, path: string): Promise<MessageKey | u
   return undefined;
 }
 
-// Decision 12 of #319: the open version goes and the original opens; the version's read and unsaved edits go with it
-async function revertVersion(c: WriteContext): Promise<void> {
+// #319 decision 12, #983: the open version goes, with its read and unsaved edits. A Hive item opens its original, read here first; a
+// user-created one has none and opens what versionToOpen answers. Its last version takes the item (custom-store.ts's revert, which then
+// answers 204), so the hook reads nothing more and opens the section's list
+async function deleteOpen(c: WriteContext): Promise<MessageKey | undefined> {
   const { version } = c.read;
-  if (version === null) return;
+  if (version === null) return 'plugins.delete.failed'; // the menu offers no delete on the original
+  const isLast = c.item.userCreated && c.item.versions.length === 1;
   try {
     await sendJson<unknown>('DELETE', versionUrl(c.item.id, version));
-    c.put(await getJson<ItemRead>(itemUrl(c.item.id)));
+    if (!c.item.userCreated) c.put(await getJson<ItemRead>(itemUrl(c.item.id)));
   } catch {
-    c.setNote({ id: c.item.id, error: 'plugins.editor.revertFailed' });
-    return;
+    return 'plugins.delete.failed';
   }
   await c.reload();
   c.dropVersion();
-  c.openVersion(null);
+  if (isLast) c.openList();
+  else c.openVersion(null);
+  return undefined;
 }
 
 // #320, decision 11: a copy of the open version (the original for null), opened once the catalogue lists it
@@ -247,7 +233,13 @@ function writesOf(context: WriteContext | undefined, canSave: () => boolean, sav
       try { await saveFile(context); } finally { saving.current = false; }
     },
     newFile: (p) => run((c) => createFile(c, p.trim()), 'plugins.file.failed'),
-    revert: async () => { await run(async (c) => { await revertVersion(c); return undefined; }, 'plugins.editor.revertFailed'); },
+    revert: async () => {
+      await run(async (c) => {
+        if ((await deleteOpen(c)) !== undefined) c.setNote({ id: c.item.id, error: 'plugins.editor.revertFailed' });
+        return undefined;
+      }, 'plugins.editor.revertFailed');
+    },
+    deleteVersion: () => run(deleteOpen, 'plugins.delete.failed'),
     createVersion: (name) => run((c) => createNamed(c, name), 'plugins.version.createFailed'),
     renameVersion: (name) => run((c) => renameOpen(c, name), 'plugins.version.renameFailed'),
     assignTo: (workspace) => run((c) => assignOpen(c, workspace), 'plugins.version.useFailed'),
@@ -371,6 +363,7 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
   const setPath = (p: string): void => setPaths((prev) => ({ ...prev, [id]: p }));
   const context: WriteContext | undefined = item && read && path ? {
     item, read, path, text: textOf(path), put, reload, setNote, setPath, openVersion: (v) => open(id, v),
+    openList: () => plugins.open({ kind: 'list', section: sectionOf(item.kind) }),
     settle: (v, p, sent) => settle(bufferKey(id, read.version, path), bufferKey(id, v, p), sent),
     moveVersion: (to) => { moveRead(id, read.version, to); rekeyBuffers(versionKey(id, read.version), versionKey(id, to)); },
     dropVersion: () => { moveRead(id, read.version); rekeyBuffers(versionKey(id, read.version)); },
