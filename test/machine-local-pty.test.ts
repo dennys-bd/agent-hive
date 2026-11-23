@@ -6,13 +6,17 @@ import { AGENTS } from '../src/agents.js';
 import { agentCommand } from '../src/agents/command.js';
 import { runners } from '../src/agents/registry.js';
 import type { AgentRun, McpServer } from '../src/agents/runner.js';
+import { commandShimDir } from '../src/command-shim.js';
 import { hooksPath, PROMPTS_DIR } from '../src/hooks-settings.js';
 import { MachineError, type RunInputs, type RunSpec } from '../src/machine.js';
 import { createLocalPty, type LocalPtyDeps } from '../src/machine-local-pty.js';
 import { posixShell } from '../src/posix-shell.js';
 import { createPtyHost } from '../src/pty-host.js';
+import { shellInitDir } from '../src/shell-init.js';
+import { shimDir } from '../src/shim.js';
 import { ptyCommand } from '../src/spawn.js';
 import { launchInternalPty } from '../src/spawn-internal.js';
+import { historyPath } from '../src/terminal-files.js';
 import type { AgentId, LaunchPty, PtyLaunch } from '../src/types.js';
 import { fakePtys, launchFlag } from './fakes.js';
 import { assertMode } from './posix-only.js';
@@ -140,13 +144,28 @@ test('through launchInternalPty the pty starts as the POSIX shell running the pt
   assert.deepEqual([pty.file, pty.args, pty.options.cwd], [posixShell().shell, ['-c', ptyCommand(handed[0])], CWD]); // as spawn-internal.test.ts expects
 });
 
-test('a terminal writes no file and is handed on as a terminal launch with its env, keep and size (#158)', async (t) => {
+test('a kept terminal writes no file and is handed on with its own HISTFILE, the command shims then the agents\' shims first on its PATH, or the machine\'s PATH when the spec sets none, and HIVE_SHELL_DIR, all under the machine\'s home (#158, #696, #800, #947)', async (t) => {
   const home = await homeIn(t);
   const { handed, launch } = recorder();
   const keep = { log: join(home, 'T1.log') };
-  await createLocalPty(depsIn(home, launch)).spawn({ ptyId: 'T1', slug: SLUG, workspace: WORKSPACE, cwd: CWD, terminal: true, env: { A: '1' }, keep, size: { cols: 80, rows: 24 } }, HANDLERS).started;
+  // linux on every host: the ':' delimiter, and no PowerShell looked up on the real disk; windowsShell's win32 branch is spawn.test.ts'
+  const pty = createLocalPty(depsIn(home, launch, { platform: 'linux', env: { PATH: '/hive/bin' } }));
+  await pty.spawn({ ptyId: 'T1', slug: SLUG, workspace: WORKSPACE, cwd: CWD, terminal: true, env: { A: '1', PATH: '/ws/bin' }, keep, size: { cols: 80, rows: 24 } }, HANDLERS).started;
+  await pty.spawn({ ptyId: 'T2', slug: SLUG, workspace: WORKSPACE, cwd: CWD, terminal: true, env: { A: '1' }, keep }, HANDLERS).started;
   assert.deepEqual(await readdir(join(home, 'prompts')), []);
-  assert.deepEqual(handed, [{ ptyId: 'T1', slug: SLUG, cwd: CWD, port: PORT, terminal: true, env: { A: '1' }, keep, size: { cols: 80, rows: 24 } }]);
+  const own = (id: string, path: string): Record<string, string> => ({ HISTFILE: historyPath(home, id), PATH: `${commandShimDir(home)}:${shimDir(home)}:${path}`, HIVE_SHELL_DIR: shellInitDir(home) });
+  assert.deepEqual(handed, [
+    { ptyId: 'T1', slug: SLUG, cwd: CWD, port: PORT, terminal: true, env: { A: '1', ...own('T1', '/ws/bin') }, keep, size: { cols: 80, rows: 24 } },
+    { ptyId: 'T2', slug: SLUG, cwd: CWD, port: PORT, terminal: true, env: { A: '1', ...own('T2', '/hive/bin') }, keep },
+  ]);
+});
+
+test('a terminal that is not kept, a run command, gets only its own env with the lent values last: no HISTFILE, no shims (#300, #696, #947)', async (t) => {
+  const home = await homeIn(t);
+  const { handed, launch } = recorder();
+  const run = { command: 'pnpm dev', env: { PORT: '5173' } };
+  await createLocalPty(depsIn(home, launch, { platform: 'linux' })).spawn({ ptyId: 'T3', slug: SLUG, workspace: WORKSPACE, cwd: CWD, terminal: true, run, env: { A: '1', GH_TOKEN: 'workspace-value' }, lent: { GH_TOKEN: LENT } }, HANDLERS).started;
+  assert.deepEqual(handed, [{ ptyId: 'T3', slug: SLUG, cwd: CWD, port: PORT, terminal: true, run, env: { A: '1', GH_TOKEN: LENT } }]);
 });
 
 test('lent values reach the run\'s env last, and no file the machine writes and no argv word holds one (#158)', async (t) => {

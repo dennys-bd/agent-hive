@@ -24,7 +24,7 @@ import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
 import { agentPrompt } from './stage-agent.js';
-import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell } from './spawn.js';
+import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
 import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, HiveEvent, Terminal, Workspace } from './types.js';
@@ -74,7 +74,7 @@ export interface SpawnerDeps {
   ptys: Pick<PtyHost, 'has' | 'subscribe' | 'adopt'>; // a run command's output (#353) and a worktree setup's (#351) reach the console through the pty host
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a stage whose agent is missing never reaches its worktree
-  home: string; // #696: where a terminal's history and ring live
+  home: string; // #696: where a terminal's ring lives (its history is the machine's, #947); #797: the protocol files
   facts?: Pick<FactLog, 'write'>; // #742: the worktree setup's worktree.step
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, once the renders queued so far have landed
   externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the external MCP servers a run of this workspace gets, header values resolved
@@ -316,16 +316,14 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     await launched(ptyId);
   }
 
-  // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir), its own history, and its ring:
-  // written to its log as it ends, the old one replayed first after a sleep. Its env is the workspace's (#738) under its own HISTFILE, and
-  // the shim dir goes first on the workspace's PATH when it sets one, so an agent typed there is still its shim's.
+  // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir) and its ring: written to its log as
+  // it ends, the old one replayed first after a sleep. The log stays on the host, whose PtyHost writes it. Its env is the workspace's (#738):
+  // keep tells the machine to add its own HISTFILE and the shims first on PATH from its own disk (#947)
   async function keptLaunch(machine: Machine, terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<RunSpec, 'cwd' | 'env' | 'keep'>> {
     await ensureTerminalsDir(home);
     const [cwd, seed] = await Promise.all([wakeDir(machine, terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
     const log = scrollbackPath(home, terminal.terminalId);
-    const path = env.PATH ?? process.env.PATH ?? '';
-    const own = terminalEnv(home, terminal.terminalId, path, { platform: process.platform, pwsh: windowsShell({ ...process.env, ...env }, process.platform) }); // #645: looked up on every launch
-    return { cwd, env: { ...env, ...own }, keep: seed === undefined ? { log } : { log, seed } };
+    return { cwd, env, keep: seed === undefined ? { log } : { log, seed } };
   }
 
   // A terminal (#283): the pool runs it in a pty (#251) like any run, with no agent, no MCP and no prompt. A run command (#300) is looked up

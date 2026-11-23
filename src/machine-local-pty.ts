@@ -1,7 +1,7 @@
 // The local machine's ptys (#158): a RunSpec's files written under the home where today's spawns put them, so `pkill -f <ptyId>.mcp.json`
 // still matches, then today's PtyLaunch through the daemon's own launcher, whose `sh -c ptyCommand` stays in spawn-internal.ts where it is
 // tested. The machine's own paths enter the argv only here, so node 8's remote machine renders the same argv over its own. The plugin
-// folders are the machine's to fill too, from the spec's workspace (#947): a distro's disk has its own copy, the host's is no use there.
+// folders and a kept terminal's own env are the machine's to fill too (#947): a distro's disk has its own copy, the host's is no use there.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AGENTS } from './agents.js';
@@ -12,7 +12,7 @@ import { hooksPath, PROMPTS_DIR } from './hooks-settings.js';
 import { writeMcpConfig } from './home-hooks.js';
 import { MachineError, type MachinePty, type RunSpec } from './machine.js';
 import type { PtyHost } from './pty-host.js';
-import { writePrompt, writeRunFiles } from './spawn.js';
+import { terminalEnv, windowsShell, writePrompt, writeRunFiles } from './spawn.js';
 import type { LaunchPty, PtyHandle, PtyHandlers, PtyLaunch, SpawnOptions } from './types.js';
 
 const PROTOCOL_MODE = 0o600; // a workspace's protocol carries its memory's lessons (#797)
@@ -80,9 +80,17 @@ async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec):
   return { ...shared(spec, port), env, ...(promptPath === undefined ? {} : { promptPath }), agent: { command, argv, ...(runner.promptFlag === undefined ? {} : { promptFlag: runner.promptFlag }) } };
 }
 
+// A kept terminal's own (#696, #800, #947): its HISTFILE, the command shims then the agents' shims before the spec's PATH (else this
+// machine's), HIVE_SHELL_DIR and, on win32, the PowerShell it opens (#645), looked up on every launch. A run command is never kept: none
+function keptEnv(deps: LocalPtyDeps, spec: RunSpec): Record<string, string> {
+  if (spec.keep === undefined) return {};
+  const path = spec.env?.PATH ?? deps.env.PATH ?? '';
+  return terminalEnv(deps.home, spec.ptyId, path, { platform: deps.platform, pwsh: windowsShell({ ...deps.env, ...spec.env }, deps.platform) });
+}
+
 async function launchOf(deps: LocalPtyDeps, spec: RunSpec): Promise<PtyLaunch> {
   if (spec.agent !== undefined) return agentLaunch(deps, spec, spec.agent);
-  return { ...shared(spec, deps.port()), env: { ...spec.env, ...spec.lent } }; // a terminal: no agent, no MCP, no prompt (#283)
+  return { ...shared(spec, deps.port()), env: { ...spec.env, ...keptEnv(deps, spec), ...spec.lent } }; // a terminal: no agent, no MCP, no prompt (#283)
 }
 
 export function createLocalPty(deps: LocalPtyDeps): MachinePty {
