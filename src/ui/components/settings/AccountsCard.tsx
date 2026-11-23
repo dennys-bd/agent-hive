@@ -57,13 +57,13 @@ function Row({ row }: { row: AccountRow }) {
   return (
     <div className="flex min-h-8 items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-accent/50">
       <RadioGroup.Item
-        id={id} value={row.value} aria-labelledby={`${id}-label`} aria-describedby={row.isGone ? `${id}-gone` : undefined}
+        id={id} value={row.value} aria-labelledby={`${id}-label`} aria-describedby={[note && `${id}-note`, row.isGone && `${id}-gone`].filter(Boolean).join(' ') || undefined}
         className="flex size-4 shrink-0 items-center justify-center rounded-full border border-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=checked]:border-primary"
       >
         <RadioGroup.Indicator className="block size-2 rounded-full bg-primary" />
       </RadioGroup.Item>
       <label id={`${id}-label`} htmlFor={id} className="cursor-pointer whitespace-nowrap text-sm">{label}</label>
-      {note && <span className="truncate text-muted-foreground text-xs">{note}</span>}
+      {note && <span id={`${id}-note`} className="truncate text-muted-foreground text-xs">{note}</span>}
       {row.isGone && <span id={`${id}-gone`} className="truncate text-destructive text-xs">{t('settings.accounts.gone')}</span>}
     </div>
   );
