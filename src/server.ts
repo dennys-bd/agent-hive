@@ -38,7 +38,7 @@ import { pluginVersion } from './item-sources.js';
 import { excludeFromGit, pluginSource, type ProtocolPaths } from './hooks-settings.js';
 import { prepareHome } from './home-hooks.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
-import { agentDirs } from './agents/command.js';
+import { agentCommand, agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
 import { createFactLog, type FactLog } from './facts.js';
@@ -63,7 +63,7 @@ import { registerTimelineRoute } from './server-timeline.js';
 import { deleteActivityOnDisk } from './activity-delete.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
-import { readCredentials, writeCredentials } from './credentials.js';
+import { readCredentials, saveClaudeCredential, writeCredentials } from './credentials.js';
 import { cachedProbe, PROBE_TIMEOUT_MS, type Probe, probeServer } from './mcp-probe.js';
 import { registerMcpRoutes } from './server-mcp.js';
 import { serversFor } from './mcp-settings.js';
@@ -108,6 +108,8 @@ import { registerLaunchOptionsRoute } from './launch-options.js';
 import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
+import { createClaudeAdd, setupTokenEnv } from './claude-account.js';
+import { registerClaudeAccountRoutes } from './server-claude-accounts.js';
 import { type JiraRouteDeps, registerJiraRoutes } from './server-jira.js';
 import { jiraColumns, jiraFilterOptions, registerJiraSettingsRoutes } from './server-jira-settings.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
@@ -126,7 +128,7 @@ import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRe
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
 import type { MachineFor, Machines } from './machine.js';
-import { killStray, runTmpDir, writePrompt } from './spawn.js';
+import { killStray, runTmpDir, withoutHiveEnv, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool, type PtyPool } from './ptys.js';
 import { type CommandSemaphores, createSemaphores, isPidAlive } from './command-semaphores.js';
@@ -309,6 +311,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec, items) => createSource(spec, { log, ghToken, ...(items === undefined ? {} : { items }) }));
   // The daemon's ptys (#251) reach every spawn.
   const ptys = createPtyHost(deps.spawnPty ?? NO_PTY, (message) => log.error(message)); // #696: a ring that cannot be written
+  // #955: claude setup-token in a pty of the daemon's own, never the host's, whose scrollback ring would keep the token. The env and the
+  // binary are a worker's: what a child of the Hive must not inherit dropped, claude found where agentCommand finds it
+  const claudeAdd = createClaudeAdd({
+    spawnPty: deps.spawnPty ?? NO_PTY, command: agentCommand('claude', process.platform, process.env), env: setupTokenEnv(withoutHiveEnv(process.env)), cwd: home, log,
+    save: (name, cred) => saveClaudeCredential(name, cred, deps.credentialsEnv),
+  });
   const reviews = createReviewStore(home, (itemId) => live?.state.tasks.some((c) => taskId(c) === itemId) === true); // one file per task (#591)
   const localReviews = createLocalReviewStore(home, (workspace) => live?.state.workspaces.includes(workspace) === true); // one file per workspace's local (#344)
   // One file per PR link (#592), kept for a PR with no task too (#758)
@@ -1221,6 +1229,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   registerJiraRoutes(app, jiraDeps); // #817: next to the GitHub login, outside requireLive: the first Jira source is created in setup mode
   registerJiraSettingsRoutes(app, jiraDeps); // #821: the same, for what the form reads before the source is saved
+  // #955: outside requireLive, next to Jira's: Settings shows the card in setup mode too. A remove waits on the save chain
+  registerClaudeAccountRoutes(app, { add: claudeAdd, credentialsEnv: deps.credentialsEnv, savedAccounts: () => live?.runtime.config.accounts, queueSave, log });
 
   // Serializes saves: two concurrent POST /settings would race on hive.config.json.tmp and
   // into configure()/reconfigure(). Chaining queues them in arrival order; each request
@@ -1557,6 +1567,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     readModel?.close();
     readModel = undefined; // a second close() closes nothing twice
     githubFlow?.controller.abort(); // a pending login is not a child process; without this it would poll GitHub to expiry after shutdown
+    claudeAdd.close(); // #955: a pending setup-token is a child process; it never outlives the daemon
     // Every stop path is a Quit (#283): POST /stop (its onStop calls this), SIGTERM and SIGINT (run.ts) and the embedded close. Saved before
     // the kills, so their exits are ignored and the next boot resumes the tasks in flight instead of reporting a crash. Once: a second close()
     // finds cleanStop already set.
