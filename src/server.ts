@@ -1260,8 +1260,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   app.post('/settings', (req: Request, res: Response) => queueSave(() => saveSettings((req.body ?? {}) as Partial<SettingsBody>, res)));
-  // #959: the logins' list and remove, outside requireLive; a remove queues behind a save that may be selecting the login
-  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env, queueSave });
+  // #959, #960: the logins' list, remove and add, outside requireLive; a remove queues behind a save that may be selecting the login.
+  // Temporary (removed in Task 3): an add that never starts, until the server builds the real one
+  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env, queueSave, add: { start: () => undefined, status: () => ({ state: 'idle' }), cancel: () => undefined, close: async () => undefined } });
 
   async function saveSettings(body: Partial<SettingsBody>, res: Response, afterSave?: () => Promise<void>): Promise<void> {
     let config: Config;
