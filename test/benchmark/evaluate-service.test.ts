@@ -8,6 +8,7 @@ import { benchRunDeps, createBenchEvaluator, readyFetch } from '../../src/benchm
 import type { BenchRunEvaluation, HiveEvent, State } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
 import { experiment, run, stateWith } from './fixtures.js';
+import { NO_ACCOUNTS } from '../fixtures/accounts.js';
 
 const AT = '2026-10-21T12:00:00.000Z';
 const EVAL: BenchRunEvaluation = { at: AT, collectors: [], scenarios: [], judge: { agent: 'claude', rubricHash: 'abcdef012345', scores: [] } };
@@ -97,7 +98,7 @@ test('benchRunDeps serializes git through one runner shared by every evaluation 
   let running = 0;
   let overlap = false;
   const exec: Run = async () => { running += 1; overlap ||= running > 1; await new Promise((resolve) => setTimeout(resolve, 5)); running -= 1; return { stdout: '' }; };
-  const make = benchRunDeps({ exec });
+  const make = benchRunDeps({ exec, accountDeps: () => NO_ACCOUNTS });
   const a = make(new AbortController().signal, () => undefined);
   const b = make(new AbortController().signal, () => undefined);
   await Promise.all([a.exec('git', ['x']), b.exec('git', ['y']), a.exec('git', ['z'])]);

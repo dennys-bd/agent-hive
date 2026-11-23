@@ -4,7 +4,8 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { disabledRefusal, withDefaultModel } from '../agents.js';
-import { type HeadlessDeps, runHeadless } from '../headless-run.js';
+import type { AccountEnvDeps } from '../account-env.js';
+import { type HeadlessSeams, runHeadless } from '../headless-run.js';
 import type { Logger } from '../log.js';
 import type { BenchmarkEvent, BenchRunEvaluation, BenchRunStatus, Config, EvaluateRow, Experiment, State } from '../types.js';
 import { ensureChromium, mcpBinary } from './browser.js';
@@ -131,10 +132,10 @@ export async function readyFetch(url: string, init: { signal: AbortSignal }, fet
 }
 
 /** The real processes behind an evaluation; the git runner is the caller's (a test or the Hive's). */
-export function benchRunDeps(o: { exec: Run; headless?: HeadlessDeps }): BenchEvaluatorDeps['runDeps'] {
+export function benchRunDeps(o: { exec: Run; headless?: HeadlessSeams; accountDeps(): AccountEnvDeps }): BenchEvaluatorDeps['runDeps'] {
   const exec = serialGit(o.exec); // one runner for every evaluation: concurrent ones share the clone
   return (signal, log) => ({
-    exec, headless: (input) => runHeadless(input, o.headless), browser: { ensureChromium: () => ensureChromium(), mcpBinary },
+    exec, headless: (input) => runHeadless(input, { ...o.headless, account: o.accountDeps() }), browser: { ensureChromium: () => ensureChromium(), mcpBinary },
     spawnSample: spawn, kill: (pid, s) => process.kill(pid, s), fetch: (url, init) => readyFetch(url, init), now: Date.now,
     sleep: (ms) => sleep(ms, undefined, { signal }), log, signal, tmpRoot: tmpdir(),
   });

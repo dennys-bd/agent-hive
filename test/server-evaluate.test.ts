@@ -20,6 +20,7 @@ import { combConfig, tempHive } from './fakes.js';
 import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { NO_ACCOUNTS } from './fixtures/accounts.js';
 
 // An evaluate stage on the server (#877): the runner alone over a real git worktree and a fake agent CLI first on PATH (no real claude or
 // codex ever runs), then the Stop route through a server.
@@ -85,7 +86,7 @@ async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepar
   let isDropped = false;
   const h: Pick<Harness, 'events' | 'prepared' | 'logs'> = { events: [], prepared: [], logs: [] };
   const runner = createEvaluateRunner({
-    exec: git, agents,
+    exec: git, agents, accountDeps: () => NO_ACCOUNTS,
     log: { info: (line) => h.logs.push(line), warn: (line) => h.logs.push(line) },
     dispatch: async (event) => { h.events.push(event); return []; },
     prepare: async (_r, _a, _t, key) => { h.prepared.push(key); onPrepare?.(); return worktree; },

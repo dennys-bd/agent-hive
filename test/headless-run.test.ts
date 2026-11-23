@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { chmod, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { AccountError } from '../src/account-env.js';
 import { AGENTS } from '../src/agents.js';
+import { runners } from '../src/agents/registry.js';
 import { type HeadlessInput, headlessProcess, runHeadless } from '../src/headless-run.js';
 import { type AgentId, EDITOR_FILE_MAX } from '../src/types.js';
+import { NO_ACCOUNTS } from './fixtures/accounts.js';
 import { tempDir } from './temp-dir.js';
 
 const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX only: the fake CLI is an extensionless sh script on a :-joined PATH' };
@@ -47,7 +50,7 @@ test("Claude's answer is its structured_output: the prompt on stdin, its own tem
     `prompt="$(cat)"; printf '{"type":"result","is_error":false,"result":"","structured_output":{"from":1,"to":1,"text":"%s|%s|%s|%s|%s"}}' "$prompt" "\${CLAUDECODE:-unset}" "\${HIVE_SECRET:-unset}" "\${HIVE_MCP_SECRET:-unset}" "$(basename "$PWD")"`);
   // every runner's hostEnv and the Hive's own, whatever the run's agent: a Hive started inside a Codex run holds the outer HIVE_MCP_SECRET
   const env = { ...cli.env, HIVE_SECRET: 'hive', HIVE_MCP_SECRET: 'outer' };
-  const result = await runHeadless(input('claude'), { env, tmpRoot: cli.tmpRoot });
+  const result = await runHeadless(input('claude'), { env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS });
   assert.ok('answer' in result, JSON.stringify(result));
   assert.match((JSON.parse(result.answer) as { text: string }).text, /^the prompt\|unset\|unset\|unset\|hive-headless-/);
   assert.deepEqual(await readdir(cli.tmpRoot), []);
@@ -56,7 +59,7 @@ test("Claude's answer is its structured_output: the prompt on stdin, its own tem
 test("Codex's answer is the file it wrote to -o, inside the run's folder, which is gone afterwards (#330)", POSIX_ONLY, async (t) => {
   const cli = await fakeCli(t, 'codex',
     `while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done; cat > /dev/null; printf '{"from":1,"to":1,"text":"x"}' > "$out"`);
-  assert.deepEqual(await runHeadless(input('codex'), { env: cli.env, tmpRoot: cli.tmpRoot }), { answer: '{"from":1,"to":1,"text":"x"}' });
+  assert.deepEqual(await runHeadless(input('codex'), { env: cli.env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS }), { answer: '{"from":1,"to":1,"text":"x"}' });
   assert.deepEqual(await readdir(cli.tmpRoot), []);
 });
 
@@ -70,7 +73,7 @@ test('Copilot gets the schema in its prompt and a home of its own inside the run
     `printf '%s\\n' '${fenced}'`,
   ].join('\n'));
   const env = { ...cli.env, REC: cli.bin, COPILOT_ALLOW_ALL: 'true' }; // an inherited "true" must not trust the cwd again
-  assert.deepEqual(await runHeadless(input('copilot'), { env, tmpRoot: cli.tmpRoot }), { answer: '{"from":1,"to":1,"text":"x"}' });
+  assert.deepEqual(await runHeadless(input('copilot'), { env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS }), { answer: '{"from":1,"to":1,"text":"x"}' });
   assert.equal(await readFile(join(cli.bin, 'stdin'), 'utf8'),
     'the prompt\n\nAnswer with one JSON object that matches this JSON Schema, and nothing else: no prose, no code fence.\n\n{"type":"object"}');
   const [home, autoUpdate, allowAll] = (await readFile(join(cli.bin, 'env'), 'utf8')).split('\n');
@@ -90,7 +93,7 @@ test('a non-zero exit, an output over the cap, the timeout and no answer each fa
   ];
   for (const [body, reason, timeoutMs] of cases) {
     const cli = await fakeCli(t, 'claude', body);
-    const result = await runHeadless(input('claude'), { env: cli.env, tmpRoot: cli.tmpRoot, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
+    const result = await runHeadless(input('claude'), { env: cli.env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
     assert.ok('failure' in result, body);
     assert.equal(result.failure, reason, body);
     if (reason === 'exit code 3') assert.match(result.detail, /boom/);
@@ -103,7 +106,7 @@ test('an abort kills the whole group, a grandchild too, and fails the run as can
   const cli = await fakeCli(t, 'claude', 'cat > /dev/null; sleep 30 & echo $! > "$PID_FILE"; wait');
   const pidFile = join(cli.bin, 'pid');
   const controller = new AbortController();
-  const running = runHeadless(input('claude', controller.signal), { env: { ...cli.env, PID_FILE: pidFile }, tmpRoot: cli.tmpRoot });
+  const running = runHeadless(input('claude', controller.signal), { env: { ...cli.env, PID_FILE: pidFile }, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS });
   const pid = await pidIn(pidFile);
   controller.abort();
   const result = await running;
@@ -118,14 +121,14 @@ test('with cwd the agent starts in that folder, gets the read-only tools and the
   const cli = await fakeCli(t, 'claude',
     `while [ $# -gt 0 ]; do [ "$1" = --tools ] && tools="$2"; shift; done; cat > /dev/null; printf '{"type":"result","is_error":false,"structured_output":{"text":"%s|%s"}}' "$PWD" "$tools"`);
   const cwd = await tempDir(t, 'worktree-');
-  const result = await runHeadless({ ...input('claude'), cwd, readOnlyTools: true, timeoutMs: 60_000 }, { env: cli.env, tmpRoot: cli.tmpRoot });
+  const result = await runHeadless({ ...input('claude'), cwd, readOnlyTools: true, timeoutMs: 60_000 }, { env: cli.env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS });
   assert.ok('answer' in result, JSON.stringify(result));
   const [pwd, tools] = (JSON.parse(result.answer) as { text: string }).text.split('|');
   assert.equal(await realpath(pwd), await realpath(cwd));
   assert.equal(tools, 'Read,Grep,Glob');
   assert.deepEqual(await readdir(cli.tmpRoot), []);
   const slow = await fakeCli(t, 'claude', 'cat > /dev/null; exec sleep 5');
-  const late = await runHeadless({ ...input('claude'), cwd, timeoutMs: 300 }, { env: slow.env, tmpRoot: slow.tmpRoot });
+  const late = await runHeadless({ ...input('claude'), cwd, timeoutMs: 300 }, { env: slow.env, tmpRoot: slow.tmpRoot, account: NO_ACCOUNTS });
   assert.deepEqual('failure' in late && late.failure, 'timed out after 300 ms');
   assert.deepEqual(await readdir(slow.tmpRoot), []);
 });
@@ -133,7 +136,7 @@ test('with cwd the agent starts in that folder, gets the read-only tools and the
 test("mcpConfig and allowedTools reach Claude's argv as --mcp-config <path> and --allowedTools (#474)", POSIX_ONLY, async (t) => {
   const cli = await fakeCli(t, 'claude',
     `while [ $# -gt 0 ]; do [ "$1" = --mcp-config ] && mcp="$2"; [ "$1" = --allowedTools ] && allowed="$2"; shift; done; cat > /dev/null; printf '{"type":"result","is_error":false,"structured_output":{"text":"%s|%s"}}' "$mcp" "$allowed"`);
-  const result = await runHeadless({ ...input('claude'), mcpConfig: '/r/mcp.json', allowedTools: ['mcp__playwright__browser_click'] }, { env: cli.env, tmpRoot: cli.tmpRoot });
+  const result = await runHeadless({ ...input('claude'), mcpConfig: '/r/mcp.json', allowedTools: ['mcp__playwright__browser_click'] }, { env: cli.env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS });
   assert.ok('answer' in result, JSON.stringify(result));
   assert.equal((JSON.parse(result.answer) as { text: string }).text, '/r/mcp.json|mcp__playwright__browser_click');
   assert.deepEqual(await readdir(cli.tmpRoot), []);
@@ -160,7 +163,24 @@ test('on win32 a headless Claude is its .exe in <USERPROFILE>\\.local\\bin and a
 
 test('on win32 an agent found nowhere fails the run with the resolver\'s reason before anything spawns, and the folder goes (#633)', async (t) => {
   const tmpRoot = await tempDir(t, 'headless-tmp-');
-  const result = await runHeadless(input('codex'), { platform: 'win32', isFile: () => false, env: { Path: 'C:\\npm' }, tmpRoot });
+  const result = await runHeadless(input('codex'), { platform: 'win32', isFile: () => false, env: { Path: 'C:\\npm' }, tmpRoot, account: NO_ACCOUNTS });
   assert.deepEqual(result, { failure: 'codex was not found', detail: '' });
+  assert.deepEqual(await readdir(tmpRoot), []);
+});
+
+test('a headless run\'s env carries the runner\'s account env, under its own headlessEnv, which wins (#953)', POSIX_ONLY, async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { X: '1', SHARED: 'account' } }));
+  t.mock.method(runners.claude, 'headlessEnv', () => ({ SHARED: 'runner' }));
+  const cli = await fakeCli(t, 'claude', `cat > /dev/null; printf '{"type":"result","is_error":false,"result":"","structured_output":{"text":"%s|%s"}}' "$X" "$SHARED"`);
+  const result = await runHeadless(input('claude'), { env: cli.env, tmpRoot: cli.tmpRoot, account: NO_ACCOUNTS });
+  assert.ok('answer' in result, JSON.stringify(result));
+  assert.equal((JSON.parse(result.answer) as { text: string }).text, '1|runner');
+});
+
+test('a refused account fails the headless run before its folder exists: nothing runs, nothing is left (#953)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => { throw new AccountError('claude', 'missing', 'no token named work'); });
+  const tmpRoot = await tempDir(t, 'headless-tmp-');
+  // an empty PATH: had the run gone on, its failure would be the agent not found, never the account's
+  assert.deepEqual(await runHeadless(input('claude'), { env: { PATH: '' }, tmpRoot, account: NO_ACCOUNTS }), { failure: 'account claude missing', detail: '' });
   assert.deepEqual(await readdir(tmpRoot), []);
 });

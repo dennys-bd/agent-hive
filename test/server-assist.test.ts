@@ -12,6 +12,7 @@ import { ARCHITECT, assertUntouched, BUILD, type Fixture, fixture, SKILL, SPECIA
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { NO_ACCOUNTS } from './fixtures/accounts.js';
 
 type Answer = (input: HeadlessInput) => Promise<HeadlessResult>;
 const BOTH: AgentAvailability[] = [{ agent: 'claude', available: true }, { agent: 'codex', available: true }];
@@ -37,7 +38,7 @@ async function serve(t: TestContext, f: Fixture, run: Answer, agents = BOTH, age
   const calls: HeadlessInput[] = [];
   registerAssistRoutes(app, {
     requireLive: () => ({ runtime: { config: { defaultAgent: 'claude', ...agentConfig, comb: { workspaces: f.workspaces } } } }),
-    home: f.home, pluginSource: f.pluginSource, agents, log,
+    home: f.home, pluginSource: f.pluginSource, agents, log, accountDeps: () => NO_ACCOUNTS,
     runHeadless: (input) => { calls.push(input); return run(input); },
   });
   const server = app.listen(0, '127.0.0.1');

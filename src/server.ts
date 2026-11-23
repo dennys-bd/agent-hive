@@ -28,7 +28,7 @@ import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
 import { createLspHost } from './lsp-host.js';
 import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
-import type { HeadlessDeps } from './headless-run.js';
+import type { HeadlessSeams } from './headless-run.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { createPassageStore, protocolRenderer } from './passage-store.js';
@@ -200,7 +200,7 @@ export interface ServerDeps {
   facts?: FactLog; // #742: tests inject a fake; default writes <home>/facts.jsonl beside hive.log
   /** The agent CLIs this machine has, detected on boot (#516). Absent (tests) means every agent is available. */
   agents?: AgentAvailability[];
-  headless?: HeadlessDeps; // #877: tests' fake agent CLI for an evaluation's runs
+  headless?: HeadlessSeams; // #877: tests' fake agent CLI for an evaluation's runs
   exec?: Exec; // git for the spawn's worktree, the deleteActivity effect and the task routes, gh for the PR states (#207); tests inject a fake and see the calls
   keepAwakeSpawn?: KeepAwakeSpawn; // #226: the keep-awake child's spawn; tests inject a fake, the default starts caffeinate / systemd-inhibit
   /** The Hive's own reading of the plan limits; absent (every test) means it never reads. main.ts / run.ts inject the real one. */
@@ -353,7 +353,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
   const evaluator = createEvaluateRunner({
-    exec, agents, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
+    exec, agents, accountDeps, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
     pluginDir: async (workspace) => { await pluginRender.ready(); return pluginRender.dir(workspace); }, ...(deps.headless === undefined ? {} : { headless: deps.headless }),
   });
   // #474: the benchmark's evaluations, in the background; a Quit aborts them beside the evaluate stage's. folderOf only sees ids the
@@ -362,7 +362,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const benchVersion = async (): Promise<string> => (await pluginVersion(shippedPlugin)) ?? '';
   const benchEvaluator = createBenchEvaluator({
     latest: () => live?.state, dispatch, folderOf: (id) => experimentFolder(home, id), log, now: Date.now, config: () => live?.runtime.config,
-    runDeps: benchRunDeps({ exec: execRun, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
+    runDeps: benchRunDeps({ exec: execRun, accountDeps, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
   });
   // #472: the benchmark's loops, one per running experiment; a Quit aborts them before the evaluations they would start
   const benchRunner = createBenchRunner({ latest: () => live?.state, config: () => live?.runtime.config, dispatch, hiveDir: home, evaluator: benchEvaluator, log, now: () => new Date() });
@@ -1346,9 +1346,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
   const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
-  registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
+  registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
-  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
+  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, facts: wiring.facts, log, home, queueSave, saveSettings });
