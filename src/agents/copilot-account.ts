@@ -10,6 +10,7 @@ export const COPILOT_USER_URL = 'https://api.github.com/copilot_internal/user'; 
 const FETCH_TIMEOUT_MS = 10_000;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_SERVER_ERROR = 500;
+const HTTP_TOO_MANY_REQUESTS = 429;
 const TOKEN_ENV = 'COPILOT_GITHUB_TOKEN'; // read by Copilot before GH_TOKEN (spike §3)
 const ENTITLED_QUOTAS = ['chat', 'premium_interactions'] as const; // Free carries chat, a paid plan premium (spike §7)
 const NETWORK = 'network';
@@ -43,10 +44,10 @@ export function copilotToken(ctx: AccountCtx): Promise<CopilotToken> {
 }
 
 // 401: the token answers for no one (revoked, expired). 403 and 404 on this endpoint: an account without Copilot. A 3xx is neither followed
-// nor read. 5xx: GitHub's own failure
+// nor read. 5xx and a 429 rate limit: GitHub cannot answer now, so the start says try again
 function statusCode(status: number): AccountCode {
   if (status === HTTP_UNAUTHORIZED) return 'mismatch';
-  if (status >= HTTP_SERVER_ERROR) return 'unreachable';
+  if (status >= HTTP_SERVER_ERROR || status === HTTP_TOO_MANY_REQUESTS) return 'unreachable';
   return 'missing';
 }
 

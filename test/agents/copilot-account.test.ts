@@ -79,11 +79,11 @@ test('a 401, a 2xx as another login or with no login is copilot/mismatch; no ent
   for (const [status, body, code] of cases) await refuses(copilotAccountEnv(ctx('work'), answering(status, body)), code, `${status} ${body}`);
 });
 
-test('a rejected fetch, a timeout, a 5xx or a body that is not JSON is copilot/unreachable (#962)', async () => {
+test('a rejected fetch, a timeout, a 5xx, a 429 or a body that is not JSON is copilot/unreachable (#962)', async () => {
   const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
   const cases: [string, FakeFetch][] = [
     ['rejected', rejecting(new TypeError('fetch failed'))], ['timeout', rejecting(timeout)],
-    ['500', answering(500, '{}')], ['503', answering(503, '')], ['not JSON', answering(200, '<html>')],
+    ['500', answering(500, '{}')], ['503', answering(503, '')], ['429', answering(429, '{}')], ['not JSON', answering(200, '<html>')],
   ];
   for (const [label, fake] of cases) await refuses(copilotAccountEnv(ctx('work'), fake), 'unreachable', label);
 });
