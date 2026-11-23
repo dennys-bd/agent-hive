@@ -39,6 +39,15 @@ const START_FAILED: Record<SpawnFailureCode, MessageKey> = {
   agent_missing: 'start.failed.agent_missing', no_workspace: 'start.failed.no_workspace', workspace_gone: 'start.failed.workspace_gone',
   command_disabled: 'start.failed.command_disabled', setup_failed: 'start.failed.setup_failed', checkout_dirty: 'start.failed.checkout_dirty',
   git_failed: 'start.failed.git_failed', pty_failed: 'start.failed.pty_failed', error: 'start.failed.error',
+  account_claude_missing: 'start.failed.account_claude_missing',
+  account_claude_mismatch: 'start.failed.account_claude_mismatch',
+  account_claude_unreachable: 'start.failed.account_claude_unreachable',
+  account_copilot_missing: 'start.failed.account_copilot_missing',
+  account_copilot_mismatch: 'start.failed.account_copilot_mismatch',
+  account_copilot_unreachable: 'start.failed.account_copilot_unreachable',
+  account_github_missing: 'start.failed.account_github_missing',
+  account_github_mismatch: 'start.failed.account_github_mismatch',
+  account_github_unreachable: 'start.failed.account_github_unreachable',
 };
 
 /** A failed start's error (#945): what the reducer's spawnFailed writes on the activity. */
