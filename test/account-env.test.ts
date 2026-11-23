@@ -4,7 +4,6 @@ import { AccountError, accountEnv, createRunAccounts, ptyAccountEnv, reportedAcc
 import { AccountError as MovedAccountError } from '../src/account-error.js';
 import type { AccountCtx } from '../src/agents/runner.js';
 import { runners } from '../src/agents/registry.js';
-import { AGENT_IDS } from '../src/types.js';
 import { LOGGED_OUT } from './fixtures/accounts.js';
 
 const DEPS = { accounts: { claude: 'work', copilot: 'octo' }, credentials: async () => ({}), machineGithub: LOGGED_OUT };
@@ -40,8 +39,8 @@ test('Codex has no provider: its runner gets no selection and its answer keeps n
   assert.equal(seen[0]?.selected, undefined);
 });
 
-test('every runner answers { env: {} } in this delivery (#953)', async () => {
-  for (const id of AGENT_IDS) assert.deepEqual(await runners[id].accountEnv({ credentials: async () => ({}), machineGithub: LOGGED_OUT }), { env: {} }, id);
+test('Claude and Codex with no selection answer { env: {} }, the machine\'s login; Copilot\'s is checked (copilot-account.test.ts) (#953, #962)', async () => {
+  for (const id of ['claude', 'codex'] as const) assert.deepEqual(await runners[id].accountEnv({ credentials: async () => ({}), machineGithub: LOGGED_OUT }), { env: {} }, id);
 });
 
 test('AccountError says account <provider> <code>, then the reason after a colon; the seam lets it and any other error through (#953)', async (t) => {

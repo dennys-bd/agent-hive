@@ -31,7 +31,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 interface Hive { base: string; server: HiveServer; workers: FakeWorker[]; lines: string[]; records: RecordInput[] }
 
 // A Hive whose one workspace has `env`, a credential store holding a Claude token, every log line and fact kept
-async function start(t: TestContext, env: Record<string, string> = {}, extra: Partial<ServerDeps> = {}): Promise<Hive> {
+async function start(t: TestContext, env: Record<string, string> = {}, extra: Partial<ServerDeps> = {}, settings: object = {}): Promise<Hive> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
   const { log, lines } = fakeLog();
@@ -42,7 +42,7 @@ async function start(t: TestContext, env: Record<string, string> = {}, extra: Pa
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  const body = { ...settingsBody(repo, STAGES), auth: AUTH, sources: [GITHUB_ENTRY], workspaces: workspacesAt(repo).map((w) => ({ ...w, env })) };
+  const body = { ...settingsBody(repo, STAGES), auth: AUTH, sources: [GITHUB_ENTRY], ...settings, workspaces: workspacesAt(repo).map((w) => ({ ...w, env })) };
   assert.equal((await postJson(`${base}/settings`, body)).status, 200);
   await server.poll();
   return { base, server, workers, lines, records };
@@ -206,4 +206,13 @@ test('the seam hands the runner gh\'s machine login, the GitHub account\'s own, 
   await postJson(`${base}/tasks/${TASK}/open`, { kind: 'claude' });
   await waitFor(() => workers.length === 1);
   assert.equal(seen[0]?.machineGithub, machine);
+});
+
+const COPILOT_ON = { agentEnabled: { claude: true, codex: true, copilot: true } };
+
+test('a Copilot session whose account check refuses spawns nothing: gh logged out is copilot/missing, in the bar (#962)', async (t) => {
+  const { base, server, workers } = await start(t, {}, { githubAccount: createGithubAccount({ machine: { ...LOGGED_OUT, invalidate: () => {} } }) }, COPILOT_ON);
+  await postJson(`${base}/tasks/${TASK}/open`, { kind: 'copilot' });
+  await waitFor(() => server.getState()?.error === 'account copilot missing');
+  assert.equal(workers.length, 0);
 });

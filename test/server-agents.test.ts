@@ -16,6 +16,7 @@ import { HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
 import { tempDir } from './temp-dir.js';
+import { copilotOnMachine } from './fixtures/accounts.js';
 
 // The agent a stage run starts (#516), end to end through the server: the detection, the resolution and the refusal before any worktree.
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
@@ -218,6 +219,7 @@ test('a free session opened with no model launches the default; its own pick win
 });
 
 test('a copilot stage starts copilot with its MCP file, the Hive\'s tools allowed, the prompt behind -i and the protocol in its run\'s instructions folder; no secret in an argv word (#873)', async (t) => {
+  copilotOnMachine(t); // #962: not about the account
   const stage = { ...STAGES[0], agent: 'copilot' as const, model: 'claude-sonnet-5.5' };
   const { workers } = await start(t, { ...BODY, agentEnabled: { claude: true, codex: true, copilot: true }, flows: bodyFlows([stage]) });
   await waitFor(() => workers.length === 1);

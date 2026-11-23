@@ -12,6 +12,7 @@ import { installShim } from '../shim.js';
 import { HEADLESS_MCP, headless, headlessAnswer, headlessEnv, headlessPrompt } from './copilot-headless.js';
 import { copilotHooksPlugin, hookPayload, writeCopilotHooksPlugin } from './copilot-hooks.js';
 import { readCopilotPlanLimits } from './copilot-limits.js';
+import { copilotAccountEnv } from './copilot-account.js';
 import { countMessages, ownsTranscript, readTurn, sessionFiles, transcriptDir } from './copilot-transcript.js';
 import type { AgentRun, AgentRunner, LaunchArg, McpServer, RunMcpServer } from './runner.js';
 
@@ -101,7 +102,7 @@ export const copilotRunner: AgentRunner = {
   headlessAnswer,
   headlessPrompt,
   headlessEnv,
-  accountEnv: async () => ({ env: {} }), // #953: the machine's login; #962 fills it
+  accountEnv: (ctx) => copilotAccountEnv(ctx), // #962: COPILOT_GITHUB_TOKEN, checked before the spawn; an arrow, read at call time
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --additional-mcp-config path holds the pty id, as Claude's --mcp-config does
   runEnv: (_server, run) => copilotEnv(run), // the secret is in the 0600 MCP file, never in the env
   runFiles,

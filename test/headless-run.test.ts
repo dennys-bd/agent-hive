@@ -8,7 +8,7 @@ import { AGENTS } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { type HeadlessInput, headlessProcess, runHeadless } from '../src/headless-run.js';
 import { type AgentId, EDITOR_FILE_MAX } from '../src/types.js';
-import { NO_ACCOUNTS } from './fixtures/accounts.js';
+import { copilotOnMachine, NO_ACCOUNTS } from './fixtures/accounts.js';
 import { tempDir } from './temp-dir.js';
 
 const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX only: the fake CLI is an extensionless sh script on a :-joined PATH' };
@@ -64,6 +64,7 @@ test("Codex's answer is the file it wrote to -o, inside the run's folder, which 
 });
 
 test('Copilot gets the schema in its prompt and a home of its own inside the run\'s folder, whose session folder goes with it; a fenced answer is unfenced (#877)', POSIX_ONLY, async (t) => {
+  copilotOnMachine(t); // #962: this test is about the home and the prompt, not the account
   const fenced = '```json\n{"from":1,"to":1,"text":"x"}\n```';
   // records its stdin and the env the isolation rests on in REC, writes a session folder as Copilot does, and answers fenced
   const cli = await fakeCli(t, 'copilot', [
@@ -182,5 +183,11 @@ test('a refused account fails the headless run before its folder exists: nothing
   const tmpRoot = await tempDir(t, 'headless-tmp-');
   // an empty PATH: had the run gone on, its failure would be the agent not found, never the account's
   assert.deepEqual(await runHeadless(input('claude'), { env: { PATH: '' }, tmpRoot, account: NO_ACCOUNTS }), { failure: 'account claude missing', detail: '' });
+  assert.deepEqual(await readdir(tmpRoot), []);
+});
+
+test('a headless Copilot run whose account check refuses runs nothing: gh logged out is copilot/missing, before its folder exists (#962)', async (t) => {
+  const tmpRoot = await tempDir(t, 'headless-tmp-');
+  assert.deepEqual(await runHeadless(input('copilot'), { env: { PATH: '' }, tmpRoot, account: NO_ACCOUNTS }), { failure: 'account copilot missing', detail: '' });
   assert.deepEqual(await readdir(tmpRoot), []);
 });
