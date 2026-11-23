@@ -44,7 +44,7 @@ test('the nav\'s order, the current item and the pinned maintenance item (#510)'
   const buttons = within(nav).getAllByRole('button');
   expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['workspaces', 'fluxo', 'execução', 'regras', 'app', 'editor', 'atalhos', 'manutenção']);
   expect(within(nav).getByRole('button', { name: 'fluxo' })).toHaveAccessibleDescription(t('settings.section.flow.hint'));
-  expect(within(nav).getByRole('button', { name: 'execução' })).toHaveAccessibleDescription('agente, branches, excluir atividade'); // #516
+  expect(within(nav).getByRole('button', { name: 'execução' })).toHaveAccessibleDescription('agentes, contas, branches'); // #516, #964
   expect(within(nav).getByRole('button', { name: 'workspaces' })).toHaveAttribute('aria-current', 'page');
   expect(h1()).toHaveTextContent('workspaces');
   expect(screen.getByText(t('settings.section.workspaces.description'))).toBeInTheDocument();

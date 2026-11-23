@@ -130,7 +130,7 @@ test('the agent copy (#516): neutral delete activity texts, the execution hint, 
     const naming = Object.entries(MESSAGES[language]).filter(([, text]) => /claude/i.test(text)).map(([key]) => key);
     assert.deepEqual(naming, [], language);
   }
-  assert.deepEqual([MESSAGES.pt['settings.section.execution.hint'], MESSAGES.en['settings.section.execution.hint']], ['agente, branches, excluir atividade', 'agent, branches, delete activity']);
+  assert.deepEqual([MESSAGES.pt['settings.section.execution.hint'], MESSAGES.en['settings.section.execution.hint']], ['agentes, contas, branches', 'agents, accounts, branches'], '#964: the nav names the accounts card');
   setLanguage('pt');
   assert.equal(t('settings.agent.offPath'), 'fora do PATH');
 });
@@ -825,4 +825,27 @@ test('a refused account\'s short messages exist for every provider and code in b
     'the GitHub login chosen in Settings has no saved token: add it again or choose another',
     'o login do GitHub escolhido na configuração não tem token salvo: adicione de novo ou escolha outro',
   ]);
+});
+
+test('the accounts card reads as the handoff writes it, in both languages; the agents\' groups are named from AGENTS, so no key names them (#964)', () => {
+  const keys = [
+    'settings.accounts', 'settings.accounts.hint', 'settings.accounts.github', 'settings.accounts.copilot.hint', 'settings.accounts.github.hint',
+    'settings.accounts.github.connection', 'settings.accounts.machine', 'settings.accounts.loading', 'settings.accounts.failed.github',
+    'settings.accounts.failed.claude', 'settings.accounts.retry', 'settings.accounts.gone',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'accounts', 'the account each new run starts on · this machine\'s login is what the agent and gh use when none is chosen', 'github',
+    'runs on a GitHub login · the same ones as the github group',
+    'the runs\' gh uses this account · git\'s own pushes follow it only through gh\'s credential helper (gh auth setup-git) · the sources are read through the',
+    'GitHub connection', 'this machine\'s login', 'reading the stored accounts…', 'couldn\'t read the GitHub accounts right now · the chosen one still applies ·',
+    'couldn\'t read the stored accounts right now · the chosen one still applies ·', 'try again', 'no longer stored: runs on it are refused · choose another',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'contas', 'em que conta cada execução nova roda · o login desta máquina é o que o agente e o gh usam sem conta escolhida', 'github',
+    'roda num login do GitHub · os mesmos do grupo github',
+    'o gh das execuções usa esta conta · os pushes do git só a seguem pelo credential helper do gh (gh auth setup-git) · as fontes são lidas pela',
+    'conexão do GitHub', 'login desta máquina', 'lendo as contas guardadas…', 'não deu para ler as contas do GitHub agora · a escolhida continua valendo ·',
+    'não deu para ler as contas guardadas agora · a escolhida continua valendo ·', 'tentar de novo', 'não está mais guardada: execuções nela são recusadas · escolha outra',
+  ]);
+  assert.ok(!('settings.accounts.claude' in MESSAGES.en) && !('settings.accounts.copilot' in MESSAGES.en));
 });
