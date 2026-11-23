@@ -216,10 +216,11 @@ function entryOf({ selected, worktrees, ...rest }: RowsProps, { showWorktree, co
 
 interface HeaderProps {
   name: string; isOpen: boolean; summary: string; onToggle(): void; nav: ActivitiesNav; view: WorkspaceView; onView(patch: Partial<WorkspaceView>): void;
+  onCollapseTasks(): void; onExpandTasks(): void;
 }
 
 // The workspace's header: collapse, its colour, its name (never wrapped), the collapsed workspace's summary (#586), then + and ⋯
-function WorkspaceHeader({ name, isOpen, summary, onToggle, nav, view, onView }: HeaderProps) {
+function WorkspaceHeader({ name, isOpen, summary, onToggle, nav, view, onView, onCollapseTasks, onExpandTasks }: HeaderProps) {
   return (
     <div className="flex items-center gap-1 px-1.5 py-1 font-medium text-xs">
       <button type="button" aria-expanded={isOpen} onClick={onToggle} className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left">
@@ -229,7 +230,9 @@ function WorkspaceHeader({ name, isOpen, summary, onToggle, nav, view, onView }:
       </button>
       <span className="min-w-0 flex-1 truncate text-right font-normal text-muted-foreground">{isOpen ? '' : summary}</span>
       <PlusMenu nav={nav} label={t('activities.newIn', { name })} workspace={name} />
-      <WorkspaceMenu name={name} view={view} onView={onView} onSettings={nav.addWorkspace} />
+      <WorkspaceMenu
+        name={name} view={view} onView={onView} onCollapseTasks={onCollapseTasks} onExpandTasks={onExpandTasks} onSettings={nav.addWorkspace}
+      />
     </div>
   );
 }
@@ -272,12 +275,14 @@ function WorkspaceGroup({ name, branch, activities, flows, localSessions, local,
   const toggle = (key: string): void => setView({ collapsed: toggled(view.collapsed, key) });
   // a task's collapse is part of the saved view too (#913), under its item id
   const toggleTask = (id: string): void => setView({ collapsedTasks: toggled(view.collapsedTasks, id) });
+  // every task with lines to hide (#913): one with none has no chevron to show it collapsed
+  const collapseTasks = (): void => setView({ collapsedTasks: activities.filter((a) => lineCount(a) > 0).map((a) => a.task.item.itemId) });
   return (
     <section aria-label={name} className="flex flex-col gap-0.5">
       {/* open or closed is part of the workspace's saved view, so a restart or a remount keeps it (#779) */}
       <WorkspaceHeader
         name={name} isOpen={view.isOpen} summary={workspaceSummary(activities)} onToggle={() => setView({ isOpen: !view.isOpen })}
-        nav={rows.nav} view={view} onView={setView}
+        nav={rows.nav} view={view} onView={setView} onCollapseTasks={collapseTasks} onExpandTasks={() => setView({ collapsedTasks: [] })}
       />
       {view.isOpen && (
         <>

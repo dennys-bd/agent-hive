@@ -109,3 +109,26 @@ test('a collapsed task is still collapsed when the panel mounts again, saved in 
   expect(lines('hive')).toHaveLength(1);
   await waitFor(() => expect(readView('activitiesView')).toMatchObject({ hive: { collapsedTasks: ['I1'] }, site: { collapsedTasks: [] } }));
 });
+
+// Radix opens a DropdownMenu on pointerdown, which jsdom does not deliver as a PointerEvent; the keyboard path opens the same menu.
+const openMenu = async (user: ReturnType<typeof userEvent.setup>, name: string): Promise<void> => {
+  screen.getByRole('button', { name }).focus();
+  await user.keyboard('{Enter}');
+};
+
+test('recolher tarefas collapses every task with lines in that workspace only; expandir tarefas opens them all (#913)', async () => {
+  const user = userEvent.setup();
+  render(<ActivitiesPanel {...props()} />);
+  await openMenu(user, 'opções de hive');
+  await user.click(screen.getByRole('menuitem', { name: 'recolher tarefas' }));
+  expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'false');
+  expect(chevron('#3 Task 3')).toHaveAttribute('aria-expanded', 'false');
+  expect(chevron('#4 Task 4')).toHaveAttribute('aria-expanded', 'true'); // site keeps its own
+  expect(lines('hive')).toEqual([]);
+  expect(readView('activitiesView')).toMatchObject({ hive: { collapsedTasks: ['I1', 'I3'] } }); // task 2 has no lines to collapse
+  await openMenu(user, 'opções de hive');
+  await user.click(screen.getByRole('menuitem', { name: 'expandir tarefas' }));
+  expect(chevron('#1 Task 1')).toHaveAttribute('aria-expanded', 'true');
+  expect(chevron('#3 Task 3')).toHaveAttribute('aria-expanded', 'true');
+  expect(lines('hive')).toHaveLength(4);
+});

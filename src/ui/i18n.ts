@@ -581,6 +581,8 @@ const en = {
   'activities.groupBy.status': 'status',
   'activities.groupBy.none': 'no grouping',
   'activities.showWorktree': 'show worktree',
+  'activities.collapseTasks': 'collapse tasks', // #913: the workspace's ⋯, every task of it at once
+  'activities.expandTasks': 'expand tasks',
   'activities.removeWorkspace': 'remove workspace…',
   'activities.deleteAll': 'delete all…', // #586: done's action
   'activities.deleteAll.title': 'Delete done activities',
@@ -4158,6 +4160,8 @@ const pt: Record<MessageKey, string> = {
   'activities.groupBy.status': 'status',
   'activities.groupBy.none': 'sem agrupamento',
   'activities.showWorktree': 'mostrar worktree',
+  'activities.collapseTasks': 'recolher tarefas', // #913: the workspace's ⋯, every task of it at once
+  'activities.expandTasks': 'expandir tarefas',
   'activities.removeWorkspace': 'remover workspace…',
   'activities.deleteAll': 'excluir todas…', // #586: done's action
   'activities.deleteAll.title': 'Excluir atividades finalizadas',
