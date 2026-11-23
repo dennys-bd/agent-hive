@@ -12,18 +12,27 @@ export interface BlockMapProps {
   map: TemplateMap; collapsed: readonly number[]; dimmed: ReadonlySet<number>; canDrag: boolean;
   onReveal(line: number): void; onToggle(line: number): void; onMove(line: number, index: number): void;
   dots?: ReadonlyMap<number, readonly EditorAnnotation[]>; onDot?(annotation: EditorAnnotation): void; // #327: each row's annotations, by its line
+  onJump(line: number): void; // #982: a chip's click, with the line of its call
   appendLine: number; onPlus?(line: number): void; gap?: MapGap; // #322: the trailing "+"'s line; no onPlus, no "+" (the preview)
   current?: number; // #492: the line of the row the caret is in, raised
 }
 type Heading = Extract<MapBlock, { kind: 'heading' }>;
-interface Ctx extends Pick<BlockMapProps, 'collapsed' | 'dimmed' | 'canDrag' | 'onReveal' | 'onToggle' | 'dots' | 'onDot' | 'onPlus' | 'gap' | 'current'> { drag: MapDrag }
+interface Ctx extends Pick<BlockMapProps, 'collapsed' | 'dimmed' | 'canDrag' | 'onReveal' | 'onJump' | 'onToggle' | 'dots' | 'onDot' | 'onPlus' | 'gap' | 'current'> { drag: MapDrag }
 interface Handle { parent: string; index: number }
 
-function Chips({ references }: { references: readonly Reference[] }) {
+// #982: a chip goes to the line that calls its item (the section's first call: buildMap keeps one Reference per kind and name), selecting nothing
+function Chips({ references, ctx }: { references: readonly Reference[]; ctx: Ctx }) {
   if (references.length === 0) return null;
   return (
     <span className="flex flex-wrap gap-1 pt-1">
-      {references.map((ref) => <span key={`${ref.kind}:${ref.name}`} className="rounded-[3px] border px-[5px] font-mono text-soft text-xs leading-4">{ref.name}</span>)}
+      {references.map((ref) => (
+        <button
+          key={`${ref.kind}:${ref.name}`} type="button" title={t('plugins.map.jump', { name: ref.name })} onClick={() => ctx.onJump(ref.line)}
+          className="rounded-[3px] border px-[5px] font-mono text-soft text-xs leading-4 hover:bg-accent"
+        >
+          {ref.name}
+        </button>
+      ))}
     </span>
   );
 }
@@ -63,7 +72,7 @@ function Row({ title, line, references, ctx, look = 'block', handle, sentence, c
         <span className="text-muted-foreground">{line}</span>
       </div>
       {sentence !== undefined && <span className="break-words text-muted-foreground leading-[18px]">{sentence}</span>}
-      <Chips references={references} />
+      <Chips references={references} ctx={ctx} />
     </div>
   );
 }

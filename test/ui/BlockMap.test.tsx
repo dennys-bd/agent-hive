@@ -9,7 +9,7 @@ import { BUILD_TEXT } from './plugins-fixtures';
 
 const map = buildMap(parseTemplate(BUILD_TEXT), { skills: ['hive:new-pr'], agents: [] });
 function renderMap(extra: Partial<BlockMapProps> = {}): BlockMapProps {
-  const props: BlockMapProps = { map, collapsed: [], dimmed: new Set(), canDrag: true, onReveal: vi.fn(), onToggle: vi.fn(), onMove: vi.fn(), appendLine: 23, ...extra };
+  const props: BlockMapProps = { map, collapsed: [], dimmed: new Set(), canDrag: true, onReveal: vi.fn(), onToggle: vi.fn(), onMove: vi.fn(), onJump: vi.fn(), appendLine: 23, ...extra };
   render(<BlockMap {...props} />);
   return props;
 }
@@ -25,7 +25,7 @@ beforeEach(() => setLanguage('pt'));
 
 test("each block shows its title, start line and chips: the introduction, the ## with its subsection count, the chain's branches dashed and indented (#319, decision 18)", () => {
   renderMap();
-  expect(within(nav()).getAllByRole('button').map((b) => b.textContent)).toEqual(['introdução', 'Input', '1 subseções', 'bloco condicional', 'bloco condicional', 'Stops']);
+  expect(within(nav()).getAllByRole('button').map((b) => b.textContent)).toEqual(['introdução', 'hive:new-pr', 'Input', '1 subseções', 'bloco condicional', 'bloco condicional', 'Stops']);
   expect(rowOf('introdução')).toHaveTextContent('hive:new-pr');
   expect(rowOf('Stops')).toHaveTextContent('Stops20');
   expect(within(nav()).getByText('senão').closest('.border-dashed')).not.toBeNull();
@@ -89,4 +89,22 @@ test('the map starts with its header line; a branch row reads bloco condicional 
   const sentence = within(nav()).getByText('só quando delivery = stacked');
   expect(sentence.closest('[data-line="14"]')).toHaveTextContent(/^bloco condicional14só quando delivery = stacked$/);
   expect(Array.from(nav().querySelectorAll('[data-current="true"]')).map((row) => row.getAttribute('data-line'))).toEqual(['11']);
+});
+
+test("a chip is a button titled with its jump; a click calls onJump with the call's line and reveals no block; a card still drags; English too (#982)", () => {
+  const props = renderMap();
+  const chip = within(rowOf('introdução')).getByRole('button', { name: 'hive:new-pr' });
+  expect(chip).toHaveAttribute('title', 'ir para a linha que chama hive:new-pr');
+  fireEvent.click(chip);
+  expect(props.onJump).toHaveBeenCalledWith(9);
+  expect(props.onReveal).not.toHaveBeenCalled();
+  const dt = dataTransfer();
+  fireEvent.dragStart(handleOf('Input'), { dataTransfer: dt });
+  fireEvent.dragOver(rowOf('Stops'), { dataTransfer: dt });
+  fireEvent.drop(rowOf('Stops'), { dataTransfer: dt });
+  expect(props.onMove).toHaveBeenCalledWith(11, 1);
+  cleanup();
+  setLanguage('en');
+  renderMap();
+  expect(screen.getByRole('button', { name: 'hive:new-pr' })).toHaveAttribute('title', 'go to the line that calls hive:new-pr');
 });

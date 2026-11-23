@@ -128,7 +128,7 @@ function EditorBody(props: BodyProps) {
   // The source line of the last reveal: the look maps it at render, so a chain just inserted lands under the look that holds it
   const [reveal, setReveal] = useState<Reveal>();
   const [caret, setCaret] = useState<number>(); // #492: the map raises the caret's block
-  const revealLine = (line: number): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1 }));
+  const revealLine = (line: number, isJump?: boolean): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1, isJump }));
   useAnnotationReveal(annotations.revealed, revealLine);
   const isPreview = workspace !== undefined;
   const isWritable = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
@@ -154,14 +154,14 @@ function EditorBody(props: BodyProps) {
         {isMd ? (
           <BlockMap
             map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move} appendLine={appendLine(parsed)}
-            onReveal={revealLine} onPlus={forms.onPlus} gap={forms.gap}
+            onReveal={revealLine} onJump={(line) => revealLine(line, true)} onPlus={forms.onPlus} gap={forms.gap}
             dots={isPreview || isProposal ? undefined : dots} onDot={annotations.openAt}
             current={isPreview || caret === undefined ? undefined : blockAt(map, caret)}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
           modelKey={modelKey} path={path} text={shown.text} isReadOnly={!canEdit} isProposal={isProposal}
-          fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { line: shown.lineOf(reveal.line), n: reveal.n }}
+          fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { ...reveal, line: shown.lineOf(reveal.line) }}
           onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={(lines) => { selection.current = lines; }}
           annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf} onCaret={setCaret}
           isMarginOpen={props.isMarginOpen} onDot={(annotation) => { props.onMargin(true); annotations.openAt(annotation); }}

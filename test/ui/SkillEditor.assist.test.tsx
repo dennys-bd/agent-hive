@@ -23,6 +23,8 @@ const echo = (_id: string, body: SaveBody): Response => json(readOf('hive:new-bu
 const view = (): FakeEditor => FakeEditor.all.at(-1)!;
 const field = (): HTMLInputElement => screen.getByPlaceholderText(PLACEHOLDER);
 const fileTab = (name: string): HTMLElement => screen.getByRole('tab', { name });
+const mapChip = (name: string): HTMLElement => within(screen.getByRole('navigation', { name: 'mapa' })).getByRole('button', { name });
+const jumps = (): number[] => view().decorations.filter((d) => d.options.className === 'template-jump').map((d) => d.range.startLineNumber);
 const sidebarItem = (name: string): HTMLElement => within(screen.getByRole('navigation', { name: 'Plugins' })).getByRole('button', { name: new RegExp(`^${name}`) });
 async function open(name: string): Promise<void> {
   fireEvent.click(await within(await screen.findByRole('region', { name: 'skills' })).findByRole('button', { name: new RegExp(`^${name}`) }));
@@ -162,4 +164,15 @@ test('accepting a swap keeps the editor view: the view state saved before the sw
   fireEvent.click(screen.getByRole('button', { name: 'descartar' }));
   await waitFor(() => expect(view().model.getValue()).toBe(BUILD_TEXT));
   expect(restore.mock.calls).toEqual([[{ scrollTop: 40 }], [{ scrollTop: 40 }]]);
+});
+
+test("a map chip's jump puts the caret on the line that calls it and paints that line; a caret move clears the paint (#982)", async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open('new-build');
+  fireEvent.click(mapChip('hive:new-pr'));
+  await waitFor(() => expect(view().position).toEqual({ lineNumber: 9, column: 1 }));
+  expect(jumps()).toEqual([9]);
+  act(() => view().setPosition({ lineNumber: 12, column: 1 }));
+  expect(jumps()).toEqual([]);
 });
