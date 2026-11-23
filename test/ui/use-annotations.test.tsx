@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { removeVariable } from '../../src/template-edit';
-import type { AgentAnnotation } from '../../src/reviewer';
+import type { AgentAnnotation, AgentFix } from '../../src/reviewer';
 import { checkOf, isAgent, useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
@@ -136,4 +136,40 @@ test("the agent's annotations follow the lint's; dismissing one hides it, saving
   act(() => result.current.annotations.review.now());
   await waitFor(() => expect(result.current.annotations.review.running).toBe(false));
   expect(result.current.annotations.list.map(checkOf)).toEqual(['unused']);
+});
+
+const RUN_FIX: AgentFix = { ...RUN_NOTE, kind: 'fix', span: 'Run it.', replacement: 'Run the tests.' };
+
+test('applying an agent fix writes its replacement through applyEdit, saving the clean buffer, and closes its card (#981)', async () => {
+  const saves: SaveBody[] = [];
+  stubItems(serverOf(ONE, { review: () => json({ annotations: [RUN_FIX] }), save: (id, body) => { saves.push(body); return echo(id, body); } }));
+  const { result } = await opened();
+  act(() => result.current.annotations.review.now());
+  await waitFor(() => expect(result.current.annotations.list.map(checkOf)).toEqual(['unused', 'agent']));
+  const fix = result.current.annotations.list[1]!;
+  expect(hasFix(fix)).toBe(true);
+  act(() => result.current.annotations.openAt(fix));
+  act(() => result.current.annotations.apply(fix));
+  await waitFor(() => expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: ONE.replace('Run it.', 'Run the tests.') }]));
+  expect([result.current.annotations.open, result.current.annotations.error]).toEqual([undefined, undefined]);
+});
+
+test('after an edit took its span away, applying an agent fix writes nothing, keeps its card open and shows fixStale (#981)', async () => {
+  const saves: SaveBody[] = [];
+  // on the title's line 7, a span to line 9: the title still reads as the agent read it, so the annotation stays there
+  const stale: AgentFix = { ...RUN_FIX, line: 7, title: 'the steps say nothing', span: '# new-build\n\nRun it.', replacement: '# new-build\n\nRun the tests.' };
+  stubItems(serverOf(ONE, { review: () => json({ annotations: [stale] }), save: (id, body) => { saves.push(body); return echo(id, body); } }));
+  const { result } = await opened();
+  act(() => result.current.annotations.review.now());
+  await waitFor(() => expect(result.current.annotations.list.map(checkOf)).toEqual(['unused', 'agent']));
+  const edited = ONE.replace('Run it.', 'Run everything.');
+  act(() => result.current.editor.edit(edited));
+  const fix = result.current.annotations.list[1]!;
+  expect(fix.line).toBe(7);
+  act(() => result.current.annotations.openAt(fix));
+  act(() => result.current.annotations.apply(fix));
+  expect(result.current.annotations.error).toBe('plugins.annotations.fixStale');
+  expect(result.current.annotations.open?.title).toBe(stale.title);
+  expect(result.current.editor.textOf('SKILL.md.liquid')).toBe(edited);
+  expect(saves).toEqual([]);
 });

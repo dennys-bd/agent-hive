@@ -3,10 +3,10 @@ import type { AgentAnnotation } from '../../reviewer';
 import { parseTemplate } from '../../template';
 import { type LintAnnotation, lintTemplate } from '../../template-lint';
 import type { CatalogueItem, LintInputRead } from '../../types';
-import type { ItemEditor } from '@/hooks/use-item-editor';
+import type { ItemEditor, WriteResult } from '@/hooks/use-item-editor';
 import { fileKeyOf, itemKeyOf, type Review, ReviewerContext, type Scope, useReviewer } from '@/hooks/use-reviewer';
 import type { MessageKey } from '@/i18n';
-import { fixOf } from '@/lib/annotation-fix';
+import { agentFixOf, fixOf } from '@/lib/annotation-fix';
 import { getJson, sendJson } from '@/lib/api';
 import { HIVE_ORIGIN } from '@/lib/plugins';
 import { isMarkdown } from '@/lib/template-view';
@@ -41,7 +41,15 @@ interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): 
 
 const NONE: readonly LintAnnotation[] = [];
 const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [] };
+const FIX_STALE: MessageKey = 'plugins.annotations.fixStale';
 const MAX_KEYS = 1000; // server-plugins.ts's MAX_DISMISSED: that module is the server's
+// What apply writes: the lint's edit, an agent fix's new text, 'stale' once that fix's span left its line (#981), nothing for an advice
+function writeOf(annotation: EditorAnnotation, text: string): WriteResult | 'stale' | undefined {
+  if (!isAgent(annotation)) return fixOf(annotation, text);
+  if (annotation.kind !== 'fix') return undefined;
+  const next = agentFixOf(annotation, text);
+  return next === undefined ? 'stale' : { ok: true, text: next };
+}
 const idOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.title}`;
 const isKeys = (value: unknown): value is string[] => Array.isArray(value) && value.every((key) => typeof key === 'string');
 const isLintInput = (value: unknown): value is LintInputRead =>
@@ -190,12 +198,12 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
       if (card.open === annotation) card.close();
       add(dismissalKey(path, annotation, lines));
     },
-    // The fix goes through applyEdit, as the variables pane writes: saved at once when the buffer was clean
+    // The fix goes through applyEdit, as the variables pane writes: saved at once when the buffer was clean. A stale agent fix writes
+    // nothing and its card stays open: the user dismisses it or reviews again (#981)
     apply: (annotation) => {
-      if (isAgent(annotation)) return; // the agent sends no fix (#328)
-      const result = fixOf(annotation, text);
+      const result = writeOf(annotation, text);
       if (result === undefined || file === undefined) return;
-      const key = editor.applyEdit(result);
+      const key = result === 'stale' ? FIX_STALE : editor.applyEdit(result);
       setRefused(key === undefined ? undefined : { file, value: key });
       if (key === undefined) card.close();
     },
