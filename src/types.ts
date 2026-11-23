@@ -227,6 +227,17 @@ export interface JiraSiteStatus {
 export const JIRA_CONNECT_ERRORS = ['invalid-site', 'refused', 'unreachable'] as const;
 export type JiraConnectError = (typeof JIRA_CONNECT_ERRORS)[number];
 
+/** #955: why a Claude account route refused; #965 maps each to copy. */
+export type ClaudeAccountError = 'name-empty' | 'name-too-long' | 'name-taken' | 'add-pending' | 'unknown' | 'selected';
+
+/** #955: the add flow's state as GET /settings/accounts/claude/add answers it. Never the token. */
+export type ClaudeAddStatus =
+  | { state: 'idle' }
+  | { state: 'pending'; name: string; url?: string } // url once the screen has printed it
+  | { state: 'connected'; name: string }
+  | { state: 'failed'; name: string; reason: 'exited' | 'timeout' | 'store' }
+  | { state: 'cancelled'; name: string };
+
 /** The task filter's criteria and operators (#245), in the order the settings form lists them. */
 export const FILTER_FIELDS = ['assignee', 'label', 'milestone', 'repository', 'projectField', 'blocked'] as const;
 export const FILTER_OPS = ['any', 'none'] as const;
