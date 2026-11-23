@@ -1030,6 +1030,23 @@ export interface FormatLog { channel: string; run: string }
  * when it failed and the text went as sent. */
 export interface FileSaved { version: string; text?: string; formatError?: string; formatLog?: FormatLog }
 
+/** The busca pane's search (#868): the text, literal unless isRegex (POSIX ERE as git reads -E), and its toggles. */
+export interface SearchQuery { q: string; isCaseSensitive: boolean; isWholeWord: boolean; isRegex: boolean }
+/** A line holding matches: 1-based, its text without the line break, every match as [start, end) in UTF-16. */
+export interface SearchMatch { line: number; text: string; spans: [number, number][] }
+/** One file's matches, flushed whole. file: relative to the tree root, a nested repository's folder as its prefix; repo: that folder, '' for the root. */
+export interface SearchFileResult { file: string; repo: string; matches: SearchMatch[] }
+/** The closing line: matches and files sent, whether the cap cut the search, the nested repositories searched, and how many files were searched when nothing matched. */
+export interface SearchEnd { total: number; files: number; capped: boolean; repos: string[]; searched?: number }
+export interface SearchError { error: string }
+/** One NDJSON line of GET /activities/:id/search. */
+export type SearchLine = SearchFileResult | (SearchEnd & { done: true }) | SearchError;
+export interface ReplaceRequest { query: SearchQuery; replacement: string; files: string[] }
+export type ReplaceSkip = 'too_large' | 'not_text' | 'read_only' | 'changed' | 'failed'; // failed: the read or the write threw (ENOENT, EACCES, a full disk)
+export interface ReplaceAnswer { changed: { path: string; previous: string; version: string; count: number }[]; skipped: { path: string; reason: ReplaceSkip }[] }
+/** The search's cap (#868, the design's 2,000): matches in total, across repositories. */
+export const SEARCH_CAP = 2_000;
+
 /** What a file's changes compare against (#668): HEAD, or the task's base, the merge-base the diff pane's worktree scope diffs from. */
 export type ChangesBase = 'head' | 'task';
 
@@ -1456,6 +1473,7 @@ export type OperationId =
   | 'flowEntry1' | 'flowEntry2' | 'flowEntry3' | 'flowEntry4' | 'flowEntry5' | 'flowEntry6' | 'flowEntry7' | 'flowEntry8' | 'flowEntry9'
   // #911: back from a page; #910: the flow canvas's zoom; #921: the tarefas entries by position
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
+  | 'searchInFiles' | 'replaceInFiles' | 'searchMatchCase' | 'searchWholeWord' | 'searchRegex' | 'searchReplaceAll' // #868
   | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings' | 'searchPlugins' | 'askAgent' | 'viewBenchmark' | 'benchmarkSearch'; // #689, #313, #331, #458
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
 export type Shortcuts = Partial<Record<OperationId, string | null>>;

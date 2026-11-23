@@ -147,7 +147,7 @@ test('the find binding opens the bar over its own tab only, on an xterm with the
   expect(FakeSearchAddon.all.map((search) => search.options)).toEqual([{ highlightLimit: 1000 }, { highlightLimit: 1000 }]);
   expect(screen.queryByRole('textbox', { name: 'buscar' })).not.toBeInTheDocument();
   let isPassed = true;
-  act(() => { isPassed = FakeTerminal.all[0].press({ key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }); }); // jsdom runs as off macOS
+  act(() => { isPassed = FakeTerminal.all[0].press({ key: 'F3', code: 'F3' }); }); // jsdom runs as off macOS: the binding is F3
   expect(isPassed).toBe(false);
   const first = within(screen.getByRole('region', { name: 'primeira' }));
   await user.type(first.getByRole('textbox', { name: 'buscar' }), 'erro');

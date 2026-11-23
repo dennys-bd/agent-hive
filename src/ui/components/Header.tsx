@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { BracesIcon, FolderTreeIcon, ListIcon, type LucideIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react';
+import { BracesIcon, FolderTreeIcon, ListIcon, type LucideIcon, PanelLeftIcon, PanelRightIcon, SearchIcon } from 'lucide-react';
 import type { EffectiveLimits, State } from '../../types.js';
 import { HeaderBrand } from '@/components/HeaderBrand';
 import { useHeaderSlotRef } from '@/components/HeaderSlot';
@@ -22,9 +22,9 @@ interface HeaderProps extends BrandProps { shell: HeaderShell }
 // The header drags the window: each of its own controls opts out to keep its clicks; the empty space and the bar's text keep dragging
 const NO_DRAG = '[-webkit-app-region:no-drag]';
 const ICON_BUTTON = `size-7 ${NO_DRAG}`; // the handoff's ghost 28×28 around a 16px icon
-// Always all three, in order: a pane the view cannot show is disabled, never removed, so the row does not jump. variáveis is #313's, last so
+// Always all four, in order: a pane the view cannot show is disabled, never removed, so the row does not jump. variáveis is #313's, last so
 // the other views' row keeps its place
-const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['details', ListIcon], ['variables', BracesIcon]];
+const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['search', SearchIcon], ['details', ListIcon], ['variables', BracesIcon]];
 
 interface SideButtonProps { Icon: LucideIcon; label: string; keys: string | null; disabled?: boolean; className?: string; onClick(): void }
 

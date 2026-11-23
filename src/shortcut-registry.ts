@@ -3,9 +3,9 @@
 import type { OperationId } from './types.js';
 import type { MessageKey } from './ui/i18n.js';
 
-/** Where a key acts (#585), the atalhos section's cards in order: everywhere, with an activity shown, with the focus in the files tree (#818),
+/** Where a key acts (#585), the atalhos section's cards in order: everywhere, with an activity shown, with the focus in the files tree (#818), with the focus in the busca pane (#868),
  * with the flow shown, with the plugins view shown (#313), with the benchmark view shown (#458), in a dialog, on the Settings page (#689). */
-export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'plugins', 'benchmark', 'dialogs', 'settings'] as const;
+export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'search', 'flow', 'plugins', 'benchmark', 'dialogs', 'settings'] as const;
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];
 
 /** A default per platform (#585): macOS's, and the one Linux and Windows share, where Ctrl alone would take a key the terminal reads. null:
@@ -55,7 +55,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('toggleRight', { mac: 'CmdOrCtrl+Shift+B', other: 'CmdOrCtrl+Alt+Shift+B' }, 'global'),
   fixed('settings', 'global', same(['CmdOrCtrl+,'])),
   row('shortcutMap', both('CmdOrCtrl+/'), 'global'), // #639: the map of the keys that work now
-  row('fullScreen', { mac: 'CmdOrCtrl+Shift+F', other: 'F11' }, 'global'),
+  row('fullScreen', { mac: 'CmdOrCtrl+Ctrl+F', other: 'F11' }, 'global'),
   row('closeWindow', { mac: 'CmdOrCtrl+Shift+W', other: 'CmdOrCtrl+Alt+Shift+W' }, 'global'),
   fixed('quit', 'global', same(['CmdOrCtrl+Q'])),
   row('newTerminal', { mac: 'CmdOrCtrl+T', other: 'CmdOrCtrl+Shift+T' }, 'activities'),
@@ -79,7 +79,10 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('splitTerminalHorizontal', { mac: 'CmdOrCtrl+Shift+D', other: 'CmdOrCtrl+Alt+Shift+D' }, 'activities'),
   row('clear', { mac: 'CmdOrCtrl+K', other: 'CmdOrCtrl+Shift+K' }, 'activities'),
   // #12: the terminal's find bar. Off macOS Ctrl+F is the program's (readline's forward-char); Cmd+F's searchTasks acts only in the flow
-  row('findInTerminal', { mac: 'CmdOrCtrl+F', other: 'CmdOrCtrl+Shift+F' }, 'activities'),
+  // Off macOS Ctrl+Shift+F is searchInFiles now (#868), and Ctrl+Alt is AltGr, so the find takes F3
+  row('findInTerminal', { mac: 'CmdOrCtrl+F', other: 'F3' }, 'activities'),
+  row('searchInFiles', both('CmdOrCtrl+Shift+F'), 'activities'), // #868
+  row('replaceInFiles', both('CmdOrCtrl+Shift+H'), 'activities'),
   row('nextPane', { mac: 'CmdOrCtrl+]', other: 'CmdOrCtrl+Shift+]' }, 'activities', SOON),
   row('prevPane', { mac: 'CmdOrCtrl+[', other: 'CmdOrCtrl+Shift+[' }, 'activities', SOON),
   row('nextActivity', { mac: 'CmdOrCtrl+Alt+Down', other: 'CmdOrCtrl+Shift+PageDown' }, 'activities', SOON),
@@ -101,6 +104,11 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   fixed('treeCut', 'files', same(['CmdOrCtrl+X'])),
   fixed('treeCopy', 'files', same(['CmdOrCtrl+C'])),
   fixed('treePaste', 'files', same(['CmdOrCtrl+V'])),
+  // #868: the busca pane's keys act only with the focus in the pane (search-keys.ts). On macOS ⌥⌘C and ⌥⌘R are also openDiff's and treeReveal's, which yield inside the pane
+  row('searchMatchCase', { mac: 'CmdOrCtrl+Alt+C', other: 'Alt+C' }, 'search'),
+  row('searchWholeWord', { mac: 'CmdOrCtrl+Alt+W', other: 'Alt+W' }, 'search'),
+  row('searchRegex', { mac: 'CmdOrCtrl+Alt+R', other: 'Alt+R' }, 'search'),
+  row('searchReplaceAll', both('CmdOrCtrl+Alt+Enter'), 'search'),
   row('searchTasks', both('CmdOrCtrl+F'), 'flow'),
   fixed('moveFocus', 'flow', same(['Up', 'Down', 'Left', 'Right'])),
   fixed('openDetails', 'flow', same(['Enter'])),

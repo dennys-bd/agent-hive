@@ -28,6 +28,7 @@ import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
 import { useCreateTaskDialog } from '@/hooks/use-create-task-dialog';
 import { useFileOpener } from '@/hooks/use-file-opener';
+import { useSearchSide } from '@/hooks/use-search-side';
 import { useDock } from '@/hooks/use-dock';
 import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
@@ -372,6 +373,7 @@ export function MainDock(props: MainDockProps) {
   // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
   const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;
   const shell = useHeaderShell({ center: selection.center, current, layout: frameLayout, isRightHidden, bar, sideTab, setSideTab, activateTab, close });
+  useSearchSide({ isOn: selection.center === 'activities' && current !== undefined, sideTab, setSideTab, activate, size: frameLayout.sizes.right, isShown: shown[detailSide] === 'detail', resize: dock.resize }); // ⌘⇧F, ⌘⇧H (#868)
   const content = (
     <>
       {header?.(shell)}

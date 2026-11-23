@@ -7,6 +7,7 @@
 // flags (#821), the docks shared; a layout from before #821 reads as the defaults whole. plugins (#313) and benchmark (#461) are the third and fourth views; a layout from before
 // either reads with that view's defaults, the others kept.
 import { isEditorKey } from '@/lib/monaco-keys';
+import { yieldsToSearchPane } from '@/lib/search-keys';
 import { isRecording, pressed, pressedFixed } from '@/lib/shortcut-bindings';
 import { readView, writeView } from '@/lib/view-state';
 import type { FixedShortcutId } from '../../shortcut-registry';
@@ -157,7 +158,7 @@ export const isSettingsClosed = (): boolean => document.querySelector('[data-set
 
 export function onShortcutKey<T>(shortcuts: ReadonlyArray<[T, OperationId]>, act: (value: T) => void, accepts: (event: KeyboardEvent) => boolean = () => true): () => void {
   const listener = (event: KeyboardEvent): void => {
-    const hit = isRecording(event.target) ? undefined : shortcuts.find(([, id]) => pressed(event, id) && !isEditorKey(id, event.target)); // #780: ⌘. in the editor is its quick fix
+    const hit = isRecording(event.target) ? undefined : shortcuts.find(([, id]) => pressed(event, id) && !isEditorKey(id, event.target) && !yieldsToSearchPane(id, event)); // #780: ⌘. in the editor is its quick fix
     if (hit === undefined || !accepts(event)) return;
     event.preventDefault();
     event.stopPropagation();
