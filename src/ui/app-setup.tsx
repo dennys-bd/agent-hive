@@ -3,6 +3,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { act } from '@/components/actions';
+import { barError } from '@/components/CommandsProgress';
 import { CloseTabContext, type CloseTabSettings, type NoticeKey } from '@/components/close-tab-notice';
 import { type EditorLanguages, EditorLanguagesContext } from '@/components/editor-languages';
 import { AgentsContext, DefaultAgentContext } from '@/components/NewRunButton';
@@ -74,7 +75,7 @@ export function useAppSetup({ info, reload, state, connected, openLanguage }: Ap
   // The page's shortcut bindings (#449), from the saved config like the trusted domains: a Settings save reloads info and re-runs it.
   useEffect(() => setShortcuts(info?.config?.shortcuts ?? {}), [info]);
   useEffect(() => onTrust(() => void reload().catch((err: Error) => toast.error(err.message))), [reload]);
-  useEffect(() => { if (state?.error) toast.error(state.error); }, [state?.error]);
+  useEffect(() => { if (state?.error) toast.error(barError(state.error)); }, [state?.error]); // #953: an account refusal in the viewer's language
   useEffect(() => { if (!connected) toast.error(t('error.disconnected')); }, [connected]);
   const editorLanguages = useMemo(() => editorLanguagesOf(info, openLanguage), [info, openLanguage]); // one value per info, so an attached model is not detached on every render (#780)
   const offered = useMemo(() => offeredAgents(info?.agents ?? [], info?.config?.agentEnabled), [info]);

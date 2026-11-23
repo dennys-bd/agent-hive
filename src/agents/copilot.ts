@@ -100,6 +100,7 @@ export const copilotRunner: AgentRunner = {
   headlessAnswer,
   headlessPrompt,
   headlessEnv,
+  accountEnv: async () => ({ env: {} }), // #953: the machine's login; #962 fills it
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --additional-mcp-config path holds the pty id, as Claude's --mcp-config does
   runEnv: (_server, run) => copilotEnv(run), // the secret is in the 0600 MCP file, never in the env
   runFiles,

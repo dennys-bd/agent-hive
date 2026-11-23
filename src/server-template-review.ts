@@ -84,7 +84,7 @@ async function runAndAnswer(res: Response, deps: TemplateReviewRouteDeps, id: st
   const input: HeadlessInput = { agent: run.agent, ...(run.model === undefined ? {} : { model: run.model }), prompt: run.prompt, schema: REVIEW_SCHEMA, signal };
   const result = signal.aborted
     ? undefined
-    : await (deps.runHeadless ?? runHeadless)(input).catch((err: unknown): HeadlessResult => ({ failure: 'could not start', detail: errorMessage(err) }));
+    : await (deps.runHeadless ?? ((i: HeadlessInput) => runHeadless(i, { account: deps.accountDeps() })))(input).catch((err: unknown): HeadlessResult => ({ failure: 'could not start', detail: errorMessage(err) }));
   if (result === undefined || signal.aborted) return void deps.log.info(`review: ${id} cancelled`);
   if ('failure' in result) {
     deps.log.warn(`review: ${id} ${run.agent} run failed: ${result.failure}: ${clip(result.detail)}`);

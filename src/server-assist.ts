@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { agentRefusal, withDefaultModel } from './agents.js';
 import { applyProposal, ASSIST_SCHEMA, type AssistAnswer, assistPrompt, type AssistTarget, parseProposal, proposalHunk, targetOf } from './assist.js';
 import { isRefusal, mainFiles } from './custom-versions.js';
+import type { AccountEnvDeps } from './account-env.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
 import type { ItemSources } from './item-sources.js';
 import { isLaunchModel } from './launch-pick.js';
@@ -49,6 +50,7 @@ export interface AssistRouteDeps {
   pluginSource: string;
   agents: readonly AgentAvailability[];
   log: Pick<Logger, 'error' | 'warn' | 'info'>;
+  accountDeps(): AccountEnvDeps; // #953: the live selection and the credential store, read at each run
   runHeadless?: (input: HeadlessInput) => Promise<HeadlessResult>; // tests inject a fake
 }
 
@@ -105,7 +107,7 @@ async function runAndAnswer(res: Response, deps: AssistRouteDeps, id: string, ru
   const input: HeadlessInput = { agent: run.agent, ...(run.model === undefined ? {} : { model: run.model }), prompt: run.prompt, schema: ASSIST_SCHEMA, signal };
   const result = signal.aborted
     ? undefined
-    : await (deps.runHeadless ?? runHeadless)(input).catch((err: unknown): HeadlessResult => ({ failure: 'could not start', detail: errorMessage(err) }));
+    : await (deps.runHeadless ?? ((i: HeadlessInput) => runHeadless(i, { account: deps.accountDeps() })))(input).catch((err: unknown): HeadlessResult => ({ failure: 'could not start', detail: errorMessage(err) }));
   if (result === undefined || signal.aborted) return void deps.log.info(`assist: ${id} cancelled`);
   if ('failure' in result) {
     deps.log.warn(`assist: ${id} ${run.agent} run failed: ${result.failure}: ${clip(result.detail)}`);
