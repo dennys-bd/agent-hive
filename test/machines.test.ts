@@ -54,7 +54,7 @@ test('the unavailable machine: run and every fs method reject, readLines on its 
   const lines = machine.fs.readLines('/a', { maxBytes: 1 })[Symbol.asyncIterator]();
   await assert.rejects(lines.next(), is);
   assert.throws(() => machine.process('git', [], { cwd: '/', env: {} }), is);
-  assert.throws(() => machine.pty.spawn({ ptyId: 'p', slug: 's', cwd: '/' }, HANDLERS), is);
+  assert.throws(() => machine.pty.spawn({ ptyId: 'p', slug: 's', workspace: 'w', cwd: '/' }, HANDLERS), is);
   assert.deepEqual(
     [machine.pty.has('p'), machine.pty.pid('p'), machine.pty.write('p', 'x'), machine.pty.resize('p', 80, 24), machine.pty.kill('p'), machine.pty.subscribe('p', () => {}, () => {})],
     [false, undefined, false, false, false, undefined],

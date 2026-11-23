@@ -335,7 +335,7 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
 test('a stage run hands its machine a RunSpec with the prompt text, the protocol text and the agent inputs, and no host path (#159)', async (t) => {
   const specs: RunSpec[] = [];
   const machine = fakeMachine({ exec: noGit, pty: { spawn: (spec) => { specs.push(spec); return { started: Promise.resolve(), kill: async () => undefined }; } } });
-  const { home, repo, server } = await start(t, BODY, undefined, {}, { machines: { local: machine, for: () => machine } });
+  const { repo, server } = await start(t, BODY, undefined, {}, { machines: { local: machine, for: () => machine } });
   const slug = 'hive-1-from-ready';
   assert.equal(specs.length, 1);
   const [spec] = specs;
@@ -343,7 +343,8 @@ test('a stage run hands its machine a RunSpec with the prompt text, the protocol
   assert.match(spec.prompt?.text ?? '', /^Task #1: from Ready/);
   assert.equal(spec.prompt?.name, slug);
   assert.equal(spec.protocol, STAGE_PROTOCOL, 'the text, read on the host; the machine writes its own file');
-  assert.deepEqual([spec.agent?.id, spec.agent?.run.pluginDir, spec.agent?.run.session?.id], ['claude', pluginRenderPath(home, WORKSPACE), work0(server)?.sessionId]);
+  assert.deepEqual([spec.workspace, spec.agent?.id, spec.agent?.run.session?.id], [WORKSPACE, 'claude', work0(server)?.sessionId]);
+  assert.ok(spec.agent !== undefined && !('pluginDir' in spec.agent.run) && !('lspPluginDir' in spec.agent.run), 'the machine resolves both folders from spec.workspace (#947)');
 });
 
 test('a spawn creates the task worktree before the worker exists and launches it there: the runner only ever gets a cwd', async (t) => {

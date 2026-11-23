@@ -24,7 +24,7 @@ import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
 import { agentPrompt } from './stage-agent.js';
-import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, windowsShell } from './spawn.js';
+import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
 import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, HiveEvent, Terminal, Workspace } from './types.js';
@@ -74,9 +74,8 @@ export interface SpawnerDeps {
   ptys: Pick<PtyHost, 'has' | 'subscribe' | 'adopt'>; // a run command's output (#353) and a worktree setup's (#351) reach the console through the pty host
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
   agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a stage whose agent is missing never reaches its worktree
-  home: string; // #696: where a terminal's history and ring live
+  home: string; // #696: where a terminal's ring lives (its history is the machine's, #947); #797: the protocol files
   facts?: Pick<FactLog, 'write'>; // #742: the worktree setup's worktree.step
-  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin as the last write left it; every agent launch loads it
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, once the renders queued so far have landed
   externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the external MCP servers a run of this workspace gets, header values resolved
 }
@@ -126,7 +125,7 @@ async function pluginFolder(plugin: Pick<PluginRender, 'dir' | 'ready'>, workspa
   }
 }
 
-// Where the user's own session runs and the plugin folder it loads (#317), or why it cannot start
+// Where the user's own session runs and the plugin folder its picks read (#317, #257), or why it cannot start
 async function sessionRun(config: Runtime['config'], effect: SessionEffect, plugin: Pick<PluginRender, 'dir' | 'ready'>, paths: Machine['paths']): Promise<{ cwd: string; slug: string; workspace: Workspace; pluginDir: string } | { refusal: string }> {
   const place = sessionPlace(config, effect, paths);
   if ('refusal' in place) return place;
@@ -144,18 +143,18 @@ const skillRefusal = (stage: Stage, pluginDir: string): string | undefined =>
 // What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the stage's specialized agent
 // (#710) under the picks' specialized agent and args, after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an
 // agent boot did not find (#516) or the config disables (#482), a skill (#710) or a specialized agent (#257) the plugin no longer has
-function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; pluginDir: string; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
+function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
   const agent = worker.agent ?? agentOf(stage, config);
   const refusal = agentRefusal(agent, agents, config.agentEnabled) ?? skillRefusal(stage, pluginDir);
   if (refusal !== undefined) return { refusal };
   const launch = stageRunLaunch(stage, worker.launch); // #710: a manual pick wins
   const picked = launchRun(launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
   if ('refusal' in picked) return picked;
-  return { agent, pluginDir, picked: { ...picked, model: runModel(picked.model, stage, agent, config) } };
+  return { agent, picked: { ...picked, model: runModel(picked.model, stage, agent, config) } };
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, home, facts, lspDir, plugin, externalMcp, machineFor, runAccounts } = deps;
+  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, home, facts, plugin, externalMcp, machineFor, runAccounts } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -262,9 +261,10 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before the machine reads the folder
     // picked: runModel's model, the config's args (#924) then the picks' (#290)
-    const run: RunInputs = { withHive: true, external, pluginDir: launch.pluginDir, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session) };
-    // #159: the machine writes the prompt, the MCP config, the protocol and the run's own files, then renders the argv over its own paths
-    pool.start({ ptyId, machine, spec: { ptyId, slug, cwd, env, ...sized(size), prompt: { text: runPrompt(effect), name: slug }, protocol, agent: { id: agent, run } }, ...handlers(ptyId, slug) });
+    const run: RunInputs = { withHive: true, external, ...launch.picked, session: runSession(activity.sessionId, session) };
+    // #159: the machine writes the prompt, the MCP config, the protocol and the run's own files, then renders the argv over its own paths and
+    // the plugin folders it resolves from the workspace's name (#947)
+    pool.start({ ptyId, machine, spec: { ptyId, slug, workspace, cwd, env, ...sized(size), prompt: { text: runPrompt(effect), name: slug }, protocol, agent: { id: agent, run } }, ...handlers(ptyId, slug) });
     await launched(ptyId);
   }
 
@@ -306,26 +306,24 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (protocol === undefined) return;
     await plugin.ready(); // #316: as spawn's, after the last await
     const model = picked.model ?? defaultModel(config, agent); // #482: a session, a copy included, runs the default when it picked none
-    const run: RunInputs = { withHive: true, external, pluginDir: place.pluginDir, lspPluginDir: lspDir(place.workspace.name), ...picked, ...(model === undefined ? {} : { model }), session: runSession(sessionId, continues ? 'continue' : 'new'), ...(notice === undefined ? {} : { notice }) };
+    const run: RunInputs = { withHive: true, external, ...picked, ...(model === undefined ? {} : { model }), session: runSession(sessionId, continues ? 'continue' : 'new'), ...(notice === undefined ? {} : { notice }) };
     const copied = copy === undefined ? {} : { copy: { from: copy.from, ...(copy.name === undefined ? {} : { name: copy.name }) } };
     pool.start({
       ptyId, machine,
-      spec: { ptyId, slug: place.slug, cwd: place.cwd, env, ...sized(size), ...(first === undefined ? {} : { prompt: { text: first, name: ptyId } }), protocol, agent: { id: agent, run, ...copied } },
+      spec: { ptyId, slug: place.slug, workspace: place.workspace.name, cwd: place.cwd, env, ...sized(size), ...(first === undefined ? {} : { prompt: { text: first, name: ptyId } }), protocol, agent: { id: agent, run, ...copied } },
       ...handlers(ptyId, place.slug),
     });
     await launched(ptyId);
   }
 
-  // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir), its own history, and its ring:
-  // written to its log as it ends, the old one replayed first after a sleep. Its env is the workspace's (#738) under its own HISTFILE, and
-  // the shim dir goes first on the workspace's PATH when it sets one, so an agent typed there is still its shim's.
+  // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir) and its ring: written to its log as
+  // it ends, the old one replayed first after a sleep. The log stays on the host, whose PtyHost writes it. Its env is the workspace's (#738):
+  // keep tells the machine to add its own HISTFILE and the shims first on PATH from its own disk (#947)
   async function keptLaunch(machine: Machine, terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<RunSpec, 'cwd' | 'env' | 'keep'>> {
     await ensureTerminalsDir(home);
     const [cwd, seed] = await Promise.all([wakeDir(machine, terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
     const log = scrollbackPath(home, terminal.terminalId);
-    const path = env.PATH ?? process.env.PATH ?? '';
-    const own = terminalEnv(home, terminal.terminalId, path, { platform: process.platform, pwsh: windowsShell({ ...process.env, ...env }, process.platform) }); // #645: looked up on every launch
-    return { cwd, env: { ...env, ...own }, keep: seed === undefined ? { log } : { log, seed } };
+    return { cwd, env, keep: seed === undefined ? { log } : { log, seed } };
   }
 
   // A terminal (#283): the pool runs it in a pty (#251) like any run, with no agent, no MCP and no prompt. A run command (#300) is looked up
@@ -352,7 +350,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const where = found ? { cwd: startDir, env } : await keptLaunch(machine, terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({
       ptyId, machine,
-      spec: { ptyId, slug: workSlug(activity, task), terminal: true, ...where, ...sized(size), ...(found ? { run: { command: found.command, env: found.env } } : {}) },
+      spec: { ptyId, slug: workSlug(activity, task), workspace: workspace.name, terminal: true, ...where, ...sized(size), ...(found ? { run: { command: found.command, env: found.env } } : {}) },
       ...handlers(ptyId, workSlug(activity, task)),
     });
     await launched(ptyId);
@@ -374,7 +372,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const env = await accountEnvOf(ptyId, undefined, await runEnv(machine, workspace)); // #953
     pool.start({
       ptyId, machine,
-      spec: { ptyId, slug: LOCAL_SLUG, terminal: true, ...sized(size), ...(await keptLaunch(machine, terminal, workspace.path, env)) },
+      spec: { ptyId, slug: LOCAL_SLUG, workspace: workspace.name, terminal: true, ...sized(size), ...(await keptLaunch(machine, terminal, workspace.path, env)) },
       ...handlers(ptyId, LOCAL_SLUG),
     });
     await launched(ptyId);

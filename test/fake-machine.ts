@@ -13,7 +13,8 @@ const NO_LAUNCH: LaunchPty = () => ({ started: Promise.resolve(), kill: () => Pr
 
 export const localDeps = (over: Partial<LocalMachineDeps> = {}): LocalMachineDeps => ({
   exec: async () => ({ stdout: '' }), launch: NO_LAUNCH, ptys: createPtyHost(NO_PTY), home: '/hive-home', secret: 'fake-secret-158',
-  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 4242, agents: [], ...over,
+  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 4242, agents: [],
+  pluginDir: (workspace) => `/hive-home/plugins/${workspace}`, lspDir: () => undefined, ...over, // #947: the pty launches nothing, so no folder need exist
 });
 
 /** The local machine over the given deps, with its id, fs, run and info overridden where given. Its env (process.env unless given) is what

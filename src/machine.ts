@@ -127,13 +127,14 @@ const TAIL_CHARS = 8192; // output with no newlines (a progress bar) is bounded 
 export const keepTail = (text: string): string => text.slice(-TAIL_CHARS).split('\n').slice(-(TAIL_LINES + 1)).join('\n');
 export const tailOf = (text: string): string => text.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
 
-/** An agent run's inputs: AgentRun without what the machine fills from its own disk and daemon. */
-export type RunInputs = Omit<AgentRun, 'ptyId' | 'cwd' | 'port' | 'hooksPath' | 'mcpPath' | 'protocolPath' | 'protocolText'>;
+/** An agent run's inputs: AgentRun without what the machine fills from its own disk and daemon, its plugin folders included (#947). */
+export type RunInputs = Omit<AgentRun, 'ptyId' | 'cwd' | 'port' | 'hooksPath' | 'mcpPath' | 'protocolPath' | 'protocolText' | 'pluginDir' | 'lspPluginDir'>;
 
 /** A pty launch with no host path in it (#158): the files' contents instead, which the machine writes on its own disk. */
 export interface RunSpec {
   ptyId: string;
   slug: string;
+  workspace: string; // the workspace's name: the machine resolves its plugin folders and anything else of the workspace on its own disk (#947)
   cwd: string;
   terminal?: true;
   run?: { command: string; env: Record<string, string> };
