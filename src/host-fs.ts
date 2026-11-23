@@ -4,15 +4,17 @@
 import { access, copyFile, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { envValue } from './exec-path.js';
-import type { MachineFs, MachineInfo } from './machine.js';
+import { type Machine, type MachineFs, type MachineInfo, pathsOf } from './machine.js';
 
 export interface HostSide {
   fs: Pick<MachineFs, 'access' | 'stat' | 'mkdtemp' | 'copyFile' | 'rm'>;
   info(): Pick<MachineInfo, 'platform' | 'path' | 'tmpdir'>;
+  readonly paths: Machine['paths'];
 }
 
 // #806: win32's env names ignore case, as the local machine's info reads them
 export const HOST: HostSide = {
   fs: { access, stat, mkdtemp, copyFile, rm },
   info: () => ({ platform: process.platform, path: (process.platform === 'win32' ? envValue(process.env, 'PATH') : process.env.PATH) ?? '', tmpdir: tmpdir() }),
+  paths: pathsOf(process.platform),
 };

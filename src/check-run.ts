@@ -3,7 +3,6 @@
 // exits non-zero when it finds something, so a failure is a spawn error, the timeout, the cap, a report that does not read, or a non-zero exit
 // with no finding read. Every run is a console run of its checker's channel.
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { parseCheck } from './checker-parse.js';
 import { checkArgv, type CliCheckerDef } from './checkers.js';
 import { checkChannel, type ConsoleStore, crlf, failLine, runHeader } from './console.js';
@@ -50,7 +49,7 @@ function ranOf(id: string, r: RunResult): Ran {
 
 function reportOf(def: CliCheckerDef, ctx: CheckContext, ran: Ran, dir: string | undefined, max: number): Promise<string> {
   if (def.output === 'stderr') return Promise.resolve(ran.stderr);
-  if (def.output === 'file') return dir === undefined ? Promise.resolve('') : readReport(ctx.machine, join(dir, REPORT), max);
+  if (def.output === 'file') return dir === undefined ? Promise.resolve('') : readReport(ctx.machine, ctx.machine.paths.join(dir, REPORT), max);
   return Promise.resolve(ran.stdout);
 }
 
@@ -70,7 +69,7 @@ async function outcomeOf(def: CliCheckerDef, ctx: CheckContext, ran: Ran, dir: s
   if (ran.failure !== undefined) return { failure: ran.failure };
   const report = await reportOf(def, ctx, ran, dir, ctx.maxBytes ?? CHECK_OUTPUT_MAX).catch((err: Error) => err);
   if (report instanceof Error) return { failure: report.message };
-  const parsed: CheckDiagnostic[] | { error: string } = report.trim() === '' ? [] : parseCheck(def.format, report, ctx.folder, { file: ctx.file });
+  const parsed: CheckDiagnostic[] | { error: string } = report.trim() === '' ? [] : parseCheck(def.format, report, ctx.folder, ctx.machine.paths, { file: ctx.file });
   if ('error' in parsed) return { failure: parsed.error };
   if (ran.code !== 0 && parsed.length === 0) return { failure: `exit code ${ran.code}` };
   return { diagnostics: parsed };
@@ -105,8 +104,8 @@ export async function runCheck(def: CliCheckerDef, ctx: CheckContext): Promise<C
   ctx.consoleStore.begin(channel, log.run, runHeader(ctx.label, new Date()));
   let dir: string | undefined;
   try {
-    dir = def.output === 'file' ? await ctx.machine.fs.mkdtemp(join(ctx.machine.info().tmpdir, 'hive-check-')) : undefined;
-    const launch = launchOf(binary, checkArgv(def, ctx.args, ctx.file, dir === undefined ? '' : join(dir, REPORT)), ctx.env, ctx.machine.info().platform);
+    dir = def.output === 'file' ? await ctx.machine.fs.mkdtemp(ctx.machine.paths.join(ctx.machine.info().tmpdir, 'hive-check-')) : undefined;
+    const launch = launchOf(binary, checkArgv(def, ctx.args, ctx.file, dir === undefined ? '' : ctx.machine.paths.join(dir, REPORT)), ctx.env, ctx.machine.info().platform);
     const ran = 'failure' in launch ? { stdout: '', stderr: '', code: null, failure: launch.failure } : ranOf(def.id, await ctx.machine.run({
       command: launch.command, args: launch.args, cwd: ctx.folder, env: ctx.env, signal: ctx.signal,
       timeoutMs: ctx.timeoutMs ?? CHECK_TIMEOUT_MS, maxBytes: ctx.maxBytes ?? CHECK_OUTPUT_MAX, ...(launch.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),

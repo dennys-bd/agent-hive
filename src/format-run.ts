@@ -2,12 +2,11 @@
 // atomic write after the version check. A supported formatter is its binary with an argv array. A custom one is the user's own line through
 // "$SHELL" -c (Git's sh.exe on Windows, #631), the third deliberate shell string (CLAUDE.md); the file reaches it only as FILE in its env. Every run is a console run, on the activity's machine (#160).
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
 import { type ConsoleStore, crlf, failLine, formatChannel, runHeader } from './console.js';
 import { type ExecLookup, resolveExec } from './exec-path.js';
 import { detectFormatters } from './formatter-detect.js';
 import { candidatesFor, type FormatterPick, pickFormatter } from './formatters.js';
-import type { Machine } from './machine.js';
+import { type Machine, pathsOf } from './machine.js';
 import { withMachinePath } from './machine-fs.js';
 import { posixShellEnv } from './posix-shell.js';
 import { EDITOR_FILE_MAX, type EditorConfig, FORMAT_TIMEOUT_MS, type FormatLog, type Workspace } from './types.js';
@@ -38,7 +37,7 @@ export function launchOf(command: string, args: readonly string[], env: NodeJS.P
     return { command: exec.file, args: [...exec.args], env, ...(exec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) };
   } catch (err) {
     // A binary gone since its detection is named by its file only, as check-run names a checker: its absolute path holds the account name
-    const name = (platform === 'win32' ? path.win32 : path.posix).basename(command);
+    const name = pathsOf(platform).basename(command);
     return { failure: (err as Error).message.replaceAll(command, name) };
   }
 }

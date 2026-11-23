@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import type { Machine } from './machine.js';
 import { type RestartPlan, restartWorktree } from './restart.js';
 import type { Checkpoint } from './types.js';
@@ -35,9 +34,9 @@ async function statusOf(machine: Machine, worktree: string): Promise<string> {
 // The worktree as `add -A` stages it (ignored files left out), committed on top of HEAD through an index of its own: the user's index and the
 // worktree are never written, and no stash entry is made (the stash stack is shared across worktrees). The temp dir goes whatever happens.
 async function pointOf(machine: Machine, worktree: string, head: string, n: number): Promise<string> {
-  const dir = await machine.fs.mkdtemp(join(machine.info().tmpdir, 'hive-checkpoint-')); // the machine's temp dir: its index and its repo on one disk;
+  const dir = await machine.fs.mkdtemp(machine.paths.join(machine.info().tmpdir, 'hive-checkpoint-')); // the machine's temp dir: its index and its repo on one disk;
   try {
-    const env = { ...process.env, ...IDENTITY, GIT_INDEX_FILE: join(dir, 'index') };
+    const env = { ...process.env, ...IDENTITY, GIT_INDEX_FILE: machine.paths.join(dir, 'index') };
     await onIndex(machine, worktree, ['read-tree', 'HEAD'], env);
     await onIndex(machine, worktree, ['add', '-A'], env);
     const tree = (await onIndex(machine, worktree, ['write-tree'], env)).trim();

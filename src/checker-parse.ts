@@ -1,7 +1,8 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { arrayOf, finding, isRecord, jsonLines, jsonOf, next, num, type ParseAt, type Parser, recordOf, severityOf, str, TOOL_PARSERS } from './checker-parse-tools.js';
 import type { CheckFormat } from './checkers.js';
+import { isWin32Paths } from './same-path.js';
+import type { Machine } from './machine.js';
 import type { CheckDiagnostic } from './types.js';
 import { toWire } from './wire-path.js';
 
@@ -59,32 +60,34 @@ const cargo: Parser = (output) => jsonLines(output).filter((d) => d.reason === '
 });
 
 // SARIF 2.1.0 (detekt): the first location's physical place; a file:// URI as its path
-function sarifResult(raw: unknown): CheckDiagnostic[] {
+function sarifResult(raw: unknown, paths: Machine['paths']): CheckDiagnostic[] {
   const x = recordOf(raw, 'a result');
   const place = Array.isArray(x.locations) && isRecord(x.locations[0]) ? x.locations[0].physicalLocation : undefined;
   const uri = isRecord(place) && isRecord(place.artifactLocation) ? str(place.artifactLocation.uri) : undefined;
   if (!isRecord(place) || uri === undefined) return [];
   const region = isRecord(place.region) ? place.region : {};
-  const path = uri.startsWith('file:') ? fileURLToPath(uri) : decodeURIComponent(uri);
+  const path = uri.startsWith('file:') ? fileURLToPath(uri, { windows: isWin32Paths(paths) }) : decodeURIComponent(uri);
   return [finding(path, num(region.startLine) ?? 1, num(region.startColumn), severityOf(x.level, 'warning'), isRecord(x.message) ? str(x.message.text) ?? '' : '',
     { code: x.ruleId, endLine: region.endLine, endColumn: region.endColumn })];
 }
-const sarif: Parser = (output) => arrayOf(recordOf(jsonOf(output), 'the report').runs, 'runs').flatMap((run) => arrayOf(recordOf(run, 'a run').results ?? [], 'results').flatMap(sarifResult));
+// the URI decodes in the machine's flavour: a distro's file:///home/… is POSIX even on a win32 host
+const sarifOn = (paths: Machine['paths']): Parser => (output) =>
+  arrayOf(recordOf(jsonOf(output), 'the report').runs, 'runs').flatMap((run) => arrayOf(recordOf(run, 'a run').results ?? [], 'results').flatMap((r) => sarifResult(r, paths)));
 
-const PARSERS: Record<CheckFormat, Parser> = { tsc, gnu, mypy, pylint, golangci, staticcheck, cargo, sarif, ...TOOL_PARSERS };
+const PARSERS: Record<Exclude<CheckFormat, 'sarif'>, Parser> = { tsc, gnu, mypy, pylint, golangci, staticcheck, cargo, ...TOOL_PARSERS };
 
 // A reported path as the activity names it: relative to the folder; undefined outside it, which the pane could not open. The guard reads the
 // native separator, as rel still is; only an inside path is turned into the wire's / (#641)
-function inside(folder: string, path: string): string | undefined {
-  const rel = relative(folder, resolve(folder, path));
-  return rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel) ? undefined : toWire(rel, process.platform);
+function inside(folder: string, path: string, paths: Machine['paths']): string | undefined {
+  const rel = paths.relative(folder, paths.resolve(folder, path));
+  return rel === '' || rel === '..' || rel.startsWith(`..${paths.sep}`) || paths.isAbsolute(rel) ? undefined : toWire(rel, isWin32Paths(paths) ? 'win32' : 'linux');
 }
 
 /** A command-line checker's report as diagnostics (#782), each path relative to `folder` (a finding outside it dropped), or why the report
  * does not read. `at.file` is the checked file, for a tool whose report names none. */
-export function parseCheck(format: CheckFormat, output: string, folder: string, at: ParseAt = {}): CheckDiagnostic[] | { error: string } {
+export function parseCheck(format: CheckFormat, output: string, folder: string, paths: Machine['paths'], at: ParseAt = {}): CheckDiagnostic[] | { error: string } {
   try {
-    return PARSERS[format](output, at).flatMap((d) => { const path = inside(folder, d.path); return path === undefined ? [] : [{ ...d, path }]; });
+    return (format === 'sarif' ? sarifOn(paths) : PARSERS[format])(output, at).flatMap((d) => { const path = inside(folder, d.path, paths); return path === undefined ? [] : [{ ...d, path }]; });
   } catch (err) {
     return { error: `${format} output does not read: ${err instanceof Error ? err.message : String(err)}` };
   }
