@@ -1,7 +1,6 @@
 // Where a path a page sent resolves for an activity (#258, #697): the editor pane's and the preview pane's routes (server-editor.ts) and the
-// details panel's result files (server-files.ts). Every OS touch is injected (realpath, isFile), so the tests fake them; node:path is only
-// string work. The external IDE that once opened these files is gone (#818).
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+// details panel's result files (server-files.ts). Every OS touch is injected (realpath, isFile), so the tests fake them; the path flavour is injected too (#929).
+// The external IDE that once opened these files is gone (#818).
 import type { Machine } from './machine.js';
 import type { TaskFile } from './types.js';
 
@@ -14,10 +13,11 @@ export interface TaskFileQuery {
   paths: Machine['paths']; // #929: the activity's machine's flavour
 }
 
-/** Strictly below `base`: not the base itself, not `..` or anything past it, not another root. server-move.ts guards a drop with it (#594). */
-export function isInside(base: string, target: string): boolean {
-  const rel = relative(base, target);
-  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+/** Strictly below `base` in `paths`' flavour: not the base itself, not `..` or anything past it, not another root. server-move.ts guards a
+ *  drop with it (#594). A task's disk passes its machine's paths; a host-only caller passes node:path's own (#929). */
+export function isInside(base: string, target: string, paths: Machine['paths']): boolean {
+  const rel = paths.relative(base, target);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${paths.sep}`) && !paths.isAbsolute(rel);
 }
 
 // The folder a relative path resolves against (#258): the worktree while it is on disk, else the workspace root
@@ -30,10 +30,10 @@ async function baseFolder({ worktree, workspace, realpath }: Pick<TaskFileQuery,
 export type ActivityPath = { file: string; base: TaskFile['base'] } | { reason: 'missing' };
 
 // Which of the activity's folders holds a real path (#697): the worktree first (it sits inside the workspace), then the workspace, else neither
-async function holderOf(real: string, worktree: string | undefined, workspace: string, realpath: TaskFileQuery['realpath']): Promise<TaskFile['base']> {
+async function holderOf(real: string, worktree: string | undefined, { workspace, realpath, paths }: Pick<TaskFileQuery, 'workspace' | 'realpath' | 'paths'>): Promise<TaskFile['base']> {
   const realOf = (folder: string): Promise<string> => realpath(folder).catch(() => folder);
-  if (worktree !== undefined && isInside(await realOf(worktree), real)) return 'worktree';
-  return isInside(await realOf(workspace), real) ? 'workspace' : 'outside';
+  if (worktree !== undefined && isInside(await realOf(worktree), real, paths)) return 'worktree';
+  return isInside(await realOf(workspace), real, paths) ? 'workspace' : 'outside';
 }
 
 /** Where an activity's file is for the editor pane and the preview pane (#697): the worktree's (else the workspace's) base and its realpath, then a regular
@@ -41,9 +41,9 @@ async function holderOf(real: string, worktree: string | undefined, workspace: s
  *  ponytail: any file the user can read or write is reachable through the UI's routes, guarded only by server.ts's origin, DNS-rebinding and
  *  x-hive-ui checks; a single-user local app that already runs the user's shells. An allowlist of roots if the Hive ever serves more than
  *  its own window. */
-export async function resolveActivityPath({ worktree, workspace, path, realpath, isFile }: TaskFileQuery): Promise<ActivityPath> {
+export async function resolveActivityPath({ worktree, workspace, path, realpath, isFile, paths }: TaskFileQuery): Promise<ActivityPath> {
   const { base, onDisk } = await baseFolder({ worktree, workspace, realpath });
-  const real = await realpath(resolve(base, path)).catch(() => undefined);
+  const real = await realpath(paths.resolve(base, path)).catch(() => undefined);
   if (real === undefined || !(await isFile(real))) return { reason: 'missing' };
-  return { file: real, base: await holderOf(real, onDisk ? worktree : undefined, workspace, realpath) };
+  return { file: real, base: await holderOf(real, onDisk ? worktree : undefined, { workspace, realpath, paths }) };
 }

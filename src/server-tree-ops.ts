@@ -66,7 +66,7 @@ export async function renameItem({ root, from, to }: { root: string; from: strin
   if (typeof item !== 'string') return item;
   const target = await newItem(roots, to, fs);
   if (typeof target !== 'string') return target;
-  if (isInside(item, target)) return refusal(HTTP_BAD_REQUEST, INTO_ITSELF_MESSAGE);
+  if (isInside(item, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, INTO_ITSELF_MESSAGE);
   // ponytail: probe then rename can race a worker's write, as tree/move accepts for a single-user daemon
   const isSameItem = await fs.sameFile(item, target);
   if (!isSameItem && (await exists(fs, target))) return refusal(HTTP_CONFLICT, TAKEN_MESSAGE);
@@ -84,7 +84,7 @@ export async function trashItems(
   const checked = await Promise.all(paths.map((path) => existingItem(roots, path, fs)));
   const refused = checked.find(isRefusal);
   if (refused) return refused;
-  const [file, args] = trashCommand(platform, outermost(checked.filter((c): c is string => typeof c === 'string')));
+  const [file, args] = trashCommand(platform, outermost(checked.filter((c): c is string => typeof c === 'string'), fs.paths));
   await run(file, args);
   return undefined;
 }
@@ -95,7 +95,7 @@ export async function trashItems(
 export async function saveNewFile({ root, path, text, replace }: { root: string; path: string; text: string; replace: boolean }, fs: TreeFs): Promise<{ path: string; version: string } | Refusal> {
   if (Buffer.byteLength(text, 'utf8') > EDITOR_FILE_MAX) return refusal(HTTP_TOO_LARGE, TOO_LARGE_MESSAGE);
   const roots = await rootsOf(root, fs);
-  const target = await newItem(roots, relative(isInside(roots.realRoot, path) ? roots.realRoot : roots.root, path), fs);
+  const target = await newItem(roots, relative(isInside(roots.realRoot, path, fs.paths) ? roots.realRoot : roots.root, path), fs);
   if (typeof target !== 'string') return target;
   const held = await fs.stat(target).catch(() => undefined);
   if (held?.isDirectory()) return refusal(HTTP_CONFLICT, IS_FOLDER_MESSAGE); // a folder is never replaced, and writing over one would be a raw 500

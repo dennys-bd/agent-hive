@@ -93,10 +93,10 @@ const hasDotSegment = (folder: string, path: string): boolean => relative(folder
 // outside is even probed), then on its realpath (a symlink out, or onto a dotfile, is caught)
 async function servedFile(machine: Machine, folder: string, segments: string[]): Promise<string | undefined> {
   const asked = resolve(folder, ...segments);
-  if (!isInside(folder, asked) || hasDotSegment(folder, asked)) return undefined;
+  if (!isInside(folder, asked, machine.paths) || hasDotSegment(folder, asked)) return undefined;
   const fs = fileFs(machine);
   const real = await fs.realpath(asked).catch(() => undefined);
-  return real !== undefined && isInside(folder, real) && !hasDotSegment(folder, real) && (await fs.isFile(real)) ? real : undefined;
+  return real !== undefined && isInside(folder, real, machine.paths) && !hasDotSegment(folder, real) && (await fs.isFile(real)) ? real : undefined;
 }
 
 // A refusal: 404 with no body, so an unknown token, an escape, a folder and a missing file look the same. The debug line names the method
@@ -180,7 +180,7 @@ const NOT_FOUND: Refusal = { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSA
 async function designFolder(located: Located): Promise<{ folder: string } | Refusal> {
   if (!located.file.endsWith(DESIGN_SUFFIX)) return { status: HTTP_BAD_REQUEST, message: NOT_DESIGN_MESSAGE };
   const folder = await located.machine.fs.realpath(located.folder).catch(() => undefined); // locate's file is real; its folder may not be (macOS's tmpdir)
-  if (folder === undefined || !isInside(folder, located.file) || dirname(located.file) === folder) return NOT_FOUND;
+  if (folder === undefined || !isInside(folder, located.file, located.machine.paths) || dirname(located.file) === folder) return NOT_FOUND;
   return { folder: dirname(located.file) };
 }
 

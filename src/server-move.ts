@@ -42,7 +42,7 @@ export async function freeName(taken: (name: string) => Promise<boolean>, name: 
 // Finder does nothing here either: a folder into itself or below it (cp would recurse into its own output), and an item moved onto its own
 // folder. A copy onto its own folder is Finder's duplicate (#818): it lands under a free name. The UI never sends a no-op; this does not
 // trust that.
-const isNoOp = (item: string, into: string, copy: boolean): boolean => (!copy && dirname(item) === into) || isRootOrInside(item, into);
+const isNoOp = (item: string, into: string, copy: boolean, paths: PathFs['paths']): boolean => (!copy && dirname(item) === into) || isRootOrInside(item, into, paths);
 
 const isCrossDevice = (err: unknown): boolean => err instanceof Error && 'code' in err && err.code === 'EXDEV';
 
@@ -80,15 +80,15 @@ export async function moveItems(job: MoveJob, fs: MoveFs): Promise<Moved | Refus
   const refused = checked.find((item): item is Refusal => typeof item !== 'string');
   if (refused) return refused;
   const done: Moved = { moved: [], from: [] }; // this call's own accumulator
-  for (const item of outermost(checked.filter((c): c is string => typeof c === 'string'))) {
-    if (isNoOp(item, into, job.copy)) continue;
+  for (const item of outermost(checked.filter((c): c is string => typeof c === 'string'), fs.paths)) {
+    if (isNoOp(item, into, job.copy, fs.paths)) continue;
     const isFolder = (await fs.stat(item)).isDirectory();
     // Probe then transfer can race: accepted, a single-user daemon whose concurrent agent writes the spec leaves unguarded
     const name = await freeName((n) => exists(fs, join(into, n)), basename(item), job.suffix, isFolder);
     await transfer(item, join(into, name), job.copy, fs);
     done.moved.push(toWire(relative(folders.realRoot, join(into, name)), process.platform));
     // a Finder file's from is absolute: it stays native, as every absolute path on the wire does (#641)
-    done.from.push(isInside(folders.realRoot, item) ? toWire(relative(folders.realRoot, item), process.platform) : item);
+    done.from.push(isInside(folders.realRoot, item, fs.paths) ? toWire(relative(folders.realRoot, item), process.platform) : item);
   }
   return done;
 }

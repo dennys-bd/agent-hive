@@ -46,7 +46,7 @@ function commitOf(located: Located, against: ChangesBase, isNested: boolean, con
 // (#377), as the files tree does (#1): its top and the file's path in it, '/'-separated: git's `<commit>:<path>` reads no `\` (#641); undefined outside a repository, or for a file outside it
 async function repoOf(located: Located, exec: Exec): Promise<{ top: string; path: string } | undefined> {
   const top = (await gitOut(dirname(located.file), ['rev-parse', '--show-toplevel'], exec))?.trim();
-  return top === undefined || top === '' || !isInside(top, located.file) ? undefined : { top, path: toWire(relative(top, located.file), process.platform) };
+  return top === undefined || top === '' || !isInside(top, located.file, located.machine.paths) ? undefined : { top, path: toWire(relative(top, located.file), process.platform) };
 }
 
 // The blob's text when the editor could hold it (#717's caps: EDITOR_FILE_MAX, UTF-8, no NUL), else undefined
@@ -74,7 +74,7 @@ export async function baseCommit(current: Live, id: string, path: unknown, again
   const repo = await repoOf(located, exec);
   // git's top is real; the folder may not be (macOS's tmpdir, a symlinked workspace), and a missed nested repository would read the outer base
   const folder = await located.machine.fs.realpath(located.folder).catch(() => located.folder);
-  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top), current.runtime.config, exec);
+  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top, located.machine.paths), current.runtime.config, exec);
   if (repo === undefined) return { located, against, label };
   // A sha, not a ref: a before frame minted on it keeps showing that commit after HEAD moves (#675)
   const sha = (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${commit}^{commit}`], exec))?.trim();

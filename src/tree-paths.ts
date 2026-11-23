@@ -26,7 +26,7 @@ export interface Roots { root: string; realRoot: string }
 export const rootsOf = async (root: string, fs: PathFs): Promise<Roots> => ({ root, realRoot: await fs.realpath(root) });
 export const refusal = (status: number, message: string): Refusal => ({ status, message });
 export const exists = (fs: PathFs, path: string): Promise<boolean> => fs.stat(path).then(() => true, () => false);
-export const isRootOrInside = (base: string, target: string): boolean => target === base || isInside(base, target);
+export const isRootOrInside = (base: string, target: string, paths: PathFs['paths']): boolean => target === base || isInside(base, target, paths);
 // Any segment, not only the first (a nested checkout's .git/hooks runs code), and case-insensitive: APFS resolves `.GIT` to `.git` by default
 const isGitPath = (root: string, target: string): boolean => relative(root, target).split(sep).some((segment) => segment.toLowerCase() === '.git');
 
@@ -34,11 +34,11 @@ const isGitPath = (root: string, target: string): boolean => relative(root, targ
  *  symlink out is refused), and a folder. Its real path. */
 export async function destination({ root, realRoot }: Roots, into: string, fs: PathFs): Promise<string | Refusal> {
   const target = resolve(root, into);
-  if (isAbsolute(into) || !isRootOrInside(root, target)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (isAbsolute(into) || !isRootOrInside(root, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
   if (isGitPath(root, target)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
   const real = await fs.realpath(target).catch(() => undefined);
   if (real === undefined) return refusal(HTTP_BAD_REQUEST, FOLDER_MISSING_MESSAGE);
-  if (!isRootOrInside(realRoot, real)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (!isRootOrInside(realRoot, real, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
   if (isGitPath(realRoot, real)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE); // a symlink to .git
   const isFolder = await fs.stat(real).then((s) => s.isDirectory(), () => false);
   return isFolder ? real : refusal(HTTP_BAD_REQUEST, FOLDER_MISSING_MESSAGE);
@@ -52,12 +52,12 @@ export async function sourceItem({ root, realRoot }: Roots, source: string, copy
   // A move would remove the original, and an absolute path may lie anywhere: only a copy may take one in (Finder's drop always copies)
   if (isFromFinder && !copy) return refusal(HTTP_BAD_REQUEST, ABSOLUTE_MOVE_MESSAGE);
   const target = resolve(root, source);
-  if (!isFromFinder && !isInside(root, target)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (!isFromFinder && !isInside(root, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
   if (!isFromFinder && isGitPath(root, target)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
   const parent = await fs.realpath(dirname(target)).catch(() => undefined);
   if (parent === undefined) return refusal(HTTP_NOT_FOUND, MISSING_FILE_MESSAGE);
   const item = join(parent, basename(target));
-  if (!isFromFinder && !isInside(realRoot, item)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (!isFromFinder && !isInside(realRoot, item, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
   if (!isFromFinder && isGitPath(realRoot, item)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE); // a symlinked parent to .git
   return (await exists(fs, item)) ? item : refusal(HTTP_NOT_FOUND, MISSING_FILE_MESSAGE);
 }
@@ -79,15 +79,15 @@ async function throughNearestReal(root: string, target: string, fs: PathFs): Pro
  *  nearest existing folder's real path (a symlink out is refused), never under .git. Its real-based absolute path. */
 export async function newItem({ root, realRoot }: Roots, path: string, fs: PathFs): Promise<string | Refusal> {
   const target = resolve(root, path);
-  if (isAbsolute(path) || !isInside(root, target)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (isAbsolute(path) || !isInside(root, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
   if (isGitPath(root, target)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
   const item = await throughNearestReal(root, target, fs);
-  if (!isInside(realRoot, item)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (!isInside(realRoot, item, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
   return isGitPath(realRoot, item) ? refusal(HTTP_BAD_REQUEST, GIT_MESSAGE) : item;
 }
 
 /** Once each (#594): a repeated item, or one under another item, would fail on a path the first already moved or trashed. */
-export const outermost = (items: string[]): string[] => [...new Set(items)].filter((item) => !items.some((other) => other !== item && isInside(other, item)));
+export const outermost = (items: string[], paths: PathFs['paths']): string[] => [...new Set(items)].filter((item) => !items.some((other) => other !== item && isInside(other, item, paths)));
 
 /** A folder of the tree a terminal starts in (#818): destination's checks, from the root alone. */
 export const treeFolder = async (root: string, folder: string, fs: PathFs): Promise<string | Refusal> => destination(await rootsOf(root, fs), folder, fs);
