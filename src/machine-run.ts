@@ -5,19 +5,13 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { killTree, treeSpawnOptions } from './kill-tree.js';
-import type { RunProcess, RunResult } from './machine.js';
+import { keepTail, type RunProcess, type RunResult, tailOf } from './machine.js';
 import { EDITOR_FILE_MAX } from './types.js';
 
 export const RUN_TIMEOUT = 'timeout';
 export const RUN_STOPPED = 'stopped';
 export const RUN_OVER = 'too_large';
 const CANCELLED = 'cancelled'; // format-run.ts' word for a stop
-const TAIL_LINES = 20; // worktree-steps.ts' tail, what a task's error shows of a RUN
-const TAIL_CHARS = 8192; // output with no newlines (a progress bar) is bounded too
-
-// +1: the last piece is the line still being written
-const keepTail = (text: string): string => text.slice(-TAIL_CHARS).split('\n').slice(-(TAIL_LINES + 1)).join('\n');
-const tailOf = (text: string): string => text.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
 
 // Never an error's message: Node writes the command line into it, and a custom formatter's line is the user's own text
 function exitFailure(code: number | null, signal: NodeJS.Signals | null): string | undefined {

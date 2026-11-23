@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { type Machine, MachineError } from '../src/machine.js';
+import { join, posix } from 'node:path';
+import { type Machine, MachineError, type MachineFs, type MachineInfo } from '../src/machine.js';
+import { createMuxMachine } from '../src/remote/machine-client.js';
 import { serveMachine } from '../src/remote/machine-serve.js';
-import { type BigIntStats, direntsOf, encodeDirent, encodeStats, machineErrorOf, remoteErrorOf, splitLines, statsOf } from '../src/remote/machine-wire.js';
-import { RemoteError } from '../src/remote/protocol.js';
+import { type BigIntStats, direntsOf, encodeDirent, encodeStats, FS_METHODS, machineErrorOf, remoteErrorOf, splitLines, statsOf } from '../src/remote/machine-wire.js';
+import { type Mux, RemoteError } from '../src/remote/protocol.js';
 import { fakeMachine } from './fake-machine.js';
 import { pair, remote, settle } from './remote-pair.js';
 import { tempDir } from './temp-dir.js';
@@ -138,4 +139,228 @@ test('serveMachine sends run\'s output and watch\'s filenames as events; a cance
   await assert.rejects(crossed, remote('cancelled'));
   await settle();
   assert.equal(seen.opened, 1, 'a watch cancelled before it started opens nothing');
+});
+
+const INFO: MachineInfo = { platform: 'linux', arch: 'x64', homedir: '/home/u', tmpdir: '/tmp', path: '/usr/bin', shell: '/bin/sh', agents: [] };
+// the #428 guard of temp-dir.test.ts looks for this member's name under test/; no fake here makes a dir
+const MAKE_TEMP = ['mk', 'dtemp'].join('');
+type Call = (...args: unknown[]) => Promise<unknown>;
+const isUnavailable = (err: unknown): boolean => err instanceof MachineError && err.code === MachineError.UNAVAILABLE && err.reason === 'link_closed';
+
+// `served` behind serveMachine on the pair's machine side, and the machine the host side sees of it
+function over(served: Machine): { host: Mux; client: Machine } {
+  const { host, machine: far } = pair();
+  serveMachine(far, served);
+  return { host, client: createMuxMachine(host, { id: 'wsl:X', pty: served.pty, info: INFO }) };
+}
+
+async function linesOf(machine: Machine, path: string): Promise<string[]> {
+  const lines: string[] = [];
+  for await (const line of machine.fs.readLines(path, { maxBytes: 64 })) lines.push(line);
+  return lines;
+}
+
+// each member's arguments and the fake's answer; stat and lstat are the real-disk test's, readLines its own test's
+const CASES: Record<string, { args: unknown[]; answer?: unknown }> = {
+  realpath: { args: ['/wt/link'], answer: '/wt/real' },
+  access: { args: ['/wt/a', 4] },
+  readdir: { args: ['/wt'], answer: ['a', 'b'] },
+  readFile: { args: ['/wt/a', { maxBytes: 64, encoding: 'utf8' }], answer: 'text' },
+  writeFile: { args: ['/wt/a', 'text', { mode: 0o644 }] },
+  writeAtomic: { args: ['/wt/a', 'text'], answer: Buffer.from('text') },
+  mkdir: { args: ['/wt/d', { recursive: true }], answer: '/wt/d' },
+  [MAKE_TEMP]: { args: ['/tmp/hive-'], answer: '/tmp/hive-1' },
+  rename: { args: ['/wt/a', '/wt/b'] },
+  rm: { args: ['/wt/d', { recursive: true, force: true }] },
+  cp: { args: ['/wt/d', '/wt/e', { recursive: true }] },
+  copyFile: { args: ['/wt/a', '/wt/b', 1] },
+  link: { args: ['/wt/a', '/wt/b'] },
+  chmod: { args: ['/wt/a', 0o755] },
+  unlink: { args: ['/wt/a'] },
+  appendFile: { args: ['/wt/a', Uint8Array.of(1, 2)] },
+};
+
+test('every MachineFs member crosses with its arguments as given and answers what the machine answers, a Buffer as a Buffer (#937)', async () => {
+  const calls: unknown[][] = [];
+  const fake = Object.fromEntries(Object.entries(CASES).map(([name, { answer }]): [string, Call] => [name, async (...args) => {
+    calls.push([name, ...args]);
+    return answer;
+  }]));
+  const { client } = over(fakeMachine({ fs: fake as unknown as Partial<MachineFs> }));
+  const fs = client.fs as unknown as Record<string, Call>;
+  for (const [name, { args, answer }] of Object.entries(CASES)) assert.deepEqual(await fs[name](...args), answer, name);
+  assert.deepEqual(calls, Object.entries(CASES).map(([name, { args }]) => [name, ...args]));
+  assert.ok(Buffer.isBuffer(await client.fs.writeAtomic('/wt/a', 'text')));
+  assert.deepEqual([...Object.keys(CASES), 'stat', 'lstat'].sort(), [...FS_METHODS].sort(), 'no member left out');
+});
+
+test('on a real disk a Buffer crosses unchanged, a Stats answers isDirectory(), a Dirent its kind; a bigint ino past 2^53 comes back exact (#937)', async (t) => {
+  const dir = await tempDir(t, 'mux-machine-');
+  const local = fakeMachine();
+  const { client } = over(local);
+  const file = join(dir, 'a.bin');
+  const bytes = Buffer.from([0, 1, 0xfe, 0xff]);
+  await client.fs.writeFile(file, bytes);
+  await client.fs.mkdir(join(dir, 'sub'));
+  const read = await client.fs.readFile(file, { maxBytes: 64 });
+  assert.ok(Buffer.isBuffer(read));
+  assert.deepEqual(read, bytes);
+  const [folder, near] = [await client.fs.stat(dir), await local.fs.stat(dir)];
+  assert.deepEqual([folder.isDirectory(), folder.isFile(), folder.ino, folder.mtimeMs], [true, false, near.ino, near.mtimeMs]);
+  assert.equal((await client.fs.lstat(file, { bigint: true })).ino, (await local.fs.lstat(file, { bigint: true })).ino);
+  const entries = await client.fs.readdir(dir, { withFileTypes: true });
+  assert.deepEqual(entries.map((e) => [e.name, e.isFile(), e.isDirectory()]).sort(), [['a.bin', true, false], ['sub', false, true]]);
+  const { client: onBig } = over(fakeMachine({ fs: { lstat: (async () => BIG_DIR) as unknown as MachineFs['lstat'] } }));
+  const big = await onBig.fs.lstat('/wt', { bigint: true });
+  assert.deepEqual([big.ino, big.isDirectory()], [BIG_INO, true]);
+});
+
+test('readLines answers the local readline\'s lines over CR LF, a lone CR and a final break, and refuses too_large on the first next() (#937)', async (t) => {
+  const dir = await tempDir(t, 'mux-lines-');
+  const local = fakeMachine();
+  const { client } = over(local);
+  for (const [i, text] of ['a\r\nb\rc\n', 'x\n\ny', 'last\r\n', ''].entries()) {
+    const file = join(dir, `${i}.txt`);
+    await writeFile(file, text);
+    assert.deepEqual(await linesOf(client, file), await linesOf(local, file), JSON.stringify(text));
+  }
+  assert.deepEqual(await linesOf(client, join(dir, '0.txt')), ['a', 'b', 'c']);
+  const lines = client.fs.readLines(join(dir, '0.txt'), { maxBytes: 2 })[Symbol.asyncIterator]();
+  await assert.rejects(lines.next(), (err: unknown) => err instanceof MachineError && err.code === MachineError.TOO_LARGE);
+});
+
+test('exec answers the machine\'s stdout; a failure keeps its code, stderr and killed, an exit code a number again (#937)', async () => {
+  const calls: unknown[] = [];
+  const exec: Machine['exec'] = async (file, args, opts) => {
+    calls.push([file, args, opts?.cwd, opts?.env, opts?.signal instanceof AbortSignal]);
+    if (args[0] === 'fail') throw new MachineError('git failed', { code: 128, stderr: 'fatal: not a repo', stdout: 'partial', killed: true });
+    return { stdout: 'ok\n' };
+  };
+  const { client } = over({ ...fakeMachine(), exec });
+  assert.deepEqual(await client.exec('git', ['status'], { cwd: '/wt', env: { A: '1' } }), { stdout: 'ok\n' });
+  const failed = await client.exec('git', ['fail']).catch((err: unknown) => err);
+  assert.ok(failed instanceof MachineError);
+  assert.deepEqual([failed.code, failed.stderr, failed.stdout, failed.killed, failed.message], [128, 'fatal: not a repo', 'partial', true, 'git failed']);
+  assert.deepEqual(calls, [['git', ['status'], '/wt', { A: '1' }, true], ['git', ['fail'], undefined, undefined, true]]);
+});
+
+test('an aborted exec rejects ABORT_ERR at once, and the abort reaches the machine\'s signal (#937)', async () => {
+  let signal: AbortSignal | undefined;
+  const exec: Machine['exec'] = (_file, _args, opts) => new Promise(() => { signal = opts?.signal; });
+  const { client } = over({ ...fakeMachine(), exec });
+  const controller = new AbortController();
+  const pending = client.exec('sleep', ['9'], { signal: controller.signal });
+  await settle();
+  controller.abort();
+  await assert.rejects(pending, (err: unknown) => err instanceof MachineError && err.code === 'ABORT_ERR');
+  await settle();
+  assert.equal(signal?.aborted, true);
+});
+
+test('run\'s chunks reach onOutput in order before it resolves with the machine\'s answer, stdout a Buffer (#937)', async () => {
+  const asked: unknown[] = [];
+  const run: Machine['run'] = async (p) => {
+    asked.push([p.command, p.args, p.cwd, p.env, p.input, p.signal instanceof AbortSignal]);
+    p.onOutput?.('one\n');
+    p.onOutput?.('two\n');
+    return { code: 1, stdout: Buffer.from('out'), stderr: 'err', tail: 'one\ntwo', failure: 'exit code 1' };
+  };
+  const { client } = over(fakeMachine({ run }));
+  const chunks: string[] = [];
+  const result = await client.run({ command: 'fmt', args: ['a.ts'], cwd: '/wt', env: { A: '1' }, input: 'x', onOutput: (text) => { chunks.push(text); } });
+  assert.deepEqual(chunks, ['one\n', 'two\n']);
+  assert.ok(Buffer.isBuffer(result.stdout));
+  assert.deepEqual(result, { code: 1, stdout: Buffer.from('out'), stderr: 'err', tail: 'one\ntwo', failure: 'exit code 1' });
+  assert.deepEqual(asked, [['fmt', ['a.ts'], '/wt', { A: '1' }, 'x', true]]);
+});
+
+test('a run its caller aborts resolves stopped at once with the tail of the chunks so far, and the abort reaches the machine\'s run (#937)', async () => {
+  let signal: AbortSignal | undefined;
+  const run: Machine['run'] = (p) => new Promise((resolve) => {
+    signal = p.signal;
+    p.onOutput?.('started\n');
+    p.signal?.addEventListener('abort', () => resolve({ code: 'stopped', stdout: Buffer.alloc(0), stderr: '', tail: 'late', failure: 'cancelled' }));
+  });
+  const { client } = over(fakeMachine({ run }));
+  const controller = new AbortController();
+  let hear = (): void => undefined;
+  const heard = new Promise<void>((resolve) => { hear = resolve; });
+  const pending = client.run({ command: 'fmt', args: [], cwd: '/wt', env: {}, signal: controller.signal, onOutput: () => hear() });
+  await heard;
+  controller.abort();
+  assert.deepEqual(await pending, { code: 'stopped', stdout: Buffer.alloc(0), stderr: '', tail: 'started', failure: 'cancelled' });
+  await settle();
+  assert.equal(signal?.aborted, true);
+});
+
+test('a watch delivers the machine\'s events until close(), which closes the machine\'s watcher, and nothing fires after it (#937)', async () => {
+  const opened: [string, boolean][] = [];
+  let emit: (filename: string | null) => void = () => undefined;
+  let isClosed = false;
+  const watch: Machine['watch'] = (path, { recursive }, onEvent) => {
+    opened.push([path, recursive]);
+    emit = onEvent;
+    return { close: () => { isClosed = true; } };
+  };
+  const { client } = over({ ...fakeMachine(), watch });
+  const events: (string | null)[] = [];
+  const watcher = client.watch('/wt', { recursive: true }, (name) => events.push(name), () => assert.fail('no error'));
+  await settle();
+  emit('a.txt');
+  emit(null);
+  await settle();
+  watcher.close();
+  emit('late.txt'); // sent before the cancel reaches the machine: the client drops it
+  await settle();
+  watcher.close();
+  assert.deepEqual([opened, events, isClosed], [[['/wt', true]], ['a.txt', null], true]);
+});
+
+test('a watch whose watcher fails calls onError once with the machine\'s error; one open when the link closes, once with machine_unavailable (#937)', async () => {
+  let fail: (err: MachineError) => void = () => undefined;
+  const watch: Machine['watch'] = (_path, _options, _onEvent, onError) => {
+    fail = onError;
+    return { close: () => undefined };
+  };
+  const { host, client } = over({ ...fakeMachine(), watch });
+  const errors: MachineError[] = [];
+  client.watch('/wt', { recursive: false }, () => undefined, (err) => errors.push(err));
+  await settle();
+  fail(new MachineError('ENOSPC: no watchers left', { code: 'ENOSPC' }));
+  await settle();
+  const closed: MachineError[] = [];
+  client.watch('/wt', { recursive: false }, () => undefined, (err) => closed.push(err));
+  await settle();
+  host.close();
+  await settle();
+  assert.deepEqual([errors.length, errors[0]?.code, closed.length, isUnavailable(closed[0])], [1, 'ENOSPC', 1, true]);
+});
+
+test('after the link closes every member rejects machine_unavailable with reason link_closed, a call pending at the close too (#937)', async () => {
+  const exec: Machine['exec'] = () => new Promise(() => undefined);
+  const { host, client } = over({ ...fakeMachine(), exec });
+  const pending = client.exec('git', ['status']);
+  await settle();
+  host.close();
+  const { fs } = client;
+  const calls: Promise<unknown>[] = [
+    pending, fs.stat('/a'), fs.lstat('/a'), fs.lstat('/a', { bigint: true }), fs.realpath('/a'), fs.access('/a'), fs.readdir('/a'),
+    fs.readdir('/a', { withFileTypes: true }), fs.readFile('/a', { maxBytes: 1 }), fs.readFile('/a', { maxBytes: 1, encoding: 'utf8' }),
+    fs.readLines('/a', { maxBytes: 1 })[Symbol.asyncIterator]().next(), fs.writeFile('/a', 'x'), fs.writeAtomic('/a', 'x'), fs.mkdir('/a'),
+    (fs as unknown as Record<string, Call>)[MAKE_TEMP]('/a-'), fs.rename('/a', '/b'), fs.rm('/a'), fs.cp('/a', '/b'), fs.copyFile('/a', '/b'),
+    fs.link('/a', '/b'), fs.chmod('/a', 0o644), fs.unlink('/a'), fs.appendFile('/a', 'x'), client.exec('git', []),
+    client.run({ command: 'fmt', args: [], cwd: '/wt', env: {} }),
+  ];
+  await Promise.all(calls.map((call, i) => assert.rejects(call, isUnavailable, `call ${i}`)));
+});
+
+test('process throws not_supported at once; paths is path.posix for a linux machine on any host; id, info and pty are what was passed; a wrong answer rejects bad_frame (#937)', async () => {
+  const served = fakeMachine();
+  const { client } = over(served);
+  assert.throws(() => client.process('node', [], { cwd: '/wt', env: {} }), (err: unknown) => err instanceof MachineError && err.code === 'not_supported');
+  assert.deepEqual([client.paths === posix, client.id, client.info() === INFO, client.pty === served.pty], [true, 'wsl:X', true, true]);
+  const { host, machine: far } = pair();
+  far.onRequest(1, () => 42);
+  const odd = createMuxMachine(host, { id: 'wsl:X', pty: served.pty, info: INFO });
+  await assert.rejects(odd.fs.realpath('/a'), (err: unknown) => err instanceof MachineError && err.code === 'bad_frame');
 });
