@@ -177,6 +177,7 @@ export function describeEvent(event: HiveEvent): string {
     }
     case 'setWorkspace': return `setWorkspace #${event.taskId} ${event.workspace}`;
     case 'rateLimits': return `rateLimits agent=${event.agent} ${event.ptyId ? `pty=${shortId(event.ptyId)}` : 'source=hive'}${event.account === undefined ? '' : ` account=${event.account}`}`; // #929; #953: the account's name, never a token
+    case 'setAccounts': return `setAccounts ${Object.entries(event.accounts).map(([provider, name]) => `${provider}=${name}`).join(' ') || 'none'}`; // #957: the selection's names; the event carries no token
     case 'pollFailed': return `pollFailed source=${event.source} ${event.message}`;
     case 'itemRead': return `itemRead source=${event.source} #${event.itemId}${event.entry ? ` column=${event.entry.column}` : ' unlisted'}`; // #686: never a title
     case 'blockerSet': return `blockerSet #${event.itemId} ${event.change.action} ${event.change.kind}=${event.change.ref}`; // #56: ids only, never a title

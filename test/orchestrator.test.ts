@@ -3773,6 +3773,50 @@ test('a rateLimits event merges or replaces only its own agent\'s reading; the o
   assert.deepEqual(reduce(both, { type: 'rateLimits', agent: 'codex', rateLimits: codexLower }).state.rateLimits, { claude, codex }, 'merged: the higher percent stands, Claude\'s untouched');
 });
 
+test('with a named Claude account only a reading carrying it updates the Claude windows; another account\'s, a worker\'s on no account and the Hive\'s own are dropped; another agent\'s is never filtered (#957)', () => {
+  const plain = filled(1, 1).state; // one worker running task 1
+  const id = plain.workers[0].runId!;
+  const busy: State = { ...plain, accounts: { claude: 'work' } };
+  const read = (state: State, account?: string): State =>
+    reduce(state, { type: 'rateLimits', agent: 'claude', ptyId: id, rateLimits: LIMITS, ...(account === undefined ? {} : { account }) }).state;
+  assert.deepEqual(read(busy, 'work').rateLimits?.claude, LIMITS);
+  assert.equal(read(busy, 'home').rateLimits?.claude, undefined, 'another account');
+  assert.equal(read(busy).rateLimits?.claude, undefined, 'a worker on the machine\'s login');
+  assert.equal(reduce(busy, { type: 'rateLimits', agent: 'claude', rateLimits: LIMITS }).state.rateLimits?.claude, undefined, 'the Hive\'s own reading carries no account');
+  assert.deepEqual(read({ ...plain, accounts: {} }).rateLimits?.claude, LIMITS, 'no Claude member: the machine\'s login counts');
+  assert.deepEqual(read(plain).rateLimits?.claude, LIMITS, 'a State from before #957 reads as no Claude member');
+  assert.equal(read(plain, 'work').rateLimits?.claude, undefined, 'no Claude member: a named account\'s reading is dropped');
+  const codex = reduce(busy, { type: 'rateLimits', agent: 'codex', rateLimits: LIMITS, account: 'home' }).state;
+  assert.deepEqual(codex.rateLimits?.codex, LIMITS, 'the rule is Claude\'s only');
+});
+
+test('setAccounts drops the Claude windows when the Claude member changes and keeps them when another member changes; a stale worker\'s reading does not bring them back; the input is not mutated (#957)', () => {
+  const plain = filled(1, 1).state;
+  const id = plain.workers[0].runId!;
+  const codex: RateLimits = { at: LIMITS.at, windows: { thirty_day: { usedPercent: 40, resetsAt: FUTURE } } };
+  const held: State = { ...plain, accounts: { claude: 'home' }, rateLimits: { claude: LIMITS, codex } };
+  const frozen = structuredClone(held);
+  const switched = reduce(held, { type: 'setAccounts', accounts: { claude: 'work' } }).state;
+  assert.deepEqual(switched.accounts, { claude: 'work' });
+  assert.deepEqual(switched.rateLimits, { codex }, 'only Claude\'s windows go');
+  assert.deepEqual(held, frozen, 'the reducer does not mutate its input');
+  const stale = reduce(switched, { type: 'rateLimits', agent: 'claude', ptyId: id, account: 'home', rateLimits: LIMITS }).state;
+  assert.equal(stale.rateLimits?.claude, undefined, 'a worker started on the old account');
+  const github = reduce(held, { type: 'setAccounts', accounts: { claude: 'home', github: 'me' } });
+  assert.deepEqual(github.state.accounts, { claude: 'home', github: 'me' });
+  assert.deepEqual(github.state.rateLimits, { claude: LIMITS, codex }, 'another member: the Claude windows stay');
+  assert.deepEqual(github.effects, []);
+});
+
+test('setAccounts fills once it dropped the Claude windows: a gate the old account\'s reading closed opens (#957)', () => {
+  const blocked = polled(planned({ ...base(1), accounts: { claude: 'home' } }, windows(85)), many(1)).state; // session 85 ≥ 80: no start
+  assert.equal(occupied(blocked).length, 0);
+  const same = reduce(blocked, { type: 'setAccounts', accounts: { claude: 'home' } });
+  assert.deepEqual(same.effects, [], 'the same Claude member: no fill');
+  const switched = reduce(blocked, { type: 'setAccounts', accounts: { claude: 'work' } });
+  assert.deepEqual(switched.effects.map((e) => e.type), ['spawn']);
+});
+
 test('a disable names its rule\'s agent: Codex\'s week rule goes off alone, its own enable brings it back, and a save without the rule drops it (#929)', () => {
   const claudeWeek: UsageRule = { source: 'week', percent: 90, signal: 'red' };
   const codexWeek: UsageRule = { ...claudeWeek, agent: 'codex' };
