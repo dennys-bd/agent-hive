@@ -1,11 +1,12 @@
-import { type TestContext, test } from 'node:test';
+import { before, type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { createServer } from 'node:net';
 import path, { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { agentsOnPath } from '../src/agents.js';
 import type { MachineInfo } from '../src/machine.js';
 import { localFs, localWatch } from '../src/machine-local-fs.js';
@@ -74,8 +75,12 @@ test('isExecutableFile, as the helper passes it to agentsOnPath: an executable f
 });
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url)); // this file runs from dist/test/: the repo is two levels up
-// TEMPORARY: tsc's output of the entry, until Task 5 points HELPER at the bundle, dist/wsl-helper.mjs
-const HELPER = join(ROOT, 'dist', 'src', 'wsl', 'helper-main.js');
+const HELPER = join(ROOT, 'dist', 'wsl-helper.mjs');
+
+// Built here, not only by pnpm build:tests: the CI lanes run tsc and vite build alone, and a bundle left from an older build would test old code
+before(async () => {
+  await promisify(execFile)(process.execPath, [join(ROOT, 'scripts', 'build-wsl-helper.mjs')], { cwd: ROOT });
+});
 
 interface Helper { host: Mux; hello: Promise<HelperHello>; exited: Promise<number | null>; write(bytes: Uint8Array): void; end(): Promise<number | null> }
 
@@ -184,4 +189,15 @@ test('with no folder, or a relative one, the helper writes one line to stderr an
     const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
     assert.deepEqual([code, stderr.trim().split('\n').length], [2, 1], JSON.stringify({ args, stderr }));
   }
+});
+
+test('the bundle is one file whose every import, re-export, dynamic import and require names a node: module (#941)', async () => {
+  const text = await readFile(HELPER, 'utf8');
+  const fromSpecifiers = [...text.matchAll(/\b(?:import|export)\b[^'"`;]*?\bfrom\s*["']([^"']+)["']/g)].map(([, name]) => name);
+  // not after a quote: AGENTS lists "import" as a claude subcommand, and `"import", "install"` is no import
+  const bareImports = [...text.matchAll(/(?<!["'`])\bimport\s*["']([^"']+)["']/g)].map(([, name]) => name);
+  const calls = [...text.matchAll(/\b(?:import|require)\(\s*([^)]*)\)/g)].map(([, arg]) => arg.trim());
+  assert.ok(fromSpecifiers.length > 0, 'the bundle imports node: modules');
+  assert.deepEqual([...fromSpecifiers, ...bareImports].filter((name) => !name.startsWith('node:')), []);
+  assert.deepEqual(calls.filter((arg) => !/^["']node:/.test(arg)), []);
 });
