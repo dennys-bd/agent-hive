@@ -194,6 +194,22 @@ test('the switch closes the margin, leaving a dot on the annotated line; a click
   expect(screen.queryByRole('switch', { name: 'margem das anotações' })).not.toBeInTheDocument();
 });
 
+test('a margin reopened with a card still open places that card from the column it just mounted, not from a height of 0 (#980)', async () => {
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(2000); // the margin column, room for the card below its line
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(150); // the open card, measured
+  try {
+    stubItems(serverOf({ reads: VARS_READS }));
+    render(<PluginsWindow />);
+    await open('new-build');
+    await waitFor(() => expect(marginSwitch()).toHaveAttribute('aria-checked', 'true'));
+    fireEvent.click(within(screen.getByRole('group', { name: 'anotações' })).getByRole('button', { name: /reviewDepth/ }));
+    fireEvent.click(marginSwitch());
+    fireEvent.click(marginSwitch()); // back on with the card still open, nothing else re-rendering the text
+    const card = within(screen.getByRole('group', { name: 'anotações' })).getByRole('article', { name: HEADLINE });
+    await waitFor(() => expect([card.style.top !== '', card.style.bottom]).toEqual([true, '']));
+  } finally { vi.restoreAllMocks(); }
+});
+
 test("closing the margin closes an open chip's popover with it; it stays closed when the margin comes back (#980)", async () => {
   stubItems(serverOf({ reads: VARS_READS }));
   render(<PluginsWindow />);

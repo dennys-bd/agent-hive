@@ -1,5 +1,5 @@
 import type { editor, IRange } from 'monaco-editor';
-import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMargin } from '@/components/plugins/Annotations';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import type { Annotations, EditorAnnotation } from '@/hooks/use-annotations';
@@ -154,6 +154,22 @@ function useCaret(view: View | undefined, onCaret: TemplateTextProps['onCaret'])
   }, [view]);
 }
 
+// #980: the margin column's height, in state, so the render that mounts the column (a dot reopening the margin with its card open) re-renders
+// once it is known, and a resize re-places an open card. A callback ref, since the column mounts and unmounts with the switch
+function useColumnHeight(): [(element: HTMLDivElement | null) => void, number] {
+  const [height, setHeight] = useState(0);
+  const observer = useRef<ResizeObserver>(undefined);
+  const ref = useCallback((element: HTMLDivElement | null): void => {
+    observer.current?.disconnect();
+    observer.current = undefined;
+    if (element === null) return;
+    setHeight(element.clientHeight);
+    observer.current = new ResizeObserver(() => setHeight(element.clientHeight));
+    observer.current.observe(element);
+  }, []);
+  return [ref, height];
+}
+
 // The conditions column (#319): each chip at its marker's line as the text scrolls; the open one anchors its popover, upward (#322, decision 13)
 interface ChipsProps { chips: readonly Chip[]; topOf(line: number): number; onChip?(line: number): void; popover?: ChipPopover }
 
@@ -195,7 +211,7 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
  * one calls onDot. */
 export function TemplateText(props: TemplateTextProps) {
   const host = useRef<HTMLDivElement>(null);
-  const column = useRef<HTMLDivElement>(null);
+  const [column, columnHeight] = useColumnHeight();
   const { view, lineHeight } = useTemplateEditor(host, props);
   const { chips, onChip, popover, annotations, anchorOf = SAME_LINE, isReadOnly, isMarginOpen = true } = props;
   const marks = annotations?.list ?? NO_MARKS;
@@ -212,8 +228,7 @@ export function TemplateText(props: TemplateTextProps) {
           <Chips chips={chips} topOf={topOf} onChip={onChip} popover={popover} />
           {annotations && marks.length > 0 && (
             <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))}
-              // ponytail: the column's height is read at render, so a window resize alone does not re-place an open card; a ResizeObserver if that bites
-              lineHeight={lineHeight} columnHeight={column.current?.clientHeight ?? 0}
+              lineHeight={lineHeight} columnHeight={columnHeight}
             />
           )}
         </div>
