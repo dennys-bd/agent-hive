@@ -1,9 +1,9 @@
-import type { ItemState } from '../../../types';
+import type { CatalogueItem, ItemState } from '../../../types';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { type MessageKey, t } from '@/i18n';
 import { HIVE_ORIGIN } from '@/lib/plugins';
 
-interface StateLook { label: MessageKey; dot: string; text: string; chip: string }
+export interface StateLook { label: MessageKey; dot: string; text: string; chip: string }
 
 /** Each state's copy and colour (#313, the handoff's "Estados e regras"): update available yellow and customized blue are status colours, a
  * workspace's item faint. Only the legend draws the hive original's hollow ring: a row of the original needs no mark (#492). */
@@ -16,11 +16,17 @@ export const STATE_LOOK: Record<ItemState, StateLook> = {
 /** The legend's order, the handoff's. */
 export const LEGEND: readonly ItemState[] = ['original', 'customized', 'update available', 'workspace'];
 
-/** An item's state dot: named for a screen reader where it is the only sign of the state, decorative next to the state's label. */
-export function StateDot({ state, isDecorative = false, isLegend = false }: { state: ItemState; isDecorative?: boolean; isLegend?: boolean }) {
+// #983: a user-created item is customized from its first version, so it keeps customized's colours under a word of its own
+const OWN_LOOK: StateLook = { ...STATE_LOOK.customized, label: 'plugins.state.userCreated' };
+/** An item's look in the head, the list, the sidebar and the version menu: "created by you" for a user-created one, else its state's. */
+export const lookOf = (item: CatalogueItem): StateLook => (item.userCreated ? OWN_LOOK : STATE_LOOK[item.state]);
+
+/** An item's state dot: named for a screen reader where it is the only sign of the state, decorative next to the state's label. `label`
+ * (#983): the word to name it by when it is not the state's own, as a user-created item's. */
+export function StateDot({ state, label: named, isDecorative = false, isLegend = false }: { state: ItemState; label?: MessageKey; isDecorative?: boolean; isLegend?: boolean }) {
   // The screen hides the original's dot but keeps its room, so the state words of a list still line up
   if (state === 'original' && !isLegend) return <span aria-hidden="true" className="invisible size-1.5 shrink-0" />;
-  const label = t(STATE_LOOK[state].label);
+  const label = t(named ?? STATE_LOOK[state].label);
   const look = `size-1.5 shrink-0 rounded-full ${STATE_LOOK[state].dot}`;
   if (isDecorative) return <span aria-hidden="true" data-state={state} className={look} />;
   return <span role="img" aria-label={label} title={label} data-state={state} className={look} />;

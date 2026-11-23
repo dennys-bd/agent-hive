@@ -21,7 +21,8 @@ export type PluginScreen =
   | { kind: 'update'; id: string; version: string }
   | { kind: 'mcp' }
   | { kind: 'protocol' };
-export interface ItemGroup { origin: string; items: CatalogueItem[] }
+/** isOwn (#983): the user-created items, under hive's origin with a header of their own. */
+export interface ItemGroup { origin: string; isOwn?: boolean; items: CatalogueItem[] }
 
 /** The item a screen shows (#325): its own, or the one whose version it updates; undefined for a list, mcp and protocol. */
 export const itemIdOf = (screen: PluginScreen): string | undefined => (screen.kind === 'item' || screen.kind === 'update' ? screen.id : undefined);
@@ -40,14 +41,24 @@ export function matches(item: CatalogueItem, query: string): boolean {
   return q === '' || item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
 }
 
-/** A kind's items by origin (#313): hive first, then each workspace in config order. With a workspace filter only hive and that workspace:
- * every Hive item reaches every workspace, a workspace's own only it. A group with no item is left out. */
+/** A kind's items by origin (#313): hive first, then its user-created items in a group of their own (#983), then each workspace in config
+ * order. With a workspace filter only hive, the own group and that workspace: every Hive item reaches every workspace, a workspace's own only
+ * it. A group with no item is left out. */
 export function groupsOf(items: readonly CatalogueItem[], kind: ItemKind, workspaces: readonly string[], query = '', filter?: string): ItemGroup[] {
-  const origins = [HIVE_ORIGIN, ...workspaces.filter((w) => w !== HIVE_ORIGIN && (filter === undefined || w === filter))];
-  return origins
-    .map((origin) => ({ origin, items: items.filter((i) => i.origin === origin && i.kind === kind && matches(i, query)) }))
-    .filter((group) => group.items.length > 0);
+  const shown = items.filter((i) => i.kind === kind && matches(i, query));
+  const hive = shown.filter((i) => i.origin === HIVE_ORIGIN);
+  const others = workspaces.filter((w) => w !== HIVE_ORIGIN && (filter === undefined || w === filter))
+    .map((origin): ItemGroup => ({ origin, items: shown.filter((i) => i.origin === origin) }));
+  const groups: ItemGroup[] = [
+    { origin: HIVE_ORIGIN, items: hive.filter((i) => !i.userCreated) },
+    { origin: HIVE_ORIGIN, isOwn: true, items: hive.filter((i) => i.userCreated) },
+    ...others,
+  ];
+  return groups.filter((group) => group.items.length > 0);
 }
+
+/** A group's header and name (#983): the own group's copy, else its origin. */
+export const groupLabel = (group: ItemGroup): string => (group.isOwn === true ? t('plugins.group.own') : group.origin);
 
 export const countOf = (items: readonly CatalogueItem[], kind: ItemKind): number => items.filter((i) => i.kind === kind).length;
 
@@ -62,12 +73,17 @@ export const basedOnTitle = ({ basedOn }: CatalogueItem): string | undefined =>
 
 const NO_USAGE = '—';
 
+const nameIn = (items: readonly CatalogueItem[], id: string): string => items.find((i) => i.id === id)?.name ?? id;
+
 /** The list's usage column (#313, decision 11): the stages first, then each caller by name, comma-joined; — for none. */
 export function usageText(item: CatalogueItem, items: readonly CatalogueItem[]): string {
   if (item.usage.length === 0) return NO_USAGE;
-  const nameOf = (id: string): string => items.find((i) => i.id === id)?.name ?? id;
-  return item.usage.map((use) => (use.kind === 'stage' ? t('plugins.usage.stage', { stage: use.stage }) : t('plugins.usage.caller', { name: nameOf(use.id) }))).join(', ');
+  return item.usage.map((use) => (use.kind === 'stage' ? t('plugins.usage.stage', { stage: use.stage }) : t('plugins.usage.caller', { name: nameIn(items, use.id) }))).join(', ');
 }
+
+/** Who still calls an item (#983): its callers by name, as usageText names them; a stage runs it but does not call it. */
+export const callersOf = (item: CatalogueItem, items: readonly CatalogueItem[]): string[] =>
+  item.usage.flatMap((use) => (use.kind === 'caller' ? [nameIn(items, use.id)] : []));
 
 const MINE = 'mine'; // custom-store.ts's MINE: that module reads the disk
 
@@ -152,4 +168,22 @@ export function versionInUse(item: CatalogueItem, workspace: string): string | n
   const used = item.versions.find((v) => v.workspaces.includes(workspace));
   if (used !== undefined) return used.name;
   return item.onOriginal.includes(workspace) ? null : undefined;
+}
+
+/** The versions made from `version` (#983): its delete re-parents them onto its own `from` (custom-store.ts), so they stay as they are. */
+export const childrenOf = (item: CatalogueItem, version: string): string[] => item.versions.filter((v) => v.from === version).map((v) => v.name);
+
+/** A kind's word inside a sentence (#983): "deletes the {kind}". */
+export const kindLabel = (kind: ItemKind): string => t(kind === 'skill' ? 'plugins.kind.skill' : 'plugins.kind.specialist');
+
+/** What the versions menu offers to delete (#983): nothing on the original; the open version; that version disabled while a workspace runs a
+ * user-created item's version that is not its last (custom-store.ts refuses it, in_use); or the item itself with its last version. */
+export type DeleteEntry = { kind: 'none' } | { kind: 'version'; version: string } | { kind: 'inUse'; version: string } | { kind: 'item'; version: string };
+
+export function deleteEntryOf(item: CatalogueItem, version: string | null): DeleteEntry {
+  if (version === null) return { kind: 'none' };
+  if (!item.userCreated) return { kind: 'version', version };
+  if (item.versions.length === 1) return { kind: 'item', version };
+  const isInUse = item.versions.some((v) => v.name === version && v.workspaces.length > 0);
+  return isInUse ? { kind: 'inUse', version } : { kind: 'version', version };
 }

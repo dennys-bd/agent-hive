@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { assignableWorkspaces, basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
-import { BASED_ON, CATALOGUE, itemOf, readOf, SECOND_ORIGIN, versionOf, WORKSPACES } from './plugins-fixtures';
+import { assignableWorkspaces, basedOnTitle, callersOf, catalogueOf, childrenOf, countOf, deleteEntryOf, groupLabel, groupsOf, itemIdOf, kindLabel, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
+import { BASED_ON, CATALOGUE, itemOf, OWN, readOf, SECOND_ORIGIN, versionOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
 const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.origin, g.items.map((i) => i.name)]);
@@ -10,6 +10,19 @@ test("groupsOf: hive first, then each workspace in config order, a kind's items 
   expect(ids(groupsOf(CATALOGUE, 'skill', WORKSPACES))).toEqual([['hive', ['new-spec', 'new-build', 'new-plan']], ['agent-hive', ['release']], ['hive-site', ['deploy']]]);
   expect(ids(groupsOf(CATALOGUE, 'specialist', WORKSPACES))).toEqual([['hive', ['architect']]]);
   expect(ids(groupsOf(CATALOGUE, 'skill', WORKSPACES, '', 'hive-site'))).toEqual([['hive', ['new-spec', 'new-build', 'new-plan']], ['hive-site', ['deploy']]]);
+});
+
+test('groupsOf: the user-created items leave the hive group for their own, second, which no workspace filter narrows; groupLabel names it (#983)', () => {
+  const items = [...CATALOGUE, OWN];
+  const marked = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [groupLabel(g), g.isOwn === true, g.items.map((i) => i.name)]);
+  expect(marked(groupsOf(items, 'skill', WORKSPACES))).toEqual([
+    ['hive', false, ['new-spec', 'new-build', 'new-plan']], ['created by you', true, ['release-check']], ['agent-hive', false, ['release']], ['hive-site', false, ['deploy']],
+  ]);
+  expect(marked(groupsOf(items, 'skill', WORKSPACES, '', 'hive-site')).map(([label]) => label)).toEqual(['hive', 'created by you', 'hive-site']);
+  expect(marked(groupsOf(items, 'skill', WORKSPACES, 'deploy')).map(([label]) => label)).toEqual(['hive-site']);
+  expect(marked(groupsOf(items, 'specialist', WORKSPACES))).toEqual([['hive', false, ['architect']]]);
+  setLanguage('pt');
+  expect(groupLabel({ origin: 'hive', isOwn: true, items: [OWN] })).toBe('criadas por você');
 });
 
 test('the search matches a name or a description, case-insensitive; a blank one keeps every item (#313)', () => {
@@ -110,4 +123,25 @@ test('two origins: basedOnTitle gives one line each in header order, and markOf 
   const both = itemOf('hive:planner', { kind: 'specialist', basedOn: [BASED_ON, SECOND_ORIGIN] });
   expect(basedOnTitle(both)).toBe('based on superpowers:executing-plans · obra/superpowers · MIT\nbased on ecc:planner · affaan-m/ECC · MIT');
   expect(markOf(both)).toBe(''); // the arrow is the sidebar's icon (#492)
+});
+
+test('childrenOf names the versions made from a version; callersOf names the callers, never a stage; kindLabel names the kind (#983)', () => {
+  const item = itemOf('hive:a', { versions: [versionOf('mine'), versionOf('tdd', { from: 'mine' }), versionOf('fast', { from: 'mine' })] });
+  expect([childrenOf(item, 'mine'), childrenOf(item, 'tdd')]).toEqual([['tdd', 'fast'], []]);
+  const build = CATALOGUE[1] ?? CATALOGUE[0];
+  expect(callersOf(build, CATALOGUE)).toEqual(['new-spec']);
+  expect(callersOf(itemOf('hive:b', { usage: [{ kind: 'caller', id: 'hive:gone' }] }), CATALOGUE)).toEqual(['hive:gone']);
+  expect(callersOf(CATALOGUE[0] ?? build, CATALOGUE)).toEqual([]);
+  expect([kindLabel('skill'), kindLabel('specialist')]).toEqual(['skill', 'specialist']);
+  setLanguage('pt');
+  expect([kindLabel('skill'), kindLabel('specialist')]).toEqual(['skill', 'especialista']);
+});
+
+test("deleteEntryOf: none on the original; a Hive item's version; a user-created one disabled while a workspace runs it; the item with its last (#983)", () => {
+  const hive = itemOf('hive:a', { versions: [versionOf('mine', { workspaces: ['agent-hive'] })] });
+  const own = itemOf('hive:b', { userCreated: true, versions: [versionOf('mine', { from: null, workspaces: ['agent-hive'] }), versionOf('tdd', { from: null })] });
+  const last = itemOf('hive:c', { userCreated: true, versions: [versionOf('mine', { from: null, workspaces: ['agent-hive'] })] });
+  expect([deleteEntryOf(hive, null), deleteEntryOf(hive, 'mine'), deleteEntryOf(own, 'mine'), deleteEntryOf(own, 'tdd'), deleteEntryOf(last, 'mine')]).toEqual([
+    { kind: 'none' }, { kind: 'version', version: 'mine' }, { kind: 'inUse', version: 'mine' }, { kind: 'version', version: 'tdd' }, { kind: 'item', version: 'mine' },
+  ]);
 });
