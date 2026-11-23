@@ -1,6 +1,7 @@
 // The GitHub account (#959, node 3.1 of #958): which login the Hive's own reads run as, and the token each stored login has.
 import { readCredentials } from './credentials.js';
 import type { GhToken } from './github-token.js';
+import type { Machine, MachineExec, Machines } from './machine.js';
 import type { Config, Credentials, GithubAuth } from './types.js';
 
 export const NO_TOKEN_MESSAGE = 'no GitHub token: run `hive login` or connect in settings';
@@ -118,4 +119,39 @@ export async function unauthorized(deps: { onUnauthorized?: () => void; refusal?
   deps.onUnauthorized?.();
   const why = await deps.refusal?.();
   if (why !== undefined) throw new Error(`${prefix}: HTTP 401: ${why}`);
+}
+
+/** What a gh call's env gets from the selection (#961). */
+export type GhEnv = () => Promise<Record<string, string>>;
+
+/** The selection as a gh env (#961): {} for the machine's login (accounts.github absent, whatever auth.github), else the named login's
+ * GH_TOKEN; rejects with the missing message when it has no stored token, never falling back to gh's own login. */
+export async function ghEnvOf(account: Pick<GithubAccount, 'selection' | 'selected'>): Promise<Record<string, string>> {
+  if (account.selection().github === undefined) return {};
+  return { GH_TOKEN: await account.selected.token() };
+}
+
+/** An exec whose gh calls follow the selection (#961). A gh call with an env of its own (GhToken's, #960's login, Copilot's limits) and
+ * any other file pass through; on the machine's login the options stay as given, so today's calls are byte for byte today's. */
+export function withGhEnv(exec: MachineExec, ghEnv: GhEnv): MachineExec {
+  return async (file, args, opts) => {
+    if (file !== 'gh' || opts?.env !== undefined) return exec(file, args, opts);
+    const env = await ghEnv();
+    if (Object.keys(env).length === 0) return exec(file, args, opts);
+    return exec(file, args, { ...opts, env: { ...process.env, ...env } });
+  };
+}
+
+/** The machine with its exec through withGhEnv (#961); everything else of it as it was. */
+export const withGhMachine = <M extends Pick<Machine, 'exec'>>(machine: M, ghEnv: GhEnv): M => ({ ...machine, exec: withGhEnv(machine.exec, ghEnv) });
+
+/** The registry with every machine it hands out gh-aware (#961), each wrapped once: a machine keeps one identity (distro-home.ts keys a WeakMap by it). */
+export function ghMachines(machines: Machines, ghEnv: GhEnv): Machines {
+  const wrapped = new WeakMap<Machine, Machine>();
+  const wrap = (machine: Machine): Machine => {
+    const known = wrapped.get(machine) ?? withGhMachine(machine, ghEnv);
+    wrapped.set(machine, known);
+    return known;
+  };
+  return { local: wrap(machines.local), for: (activity) => wrap(machines.for(activity)) };
 }
