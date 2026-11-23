@@ -125,6 +125,7 @@ async function readToken(deps: GithubAddDeps, env: NodeJS.ProcessEnv): Promise<s
 async function collect(s: AddState, deps: GithubAddDeps, f: Flow): Promise<void> {
   const token = await readToken(deps, f.env);
   if (token === undefined) return finish(s, deps, f, failed('token'), ', exit 0');
+  if (s.flow !== f) return; // closed while gh auth token ran: a stopped add never stores
   try {
     const login = await deps.store(token);
     finish(s, deps, f, { state: 'connected', login });
@@ -167,8 +168,8 @@ function run(s: AddState, deps: GithubAddDeps, f: Flow): void {
 function begin(s: AddState, deps: GithubAddDeps): GithubAddStatus {
   deps.log.info('github login add started');
   const dir = scratchDir(deps.home);
-  // GH_TOKEN and its kin removed: gh refuses to log in while GH_TOKEN is set
-  const f: Flow = { env: childEnv(deps.env, { ...cliEnv(), GH_CONFIG_DIR: dir }), output: '', isEnded: false };
+  // GH_TOKEN and its kin removed: gh refuses to log in while GH_TOKEN is set; GH_DEBUG would put its HTTP traffic in the output we read
+  const f: Flow = { env: childEnv(deps.env, { ...cliEnv(), GH_DEBUG: undefined, DEBUG: undefined, GH_CONFIG_DIR: dir }), output: '', isEnded: false };
   s.flow = f;
   f.timer = setTimeout(() => {
     if (f.isEnded) return;

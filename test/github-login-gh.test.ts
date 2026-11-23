@@ -20,7 +20,7 @@ const CODE = 'AB12-CD34';
 const DEVICE_URL = 'https://github.com/login/device';
 // What gh 2.97 prints on stderr before it waits (the spec's probe)
 const PROMPT = `! First copy your one-time code: ${CODE}\nOpen this URL to continue in your web browser: ${DEVICE_URL}\n`;
-const INHERITED = { GH_TOKEN: 'fake-inherited', GITHUB_TOKEN: 'fake-inherited', GH_ENTERPRISE_TOKEN: 'fake-inherited', KEEP: 'kept' };
+const INHERITED = { GH_TOKEN: 'fake-inherited', GITHUB_TOKEN: 'fake-inherited', GH_ENTERPRISE_TOKEN: 'fake-inherited', GH_DEBUG: 'api', DEBUG: '1', KEEP: 'kept' };
 
 // gh as a child of the daemon: the test writes its streams; kill() is counted and ends it as a signal would
 class FakeChild extends EventEmitter {
@@ -131,7 +131,7 @@ test('gh runs the fixed argv on pipes with stdin ignored; its env and gh auth to
   for (const env of [gh.options.env ?? {}, h.execs[0].env]) {
     assert.equal(env.GH_CONFIG_DIR, h.dir);
     assert.equal(env.GH_HOST, 'github.com');
-    for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN']) assert.equal(env[name], undefined, name);
+    for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GH_DEBUG', 'DEBUG']) assert.equal(env[name], undefined, name);
     assert.equal(env.KEEP, 'kept', 'the rest of the daemon\'s env is kept');
   }
 });
@@ -270,4 +270,15 @@ test('close kills a pending gh and settles once the dir is gone (#960)', async (
   await h.add.close();
   assert.equal(h.spawned[0].child.kills, 1);
   assert.equal(existsSync(h.dir), false);
+});
+
+test('a close while the token is read after exit 0 stores nothing (#960)', async (t) => {
+  const h = await harness(t);
+  h.add.start();
+  await started(h);
+  await login(h.spawned[0]);
+  await h.add.close();
+  await until(() => h.execs.length === 1, 'gh auth token never ran');
+  for (let i = 0; i < 20; i += 1) await turn();
+  assert.deepEqual(h.stored, []);
 });
