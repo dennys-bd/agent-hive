@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
-import { CHIP, STATE_LOOK } from '@/components/plugins/marks';
+import { CHIP, lookOf, STATE_LOOK } from '@/components/plugins/marks';
 import { OriginCard } from '@/components/plugins/OriginCard';
 import { ReviewerMenu } from '@/components/plugins/ReviewerMenu';
 import { VersionMenu } from '@/components/plugins/VersionMenu';
@@ -87,7 +87,7 @@ function ItemActions({ item, editor, annotations, workspaces }: ItemProps) {
 
 // #320, decision 14: the menu opens versions; the chip stays the way into a version's update, the first with one, in catalogue order
 function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadProps) {
-  const look = STATE_LOOK[item.state];
+  const look = lookOf(item); // #983: a user-created item's chip reads "created by you"
   const updated = item.state === 'update available' ? item.versions.find((v) => v.updateAvailable) : undefined;
   const chip = updated === undefined
     ? <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>

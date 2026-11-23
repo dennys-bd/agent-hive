@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { assignableWorkspaces, basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
-import { BASED_ON, CATALOGUE, itemOf, readOf, SECOND_ORIGIN, versionOf, WORKSPACES } from './plugins-fixtures';
+import { assignableWorkspaces, basedOnTitle, catalogueOf, countOf, groupLabel, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
+import { BASED_ON, CATALOGUE, itemOf, OWN, readOf, SECOND_ORIGIN, versionOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
 const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.origin, g.items.map((i) => i.name)]);
@@ -10,6 +10,19 @@ test("groupsOf: hive first, then each workspace in config order, a kind's items 
   expect(ids(groupsOf(CATALOGUE, 'skill', WORKSPACES))).toEqual([['hive', ['new-spec', 'new-build', 'new-plan']], ['agent-hive', ['release']], ['hive-site', ['deploy']]]);
   expect(ids(groupsOf(CATALOGUE, 'specialist', WORKSPACES))).toEqual([['hive', ['architect']]]);
   expect(ids(groupsOf(CATALOGUE, 'skill', WORKSPACES, '', 'hive-site'))).toEqual([['hive', ['new-spec', 'new-build', 'new-plan']], ['hive-site', ['deploy']]]);
+});
+
+test('groupsOf: the user-created items leave the hive group for their own, second, which no workspace filter narrows; groupLabel names it (#983)', () => {
+  const items = [...CATALOGUE, OWN];
+  const marked = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [groupLabel(g), g.isOwn === true, g.items.map((i) => i.name)]);
+  expect(marked(groupsOf(items, 'skill', WORKSPACES))).toEqual([
+    ['hive', false, ['new-spec', 'new-build', 'new-plan']], ['created by you', true, ['release-check']], ['agent-hive', false, ['release']], ['hive-site', false, ['deploy']],
+  ]);
+  expect(marked(groupsOf(items, 'skill', WORKSPACES, '', 'hive-site')).map(([label]) => label)).toEqual(['hive', 'created by you', 'hive-site']);
+  expect(marked(groupsOf(items, 'skill', WORKSPACES, 'deploy')).map(([label]) => label)).toEqual(['hive-site']);
+  expect(marked(groupsOf(items, 'specialist', WORKSPACES))).toEqual([['hive', false, ['architect']]]);
+  setLanguage('pt');
+  expect(groupLabel({ origin: 'hive', isOwn: true, items: [OWN] })).toBe('criadas por você');
 });
 
 test('the search matches a name or a description, case-insensitive; a blank one keeps every item (#313)', () => {

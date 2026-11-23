@@ -1,10 +1,10 @@
 import { ArrowUpRightIcon } from 'lucide-react';
 import type { CatalogueItem, ItemKind } from '../../../types';
-import { OriginMark, STATE_LOOK, StateDot } from '@/components/plugins/marks';
+import { lookOf, OriginMark, StateDot } from '@/components/plugins/marks';
 import { NewItemField } from '@/components/plugins/NewItemField';
 import type { Plugins } from '@/hooks/use-plugins';
 import { t } from '@/i18n';
-import { basedOnTitle, groupsOf, HIVE_ORIGIN, type ItemGroup, KIND_OF, type ListSection, usageText } from '@/lib/plugins';
+import { basedOnTitle, groupLabel, groupsOf, HIVE_ORIGIN, type ItemGroup, KIND_OF, type ListSection, usageText } from '@/lib/plugins';
 
 const NO_ITEMS: CatalogueItem[] = [];
 // The handoff's five columns: name, description, state, usage, external origin
@@ -12,7 +12,7 @@ const COLUMNS = 'grid grid-cols-[150px_minmax(0,1fr)_190px_170px_190px] items-ce
 const KIND_PATH: Record<ItemKind, string> = { skill: '.claude/skills', specialist: '.claude/agents' }; // Claude Code's layout, a path in every language
 
 function Row({ item, items, onOpen }: { item: CatalogueItem; items: readonly CatalogueItem[]; onOpen(): void }) {
-  const look = STATE_LOOK[item.state];
+  const look = lookOf(item);
   return (
     <li className="border-b last:border-b-0">
       <button type="button" onClick={onOpen} className={`${COLUMNS} w-full px-3.5 py-2.5 text-left text-sm hover:bg-accent/60`}>
@@ -32,12 +32,19 @@ function hivePath(version?: string): string {
   return version === undefined ? t('plugins.list.hivePath') : t('plugins.list.hivePathVersion', { version });
 }
 
+// The group's path beside its name: the plugin's for hive, Claude Code's folder for a workspace, none for the own group (#983)
+function pathOf(group: ItemGroup, kind: ItemKind, pluginVersion?: string): string | undefined {
+  if (group.isOwn === true) return undefined;
+  return group.origin === HIVE_ORIGIN ? hivePath(pluginVersion) : KIND_PATH[kind];
+}
+
 function ListGroup({ group, kind, items, pluginVersion, onOpen }: ListGroupProps) {
-  const path = group.origin === HIVE_ORIGIN ? hivePath(pluginVersion) : KIND_PATH[kind];
+  const label = groupLabel(group);
+  const path = pathOf(group, kind, pluginVersion);
   return (
-    <fieldset aria-label={group.origin} className="flex min-w-0 flex-col gap-1.5">
+    <fieldset aria-label={label} className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
-        <OriginMark origin={group.origin} /><span className="font-medium text-foreground">{group.origin}</span><span className="font-mono">{path}</span>
+        <OriginMark origin={group.origin} /><span className="font-medium text-foreground">{label}</span>{path !== undefined && <span className="font-mono">{path}</span>}
       </div>
       <ul className="flex flex-col rounded-lg border">{group.items.map((item) => <Row key={item.id} item={item} items={items} onOpen={() => onOpen(item.id)} />)}</ul>
     </fieldset>
@@ -55,7 +62,7 @@ export function ListScreen({ plugins, section, workspaces }: { plugins: Plugins;
         <NewItemField kind={kind} workspaces={workspaces} initialOrigin={plugins.filter ?? HIVE_ORIGIN} onCreate={plugins.create} onCancel={() => plugins.setCreating(false)} />
       )}
       {groupsOf(items, kind, workspaces, plugins.query, plugins.filter).map((group) => (
-        <ListGroup key={group.origin} group={group} kind={kind} items={items} pluginVersion={plugins.pluginVersion} onOpen={(id) => plugins.open({ kind: 'item', id })} />
+        <ListGroup key={groupLabel(group)} group={group} kind={kind} items={items} pluginVersion={plugins.pluginVersion} onOpen={(id) => plugins.open({ kind: 'item', id })} />
       ))}
     </section>
   );

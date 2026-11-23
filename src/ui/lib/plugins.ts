@@ -21,7 +21,8 @@ export type PluginScreen =
   | { kind: 'update'; id: string; version: string }
   | { kind: 'mcp' }
   | { kind: 'protocol' };
-export interface ItemGroup { origin: string; items: CatalogueItem[] }
+/** isOwn (#983): the user-created items, under hive's origin with a header of their own. */
+export interface ItemGroup { origin: string; isOwn?: boolean; items: CatalogueItem[] }
 
 /** The item a screen shows (#325): its own, or the one whose version it updates; undefined for a list, mcp and protocol. */
 export const itemIdOf = (screen: PluginScreen): string | undefined => (screen.kind === 'item' || screen.kind === 'update' ? screen.id : undefined);
@@ -40,14 +41,24 @@ export function matches(item: CatalogueItem, query: string): boolean {
   return q === '' || item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
 }
 
-/** A kind's items by origin (#313): hive first, then each workspace in config order. With a workspace filter only hive and that workspace:
- * every Hive item reaches every workspace, a workspace's own only it. A group with no item is left out. */
+/** A kind's items by origin (#313): hive first, then its user-created items in a group of their own (#983), then each workspace in config
+ * order. With a workspace filter only hive, the own group and that workspace: every Hive item reaches every workspace, a workspace's own only
+ * it. A group with no item is left out. */
 export function groupsOf(items: readonly CatalogueItem[], kind: ItemKind, workspaces: readonly string[], query = '', filter?: string): ItemGroup[] {
-  const origins = [HIVE_ORIGIN, ...workspaces.filter((w) => w !== HIVE_ORIGIN && (filter === undefined || w === filter))];
-  return origins
-    .map((origin) => ({ origin, items: items.filter((i) => i.origin === origin && i.kind === kind && matches(i, query)) }))
-    .filter((group) => group.items.length > 0);
+  const shown = items.filter((i) => i.kind === kind && matches(i, query));
+  const hive = shown.filter((i) => i.origin === HIVE_ORIGIN);
+  const others = workspaces.filter((w) => w !== HIVE_ORIGIN && (filter === undefined || w === filter))
+    .map((origin): ItemGroup => ({ origin, items: shown.filter((i) => i.origin === origin) }));
+  const groups: ItemGroup[] = [
+    { origin: HIVE_ORIGIN, items: hive.filter((i) => !i.userCreated) },
+    { origin: HIVE_ORIGIN, isOwn: true, items: hive.filter((i) => i.userCreated) },
+    ...others,
+  ];
+  return groups.filter((group) => group.items.length > 0);
 }
+
+/** A group's header and name (#983): the own group's copy, else its origin. */
+export const groupLabel = (group: ItemGroup): string => (group.isOwn === true ? t('plugins.group.own') : group.origin);
 
 export const countOf = (items: readonly CatalogueItem[], kind: ItemKind): number => items.filter((i) => i.kind === kind).length;
 
