@@ -97,5 +97,7 @@ test('the catalogue lists hive:template-reviewer as a specialist of the plugin, 
   const rendered = renderTemplate(parsed, '');
   assert.ok(rendered.ok, JSON.stringify(parsed.errors));
   const body = rendered.text.slice(deliveredHeader(parsed).length);
-  for (const part of ['"annotations"', '`red`', '`yellow`', 'only the JSON']) assert.ok(body.includes(part), part);
+  for (const part of ['"annotations"', '`red`', '`yellow`', 'only the JSON', '"kind": "fix"', '"kind": "advice"', '"span"', '"replacement"', '`span` and `replacement` null']) {
+    assert.ok(body.includes(part), part);
+  }
 });
