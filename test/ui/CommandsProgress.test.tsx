@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest';
-import { evaluateProgress, taskError } from '@/components/CommandsProgress';
+import { barError, evaluateProgress, taskError } from '@/components/CommandsProgress';
 import { setLanguage } from '@/i18n';
 import type { Stage, State, Task } from '../../src/types';
 import { STAGE_GONE } from '../../src/types';
@@ -25,4 +25,10 @@ test('an evaluation reads avaliando · n revisores, then julgando; its failures 
   expect(evaluateProgress(task, at({}))).toBeUndefined();
   expect(taskError('evaluation rejected: Tests cover it?')).toBe('avaliação reprovou: Tests cover it?');
   expect(taskError('evaluation failed: judge (claude): no answer')).toBe('avaliação falhou: judge (claude): no answer');
+});
+
+test('the bar translates an account refusal only; any other error stays as the state holds it (#953)', () => {
+  setLanguage('en');
+  expect(barError('account copilot unreachable')).toBe('could not check the account chosen for Copilot: try again');
+  expect(barError('workspace "api" não existe mais')).toBe('workspace "api" não existe mais');
 });

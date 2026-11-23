@@ -1,3 +1,4 @@
+import { knownAgent, AGENTS } from '../../agents';
 import { activityOf, resultOf } from '../../activities';
 import { stageChannel } from '../../console';
 import { type SpawnFailureCode, spawnFailureCode } from '../../spawn-failure';
@@ -39,6 +40,15 @@ const START_FAILED: Record<SpawnFailureCode, MessageKey> = {
   agent_missing: 'start.failed.agent_missing', no_workspace: 'start.failed.no_workspace', workspace_gone: 'start.failed.workspace_gone',
   command_disabled: 'start.failed.command_disabled', setup_failed: 'start.failed.setup_failed', checkout_dirty: 'start.failed.checkout_dirty',
   git_failed: 'start.failed.git_failed', pty_failed: 'start.failed.pty_failed', error: 'start.failed.error',
+  account_claude_missing: 'start.failed.account_claude_missing',
+  account_claude_mismatch: 'start.failed.account_claude_mismatch',
+  account_claude_unreachable: 'start.failed.account_claude_unreachable',
+  account_copilot_missing: 'start.failed.account_copilot_missing',
+  account_copilot_mismatch: 'start.failed.account_copilot_mismatch',
+  account_copilot_unreachable: 'start.failed.account_copilot_unreachable',
+  account_github_missing: 'start.failed.account_github_missing',
+  account_github_mismatch: 'start.failed.account_github_mismatch',
+  account_github_unreachable: 'start.failed.account_github_unreachable',
 };
 
 /** A failed start's error (#945): what the reducer's spawnFailed writes on the activity. */
@@ -46,10 +56,20 @@ export const isStartFailure = (error: string | undefined): error is string => er
 /** The spawn's own message behind a failed start's error (#945): a path, git's lines; the details panel shows it only when asked. */
 export const startFailureRaw = (error: string): string => error.slice(SPAWN_FAILED.length);
 
+/** A spawn failure's short message by its code (#945), in the viewer's language; an account refusal names its agent from AGENTS (#953): no copy names one. */
+export function startFailureText(message: string): string {
+  const code = spawnFailureCode(message);
+  const agent = code.startsWith('account_') ? knownAgent(code.split('_')[1]) : undefined; // github is no agent: its copy has no {agent}
+  return t(START_FAILED[code], agent === undefined ? undefined : { agent: AGENTS[agent].label });
+}
+
+/** The bar's toast (#953): an account refusal's copy; any other State.error as the server wrote it. */
+export const barError = (error: string): string => (spawnFailureCode(error).startsWith('account_') ? startFailureText(error) : error);
+
 /** A task's error as the page shows it: a failed start's short message, a commands stage's, a wait for CI's or an evaluation's failure, a stage end with no
  * transition, a transition out of tries (#945, #755, #834, #134), in the viewer's language; any other as the state holds it. */
 export function taskError(error: string): string {
-  if (error.startsWith(SPAWN_FAILED)) return t(START_FAILED[spawnFailureCode(startFailureRaw(error))]); // not isStartFailure: its guard would narrow the rest to never
+  if (error.startsWith(SPAWN_FAILED)) return startFailureText(startFailureRaw(error)); // not isStartFailure: its guard would narrow the rest to never
   if (error.startsWith(CHECKS_FAILED)) return t('stageCommands.failed', { list: error.slice(CHECKS_FAILED.length) });
   if (error.startsWith(CI_FAILED)) return t('stageCi.failed', { list: error.slice(CI_FAILED.length) });
   if (error.startsWith(EVALUATION_REJECTED)) return t('stageEvaluate.rejected', { list: error.slice(EVALUATION_REJECTED.length) }); // #877

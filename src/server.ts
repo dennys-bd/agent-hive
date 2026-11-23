@@ -28,7 +28,7 @@ import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
 import { createLspHost } from './lsp-host.js';
 import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
-import type { HeadlessDeps } from './headless-run.js';
+import type { HeadlessSeams } from './headless-run.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { createPassageStore, protocolRenderer } from './passage-store.js';
@@ -124,6 +124,7 @@ import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { accountsRefusal } from './accounts-config.js';
+import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
@@ -182,6 +183,7 @@ export interface Runtime {
 
 export interface ServerDeps {
   treeWatch?: TreeWatch; // #502: the files sidebar's watches; tests inject a recording fake, the default watches each root on its activity's machine (#935)
+  accountEnv?: typeof accountEnv; // #953: tests: a seam that refuses where no runner is asked (a terminal); the default is account-env.ts'
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
@@ -200,7 +202,7 @@ export interface ServerDeps {
   facts?: FactLog; // #742: tests inject a fake; default writes <home>/facts.jsonl beside hive.log
   /** The agent CLIs this machine has, detected on boot (#516). Absent (tests) means every agent is available. */
   agents?: AgentAvailability[];
-  headless?: HeadlessDeps; // #877: tests' fake agent CLI for an evaluation's runs
+  headless?: HeadlessSeams; // #877: tests' fake agent CLI for an evaluation's runs
   exec?: Exec; // git for the spawn's worktree, the deleteActivity effect and the task routes, gh for the PR states (#207); tests inject a fake and see the calls
   keepAwakeSpawn?: KeepAwakeSpawn; // #226: the keep-awake child's spawn; tests inject a fake, the default starts caffeinate / systemd-inhibit
   /** The Hive's own reading of the plan limits; absent (every test) means it never reads. main.ts / run.ts inject the real one. */
@@ -350,12 +352,16 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
+  const runAccounts = createRunAccounts();
+  const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv) });
+  const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
+  const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
   const evaluator = createEvaluateRunner({
-    exec, agents, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
+    exec, agents, accountDeps, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
     pluginDir: async (workspace) => { await pluginRender.ready(); return pluginRender.dir(workspace); }, ...(deps.headless === undefined ? {} : { headless: deps.headless }),
   });
   // #474: the benchmark's evaluations, in the background; a Quit aborts them beside the evaluate stage's. folderOf only sees ids the
@@ -364,7 +370,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const benchVersion = async (): Promise<string> => (await pluginVersion(shippedPlugin)) ?? '';
   const benchEvaluator = createBenchEvaluator({
     latest: () => live?.state, dispatch, folderOf: (id) => experimentFolder(home, id), log, now: Date.now, config: () => live?.runtime.config,
-    runDeps: benchRunDeps({ exec: execRun, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
+    runDeps: benchRunDeps({ exec: execRun, accountDeps, ...(deps.headless === undefined ? {} : { headless: deps.headless }) }),
   });
   // #472: the benchmark's loops, one per running experiment; a Quit aborts them before the evaluations they would start
   const benchRunner = createBenchRunner({ latest: () => live?.state, config: () => live?.runtime.config, dispatch, hiveDir: home, evaluator: benchEvaluator, log, now: () => new Date() });
@@ -521,6 +527,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // sources against the runtime this event actually reduced against, never whatever live.runtime holds by the time it runs.
     const runtime = live.runtime;
     live = { runtime, state: result.state };
+    if (event.type === 'exit' || event.type === 'spawnFailed') runAccounts.drop(event.ptyId); // #953: a run's accounts live as long as it does
     if (event.type === 'exit') semaphores?.ended(event.ptyId); // #798: a captured session ending inside its terminal frees what its run holds
     backoffs.sync(result.state.workers); // #805: a new wait arms its timer, a resumed or gone run's goes
     keepAwake.sync(result.state.keepAwake === true); // #226: every path that sets or clears it; before the effects, so the shutdown's drain releases it first
@@ -598,7 +605,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         if (closing) { log.info(`${describeEffect(effect)} dropped: closing`); return; }
         log.info(describeEffect(effect));
         // #696: awaited, so a wake answers its run once the pool holds it; a failure before the pty (its files) sleeps it again, the reason in the bar
-        await spawner.spawnTerminal(runtime, effect, size).catch((err: unknown) => dispatch({ type: 'spawnFailed', ptyId: effect.terminal.terminalId, message: errorMessage(err) }));
+        await spawner.spawnTerminal(runtime, effect, size).catch((err: unknown) => dispatch({ type: 'spawnFailed', ptyId: effect.terminal.terminalId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) }));
         return;
       case 'stageCommand': // #755: one command of a commands stage; its pty's end answers stageCommandEnded, so this awaits only its start
         if (closing) { log.info(`${describeEffect(effect)} dropped: closing`); return; }
@@ -1112,7 +1119,8 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
-    await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits }); // #929: the worker's agent's reading
+    const account = reportedAccount(runAccounts, ptyId, agent); // #953: the account its run started on, never the one selected now
+    await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits, ...(account === undefined ? {} : { account }) }); // #929: the worker's agent's reading
   });
   let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
@@ -1348,9 +1356,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
   const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
-  registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
+  registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
-  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents });
+  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, facts: wiring.facts, log, home, queueSave, saveSettings });
@@ -1382,7 +1390,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor, dropRunTmp: dropCapturedTmp }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor, dropRunTmp: dropCapturedTmp, accountEnv: accountSeam, runAccounts }); // wake, forget (#696); the shim's register under /hooks/
   registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)

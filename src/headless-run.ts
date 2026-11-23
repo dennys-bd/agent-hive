@@ -8,6 +8,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { type AccountEnvDeps, AccountError, accountEnv, refusalLine } from './account-env.js';
 import { AGENTS } from './agents.js';
 import { agentDirs } from './agents/command.js';
 import { runners } from './agents/registry.js';
@@ -26,9 +27,12 @@ const FILE_MODE = 0o600; // the schema; the folder's 0700 already keeps the answ
 export interface HeadlessInput { agent: AgentId; model?: string; prompt: string; schema: object; signal: AbortSignal; cwd?: string; readOnlyTools?: true; mcpConfig?: string; allowedTools?: readonly string[]; outsideRepo?: true; timeoutMs?: number }
 type HeadlessFailure = { failure: string; detail: string };
 export type HeadlessResult = { answer: string } | HeadlessFailure;
-/** Tests' seams: the env (a fake CLI first on its PATH), the folder the run's temp folder goes in, a shorter timeout, and the platform and file
- *  system the agent is looked up with (#633). */
-export interface HeadlessDeps { env?: NodeJS.ProcessEnv; tmpRoot?: string; timeoutMs?: number; platform?: NodeJS.Platform; isFile?: (file: string) => boolean }
+/** `account` is every caller's (#953): the live selection and the credential store. The rest are the tests' seams: the env (a fake CLI first on
+ *  its PATH), the folder the run's temp folder goes in, a shorter timeout, and the platform and file system the agent is looked up with (#633). */
+export interface HeadlessDeps { account: AccountEnvDeps; env?: NodeJS.ProcessEnv; tmpRoot?: string; timeoutMs?: number; platform?: NodeJS.Platform; isFile?: (file: string) => boolean }
+
+/** What a test injects; every caller adds the live account deps. */
+export type HeadlessSeams = Omit<HeadlessDeps, 'account'>;
 
 const DETAIL_TAIL = 2048;
 
@@ -50,9 +54,22 @@ export function headlessProcess(agent: AgentId, args: string[], env: NodeJS.Proc
   }
 }
 
-/** One headless run of `input.agent`. Never leaves its folder behind; throws only when the folder itself cannot be made or written. */
-export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {}): Promise<HeadlessResult> {
+// #953: the run's account env, before its folder exists; a refused account runs nothing and is the run's failure, any other error a throw
+async function headlessAccount(agent: AgentId, deps: AccountEnvDeps): Promise<{ env: Record<string, string> } | HeadlessFailure> {
+  try {
+    return await accountEnv({ agent }, deps);
+  } catch (err) {
+    if (err instanceof AccountError) return { failure: refusalLine(err), detail: '' };
+    throw err;
+  }
+}
+
+/** One headless run of `input.agent`. Never leaves its folder behind; throws only when the folder itself cannot be made or written, or when a
+ *  provider fails with anything but AccountError. */
+export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps): Promise<HeadlessResult> {
   const runner = runners[input.agent];
+  const account = await headlessAccount(input.agent, deps.account);
+  if ('failure' in account) return account;
   const dir = await mkdtemp(join(deps.tmpRoot ?? tmpdir(), 'hive-headless-'));
   try {
     const schema = JSON.stringify(input.schema);
@@ -63,8 +80,9 @@ export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps = {})
       ...(input.outsideRepo ? { outsideRepo: true as const } : {}),
     };
     await writeFile(run.schemaPath, schema, { mode: FILE_MODE });
-    // #877: the runner's env over the Hive-free one, before the lookup: the child's PATH and Copilot's own home both come from it
-    const env = { ...withoutHiveEnv(deps.env ?? process.env), ...runner.headlessEnv(run) };
+    // #877: the runner's env over the Hive-free one, before the lookup: the child's PATH and Copilot's own home both come from it; #953: the
+    // account's between them, so the runner's own home (Copilot) stays last
+    const env = { ...withoutHiveEnv(deps.env ?? process.env), ...account.env, ...runner.headlessEnv(run) };
     const proc = headlessProcess(input.agent, runner.headless(run), env, { platform: deps.platform ?? process.platform, isFile: deps.isFile });
     if ('failure' in proc) return proc;
     const ran = await runOn(runDetached, proc, runner.headlessPrompt(input.prompt, schema), input.cwd ?? dir, deps.timeoutMs ?? input.timeoutMs ?? HEADLESS_TIMEOUT_MS, input.signal);
