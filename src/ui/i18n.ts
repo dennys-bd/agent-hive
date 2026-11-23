@@ -571,6 +571,10 @@ const en = {
   'activities.worker': 'worker',
   'activities.done': 'done', // #586: the done group in status and no-grouping modes
   'activities.summary': '{n} · {k} {status}', // #586: a collapsed workspace's count and those that wait on the user
+  'activities.collapseTask': 'Collapse {name}', // #913: a task's chevron, named after the task
+  'activities.expandTask': 'Expand {name}',
+  'activities.taskHidden': '{n} hidden lines', // #913: a collapsed task's marker, as a screen reader reads it
+  'activities.taskHiddenOne': '{n} hidden line',
   'activities.clean': 'clean', // #586: a worktree with nothing changed and nothing ahead
   'activities.groupBy': 'group by', // #586: the workspace's ⋯
   'activities.groupBy.stage': 'stage',
@@ -4144,6 +4148,10 @@ const pt: Record<MessageKey, string> = {
   'activities.worker': 'worker',
   'activities.done': 'finalizado', // #586: the done group in status and no-grouping modes
   'activities.summary': '{n} · {k} {status}', // #586: a collapsed workspace's count and those that wait on the user
+  'activities.collapseTask': 'Recolher {name}', // #913: a task's chevron, named after the task
+  'activities.expandTask': 'Expandir {name}',
+  'activities.taskHidden': '{n} linhas ocultas', // #913: a collapsed task's marker, as a screen reader reads it
+  'activities.taskHiddenOne': '{n} linha oculta',
   'activities.clean': 'limpa', // #586: a worktree with nothing changed and nothing ahead
   'activities.groupBy': 'agrupar por', // #586: the workspace's ⋯
   'activities.groupBy.stage': 'etapa',
