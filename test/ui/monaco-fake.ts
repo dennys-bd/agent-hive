@@ -84,7 +84,10 @@ export class FakeEditor {
   private zones = new Map<string, FakeZone>();
   private keys: KeyListener[] = [];
   private ends: Listener[] = [];
-  decorations: FakeDecoration[] = [];
+  // one list per decorations collection: the template's marks and a jump's paint stand together (#982)
+  private marks: { list: FakeDecoration[] }[] = [];
+  get decorations(): FakeDecoration[] { return this.marks.flatMap((collection) => collection.list); }
+  selection?: FakeSelection; // #982: the last selection, set from outside, made by the user or left by a move
   private mouse: MouseListener[] = [];
   private selecting: SelectionListener[] = [];
   private moving: PositionListener[] = [];
@@ -105,6 +108,8 @@ export class FakeEditor {
   setPosition(position: Position): void {
     this.position = position;
     for (const listener of this.moving) listener({ position }); // Monaco reports its own moves too (#492)
+    // #982: a move collapses Monaco's selection, and its selection event reports that
+    this.select({ startLineNumber: position.lineNumber, startColumn: position.column, endLineNumber: position.lineNumber, endColumn: position.column });
   }
   onDidChangeCursorPosition(listener: PositionListener): { dispose(): void } {
     this.moving = [...this.moving, listener];
@@ -121,8 +126,10 @@ export class FakeEditor {
   getModel(): FakeModel { return this.model; }
   getRawOptions(): { fontFamily: string } { return { fontFamily: this.fontFamily }; }
   getOption(id: number): number | undefined { return id === LINE_HEIGHT_OPTION ? FAKE_LINE_HEIGHT : undefined; }
-  createDecorationsCollection(): { set(list: FakeDecoration[]): void; clear(): void } {
-    return { set: (list) => { this.decorations = list; }, clear: () => { this.decorations = []; } };
+  createDecorationsCollection(initial: FakeDecoration[] = []): { set(list: FakeDecoration[]): void; clear(): void } {
+    const collection = { list: initial };
+    this.marks = [...this.marks, collection];
+    return { set: (list) => { collection.list = list; }, clear: () => { collection.list = []; } };
   }
   onDidChangeModelContent(listener: Listener): { dispose(): void } { return this.model.onDidChangeContent(listener); }
   onMouseDown(listener: MouseListener): { dispose(): void } {
@@ -135,8 +142,12 @@ export class FakeEditor {
   }
   /** What selecting text in the editor does (#331). */
   select(selection: FakeSelection): void {
+    this.selection = selection;
     for (const listener of this.selecting) listener({ selection });
   }
+  getSelection(): FakeSelection | null { return this.selection ?? null; }
+  /** Monaco's setSelection (#982): its selection event reports the new one. */
+  setSelection(selection: FakeSelection): void { this.select(selection); }
   /** What a click on the gutter's mark column at `line` does. */
   clickGutter(line: number): void {
     for (const listener of this.mouse) listener({ target: { type: GUTTER_LINE_DECORATIONS, position: { lineNumber: line, column: 1 } } });

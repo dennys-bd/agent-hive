@@ -5,12 +5,12 @@ import type { EditResult } from '../../../template-edit';
 import { buildMap, type TemplateMap } from '../../../template-map';
 import { chainsOf, previewTemplate } from '../../../template-preview';
 import type { CatalogueItem, ItemRead } from '../../../types';
-import { AssistFooter } from '@/components/plugins/AssistFooter';
+import { AssistFooter, type Handoff } from '@/components/plugins/AssistFooter';
 import { BlockMap, type MapGap } from '@/components/plugins/BlockMap';
 import { ChainCard } from '@/components/plugins/ChainCard';
 import { ConditionPopover } from '@/components/plugins/ConditionPopover';
 import { FileTabs, type FileTabsProps } from '@/components/plugins/FileTabs';
-import { type ChipPopover, type Reveal, TemplateText } from '@/components/plugins/TemplateText';
+import { type ChipPopover, type Reveal, type SelectCommand, TemplateText } from '@/components/plugins/TemplateText';
 import type { Annotations } from '@/hooks/use-annotations';
 import { type Assist, type AssistPick, useAssist } from '@/hooks/use-assist';
 import type { ItemEditor } from '@/hooks/use-item-editor';
@@ -122,13 +122,36 @@ function marginOf({ annotations, isMarginOpen, onMargin }: BodyProps, chips: rea
   return { isOpen: isMarginOpen, count: annotations.list.length, onToggle };
 }
 
+interface Passage {
+  selection?: LineSelection; select?: SelectCommand; handoff?: Handoff;
+  onSelection(lines: LineSelection | undefined): void; release(): void; passage(request: string, line: number): void;
+}
+
+// #982: the bar's passage is the editor's selection as Monaco last reported it. × and a hand-off reach Monaco through select, and Monaco's
+// own event brings the state back, so nothing holds a second selection
+function usePassage(modelKey: string, isWritable: boolean, lineOf: (line: number) => number): Passage {
+  const [selection, setSelection] = useState<LineSelection>();
+  const [select, setSelect] = useState<SelectCommand>();
+  const [handoff, setHandoff] = useState<Handoff>();
+  // A new Monaco or a text no longer writable starts with no selection: the old one's lines are invisible now, and Monaco reports none
+  // biome-ignore lint/correctness/useExhaustiveDependencies: both are triggers, not read inside
+  useEffect(() => { setSelection(undefined); }, [modelKey, isWritable]);
+  const selectLines = (lines?: LineSelection): void => setSelect((last) => ({ lines, n: (last?.n ?? 0) + 1 }));
+  const passage = (request: string, line: number): void => {
+    const shownLine = lineOf(line); // a source line, as an annotation carries it
+    selectLines({ startLine: shownLine, endLine: shownLine });
+    setHandoff((last) => ({ request, n: (last?.n ?? 0) + 1 }));
+  };
+  return { selection, select, handoff, onSelection: setSelection, release: () => selectLines(), passage };
+}
+
 function EditorBody(props: BodyProps) {
   const { editor, annotations, item, read, path, fontFamily, workspaces } = props;
   const { isMd, parsed, map, workspace, preview, look } = useFileLook(props);
   // The source line of the last reveal: the look maps it at render, so a chain just inserted lands under the look that holds it
   const [reveal, setReveal] = useState<Reveal>();
   const [caret, setCaret] = useState<number>(); // #492: the map raises the caret's block
-  const revealLine = (line: number): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1 }));
+  const revealLine = (line: number, isJump?: boolean): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1, isJump }));
   useAnnotationReveal(annotations.revealed, revealLine);
   const isPreview = workspace !== undefined;
   const isWritable = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
@@ -138,11 +161,8 @@ function EditorBody(props: BodyProps) {
   const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const forms = useChainForms({ editor, parsed, map, workspaces, isReadOnly: !canEdit, reveal: revealLine });
   const margin = marginOf(props, shown.chips, isPreview, forms.popover);
-  const selection = useRef<LineSelection>(undefined); // the text's last selection, which a request sends
   const modelKey = [item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0');
-  // A new Monaco or a text no longer writable starts with no selection: the old one's lines are invisible now, and Monaco reports none
-  // biome-ignore lint/correctness/useExhaustiveDependencies: both are triggers, not read inside
-  useEffect(() => { selection.current = undefined; }, [modelKey, isWritable]);
+  const bar = usePassage(modelKey, isWritable, shown.lineOf); // #982: the selection a request sends, and the bar's entry point
   return (
     <section aria-label={item.name} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FileTabs
@@ -154,26 +174,29 @@ function EditorBody(props: BodyProps) {
         {isMd ? (
           <BlockMap
             map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move} appendLine={appendLine(parsed)}
-            onReveal={revealLine} onPlus={forms.onPlus} gap={forms.gap}
+            onReveal={revealLine} onJump={(line) => revealLine(line, true)} onPlus={forms.onPlus} gap={forms.gap}
             dots={isPreview || isProposal ? undefined : dots} onDot={annotations.openAt}
             current={isPreview || caret === undefined ? undefined : blockAt(map, caret)}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
           modelKey={modelKey} path={path} text={shown.text} isReadOnly={!canEdit} isProposal={isProposal}
-          fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { line: shown.lineOf(reveal.line), n: reveal.n }}
-          onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={(lines) => { selection.current = lines; }}
-          annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf} onCaret={setCaret}
+          fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { ...reveal, line: shown.lineOf(reveal.line) }}
+          onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={bar.onSelection} select={bar.select}
+          annotations={isPreview ? undefined : { ...annotations, passage: bar.passage }} anchorOf={shown.lineOf} onCaret={setCaret}
           isMarginOpen={props.isMarginOpen} onDot={(annotation) => { props.onMargin(true); annotations.openAt(annotation); }}
         />
       </div>
-      <AssistFooter assist={assist} pick={props.pick} onPick={props.onPick} workspace={workspaces[0]} isDisabled={!isWritable} onAsk={(request) => assist.ask(request, selection.current)} />
+      <AssistFooter
+        assist={assist} pick={props.pick} onPick={props.onPick} workspace={workspaces[0]} isDisabled={!isWritable} onAsk={(request) => assist.ask(request, bar.selection)}
+        passage={bar.selection} onRelease={bar.release} handoff={bar.handoff}
+      />
     </section>
   );
 }
 
 /** A skill's or a specialist's item screen (#319, #323, handoff 11b, 11c, 11e, 11m): its files, the map and the text, or the preview of one
- * workspace; #327: the open file's annotations in the text; #980: the view's switch closes the margin, and a dot in the gutter reopens it with its card. A specialist is one file: no "+", and its header stays in the text. #331: the footer that asks the agent, under the text. The body is keyed by item and file, so a switch starts with
+ * workspace; #327: the open file's annotations in the text; #980: the view's switch closes the margin, and a dot in the gutter reopens it with its card. A specialist is one file: no "+", and its header stays in the text. #331: the footer that asks the agent, under the text. #982: the bar names the editor's selection, and `annotations.passage` hands it a request and a line. The body is keyed by item and file, so a switch starts with
  * no pending reveal. */
 export function SkillEditor(props: SkillEditorProps) {
   const { item, read, path, hasFailed } = props.editor;
