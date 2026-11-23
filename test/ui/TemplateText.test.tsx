@@ -167,4 +167,8 @@ test('select sets whole lines once per n, reported through onSelection; one with
   rerender(<TemplateText {...props({ onSelection, select: { n: 2 } })} />);
   expect(view.selection).toEqual({ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 });
   expect(onSelection).toHaveBeenLastCalledWith(undefined);
+  const last = view.getModel().getLineCount();
+  rerender(<TemplateText {...props({ onSelection, select: { lines: { startLine: last + 5, endLine: last + 9 }, n: 3 } })} />);
+  // a stale line past the end is clamped to the last line, never thrown on
+  expect(view.selection).toEqual({ startLineNumber: last, startColumn: 1, endLineNumber: last, endColumn: view.getModel().getLineMaxColumn(last) });
 });

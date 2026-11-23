@@ -120,6 +120,7 @@ test('a selection names its lines after the agent chip and before the field, in 
   expect(release).toHaveAttribute('title', 'soltar a seleção');
   fireEvent.click(release);
   expect(onRelease).toHaveBeenCalledTimes(1);
+  expect(input).toHaveFocus(); // × unmounts with the chip: the focus goes to the field, not to the page
   rerender(footer(assistOf(), { passage: { startLine: 9, endLine: 9 }, onRelease }));
   expect(screen.getByText('linha 9')).toBeInTheDocument();
   rerender(footer(assistOf(), { onRelease }));

@@ -95,7 +95,7 @@ export function AssistFooter({ assist, pick, onPick, workspace, isDisabled, onAs
       {assist.request !== undefined && <Exchange assist={assist} agent={pick.agent} />}
       <div className="flex items-center gap-2 rounded-md border px-2 py-1.5 focus-within:border-ring">
         <AgentModelChip pick={pick} onPick={onPick} workspace={workspace} isDisabled={isDisabled} label={t('plugins.assist.chip')} />
-        <PassageChip lines={shown} onRelease={onRelease} />
+        <PassageChip lines={shown} onRelease={() => { input.current?.focus(); onRelease?.(); }} />
         <input
           ref={input} aria-label={placeholder} placeholder={placeholder} value={draft} disabled={isOff}
           onChange={(event) => setDraft(event.target.value)} onKeyDown={send}

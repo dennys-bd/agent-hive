@@ -48,9 +48,12 @@ function selectedLines(selection: IRange): LineSelection | undefined {
   if (startLineNumber === endLineNumber && startColumn === endColumn) return undefined;
   return { startLine: startLineNumber, endLine: endColumn === 1 && endLineNumber > startLineNumber ? endLineNumber - 1 : endLineNumber };
 }
-// #982: from the first column of the first line to the last column of the last
+// #982: from the first column of the first line to the last column of the last. Lines past the end are clamped: a caller's line may be
+// stale after an edit, and Monaco's getLineMaxColumn throws on a line the model does not have
 function wholeLines(view: View, { startLine, endLine }: LineSelection): IRange {
-  return { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: view.getModel()?.getLineMaxColumn(endLine) ?? 1 };
+  const model = view.getModel();
+  const end = Math.min(Math.max(endLine, 1), model?.getLineCount() ?? 1);
+  return { startLineNumber: Math.min(Math.max(startLine, 1), end), startColumn: 1, endLineNumber: end, endColumn: model?.getLineMaxColumn(end) ?? 1 };
 }
 // #982: no lines collapses the selection to its start, so Monaco reports none and the bar's chip goes
 function collapsed(view: View): IRange {
