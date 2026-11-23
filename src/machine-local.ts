@@ -1,15 +1,15 @@
 // The local machine (#158): the host's own disk, processes and ptys behind Machine, so 7.2 to 7.4 move every caller onto it and node 8's
-// remote machine stands in for an actor's task with no caller changing again. The pty half is machine-local-pty.ts.
-import { execFile, spawn } from 'node:child_process';
-import { homedir, tmpdir } from 'node:os';
-import { promisify } from 'node:util';
-import { envValue } from './exec-path.js';
-import { type Machine, type MachineChild, type MachineExec, type MachineInfo, type ProcessOptions, pathsOf, toMachineError } from './machine.js';
+// remote machine stands in for an actor's task with no caller changing again. The pty half is machine-local-pty.ts; the disk, its exec and
+// the machine's facts are machine-local-disk.ts (#941), which the distro's helper takes without the pty.
+import { spawn } from 'node:child_process';
+import { type Machine, type MachineChild, type MachineInfo, type ProcessOptions, pathsOf } from './machine.js';
+import { infoOf, localDisk } from './machine-local-disk.js';
+import { localWatch } from './machine-local-fs.js';
 import { createLocalPty, type LocalPtyDeps } from './machine-local-pty.js';
-import { localFs, localWatch } from './machine-local-fs.js';
 import { runDetached } from './machine-run.js';
-import { posixShell } from './posix-shell.js';
 import { type AgentAvailability, type Exec, LOCAL_MACHINE } from './types.js';
+
+export { LOCAL_DISK, localDisk } from './machine-local-disk.js';
 
 export interface LocalMachineDeps extends Omit<LocalPtyDeps, 'env' | 'platform'> {
   exec: Exec; // the server's own: tests see every call, as today
@@ -21,33 +21,6 @@ export interface LocalMachineDeps extends Omit<LocalPtyDeps, 'env' | 'platform'>
 // stdio left at its default, three pipes: spawn's type is then ChildProcessWithoutNullStreams
 const localProcess = (command: string, args: string[], { cwd, env, windowsVerbatimArguments }: ProcessOptions): MachineChild =>
   spawn(command, args, { cwd, env, windowsVerbatimArguments });
-
-// cwd and signal ride along to the exec under it: execFile takes both, and a test's fake sees them
-const machineExec = (exec: Exec): MachineExec => async (file, args, opts) => {
-  try {
-    return await exec(file, args, opts);
-  } catch (err) {
-    throw toMachineError(err);
-  }
-};
-
-/** The local disk with an exec over it (#159): what createLocalMachine is built on, and what a host caller with no server yet hands a
- * function that reads a workspace folder. */
-export const localDisk = (exec: Exec): Pick<Machine, 'exec' | 'fs'> => ({ fs: localFs, exec: machineExec(exec) });
-
-/** workspacePathProblem's own (#202): always the real git, never an injected one, as it was before the machine. */
-export const LOCAL_DISK: Pick<Machine, 'exec' | 'fs' | 'paths'> = { ...localDisk(promisify(execFile)), paths: pathsOf(process.platform) };
-
-// #806: win32's env names ignore case; elsewhere PATH is PATH
-function infoOf(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, agents: readonly AgentAvailability[]): MachineInfo {
-  const path = (platform === 'win32' ? envValue(env, 'PATH') : env.PATH) ?? '';
-  const { CLAUDE_CONFIG_DIR: claudeConfigDir, CODEX_HOME: codexHome, COPILOT_HOME: copilotHome } = env;
-  return {
-    platform, arch: process.arch, homedir: homedir(), tmpdir: tmpdir(), path, shell: posixShell().shell,
-    ...(claudeConfigDir === undefined ? {} : { claudeConfigDir }), ...(codexHome === undefined ? {} : { codexHome }),
-    ...(copilotHome === undefined ? {} : { copilotHome }), agents: [...agents],
-  };
-}
 
 export function createLocalMachine(deps: LocalMachineDeps): Machine {
   const env = deps.env ?? process.env;

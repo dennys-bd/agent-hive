@@ -6,9 +6,10 @@ import path, { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { MachineError } from '../src/machine.js';
 import { createLocalMachine, LOCAL_DISK, localDisk } from '../src/machine-local.js';
+import { infoOf, LOCAL_DISK as DISK_OF_MODULE, localDisk as diskOfModule } from '../src/machine-local-disk.js';
 import { runDetached } from '../src/machine-run.js';
 import { posixShell } from '../src/posix-shell.js';
-import type { Exec } from '../src/types.js';
+import type { AgentAvailability, Exec } from '../src/types.js';
 import { localDeps as deps, fakeMachine as fakeLocal, machineWith } from './fake-machine.js';
 import { fakeMachine } from './fakes.js';
 import { assertMode, NO_POSIX_FAULTS } from './posix-only.js';
@@ -82,6 +83,15 @@ test('localDisk is the local fs and the exec turned into MachineError: what crea
   await assert.rejects(disk.exec('git', ['status']), (err: unknown) => err instanceof MachineError && err.code === 128 && err.stderr === 'fatal: not a git repository');
   assert.equal(disk.fs, createLocalMachine(deps()).fs, 'one fs table');
   assert.equal(LOCAL_DISK.fs, disk.fs);
+});
+
+test('machine-local-disk.ts holds the disk, which machine-local.ts re-exports as the same values, and infoOf, which reads PATH case-blind on win32 only (#941)', () => {
+  assert.deepEqual([LOCAL_DISK === DISK_OF_MODULE, localDisk === diskOfModule], [true, true]);
+  const agents: AgentAvailability[] = [{ agent: 'claude', available: true }];
+  const linux = infoOf({ Path: 'C:\\bin', PATH: '/usr/bin', CODEX_HOME: '/codex-home' }, 'linux', agents);
+  const windows = infoOf({ Path: 'C:\\bin' }, 'win32', agents);
+  assert.deepEqual([linux.platform, linux.path, linux.codexHome, linux.agents, windows.path], ['linux', '/usr/bin', '/codex-home', agents, 'C:\\bin']);
+  assert.notEqual(linux.agents, agents, 'a copy: the caller\'s list is never the machine\'s');
 });
 
 const linesOf = async (lines: AsyncIterable<string>): Promise<string[]> => {
