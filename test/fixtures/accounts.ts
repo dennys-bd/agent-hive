@@ -1,4 +1,7 @@
 import type { AccountEnvDeps } from '../../src/account-env.js';
 
-/** No account selected and an empty credential store (#953): every run on the machine's login. */
-export const NO_ACCOUNTS: AccountEnvDeps = { accounts: {}, credentials: async () => ({}) };
+/** gh with no login (#962): Copilot's check refuses it as copilot/missing before anything is fetched. */
+export const LOGGED_OUT: AccountEnvDeps['machineGithub'] = { login: async () => '', token: async () => { throw new Error('gh has no login'); } };
+
+/** No account selected, an empty credential store and gh logged out (#953, #962): every run on the machine's login. */
+export const NO_ACCOUNTS: AccountEnvDeps = { accounts: {}, credentials: async () => ({}), machineGithub: LOGGED_OUT };

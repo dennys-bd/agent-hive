@@ -2,22 +2,12 @@
 // headless run alike. It asks the run's agent's runner (AgentRunner.accountEnv); #961 adds the GitHub provider under it. A provider that
 // cannot give the account throws AccountError, which every start path turns into a refusal. Also the accounts each pty's run resolved, kept
 // for the run's life, so a worker's report is attributed to the account its run started on.
+import { AccountError } from './account-error.js';
 import { runners } from './agents/registry.js';
+import type { GhToken } from './github-token.js';
 import type { AccountProvider, AccountsConfig, AgentId, Credentials } from './types.js';
 
-export type AccountCode = 'missing' | 'mismatch' | 'unreachable';
-
-/** A provider's refusal (#953). Its message is safe to log and to show raw: it names the provider, the code and a reason, never a token. */
-export class AccountError extends Error {
-  readonly provider: AccountProvider;
-  readonly code: AccountCode;
-  constructor(provider: AccountProvider, code: AccountCode, reason?: string) {
-    super(`account ${provider} ${code}${reason === undefined ? '' : `: ${reason}`}`);
-    this.name = 'AccountError';
-    this.provider = provider;
-    this.code = code;
-  }
-}
+export { AccountError, type AccountCode } from './account-error.js'; // #962: moved; every caller still imports it from here
 
 /** The one line a refusal becomes wherever it leaves the process (#953): provider and code, never the reason, which is free-form text a
  * provider could let a token into. The reason stays in the process. */
@@ -30,7 +20,8 @@ export const seamRefusalLine = (err: unknown): string => (err instanceof Account
 
 /** What each provider resolved to for one run; a member absent = the machine's login. Names only, never a token. */
 export type RunAccounts = AccountsConfig;
-export interface AccountEnvDeps { accounts: AccountsConfig; credentials(): Promise<Credentials> }
+// machineGithub: gh's login and token (#962), Copilot's account when nothing is selected; the GitHub account's machine (server.ts)
+export interface AccountEnvDeps { accounts: AccountsConfig; credentials(): Promise<Credentials>; machineGithub: Pick<GhToken, 'login' | 'token'> }
 export interface AccountEnvAnswer { env: Record<string, string>; accounts: RunAccounts }
 /** The seam bound to the live selection and store (server.ts): what a start path calls. */
 export type AccountSeam = (run: { agent?: AgentId }) => Promise<AccountEnvAnswer>;
@@ -43,7 +34,7 @@ export async function accountEnv(run: { agent?: AgentId }, deps: AccountEnvDeps)
   if (run.agent === undefined) return { env: {}, accounts: {} };
   const provider = AGENT_PROVIDER[run.agent];
   const selected = provider === undefined ? undefined : deps.accounts[provider];
-  const answer = await runners[run.agent].accountEnv({ ...(selected === undefined ? {} : { selected }), credentials: deps.credentials });
+  const answer = await runners[run.agent].accountEnv({ ...(selected === undefined ? {} : { selected }), credentials: deps.credentials, machineGithub: deps.machineGithub });
   return { env: answer.env, accounts: provider === undefined || answer.account === undefined ? {} : { [provider]: answer.account } };
 }
 

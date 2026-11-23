@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AccountError, accountEnv, createRunAccounts, ptyAccountEnv, reportedAccount } from '../src/account-env.js';
+import { AccountError as MovedAccountError } from '../src/account-error.js';
 import type { AccountCtx } from '../src/agents/runner.js';
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS } from '../src/types.js';
+import { LOGGED_OUT } from './fixtures/accounts.js';
 
-const DEPS = { accounts: { claude: 'work', copilot: 'octo' }, credentials: async () => ({}) };
+const DEPS = { accounts: { claude: 'work', copilot: 'octo' }, credentials: async () => ({}), machineGithub: LOGGED_OUT };
 
 test('with no agent (a terminal) the seam answers no env and no accounts, and asks no runner (#953)', async (t) => {
   const asked = t.mock.method(runners.claude, 'accountEnv');
@@ -20,7 +22,7 @@ test('the runner is asked with its provider\'s selection and the credential read
     return { env: { X: '1' }, account: 'octo' };
   });
   assert.deepEqual(await accountEnv({ agent: 'copilot' }, DEPS), { env: { X: '1' }, accounts: { copilot: 'octo' } });
-  assert.deepEqual([seen[0]?.selected, seen[0]?.credentials], ['octo', DEPS.credentials]);
+  assert.deepEqual([seen[0]?.selected, seen[0]?.credentials, seen[0]?.machineGithub], ['octo', DEPS.credentials, LOGGED_OUT], '#962: gh\'s machine login reaches the runner');
 });
 
 test('a runner answering no account leaves accounts empty: the machine\'s login (#953)', async (t) => {
@@ -39,10 +41,12 @@ test('Codex has no provider: its runner gets no selection and its answer keeps n
 });
 
 test('every runner answers { env: {} } in this delivery (#953)', async () => {
-  for (const id of AGENT_IDS) assert.deepEqual(await runners[id].accountEnv({ credentials: async () => ({}) }), { env: {} }, id);
+  for (const id of AGENT_IDS) assert.deepEqual(await runners[id].accountEnv({ credentials: async () => ({}), machineGithub: LOGGED_OUT }), { env: {} }, id);
 });
 
 test('AccountError says account <provider> <code>, then the reason after a colon; the seam lets it and any other error through (#953)', async (t) => {
+  assert.equal(AccountError, MovedAccountError, '#962: account-env.ts re-exports the one class');
+  assert.deepEqual([new AccountError('github', 'unreachable').reason, new AccountError('copilot', 'mismatch', 'HTTP 401').reason], [undefined, 'HTTP 401']);
   assert.equal(new AccountError('github', 'unreachable').message, 'account github unreachable');
   const refusal = new AccountError('claude', 'missing', 'no token named work');
   assert.deepEqual([refusal.message, refusal.provider, refusal.code, refusal instanceof Error], ['account claude missing: no token named work', 'claude', 'missing', true]);
