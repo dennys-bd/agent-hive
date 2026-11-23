@@ -21,9 +21,9 @@ export const isLocal = (machine: Pick<Machine, 'id'>): boolean => machine.id ===
 export const machineCode = (err: unknown): string | number | undefined => (err instanceof MachineError ? err.code : undefined);
 
 // lstat, not stat: a symlink is the item, not its target, and a dangling one still holds its name, so no free name lands on it
-export const pathFs = ({ fs }: Pick<Machine, 'fs'>): PathFs => ({ realpath: (path) => fs.realpath(path), stat: (path) => fs.lstat(path) });
+export const pathFs = ({ fs, paths }: Pick<Machine, 'fs' | 'paths'>): PathFs => ({ realpath: (path) => fs.realpath(path), stat: (path) => fs.lstat(path), paths });
 
-export function treeFs(machine: Pick<Machine, 'fs'>): TreeFs {
+export function treeFs(machine: Pick<Machine, 'fs' | 'paths'>): TreeFs {
   const { fs } = machine;
   return {
     ...pathFs(machine),
@@ -47,7 +47,7 @@ export function treeFs(machine: Pick<Machine, 'fs'>): TreeFs {
 }
 
 // cp keeps a link a link and never overwrites
-export const moveFs = (machine: Pick<Machine, 'fs'>): MoveFs => ({
+export const moveFs = (machine: Pick<Machine, 'fs' | 'paths'>): MoveFs => ({
   ...pathFs(machine),
   rename: (from, to) => machine.fs.rename(from, to),
   cp: (from, to) => machine.fs.cp(from, to, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true }),
@@ -55,10 +55,11 @@ export const moveFs = (machine: Pick<Machine, 'fs'>): MoveFs => ({
 });
 
 /** What resolveActivityPath reads (#258): realpath follows symlinks, so a link out of the task's folder is caught. */
-export interface FileFs { realpath(path: string): Promise<string>; isFile(path: string): Promise<boolean> }
-export const fileFs = ({ fs }: Pick<Machine, 'fs'>): FileFs => ({
+export interface FileFs { realpath(path: string): Promise<string>; isFile(path: string): Promise<boolean>; paths: Machine['paths'] }
+export const fileFs = ({ fs, paths }: Pick<Machine, 'fs' | 'paths'>): FileFs => ({
   realpath: (path) => fs.realpath(path),
   isFile: (path) => fs.stat(path).then((s) => s.isFile(), () => false),
+  paths,
 });
 
 /** A run's env base on the machine (#160): `base` with PATH as the machine's own; the workspace's env goes on top at the caller. On win32

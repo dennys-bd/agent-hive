@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
+import { HOST_PATHS } from './fake-machine.js';
 import { destination, existingItem, GIT_MESSAGE, newItem, type PathFs, refusal, rootsOf, sourceItem, treeFolder, treeItem } from '../src/tree-paths.js';
 
 // Every path exists and is its own real path, so only the guards under test can refuse
-const FS: PathFs = { realpath: async (path) => path, stat: async () => ({ isDirectory: () => true }) };
+const FS: PathFs = { realpath: async (path) => path, stat: async () => ({ isDirectory: () => true }), paths: HOST_PATHS };
 const BAD = refusal(400, GIT_MESSAGE);
 
 test('a .git segment anywhere in the path is refused, in any case, for a new item, an existing one, a source and a destination (#818)', async () => {

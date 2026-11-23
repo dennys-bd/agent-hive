@@ -3,6 +3,7 @@
 // reaches .git. Every disk touch goes through PathFs, so node:test can fake one.
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isInside } from './ide.js';
+import type { Machine } from './machine.js';
 import type { Refusal } from './server-tasks.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -16,6 +17,7 @@ export const MISSING_FILE_MESSAGE = 'file not found';
 export interface PathFs {
   realpath(path: string): Promise<string>; // rejects when the path does not exist
   stat(path: string): Promise<{ isDirectory(): boolean }>; // rejects when the path does not exist
+  paths: Machine['paths']; // #929: the flavour of the disk these paths are on
 }
 
 /** The tree's root as written and as real: every guard checks a path against both. */

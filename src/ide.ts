@@ -2,6 +2,7 @@
 // details panel's result files (server-files.ts). Every OS touch is injected (realpath, isFile), so the tests fake them; node:path is only
 // string work. The external IDE that once opened these files is gone (#818).
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import type { Machine } from './machine.js';
 import type { TaskFile } from './types.js';
 
 export interface TaskFileQuery {
@@ -10,6 +11,7 @@ export interface TaskFileQuery {
   path: string; // what the page or the result holds: relative to the base, or absolute inside it
   realpath(path: string): Promise<string>; // rejects when the path does not exist
   isFile(path: string): Promise<boolean>;
+  paths: Machine['paths']; // #929: the activity's machine's flavour
 }
 
 /** Strictly below `base`: not the base itself, not `..` or anything past it, not another root. server-move.ts guards a drop with it (#594). */

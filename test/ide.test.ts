@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isInside, resolveActivityPath } from '../src/ide.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 // What the server injects (#258): the real realpath, and a stat that says whether the path is a regular file
-const DISK = { realpath: (path: string) => realpath(path), isFile: (path: string) => stat(path).then((s) => s.isFile(), () => false) };
+const DISK = { realpath: (path: string) => realpath(path), isFile: (path: string) => stat(path).then((s) => s.isFile(), () => false), paths: HOST_PATHS };
 
 // A workspace whose worktree holds docs/spec.md and whose main checkout holds docs/plan.md, a file outside both, and a symlink in the worktree
 // that points at it. Real paths throughout: macOS's tmpdir is itself a symlink, and resolveActivityPath answers the real path.

@@ -17,7 +17,7 @@ import { APPROVAL_MINUTES_DEFAULT, CLOSE_TAB_DEFAULTS, DELETE_ACTIVITY_DEFAULTS,
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { fakeMachine, fakeMachines, HOST_PATHS } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 // The files tree's own operations (#818) end to end: one local task's worktree is a real temp folder; the exec records the trash's argv and
@@ -148,6 +148,7 @@ function fakeVolume(names: string[], isCaseInsensitive: boolean): { fs: TreeFs; 
   const renames: [string, string][] = [];
   const found = (path: string): string | undefined => (isCaseInsensitive ? [...entries].find((e) => e.toLowerCase() === path.toLowerCase()) : entries.has(path) ? path : undefined);
   const fs: TreeFs = {
+    paths: HOST_PATHS,
     realpath: async (path) => path,
     stat: async (path) => {
       if (found(path) === undefined && path !== ROOT) throw new Error('ENOENT');
