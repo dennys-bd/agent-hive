@@ -137,6 +137,8 @@
 .monaco-editor .template-marker { color: var(--muted-foreground); }
 .monaco-editor .template-branch { background: var(--template-branch); box-shadow: inset 3px 0 0 var(--empty); }
 .monaco-editor .template-dim { opacity: 0.35; }
+/* #982: a map chip's jump paints its line as the screen draws it: the accent ground and a 3px foreground bar, built as .template-branch is */
+.monaco-editor .template-jump { background: var(--accent); box-shadow: inset 3px 0 0 var(--foreground); }
 /* #327: the structural lint's annotations: a wavy underline in the severity's status colour */
 .monaco-editor .template-annotation-yellow { text-decoration: underline wavy var(--waiting); text-underline-offset: 3px; }
 .monaco-editor .template-annotation-red { text-decoration: underline wavy var(--destructive); text-underline-offset: 3px; }

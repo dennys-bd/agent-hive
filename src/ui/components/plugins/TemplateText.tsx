@@ -11,8 +11,11 @@ import type { Severity } from '../../../template-lint';
 import { type Chip, type Decoration, isMarkdown, type LineRange } from '@/lib/template-view';
 
 type View = editor.IStandaloneCodeEditor;
-/** A map click (decision 19): the line to put the cursor on; n changes on every click, so the same line twice reveals twice. */
-export interface Reveal { line: number; n: number }
+/** A map click (decision 19): the line to put the cursor on; n changes on every click, so the same line twice reveals twice. #982: a map
+ * chip's jump paints the line too. */
+export interface Reveal { line: number; n: number; isJump?: boolean }
+/** #982: a selection set from outside the text (the agent bar's × and hand-off): whole lines, or none to collapse it; n as Reveal's. */
+export interface SelectCommand { lines?: LineSelection; n: number }
 /** The open chip's popover (#322): the content of the chain's form at the chip of `line`; Esc and a click outside call onClose. */
 export interface ChipPopover { line: number; content: ReactNode; onClose(): void }
 export interface TemplateTextProps {
@@ -25,6 +28,7 @@ export interface TemplateTextProps {
   annotations?: Annotations; anchorOf?(line: number): number; // #327: the margin's annotations, each at the line the look shows it on
   isProposal?: boolean; // #331: the text is an agent's proposal look; only a flip swaps the model's text
   onSelection?(lines: LineSelection | undefined): void; // #331: the selection's lines, undefined when it is empty
+  select?: SelectCommand; // #982: Monaco's selection, set once per n; Monaco's own event then reports it through onSelection
   onCaret?(line: number): void; // #492: the caret's line, for the map to raise its block
   isMarginOpen?: boolean; // #980: the view's switch, open when absent; closed, no column and a dot per annotated line in the glyph margin
   onDot?(annotation: EditorAnnotation): void; // #980: a click on a dot, with its line's first annotation
@@ -41,6 +45,26 @@ function selectedLines(selection: IRange): LineSelection | undefined {
   const { startLineNumber, startColumn, endLineNumber, endColumn } = selection;
   if (startLineNumber === endLineNumber && startColumn === endColumn) return undefined;
   return { startLine: startLineNumber, endLine: endColumn === 1 && endLineNumber > startLineNumber ? endLineNumber - 1 : endLineNumber };
+}
+// #982: from the first column of the first line to the last column of the last
+function wholeLines(view: View, { startLine, endLine }: LineSelection): IRange {
+  return { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: view.getModel()?.getLineMaxColumn(endLine) ?? 1 };
+}
+// #982: no lines collapses the selection to its start, so Monaco reports none and the bar's chip goes
+function collapsed(view: View): IRange {
+  const at = view.getSelection();
+  const line = at?.startLineNumber ?? 1;
+  const column = at?.startColumn ?? 1;
+  return { startLineNumber: line, startColumn: column, endLineNumber: line, endColumn: column };
+}
+// #982: a jump paints its line until the caret moves or the text changes; it is painted after the reveal's own move, so that move does not
+// clear it
+function paintJump(view: View, line: number): () => void {
+  const paint = view.createDecorationsCollection([{ range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 }, options: { isWholeLine: true, className: 'template-jump' } }]);
+  const unpaint = (): void => { paint.clear(); moving.dispose(); typing.dispose(); };
+  const moving = view.onDidChangeCursorPosition(unpaint);
+  const typing = view.onDidChangeModelContent(unpaint);
+  return unpaint;
 }
 function toDecoration(d: Decoration): editor.IModelDeltaDecoration {
   const range = { startLineNumber: d.line, startColumn: d.from ?? 1, endLineNumber: d.line, endColumn: d.to ?? LAST_COLUMN };
@@ -121,15 +145,35 @@ function useLook(view: View | undefined, { text, isProposal = false, isReadOnly,
     marks.set([...decorations.map(toDecoration), ...glyphs.map(toGlyph)]);
     return () => marks.clear();
   }, [view, decorations, glyphs]);
-  // A reveal is one click: a view rebuilt for another "view as" must not replay the last one on lines of the old look
+  useReveal(view, reveal);
+}
+
+// A reveal is one click: a view rebuilt for another "view as" must not replay the last one on lines of the old look. #982: a jump's paint
+// goes with the next reveal and with its view
+function useReveal(view: View | undefined, reveal: Reveal | undefined): void {
   const applied = useRef<number>(undefined);
+  const unpaint = useRef<() => void>(undefined);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view is a trigger, not read inside: a new view drops the old one's paint
+  useEffect(() => () => { unpaint.current?.(); unpaint.current = undefined; }, [view]);
   useEffect(() => {
     if (view === undefined || reveal === undefined || applied.current === reveal.n) return;
     applied.current = reveal.n;
+    unpaint.current?.();
     view.setPosition({ lineNumber: reveal.line, column: 1 });
     view.revealLineInCenter(reveal.line);
     view.focus();
+    unpaint.current = reveal.isJump === true ? paintJump(view, reveal.line) : undefined;
   }, [view, reveal]);
+}
+
+// #982: a selection set from outside, once per n, as a reveal is
+function useSelect(view: View | undefined, select: SelectCommand | undefined): void {
+  const applied = useRef<number>(undefined);
+  useEffect(() => {
+    if (view === undefined || select === undefined || applied.current === select.n) return;
+    applied.current = select.n;
+    view.setSelection(select.lines === undefined ? collapsed(view) : wholeLines(view, select.lines));
+  }, [view, select]);
 }
 
 function useScrollTop(view: View | undefined): number {
@@ -218,6 +262,7 @@ export function TemplateText(props: TemplateTextProps) {
   const glyphs = useMemo(() => (isMarginOpen ? NO_GLYPHS : glyphsOf(marks, anchorOf)), [isMarginOpen, marks, anchorOf]);
   useLook(view, props, glyphs);
   useCaret(view, props.onCaret);
+  useSelect(view, props.select);
   const scrollTop = useScrollTop(view);
   const topOf = (line: number): number => (view?.getTopForLineNumber(line) ?? 0) - scrollTop;
   return (
