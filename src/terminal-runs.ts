@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { isAbsolute, relative, sep } from 'node:path';
 import { heldSession, isLocalActivityId, taskOfActivity } from './activities.js';
 import { ranAgent } from './agents.js';
+import { type Machine, pathsOf } from './machine.js';
 import { localSessionsOf } from './local-sessions.js';
 import { withLaunch } from './launch-pick.js';
 import { touchFreeSession } from './record-kit.js';
@@ -25,16 +25,23 @@ export const liveShell = (state: Pick<State, 'terminals'>, terminalId: string): 
 // What the shim's read loop cannot take (#696): a folder holding a line break would split it
 const LINE_BREAK = /[\r\n]/;
 
-const isWithin = (path: string, root: string): boolean => {
-  const rel = relative(root, path);
-  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+const isWithin = (path: string, root: string, paths: Machine['paths']): boolean => {
+  const rel = paths.relative(root, path);
+  return rel !== '..' && !rel.startsWith(`..${paths.sep}`) && !paths.isAbsolute(rel);
 };
+
+// #929: the reducer holds no machine, so the flavour is read off the root. A terminal's root is absolute on its own machine, and only a
+// posix one starts with a lone / (a win32 root starts with a drive, a UNC one with \\)
+const pathsOfRoot = (root: string): Machine['paths'] => pathsOf(root.startsWith('/') ? 'linux' : 'win32');
 
 /** The folder the shim ran in (#932), as posted: kept when it is an absolute path on one line inside `root` (the terminal's own folder), else
  * undefined and the register falls back to the terminal's cwd. Codex trusts the run's folder outright, so a folder the Hive does not manage (a
  * repository cloned and cd'ed into) keeps Codex's own folder-trust screen. Here, not in shim.ts, since the reducer reads it too (#347). */
-export const capturedCwd = (value: unknown, root: string | undefined): string | undefined =>
-  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && root !== '' && isWithin(value, root) ? value : undefined);
+export const capturedCwd = (value: unknown, root: string | undefined): string | undefined => {
+  if (typeof value !== 'string' || LINE_BREAK.test(value) || root === undefined || root === '') return undefined;
+  const paths = pathsOfRoot(root);
+  return paths.isAbsolute(value) && isWithin(value, root, paths) ? value : undefined;
+};
 
 /** The free sessions the shim captured in a terminal (#696) end with it: their claude dies with its shell, so their runs close as their exit
  * would. */

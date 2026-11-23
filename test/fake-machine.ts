@@ -51,3 +51,6 @@ export function fakeFiles(...files: string[]): Pick<MachineFs, 'access' | 'stat'
     },
   };
 }
+
+/** The flavour fakeMachine() answers when no platform is given: the host's, for a fake of PathFs, TreeFs or a file query on host paths (#929). */
+export const HOST_PATHS = pathsOf(process.platform);

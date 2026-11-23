@@ -1,7 +1,6 @@
 // GET /activities/:id/file-base (#668): the base a file's changes compare against, for the editor pane's gutter marks and the changes pane.
 // HEAD, or the task's base: the merge-base the diff pane's worktree scope diffs from (diffBase). The file is located as the editor's routes
 // locate it; the blob is read with git in the repository holding the file (#377), every call an argv. Only the blob's id goes back when the page holds it.
-import { dirname, relative } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { holdableText } from './decode-text.js';
@@ -45,8 +44,9 @@ function commitOf(located: Located, against: ChangesBase, isNested: boolean, con
 // The repository that holds the file, asked from the file's own folder so a nested one (the task's docs/ checkout) answers for its files
 // (#377), as the files tree does (#1): its top and the file's path in it, '/'-separated: git's `<commit>:<path>` reads no `\` (#641); undefined outside a repository, or for a file outside it
 async function repoOf(located: Located, exec: Exec): Promise<{ top: string; path: string } | undefined> {
-  const top = (await gitOut(dirname(located.file), ['rev-parse', '--show-toplevel'], exec))?.trim();
-  return top === undefined || top === '' || !isInside(top, located.file) ? undefined : { top, path: toWire(relative(top, located.file), process.platform) };
+  const { paths } = located.machine;
+  const top = (await gitOut(paths.dirname(located.file), ['rev-parse', '--show-toplevel'], exec))?.trim();
+  return top === undefined || top === '' || !isInside(top, located.file, paths) ? undefined : { top, path: toWire(paths.relative(top, located.file), located.machine.info().platform) };
 }
 
 // The blob's text when the editor could hold it (#717's caps: EDITOR_FILE_MAX, UTF-8, no NUL), else undefined
@@ -74,7 +74,7 @@ export async function baseCommit(current: Live, id: string, path: unknown, again
   const repo = await repoOf(located, exec);
   // git's top is real; the folder may not be (macOS's tmpdir, a symlinked workspace), and a missed nested repository would read the outer base
   const folder = await located.machine.fs.realpath(located.folder).catch(() => located.folder);
-  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top), current.runtime.config, exec);
+  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top, located.machine.paths), current.runtime.config, exec);
   if (repo === undefined) return { located, against, label };
   // A sha, not a ref: a before frame minted on it keeps showing that commit after HEAD moves (#675)
   const sha = (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${commit}^{commit}`], exec))?.trim();

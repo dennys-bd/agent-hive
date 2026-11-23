@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CopyOptions, RmOptions } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MachineError, type MachineFs } from '../src/machine.js';
+import { MachineError, type MachineFs, pathsOf } from '../src/machine.js';
 import { fileFs, isLocal, MACHINE_REMOTE, moveFs, pathFs, REMOTE_REFUSAL, treeFs, withMachinePath } from '../src/machine-fs.js';
 import { fakeMachine, statsOf } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
@@ -79,4 +79,12 @@ test('fakeMachine: its default exec answers nothing, a given one rejects as a Ma
   assert.equal(fakeMachine({ id: 'AB:CD' }).id, 'AB:CD');
   const info = fakeMachine({ info: { platform: 'win32' } }).info();
   assert.deepEqual([info.platform, info.tmpdir], ['win32', fakeMachine().info().tmpdir]);
+});
+
+test('pathFs, treeFs, moveFs and fileFs carry the machine\'s own path flavour, whatever the host (#929)', () => {
+  for (const platform of ['linux', 'win32'] as const) {
+    const machine = fakeMachine({ info: { platform } });
+    const flavours = [pathFs(machine).paths, treeFs(machine).paths, moveFs(machine).paths, fileFs(machine).paths];
+    assert.deepEqual(flavours.map((paths) => paths === pathsOf(platform)), [true, true, true, true], platform);
+  }
 });

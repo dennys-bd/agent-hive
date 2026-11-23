@@ -5,7 +5,7 @@ import { access, mkdir, readdir, readFile, realpath, stat, symlink, writeFile } 
 import { join, resolve } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { trashCommand } from '../src/platform-commands.js';
-import type { Machine } from '../src/machine.js';
+import { type Machine, pathsOf } from '../src/machine.js';
 import { treeFs } from '../src/machine-fs.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { CREATE_BODY_MESSAGE, createItem, FILE_BODY_MESSAGE, INTO_ITSELF_MESSAGE, IS_FOLDER_MESSAGE, renameItem, saveNewFile, TAKEN_MESSAGE, TOO_LARGE_MESSAGE, type TreeFs } from '../src/server-tree-ops.js';
@@ -17,7 +17,7 @@ import { APPROVAL_MINUTES_DEFAULT, CLOSE_TAB_DEFAULTS, DELETE_ACTIVITY_DEFAULTS,
 import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { fakeMachine, fakeMachines, HOST_PATHS } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 // The files tree's own operations (#818) end to end: one local task's worktree is a real temp folder; the exec records the trash's argv and
@@ -132,7 +132,8 @@ test('tree/file writes an untitled buffer to the dialog\'s absolute path and ans
 
 test('tree/trash runs its trash command with the activity\'s machine\'s exec and platform, never the host\'s exec (#160)', async (t) => {
   const ran: [string, string[]][] = [];
-  const machine = fakeMachine({ exec: async (file, args) => { ran.push([file, [...args]]); return { stdout: '' }; }, info: { platform: 'linux' } });
+  // the worktree is the host's real temp folder, so its paths stay the host's; only the trash command's platform is the machine's (#929)
+  const machine = { ...fakeMachine({ exec: async (file, args) => { ran.push([file, [...args]]); return { stdout: '' }; }, info: { platform: 'linux' } }), paths: HOST_PATHS };
   const f = await startOps(t, machine);
   assert.deepEqual(await post(f, 'trash', { paths: ['README.md'] }), [204, undefined]);
   assert.deepEqual([ran, f.calls], [[trashCommand('linux', [join(await realpath(f.wt), 'README.md')])], []]);
@@ -143,14 +144,15 @@ const ROOT = resolve('/root');
 const at = (name: string): string => join(ROOT, name);
 
 // A fake volume for renameItem: `names` are the entries on it; a case-insensitive one resolves a name to the entry of any case, as APFS does
-function fakeVolume(names: string[], isCaseInsensitive: boolean): { fs: TreeFs; renames: [string, string][]; entries: Set<string> } {
+function fakeVolume(names: string[], isCaseInsensitive: boolean, paths: TreeFs['paths'] = HOST_PATHS, root = ROOT): { fs: TreeFs; renames: [string, string][]; entries: Set<string> } {
   const entries = new Set(names);
   const renames: [string, string][] = [];
   const found = (path: string): string | undefined => (isCaseInsensitive ? [...entries].find((e) => e.toLowerCase() === path.toLowerCase()) : entries.has(path) ? path : undefined);
   const fs: TreeFs = {
+    paths,
     realpath: async (path) => path,
     stat: async (path) => {
-      if (found(path) === undefined && path !== ROOT) throw new Error('ENOENT');
+      if (found(path) === undefined && path !== root) throw new Error('ENOENT');
       return { isDirectory: () => false };
     },
     sameFile: async (a, b) => found(a) !== undefined && found(a) === found(b),
@@ -167,13 +169,13 @@ function fakeVolume(names: string[], isCaseInsensitive: boolean): { fs: TreeFs; 
 
 test('renameItem accepts a case-only rename of the same inode (case-insensitive volume) (#818)', async () => {
   const { fs, renames } = fakeVolume([at('a.ts')], true);
-  assert.equal(await renameItem({ root: ROOT, from: 'a.ts', to: 'A.ts' }, fs), 'A.ts');
+  assert.equal(await renameItem({ root: ROOT, from: 'a.ts', to: 'A.ts', platform: process.platform }, fs), 'A.ts');
   assert.deepEqual(renames, [[at('a.ts'), at('A.ts')]]);
 });
 
 test('renameItem answers 409 and renames nothing when a differently-cased name is another file (case-sensitive volume) (#818)', async () => {
   const { fs, renames } = fakeVolume([at('a.ts'), at('A.ts')], false);
-  assert.deepEqual(await renameItem({ root: ROOT, from: 'a.ts', to: 'A.ts' }, fs), { status: 409, message: TAKEN_MESSAGE });
+  assert.deepEqual(await renameItem({ root: ROOT, from: 'a.ts', to: 'A.ts', platform: process.platform }, fs), { status: 409, message: TAKEN_MESSAGE });
   assert.deepEqual(renames, []);
 });
 
@@ -181,7 +183,7 @@ test('saveNewFile answers 409 with its own words when the path holds a folder, r
   const { fs } = fakeVolume([at('docs')], false);
   const isFolder: TreeFs = { ...fs, stat: async (path) => ({ isDirectory: () => path === at('docs') }) };
   for (const replace of [false, true]) {
-    assert.deepEqual(await saveNewFile({ root: ROOT, path: at('docs'), text: 'x', replace }, isFolder), { status: 409, message: IS_FOLDER_MESSAGE }, `replace ${replace}`);
+    assert.deepEqual(await saveNewFile({ root: ROOT, path: at('docs'), text: 'x', replace, platform: process.platform }, isFolder), { status: 409, message: IS_FOLDER_MESSAGE }, `replace ${replace}`);
   }
 });
 
@@ -189,10 +191,21 @@ const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its nati
 
 test('on win32 create, rename and an untitled file\'s first save answer their nested paths with / only, from real paths of the runner (#641)', WIN32_ONLY, async (t) => {
   const root = await tempDir(t, 'wire-ops-');
-  assert.equal(await createItem({ root, path: 'a/b/c.ts', kind: 'file' }, treeFs(fakeMachine())), 'a/b/c.ts');
-  assert.equal(await renameItem({ root, from: 'a/b/c.ts', to: 'x/y/z.ts' }, treeFs(fakeMachine())), 'x/y/z.ts');
+  assert.equal(await createItem({ root, path: 'a/b/c.ts', kind: 'file', platform: 'win32' }, treeFs(fakeMachine())), 'a/b/c.ts');
+  assert.equal(await renameItem({ root, from: 'a/b/c.ts', to: 'x/y/z.ts', platform: 'win32' }, treeFs(fakeMachine())), 'x/y/z.ts');
   await mkdir(join(root, 'n', 'm'), { recursive: true });
-  const saved = await saveNewFile({ root, path: join(root, 'n', 'm', 'new.ts'), text: 'x', replace: false }, treeFs(fakeMachine()));
+  const saved = await saveNewFile({ root, path: join(root, 'n', 'm', 'new.ts'), text: 'x', replace: false, platform: 'win32' }, treeFs(fakeMachine()));
   assert.ok('path' in saved);
   assert.equal(saved.path, 'n/m/new.ts');
+});
+
+test('create, rename and an untitled file\'s first save on a fake win32 volume answer / on the wire, on every OS (#929)', async () => {
+  const win32 = pathsOf('win32');
+  const root = 'C:\\root';
+  const { fs } = fakeVolume([win32.join(root, 'a.ts')], false, win32, root);
+  assert.equal(await createItem({ root, path: 'a/b/c.ts', kind: 'file', platform: 'win32' }, fs), 'a/b/c.ts');
+  assert.equal(await renameItem({ root, from: 'a.ts', to: 'x/y/z.ts', platform: 'win32' }, fs), 'x/y/z.ts');
+  const saved = await saveNewFile({ root, path: win32.join(root, 'n', 'new.ts'), text: 'x', replace: false, platform: 'win32' }, fs);
+  assert.ok('path' in saved);
+  assert.equal(saved.path, 'n/new.ts');
 });

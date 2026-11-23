@@ -1,8 +1,7 @@
 // The design pane's frame (#108): an authenticated call mints a URL for one Hive design of an activity, and a read-only route serves that
 // design's folder under the URL's token, outside the secret gate. A sandboxed frame has an opaque origin and no usable credential, so the
 // token is the capability and the route never reads the port's cookie. Every answer carries its own sandboxing policy.
-import type { Machine, MachineFor } from './machine.js';
-import { basename, dirname, extname, posix, relative, resolve, sep } from 'node:path';
+import { type Machine, type MachineFor, pathsOf } from './machine.js';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { bridgeScript } from './design-bridge.js';
@@ -30,6 +29,9 @@ const NOT_DESIGN_MESSAGE = 'not a Hive design';
 const REFUSED_POLICY = "sandbox; default-src 'none'; frame-ancestors 'self'";
 
 type Live = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
+// A commit's paths are git's, `/` on every machine (#675, #929)
+const GIT_PATHS = pathsOf('linux');
+
 interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'>; machineFor: MachineFor }
 interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens; exec: Exec; machineFor: MachineFor }
 
@@ -87,16 +89,17 @@ export function withBridge(html: string, parts: readonly string[] = []): string 
 }
 
 // A dot segment (.env, .git, .hive) is never a design's asset, and serving one would hand a token holder the checkout's secrets
-const hasDotSegment = (folder: string, path: string): boolean => relative(folder, path).split(sep).some((part) => part.startsWith('.'));
+const hasDotSegment = (folder: string, path: string, paths: Machine['paths']): boolean => paths.relative(folder, path).split(paths.sep).some((part) => part.startsWith('.'));
 
 // The asked file, if it is a regular file strictly inside the token's folder and under no dot segment: checked on the joined path (nothing
 // outside is even probed), then on its realpath (a symlink out, or onto a dotfile, is caught)
 async function servedFile(machine: Machine, folder: string, segments: string[]): Promise<string | undefined> {
-  const asked = resolve(folder, ...segments);
-  if (!isInside(folder, asked) || hasDotSegment(folder, asked)) return undefined;
+  const { paths } = machine;
+  const asked = paths.resolve(folder, ...segments);
+  if (!isInside(folder, asked, paths) || hasDotSegment(folder, asked, paths)) return undefined;
   const fs = fileFs(machine);
   const real = await fs.realpath(asked).catch(() => undefined);
-  return real !== undefined && isInside(folder, real) && !hasDotSegment(folder, real) && (await fs.isFile(real)) ? real : undefined;
+  return real !== undefined && isInside(folder, real, paths) && !hasDotSegment(folder, real, paths) && (await fs.isFile(real)) ? real : undefined;
 }
 
 // A refusal: 404 with no body, so an unknown token, an escape, a folder and a missing file look the same. The debug line names the method
@@ -122,15 +125,15 @@ async function diskServed(machine: Machine, folder: string, segments: string[]):
   if (file === undefined) return undefined;
   const bytes = await machine.fs.readFile(file, { maxBytes: IMAGE_MAX }).catch(() => undefined); // over the cap, or gone since the check: the bare 404
   if (bytes === undefined) return undefined;
-  return { name: file, bytes, page: () => pageOf(toWire(relative(folder, file), process.platform), bytes.toString('utf8'), readPartFrom(folder)) };
+  return { name: file, bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(folder)) };
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
 // escape or a dot segment before git is asked; then only a regular blob within its cap, so a link, a tree or a huge blob is never read. A
 // page is held to OUTPUT_MAX, as its assembly is; an asset (an image, a video) to IMAGE_MAX, since the disk route serves one of any size
 async function servedBlob({ top, commit, folder }: BaseFolder, segments: string[]): Promise<Served | undefined> {
-  const path = posix.join(folder, ...segments);
-  const screen = posix.relative(folder, path);
+  const path = GIT_PATHS.join(folder, ...segments);
+  const screen = GIT_PATHS.relative(folder, path);
   if (screen === '' || screen.split('/').some((part) => part.startsWith('.'))) return undefined; // '..' is a dot segment too
   const entry = await gitEntry(top, commit, path);
   const cap = HTML_FILE.test(path) ? OUTPUT_MAX : IMAGE_MAX;
@@ -156,7 +159,7 @@ async function serveFrame(req: Request, res: Response, { tokens, log, machineFor
   const machine = machineFor({}); // ponytail: a token names a folder, not an activity, so the frame reads the local machine; node 8 puts the machine's id in the token's value
   const served = await servedOf(tokens, machine, token, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
   if (served === undefined) return refuseFrame(req, res, log);
-  res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(extname(served.name)); // the Host check already ran
+  res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(machine.paths.extname(served.name)); // the Host check already ran
   const isHtml = res.get('content-type')?.startsWith('text/html') === true;
   res.send(isHtml ? await served.page() : served.bytes);
 }
@@ -180,8 +183,9 @@ const NOT_FOUND: Refusal = { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSA
 async function designFolder(located: Located): Promise<{ folder: string } | Refusal> {
   if (!located.file.endsWith(DESIGN_SUFFIX)) return { status: HTTP_BAD_REQUEST, message: NOT_DESIGN_MESSAGE };
   const folder = await located.machine.fs.realpath(located.folder).catch(() => undefined); // locate's file is real; its folder may not be (macOS's tmpdir)
-  if (folder === undefined || !isInside(folder, located.file) || dirname(located.file) === folder) return NOT_FOUND;
-  return { folder: dirname(located.file) };
+  const { paths } = located.machine;
+  if (folder === undefined || !isInside(folder, located.file, paths) || paths.dirname(located.file) === folder) return NOT_FOUND;
+  return { folder: paths.dirname(located.file) };
 }
 
 // The frame URL of the activity's design: located as the editor locates its file, then refused by designFolder
@@ -190,7 +194,7 @@ async function frameUrl(current: Live, id: string, path: unknown, tokens: Design
   if ('status' in located) return located;
   const design = await designFolder(located);
   if ('status' in design) return design;
-  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint(design.folder)}/${encodeURIComponent(basename(located.file))}` };
+  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint(design.folder)}/${encodeURIComponent(located.machine.paths.basename(located.file))}` };
 }
 
 // The before frame's URL (#675): the base as file-base resolves it, at a sha; missing when that commit has no such screen. A screen at the
@@ -202,12 +206,12 @@ async function baseFrameUrl(current: Live, req: Request, { tokens, machineFor }:
   if ('status' in design) return design;
   if (base.repo === undefined) return NOT_FOUND;
   const { top, commit } = base.repo;
-  const path = toWire(base.repo.path, process.platform); // git's path space
-  const folder = posix.dirname(path);
+  const path = toWire(base.repo.path, base.located.machine.info().platform); // git's path space
+  const folder = GIT_PATHS.dirname(path);
   if (folder === '.') return NOT_FOUND;
   const entry = commit === undefined ? undefined : await gitEntry(top, commit, path);
   if (commit === undefined || entry === undefined || !isRegularBlob(entry)) return { missing: true };
-  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mintBase({ top, commit, folder })}/${encodeURIComponent(posix.basename(path))}` };
+  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mintBase({ top, commit, folder })}/${encodeURIComponent(GIT_PATHS.basename(path))}` };
 }
 
 function registerMint(app: Express, route: string, requireLive: MintDeps['requireLive'], answerOf: (current: Live, req: Request) => Promise<MintAnswer>): void {
