@@ -86,7 +86,7 @@ async function hostFiles(host: Machine, dir: string): Promise<string[]> {
 
 // A manifest key is data from the distro's disk: only a plain relative path under the plugin folder may reach a write or an rm
 const isPluginRel = (rel: string): boolean =>
-  !rel.includes('\\') && !rel.includes('\0') && rel.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+  !rel.includes('\\') && !rel.includes('\0') && rel.split('/').every((seg) => seg !== '' && !seg.startsWith('.')); // as hostFiles: no dot entry, no . or ..
 
 async function readManifest(distro: Machine, path: string): Promise<Map<string, string>> {
   let parsed: unknown;
@@ -117,7 +117,11 @@ async function putFile(distro: Machine, target: string, data: Buffer): Promise<v
   await ensureDir(distro, dir, PRIVATE_DIR);
   const tmp = distro.paths.join(dir, `.${distro.paths.basename(target)}.hive-new`);
   await distro.fs.writeFile(tmp, data);
-  await distro.fs.rename(tmp, target);
+  // A folder where the file goes (it was a folder on the host before): only then is it removed, so a plain rewrite costs no rm
+  await distro.fs.rename(tmp, target).catch(async () => {
+    await distro.fs.rm(target, { recursive: true, force: true });
+    await distro.fs.rename(tmp, target);
+  });
 }
 
 async function syncPlugin(distro: Machine, host: Machine, hostDir: string, dest: string): Promise<void> {
@@ -126,7 +130,7 @@ async function syncPlugin(distro: Machine, host: Machine, hostDir: string, dest:
   const rels = await hostFiles(host, hostDir);
   // Removed files first: a file that became a folder (or the reverse) would otherwise block its own replacement
   const gone = [...old.keys()].filter((rel) => !rels.includes(rel));
-  await Promise.all(gone.map((rel) => distro.fs.rm(distro.paths.join(dest, rel), { force: true })));
+  await Promise.all(gone.map((rel) => distro.fs.rm(distro.paths.join(dest, rel), { recursive: true, force: true })));
   const fresh = new Map<string, string>();
   for (const rel of rels) {
     const data = await host.fs.readFile(host.paths.join(hostDir, ...rel.split('/')), { maxBytes: PLUGIN_FILE_MAX });

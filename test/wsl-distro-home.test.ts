@@ -205,3 +205,21 @@ test('distroPluginDir from a win32 host writes /-separated distro paths and mani
   assert.ok(distroDisk.ops.every((o) => !o.path.includes('\\')));
   assert.deepEqual(Object.keys(JSON.parse(distroDisk.text(`${DEST}/.hive-manifest.json`) ?? '{}')).sort(), ['plugin.json', 'skills/x/SKILL.md']);
 });
+
+test('distroPluginDir replaces a folder that became a file', async () => {
+  const { distro, host, distroDisk, hostDisk } = setup(pluginFiles);
+  await copy(distro, host);
+  hostDisk.files.delete(`${PLUGIN}/skills/x/SKILL.md`);
+  hostDisk.files.set(`${PLUGIN}/skills/x`, { data: Buffer.from('now a file'), mode: 0o644 });
+  distroDisk.dirs.set(`${DEST}/skills/x`, 0o700); // the folder the rm of SKILL.md leaves behind
+  const rename = distroDisk.fs.rename;
+  let refused = false;
+  distroDisk.fs.rename = async (from, to) => {
+    if (to === `${DEST}/skills/x` && distroDisk.dirs.has(to) && !refused) { refused = true; throw Object.assign(new Error('EISDIR'), { code: 'EISDIR' }); }
+    return rename?.(from, to);
+  };
+  const again = fakeMachine({ fs: distroDisk.fs, info: { platform: 'linux', homedir: '/home/u' } }); // fakeMachine copies fs at creation
+  await copy(again, host);
+  assert.equal(distroDisk.text(`${DEST}/skills/x`), 'now a file');
+  assert.ok(distroDisk.ops.some((o) => o.kind === 'rm' && o.path === `${DEST}/skills/x`));
+});
