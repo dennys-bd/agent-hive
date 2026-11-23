@@ -25,3 +25,5 @@ export const SH_LAUNCHER: string | false = process.platform === 'win32' && 'Git\
 export const ONLY_WIN32: string | false = process.platform !== 'win32' && 'Windows only: Git\'s bash, PowerShell and a ConPTY run on the Windows lane (#806)';
 // #876: whether Git's sh.exe reads a ConPTY stdin as a terminal ([ -t 0 ]) is not proven, so the copilot shim's terminal tests run on POSIX only
 export const MSYS_TTY: string | false = process.platform === 'win32' && 'MSYS\'s [ -t 0 ] over a ConPTY is not proven: the copilot shim\'s terminal check is tested on POSIX only';
+// #931: a wsl: workspace's path is checked as POSIX on every host, and the lane's temp repo is a C:\ path the parse refuses (win32's reason is not_supported anyway)
+export const POSIX_TEMP_REPO: string | false = process.platform === 'win32' && 'a wsl: workspace needs a POSIX path, and the temp repo on win32 is a C:\\ path the parse refuses';

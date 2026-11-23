@@ -20,7 +20,7 @@ const task = (id: string, at?: string, item: Partial<Item> = {}, extra: Partial<
 });
 const state = (tasks: WithWork[], workers: Worker[] = []): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], flows: FLOWS, ...flatten(FLOWS), tasks, sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
-  workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+  workspaces: ['hive', 'site'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const waitingOn = (itemId: string): Worker => ({ id: `s-${itemId}`, status: 'waiting', activityId: activityIdOf(itemId), runId: `W-${itemId}` });
 function Harness({ state: s }: { state: State }) {

@@ -61,7 +61,7 @@ export async function stepHarness(t: AfterHost): Promise<StepHarness> {
   const noGit: Exec = async () => assert.fail('the steps run no git');
   const machine = fakeMachine({ exec: noGit, info: { homedir: home } });
   const deps: StepDeps = { log: { info: () => undefined }, output: (text) => output.push(text) };
-  return { workspace: { name: 'hive', path: main, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }, main, worktree, home, machine, deps, output };
+  return { workspace: { name: 'hive', path: main, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, main, worktree, home, machine, deps, output };
 }
 
 export const setupPhase = (h: StepHarness): Phase => ({ name: 'setup', from: h.main, fromName: 'hive', to: h.worktree, toName: WORKTREE_NAME });

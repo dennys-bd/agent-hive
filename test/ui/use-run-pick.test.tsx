@@ -13,7 +13,7 @@ const stages: Stage[] = [{ name: 'spec', from: {}, prompt: 'x' }, { name: 'build
 const TASK: Task = { item: { itemId: 'I1', id: 'SITE-1', title: 'one', body: '', url: '' }, stage: 'build', boardColumn: '', auto: true, workspace: 'site' };
 const stateWith = (sessions: Session[]): State => withWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed(stages, []), tasks: [TASK], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
-  workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+  workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 }, 'I1', {}, { sessions });
 
 test('the initial picks are the stage\'s: its agent, the model left to the chain, and the previous stage\'s session when the stage continues and its agent recorded it (#290)', () => {

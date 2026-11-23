@@ -4,7 +4,7 @@ import { candidates, canOpenSession, leave, sessionsOf, canDeleteActivity, diffe
 import { canSchedule, canStart, effectiveLimits, extractPrUrl, initialState, isChildSession, isFree, reduce, type Reduced, WAITING_NOTIFICATIONS } from '../src/orchestrator.js';
 import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { activityOf, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfPr, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
+import { activityOf, bornMachine, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfPr, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, Flow, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
@@ -2414,11 +2414,11 @@ const twoWorkspaces = (max: number): State => ({ ...base(max), workspaces: ['hiv
 test('setWorkspaces stores the names and the source default, drops a stale default, and fills: a task that resolved to none becomes a candidate (#179)', () => {
   const waiting = polled(twoWorkspaces(1), [listed(1)]);
   assert.deepEqual(waiting.effects, [], 'two workspaces, no rule: no workspace, no spawn');
-  const { state, effects } = reduce(waiting.state, { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: {}, workspaceColors: {} });
+  const { state, effects } = reduce(waiting.state, { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: {}, workspaceColors: {}, workspaceMachines: {} });
   assert.deepEqual([state.workspaces, state.sourceWorkspaces], [['hive', 'site'], { board: 'site' }]);
   assert.deepEqual(effects.map((e) => e.type), ['spawn']);
   assert.equal(task(state, 1)?.workspace, 'site', 'the spawn froze the board default');
-  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }).state.sourceWorkspaces, {});
+  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {}, workspaceMachines: {} }).state.sourceWorkspaces, {});
 });
 
 test('setWorkspaces leaves every task as it is: an activity\'s workspace is frozen at its birth, so a save never re-resolves a worktree onto another workspace (#179, #629)', () => {
@@ -2426,7 +2426,7 @@ test('setWorkspaces leaves every task as it is: an activity\'s workspace is froz
   const noWorktree: Task = { item: item(2), stage: 'spec', boardColumn: 'Backlog', auto: true };
   const already: Task = { item: item(3), stage: 'dev', boardColumn: 'In progress', auto: true, workspace: 'other' };
   const held = withLive(withLive({ ...base(0), tasks: [legacy, noWorktree, already] }, 1, { worktree: WORKTREE }), 3, { worktree: '/w3', workspace: 'other' });
-  const { state: next } = reduce(held, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }); // no free worker: no fill
+  const { state: next } = reduce(held, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {}, workspaceMachines: {} }); // no free worker: no fill
   assert.deepEqual([task(next, 1)?.workspace, work(next, 1)?.workspace], [undefined, 'hive'], 'a worktree: its activity holds the workspace it was born in');
   assert.equal(task(next, 2)?.workspace, undefined, 'no worktree: nothing to freeze');
   assert.deepEqual([task(next, 3)?.workspace, work(next, 3)?.workspace], ['other', 'other'], 'left as it is, even though "other" is not a workspace here');
@@ -2434,14 +2434,50 @@ test('setWorkspaces leaves every task as it is: an activity\'s workspace is froz
 
 test('setWorkspaces carries the workspaces\' colours into the state with their names (#78)', () => {
   const workspaceColors = { hive: 'oklch(0.72 0.12 25)', site: '#a1b2c3' };
-  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: {}, workspaceColors });
+  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: {}, workspaceColors, workspaceMachines: {} });
   assert.deepEqual(state.workspaceColors, workspaceColors);
 });
 
+test('setWorkspaces carries the machines of the workspaces not on local into the state (#931)', () => {
+  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: {}, workspaceColors: {}, workspaceMachines: { site: 'wsl:X' } });
+  assert.deepEqual(state.workspaceMachines, { site: 'wsl:X' });
+});
+
+const onWsl = (): State => ({ ...base(0), workspaceMachines: { hive: 'wsl:X' } });
+const SAVED_LOCAL = { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {}, workspaceMachines: {} } satisfies HiveEvent;
+
+test('a start creates the activity with its workspace\'s machine; on a local workspace the activity has none (#931)', () => {
+  const { state, effects } = started(polled(onWsl(), [listed(1)]).state, 'board:item1');
+  assert.equal(work(state, 1)?.machine, 'wsl:X');
+  const spawn = effects.find((e) => e.type === 'spawn');
+  assert.equal(spawn?.type === 'spawn' ? spawn.activity.machine : undefined, 'wsl:X', 'the spawner gets the machine with the activity');
+  const local = started(polled(base(0), [listed(1)]).state, 'board:item1').state;
+  assert.equal(holds(local, 1, 'machine'), false, 'absent, never undefined');
+});
+
+test('a live activity keeps its machine: a second start finds it, and a save that moves the workspace to local does not move it (#931)', () => {
+  const live = born(polled(onWsl(), [listed(1)]).state, 1);
+  assert.equal(work(live, 1)?.machine, 'wsl:X', 'createActivity goes through ensureActivity');
+  const saved = reduce(live, SAVED_LOCAL).state;
+  const { state } = started(saved, 'board:item1');
+  assert.deepEqual([work(state, 1)?.id, work(state, 1)?.machine], [work(live, 1)?.id, 'wsl:X']);
+});
+
+test('a workspace named like an Object.prototype member is on the local machine, not on the inherited property (#931)', () => {
+  assert.deepEqual([bornMachine({ workspaceMachines: {} }, 'constructor'), bornMachine({ workspaceMachines: { toString: 'wsl:X' } }, 'toString')], [{}, { machine: 'wsl:X' }]);
+});
+
+test('a workspace\'s local activity is born with its machine; one on local has none (#931)', () => {
+  const { state } = reduce(base(0), { ...SAVED_LOCAL, workspaces: ['hive', 'site'], workspaceMachines: { site: 'wsl:X' } });
+  const localOf = (ws: string) => state.activities.find((a) => a.id === localActivityId(ws));
+  assert.equal(localOf('site')?.machine, 'wsl:X');
+  assert.equal('machine' in (localOf('hive') ?? {}), false);
+});
+
 test('setWorkspaces stores each workspace\'s command names and a later save replaces them, with no fill of its own for them (#300)', () => {
-  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: { hive: ['Run Frontend'], site: [] }, workspaceColors: {} });
+  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: { hive: ['Run Frontend'], site: [] }, workspaceColors: {}, workspaceMachines: {} });
   assert.deepEqual(state.commands, { hive: ['Run Frontend'], site: [] });
-  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: { hive: [] }, workspaceColors: {} }).state.commands, { hive: [] });
+  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: { hive: [] }, workspaceColors: {}, workspaceMachines: {} }).state.commands, { hive: [] });
   assert.deepEqual(initialState(1).commands, {}, 'until the config sets them');
 });
 

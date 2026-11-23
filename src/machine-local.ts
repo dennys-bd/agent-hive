@@ -4,12 +4,12 @@ import { execFile, spawn } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { envValue } from './exec-path.js';
-import { type Machine, type MachineChild, MachineError, type MachineExec, type MachineInfo, type Machines, type ProcessOptions, pathsOf } from './machine.js';
+import { type Machine, type MachineChild, MachineError, type MachineExec, type MachineInfo, type ProcessOptions, pathsOf } from './machine.js';
 import { createLocalPty, type LocalPtyDeps } from './machine-local-pty.js';
 import { localFs } from './machine-local-fs.js';
 import { runDetached } from './machine-run.js';
 import { posixShell } from './posix-shell.js';
-import type { AgentAvailability, Exec, MachineId } from './types.js';
+import { type AgentAvailability, type Exec, LOCAL_MACHINE } from './types.js';
 
 export interface LocalMachineDeps extends Omit<LocalPtyDeps, 'env' | 'platform'> {
   exec: Exec; // the server's own: tests see every call, as today
@@ -17,8 +17,6 @@ export interface LocalMachineDeps extends Omit<LocalPtyDeps, 'env' | 'platform'>
   env?: NodeJS.ProcessEnv; // process.env unless a test injects one
   platform?: NodeJS.Platform; // process.platform unless a test injects one
 }
-
-const LOCAL: MachineId = 'local';
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : Buffer.isBuffer(value) ? value.toString('utf8') : '');
 
@@ -69,17 +67,11 @@ export function createLocalMachine(deps: LocalMachineDeps): Machine {
   const platform = deps.platform ?? process.platform;
   let read: MachineInfo | undefined; // nothing it holds changes while the Hive runs
   return {
-    id: LOCAL, ...localDisk(deps.exec), run: runDetached, process: localProcess, paths: pathsOf(platform),
+    id: LOCAL_MACHINE, ...localDisk(deps.exec), run: runDetached, process: localProcess, paths: pathsOf(platform),
     pty: createLocalPty({ ...deps, env, platform }),
     info: () => {
       read ??= infoOf(env, platform, deps.agents);
       return read;
     },
   };
-}
-
-/** Until node 8 the local machine is every activity's, an id it does not know included. */
-export function createLocalMachines(deps: LocalMachineDeps): Machines {
-  const local = createLocalMachine(deps);
-  return { local, for: () => local };
 }

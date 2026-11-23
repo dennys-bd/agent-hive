@@ -10,6 +10,7 @@ import { startLocal } from './server-local.js';
 import { parseRunPick } from './run-pick.js';
 import { checkBase } from './worktree.js';
 import { sizeIn } from './terminal-wire.js';
+import { type Machine, MachineError } from './machine.js';
 import type { HiveEvent, State, Task } from './types.js';
 import {
   DELETING_MESSAGE, OUTSIDE_FLOW_MESSAGE, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE,
@@ -46,6 +47,17 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   return undefined;
 }
 
+// #931: a workspace on a machine the registry cannot serve is refused before anything is dispatched. Any other failure is the spawn's to report, as before
+async function machineRefusal(machine: Machine, path: string): Promise<Refusal | undefined> {
+  try {
+    await machine.fs.stat(path);
+    return undefined;
+  } catch (err) {
+    if (!(err instanceof MachineError) || err.code !== MachineError.UNAVAILABLE) return undefined;
+    return { status: HTTP_CONFLICT, message: err.message, code: MachineError.UNAVAILABLE, machine: machine.id, ...(err.reason === undefined ? {} : { reason: err.reason }) };
+  }
+}
+
 /** The start the body asks for. `base: null` is the popup's default and drops a saved base. No string base, or a delete activity stage (which
  * never gets one): today's start. A base must be a branch git has and not the task's own (#131), else the answer is a 409 with the
  * reason and nothing starts. The body's workspace is checked like right-click › Workspace and saved with the start (#179). The body's run picks
@@ -58,6 +70,9 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if ('status' in task) return task;
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
+  const machine = deps.machineFor(activityOf(current.state, itemId) ?? workspace); // a live activity's machine is frozen; else the workspace's
+  const unavailable = await machineRefusal(machine, workspace.path);
+  if (unavailable) return unavailable;
   await deps.plugin.ready(); // #316: a render a save queued lands before the picks read the folder
   const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), () => deps.plugin.dir(workspace.name), current.runtime.config.agentEnabled); // #290: the run picks, before any git; #316: its workspace's agents
   if ('status' in picked) return picked;
@@ -66,7 +81,7 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if (base === null) return { type: 'start', itemId, base: null, ...placed }; // the popup's default: drops a saved base
   if (typeof base !== 'string') return { type: 'start', itemId, ...placed };
   try {
-    await checkBase(deps.machineFor(activityOf(current.state, itemId) ?? {}), workspace.path, base, branchFor(current.runtime.config, task.item), baseRemote(workspace));
+    await checkBase(machine, workspace.path, base, branchFor(current.runtime.config, task.item), baseRemote(workspace));
   } catch (err) {
     return { status: HTTP_CONFLICT, message: errorMessage(err) };
   }

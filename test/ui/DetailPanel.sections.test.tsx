@@ -32,7 +32,7 @@ const RAN: ActivityRecord[] = [{ id: 'a-I1', taskIds: ['I1'], sessions: [{ id: S
 const STATE: State = withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [{ id: 's1', status: 'empty' }], ...flowed([{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], []),
   tasks: [EPIC, CHILD], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {}, activities: [], activityRecords: RAN, usage: [], budget: {}, usageRules: [],
-  disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS,
+  disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS,
   shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 const panel = (taskId: string) => <DetailPanel state={STATE} selected={{ taskId }} locale="pt-BR" isShown onClose={() => {}} onOpenTask={() => {}} />;

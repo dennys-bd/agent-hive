@@ -57,7 +57,7 @@ export const STATUSES: readonly Status[] = ['empty', 'working', 'waiting', 'revi
 
 export function initialState(maxConcurrent: number): State {
   return {
-    signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent, workers: Array.from({ length: maxConcurrent }, emptyWorker), terminals: [], flows: [], stages: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, tasks: [], activities: [], activityRecords: [], sourceOrder: [], usage: [], budget: {},
+    signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent, workers: Array.from({ length: maxConcurrent }, emptyWorker), terminals: [], flows: [], stages: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {}, tasks: [], activities: [], activityRecords: [], sourceOrder: [], usage: [], budget: {},
     usageRules: [], disabledRules: [], localCount: 0, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT,
     rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, // #805
     benchmark: { experiments: [] }, // #458
@@ -450,8 +450,8 @@ function setStages(state: State, flows: Flow[]): Reduced {
 }
 
 // The Comb's workspaces, each source's default and each workspace's command names and colours, from the config on every save (#179, #180, #300, #78).
-function setWorkspaces(state: State, { workspaces, sourceWorkspaces, commands, workspaceColors }: Extract<HiveEvent, { type: 'setWorkspaces' }>): Reduced {
-  return none(withLocalActivities({ ...state, workspaces, sourceWorkspaces, commands, workspaceColors })); // an activity's workspace is frozen at its birth (#629)
+function setWorkspaces(state: State, { workspaces, sourceWorkspaces, commands, workspaceColors, workspaceMachines }: Extract<HiveEvent, { type: 'setWorkspaces' }>): Reduced {
+  return none(withLocalActivities({ ...state, workspaces, sourceWorkspaces, commands, workspaceColors, workspaceMachines })); // an activity's workspace and machine (#931) are frozen at its birth (#629)
 }
 
 // The task with `name` as its workspace, when it may still change and the Comb has it (#179); undefined otherwise. An activity born in

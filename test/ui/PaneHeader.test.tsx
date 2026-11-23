@@ -39,7 +39,7 @@ test('each pane type\'s header: an agent reads claude, the model and the folder 
 
 test('paneContext reads the task stage\'s model when it sets one and the worktree\'s folder, or the workspace\'s name on a checkout task (#536)', () => {
   const stages: Stage[] = [{ name: 'dev', from: {}, prompt: 'p', model: 'opus' }, { name: 'spec', from: {}, prompt: 'p' }];
-  const state = { stages, workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, tasks: [] };
+  const state = { stages, workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, tasks: [] };
   expect(paneContext(task, live, state)).toEqual({ model: 'opus', folder: 'hive-1-task-1' });
   expect(paneContext({ ...task, stage: 'spec' }, live, state)).toEqual({ folder: 'hive-1-task-1' });
   expect(paneContext({ ...task, stage: 'spec', workspace: 'hive' }, { ...live, local: true, worktree: '/repo' }, state)).toEqual({ folder: 'hive' });
@@ -48,7 +48,7 @@ test('paneContext reads the task stage\'s model when it sets one and the worktre
 });
 
 test('a local activity\'s panes read its workspace as their folder, as a checkout task\'s do; a task activity\'s read paneContext (#590)', () => {
-  const state = { stages: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, tasks: [] };
+  const state = { stages: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, tasks: [] };
   const local: Activity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [STAGE, SHELL], sessions: [{ run: STAGE, status: 'waiting' }], kept: [] };
   expect(activityPane(local, state)).toEqual({ folder: 'hive' });
   expect(activityPane(activity, state)).toEqual(paneContext(task, live, state));
@@ -73,7 +73,7 @@ test('a run opened with picks reads its own model over the stage\'s, then its sp
 
 test('a Windows worktree names the pane\'s folder by its last segment, a trailing separator too (#641)', () => {
   const stages: Stage[] = [{ name: 'dev', from: {}, prompt: 'p', model: 'opus' }];
-  const state = { stages, workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, tasks: [] };
+  const state = { stages, workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, tasks: [] };
   expect(paneContext(task, { ...live, worktree: 'C:\\wt\\hive-1-task-1' }, state)).toEqual({ model: 'opus', folder: 'hive-1-task-1' });
   expect(paneContext(task, { ...live, worktree: 'C:\\wt\\hive-1-task-1\\' }, state)).toEqual({ model: 'opus', folder: 'hive-1-task-1' });
 });
