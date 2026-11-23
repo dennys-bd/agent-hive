@@ -2324,6 +2324,7 @@ export interface UpdateChange {
   removed: string[]; // lines of the version's text the update replaces
   added: string[]; // lines it puts in their place
   note?: string; // #492: the plugin changelog's note for the heading, absent without one
+  diff: DiffHunk[]; // #984: the base→shipped hunks the change comes from, -U1, numbered; [] for a binary file
 }
 
 export interface UpdateConflict {

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import type { CatalogueItem, ItemVersion, UpdateConflict, UpdatePreview } from '../../src/types';
+import type { CatalogueItem, DiffHunk, ItemVersion, UpdateConflict, UpdatePreview } from '../../src/types';
 import { PluginsView } from '@/components/plugins/PluginsView';
 import { useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
@@ -19,11 +19,26 @@ const CONFLICT: UpdateConflict = {
   kind: 'conflict', id: 'reference/index.md#0', file: 'reference/index.md', heading: '## Index',
   base: ['| # | slice |'], mine: ['| # | slice | owner |'], hive: ['| # | slice | tests |'],
 };
+// #984: each clean row's diff, the Hive's original before and after, numbered as the screen's 11d draws them
+const INPUT_DIFF: DiffHunk[] = [{
+  header: '@@ -8,3 +8,3 @@',
+  lines: [
+    { kind: 'context', text: '## Input', old: 8, new: 8 }, { kind: 'del', text: 'Take the issue.', old: 9 },
+    { kind: 'add', text: 'Take the issue number.', new: 9 }, { kind: 'context', text: 'Stop when none is found.', old: 10, new: 10 },
+  ],
+}];
+const ROUTING_DIFF: DiffHunk[] = [{
+  header: '@@ -22,2 +22,3 @@',
+  lines: [
+    { kind: 'context', text: '## Model routing', old: 22, new: 22 }, { kind: 'del', text: 'plan-reviewer: opus', old: 23 },
+    { kind: 'add', text: 'plan-reviewer: sonnet', new: 23 }, { kind: 'add', text: 'tester: haiku', new: 24 },
+  ],
+}];
 const PREVIEW: UpdatePreview = {
   version: 'mine', from: '0.14', to: '0.15', token: 't1',
   changes: [
-    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take the issue number.'] },
-    { kind: 'clean', file: 'SKILL.md', heading: '## Model routing', removed: ['plan-reviewer: opus'], added: ['plan-reviewer: sonnet', 'tester: haiku'] },
+    { kind: 'clean', file: 'SKILL.md', heading: '## Input', removed: ['Take the issue.'], added: ['Take the issue number.'], diff: INPUT_DIFF },
+    { kind: 'clean', file: 'SKILL.md', heading: '## Model routing', removed: ['plan-reviewer: opus'], added: ['plan-reviewer: sonnet', 'tester: haiku'], diff: ROUTING_DIFF },
     CONFLICT,
   ],
 };
