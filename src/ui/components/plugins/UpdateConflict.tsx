@@ -5,7 +5,7 @@ import { savedLabel } from '@/lib/plugins';
 import { type SideLine, sideAgainstBase } from '@/lib/update-diff';
 
 // The design system's diff grounds (#270) under the line, the status colour on its mark only (decision 17)
-const LOOK: Record<SideLine['mark'], { ground: string; mark: string }> = {
+export const LOOK: Record<SideLine['mark'], { ground: string; mark: string }> = {
   ' ': { ground: '', mark: 'text-muted-foreground' },
   '+': { ground: 'bg-diff-add', mark: 'text-working' },
   '−': { ground: 'bg-diff-del', mark: 'text-destructive' },

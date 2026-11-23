@@ -1,4 +1,4 @@
-// git as the update merge's engine (#324): merge-file for the three-way merge, diff --no-index for the clean changes. execFile with argv
+// git as the update merge's engine (#324): merge-file for the three-way merge, diff --no-index for the clean changes and their numbered diff (#984). execFile with argv
 // arrays only; the texts reach git as files in the caller's temp folder, under fixed names that never read as an option.
 import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
@@ -100,10 +100,21 @@ function toHunk(hunk: DiffHunk): Hunk {
   return { fromAbove: linesAbove(fromStart, fromCount), toAbove: linesAbove(toStart, toCount), removed: text('del'), added: text('add') };
 }
 
+// git diff --no-index of two texts in the caller's temp folder, at `context` lines around each change
+async function gitDiff(dir: string, from: Buffer, to: Buffer, context: number): Promise<DiffHunk[]> {
+  await Promise.all([writeFile(join(dir, 'from'), from), writeFile(join(dir, 'to'), to)]);
+  const run = await git(dir, ['diff', '--no-index', '--no-ext-diff', '--no-color', `-U${context}`, 'from', 'to']);
+  if (run.code !== 0 && run.code !== FILES_DIFFER) throw new Error(`git diff failed (${run.code}): ${run.stderr.trim()}`);
+  return parseDiff(run.stdout).flatMap((file) => file.hunks);
+}
+
 /** The changes from one text to another, as git diff -U0 hunks. */
 export async function diffTexts(dir: string, from: Buffer, to: Buffer): Promise<Hunk[]> {
-  await Promise.all([writeFile(join(dir, 'from'), from), writeFile(join(dir, 'to'), to)]);
-  const run = await git(dir, ['diff', '--no-index', '--no-ext-diff', '--no-color', '-U0', 'from', 'to']);
-  if (run.code !== 0 && run.code !== FILES_DIFFER) throw new Error(`git diff failed (${run.code}): ${run.stderr.trim()}`);
-  return parseDiff(run.stdout).flatMap((file) => file.hunks.map(toHunk));
+  return (await gitDiff(dir, from, to, 0)).map(toHunk);
+}
+
+/** The changes from one text to another as numbered -U<context> hunks (#984): what the update screen's row diff shows. A CRLF text's
+ * lines lose their \r, as toHunk's do. */
+export async function numberedDiff(dir: string, from: Buffer, to: Buffer, context: number): Promise<DiffHunk[]> {
+  return (await gitDiff(dir, from, to, context)).map((hunk) => ({ header: hunk.header, lines: hunk.lines.map((line) => ({ ...line, text: line.text.replace(/\r$/, '') })) }));
 }
