@@ -68,7 +68,7 @@ const headless = (run: HeadlessRun): string[] => [
 async function claudeAccountEnv(ctx: AccountCtx): Promise<{ env: Record<string, string>; account?: string }> {
   if (ctx.selected === undefined) return { env: {} };
   const { claude } = await ctx.credentials();
-  if (claude === undefined || !Object.hasOwn(claude, ctx.selected)) throw new AccountError('claude', 'missing');
+  if (claude === undefined || !Object.hasOwn(claude, ctx.selected) || claude[ctx.selected].token === '') throw new AccountError('claude', 'missing');
   return { env: { CLAUDE_CODE_OAUTH_TOKEN: claude[ctx.selected].token }, account: ctx.selected };
 }
 

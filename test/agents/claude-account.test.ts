@@ -21,10 +21,11 @@ test('no selection is the machine\'s login: no env, no account, and the store is
 });
 
 test('a selected name the store lacks throws claude/missing, matched exactly, with no name or token in the message (#956)', async () => {
-  for (const selected of ['gone', 'Work', 'toString']) {
+  for (const selected of ['gone', 'Work', 'toString', '__proto__', 'constructor']) {
     await assert.rejects(runners.claude.accountEnv({ selected, credentials: store() }), (err: unknown) => isMissing(err) && !(err as Error).message.includes(selected));
   }
   await assert.rejects(runners.claude.accountEnv({ selected: 'work', credentials: async () => ({}) }), isMissing);
+  await assert.rejects(runners.claude.accountEnv({ selected: 'work', credentials: async () => ({ claude: { work: { token: '' } } }) }), isMissing); // a hand-edited store
 });
 
 test('through the seam, a Claude run gets the selected account\'s token and the run\'s account is its name (#956)', async () => {
