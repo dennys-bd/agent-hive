@@ -56,10 +56,6 @@
         "src/setup-script.ts", "src/shell-procs.ts", "src/transcript.ts", "src/usage.ts", "src/worktree.ts", "src/worktree-copy-step.ts",
         "src/worktree-remove.ts", "src/worktree-setup.ts", "src/worktree-steps.ts", "src/worktree-teardown.ts",
         "src/worktree-nested.ts", "src/worktree-stranded.ts", "src/nested-check.ts", "src/design-parts.ts",
-        // 1.3 (#929): the routes
-        "src/server-design-frame.ts", "src/server-editor.ts", "src/server-file-base.ts", "src/server-move.ts", "src/server-tree-ops.ts",
-        "src/server-tree.ts", "src/repos/repositories.ts", "src/wire-path.ts", "src/tree-paths.ts", "src/terminal-runs.ts", "src/ide.ts",
-        "src/decomposition-deliver.ts",
         // 2.2 (#932): workspace calls on the workspace's machine
         "src/mcp-conventions.ts"
       ],
