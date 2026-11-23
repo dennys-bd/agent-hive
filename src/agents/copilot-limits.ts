@@ -1,19 +1,20 @@
-// Copilot's plan limits (#879, node 7 of #608): `gh api /copilot_internal/user` (spike §7). Undocumented, so parsed defensively; it spends
-// nothing, and it answers for gh's own logged-in account, which may not be the one a run uses (COPILOT_GITHUB_TOKEN, a `copilot login`).
-import { childEnv, cliEnv } from '../github-token.js';
-import { createExec } from '../exec-path.js';
+// Copilot's plan limits (#879, node 7 of #608): GET /copilot_internal/user (spike §7). Undocumented, so parsed defensively; it spends nothing.
+// #962: with the token the runs use (the selected GitHub login's, else gh's machine login's) over the GET the spawn's check makes. No login
+// check: a mismatch is the spawn's to refuse. No reason quotes a token, a body or gh's words.
+import { AccountError } from '../account-error.js';
+import type { AccountEnvDeps } from '../account-env.js';
 import { isPercent, isRecord, PERCENT_MAX } from '../rate-limits.js';
-import type { Exec, RateLimits, RateLimitWindow } from '../types.js';
-import { agentDirs } from './command.js';
+import type { RateLimits, RateLimitWindow } from '../types.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
+import { copilotToken, fetchCopilotUser } from './copilot-account.js';
+import type { AccountCtx } from './runner.js';
 
-const GH_ARGS = ['api', '/copilot_internal/user'];
-const GH_TIMEOUT_MS = 10_000;
+const NO_TOKEN = 'no Copilot token';
+const UNREACHABLE = 'Copilot quota unreachable';
+const NO_QUOTA = 'no Copilot quota with an entitlement';
 // The quotas the CLI draws on, first match wins: a paid plan's premium requests, else Free's chat (spike §7). completions is the editor's
 const QUOTAS = ['premium_interactions', 'chat'] as const;
 const HUNDREDTHS = 100; // 100 − 97.6 is 2.4000000000000057: kept to the hundredths the API gives
-
-const execGh: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
 
 // A quota the CLI can spend: an entitlement, `unlimited: false` said outright (every snapshot of spike §7 has it: a shape without it is
 // unseen, so no reading rather than a guess), and its percent_remaining
@@ -36,20 +37,20 @@ export function parseCopilotUser(body: unknown, now: Date): RateLimits | undefin
   return { at: now.toISOString(), windows: { thirty_day: window } };
 }
 
-/** One read of gh's account (#879). No reading throws its reason (#557), for planLimitsReading to list; no reason quotes gh's words. */
-export async function readCopilotPlanLimits(deps: Pick<PlanLimitsDeps, 'exec' | 'env' | 'now'> = {}): Promise<RateLimits> {
-  const exec = deps.exec ?? execGh;
-  const env = childEnv(deps.env ?? process.env, cliEnv()); // gh's login, never an inherited GH_TOKEN (#180)
-  const { stdout } = await exec('gh', GH_ARGS, { env, timeout: GH_TIMEOUT_MS }).catch(() => {
-    throw new Error('gh api /copilot_internal/user failed: gh missing, logged out, or the account has no Copilot');
-  });
-  let body: unknown;
-  try {
-    body = JSON.parse(stdout);
-  } catch {
-    throw new Error('gh answered no JSON for the Copilot quota');
-  }
+// The ctx a run's accountEnv gets (account-env.ts' accountEnv), for Copilot's provider
+const ctxOf = (accounts: AccountEnvDeps): AccountCtx =>
+  ({ ...(accounts.accounts.copilot === undefined ? {} : { selected: accounts.accounts.copilot }), credentials: accounts.credentials, machineGithub: accounts.machineGithub });
+
+// The GET's refusal names its status (AccountError's fixed `HTTP <status>`); a transport failure or a body that is not JSON is unreachable
+const readFailure = (err: unknown): Error =>
+  new Error(err instanceof AccountError && err.reason?.startsWith('HTTP ') ? `Copilot quota read failed: ${err.reason}` : UNREACHABLE);
+
+/** One read of the account Copilot's runs use (#879, #962). No reading throws a fixed reason (#557), for planLimitsReading to list. */
+export async function readCopilotPlanLimits(deps: Pick<PlanLimitsDeps, 'accounts' | 'fetch' | 'now'> = {}): Promise<RateLimits> {
+  if (deps.accounts === undefined) throw new Error(NO_TOKEN);
+  const { token } = await copilotToken(ctxOf(deps.accounts)).catch(() => { throw new Error(NO_TOKEN); });
+  const body = await fetchCopilotUser(token, deps).catch((err: unknown) => { throw readFailure(err); });
   const reading = parseCopilotUser(body, deps.now?.() ?? new Date());
-  if (!reading) throw new Error('no Copilot quota with an entitlement');
+  if (!reading) throw new Error(NO_QUOTA);
   return reading;
 }

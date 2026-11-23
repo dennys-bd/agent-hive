@@ -898,7 +898,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const { agentEnabled: enabled, accounts } = live.runtime.config;
     const asked = planLimitAgents(agents).filter((agent) => enabled[agent] && !(agent === 'claude' && accounts.claude !== undefined));
     if (asked.length === 0) return undefined;
-    const { readings, failures } = await read(asked);
+    const { readings, failures } = await read(asked, accountDeps()); // #962: the live selection, the store and gh's login, as a run reads them
     for (const agent of asked) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
     for (const { agent, rateLimits } of readings) await dispatch({ type: 'rateLimits', agent, rateLimits, replace });
     if (readings.length > 0) return undefined;
