@@ -2587,6 +2587,18 @@ const en = {
   'plugins.version.useFailed': 'could not change the version in use',
   // #983: deleting a version, or a user-created item with its last
   'plugins.delete.failed': 'could not delete {version}',
+  'plugins.kind.skill': 'skill',
+  'plugins.kind.specialist': 'specialist',
+  'plugins.delete.versionTitle': 'Delete {version}',
+  'plugins.delete.itemTitle': 'Delete {name}',
+  'plugins.delete.workspace': '{workspace} uses {version} today and moves to the {fallback}.',
+  'plugins.delete.kept.one': '{names}, made from {version}, stays as it is.',
+  'plugins.delete.kept.other': '{names}, made from {version}, stay as they are.',
+  'plugins.delete.lastVersion': '{version} is the last version, so the {kind} goes with it, from every workspace.',
+  'plugins.delete.callers.one': '{callers} still calls /{name} and the reviewer will flag it.',
+  'plugins.delete.callers.other': '{callers} still call /{name} and the reviewer will flag it.',
+  'plugins.delete.undone': 'this cannot be undone.',
+  'plugins.delete.confirm': 'delete',
   // #320: the based-on link and its card
   'plugins.origin.link': 'based on {name}',
   'plugins.origin.title': 'based on',
@@ -6119,6 +6131,18 @@ const pt: Record<MessageKey, string> = {
   'plugins.version.useFailed': 'não foi possível trocar a versão em uso',
   // #983: deleting a version, or a user-created item with its last
   'plugins.delete.failed': 'não foi possível excluir {version}',
+  'plugins.kind.skill': 'skill',
+  'plugins.kind.specialist': 'especialista',
+  'plugins.delete.versionTitle': 'Excluir {version}',
+  'plugins.delete.itemTitle': 'Excluir {name}',
+  'plugins.delete.workspace': '{workspace} usa {version} hoje e passa a usar a {fallback}.',
+  'plugins.delete.kept.one': '{names}, criada a partir de {version}, fica como está.',
+  'plugins.delete.kept.other': '{names}, criadas a partir de {version}, ficam como estão.',
+  'plugins.delete.lastVersion': '{version} é a última versão, então a {kind} sai junto, de todos os workspaces.',
+  'plugins.delete.callers.one': '{callers} ainda chama /{name} e o revisor vai acusar isso.',
+  'plugins.delete.callers.other': '{callers} ainda chamam /{name} e o revisor vai acusar isso.',
+  'plugins.delete.undone': 'não dá para desfazer.',
+  'plugins.delete.confirm': 'excluir',
   // #320: the based-on link and its card
   'plugins.origin.link': 'baseada em {name}',
   'plugins.origin.title': 'baseada em',
@@ -7126,7 +7150,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580), or the report tab's counts (#467), or the wake dialog's sleeps (#468), or the memory history's changes (#684). */
-export type PluralFamily = 'checkpoints.summary' | 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'search.results' | 'search.files' | 'search.confirm.title' | 'search.occurrences' | 'search.done.title' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
+export type PluralFamily = 'checkpoints.summary' | 'settings.stages.meta.evaluate' | 'settings.flows.holdsTasks' | 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'search.results' | 'search.files' | 'search.confirm.title' | 'search.occurrences' | 'search.done.title' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.readTimes' | 'settings.memory.lessonsRead' | 'settings.memory.days' | 'settings.memory.historyCount' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.tasks' | 'stageEvaluate.reviewing' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.delete.kept' | 'plugins.delete.callers' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff' | 'benchmark.pr.commitsLine' | 'benchmark.config.scenarios' | 'benchmark.config.eval.rejudgeRuns' | 'benchmark.compare.tasks' | 'benchmark.compare.hidden' | 'benchmark.report.rounds' | 'benchmark.report.runs' | 'benchmark.report.medianOf' | 'benchmark.report.intervenedCol' | 'benchmark.report.sleptCol' | 'benchmark.report.files' | 'benchmark.report.evaluateText' | 'benchmark.result.waitingTasks' | 'benchmark.result.scenarioCount' | 'benchmark.result.walks' | 'benchmark.result.collectorCount' | 'benchmark.result.findings' | 'benchmark.result.interventionCount' | 'benchmark.result.sleepCount' | 'benchmark.sleep.slept';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

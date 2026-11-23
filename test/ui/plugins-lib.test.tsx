@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { assignableWorkspaces, basedOnTitle, catalogueOf, countOf, groupLabel, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
+import { assignableWorkspaces, basedOnTitle, callersOf, catalogueOf, childrenOf, countOf, deleteEntryOf, groupLabel, groupsOf, itemIdOf, kindLabel, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
 import { BASED_ON, CATALOGUE, itemOf, OWN, readOf, SECOND_ORIGIN, versionOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
@@ -123,4 +123,25 @@ test('two origins: basedOnTitle gives one line each in header order, and markOf 
   const both = itemOf('hive:planner', { kind: 'specialist', basedOn: [BASED_ON, SECOND_ORIGIN] });
   expect(basedOnTitle(both)).toBe('based on superpowers:executing-plans · obra/superpowers · MIT\nbased on ecc:planner · affaan-m/ECC · MIT');
   expect(markOf(both)).toBe(''); // the arrow is the sidebar's icon (#492)
+});
+
+test('childrenOf names the versions made from a version; callersOf names the callers, never a stage; kindLabel names the kind (#983)', () => {
+  const item = itemOf('hive:a', { versions: [versionOf('mine'), versionOf('tdd', { from: 'mine' }), versionOf('fast', { from: 'mine' })] });
+  expect([childrenOf(item, 'mine'), childrenOf(item, 'tdd')]).toEqual([['tdd', 'fast'], []]);
+  const build = CATALOGUE[1] ?? CATALOGUE[0];
+  expect(callersOf(build, CATALOGUE)).toEqual(['new-spec']);
+  expect(callersOf(itemOf('hive:b', { usage: [{ kind: 'caller', id: 'hive:gone' }] }), CATALOGUE)).toEqual(['hive:gone']);
+  expect(callersOf(CATALOGUE[0] ?? build, CATALOGUE)).toEqual([]);
+  expect([kindLabel('skill'), kindLabel('specialist')]).toEqual(['skill', 'specialist']);
+  setLanguage('pt');
+  expect([kindLabel('skill'), kindLabel('specialist')]).toEqual(['skill', 'especialista']);
+});
+
+test("deleteEntryOf: none on the original; a Hive item's version; a user-created one disabled while a workspace runs it; the item with its last (#983)", () => {
+  const hive = itemOf('hive:a', { versions: [versionOf('mine', { workspaces: ['agent-hive'] })] });
+  const own = itemOf('hive:b', { userCreated: true, versions: [versionOf('mine', { from: null, workspaces: ['agent-hive'] }), versionOf('tdd', { from: null })] });
+  const last = itemOf('hive:c', { userCreated: true, versions: [versionOf('mine', { from: null, workspaces: ['agent-hive'] })] });
+  expect([deleteEntryOf(hive, null), deleteEntryOf(hive, 'mine'), deleteEntryOf(own, 'mine'), deleteEntryOf(own, 'tdd'), deleteEntryOf(last, 'mine')]).toEqual([
+    { kind: 'none' }, { kind: 'version', version: 'mine' }, { kind: 'inUse', version: 'mine' }, { kind: 'version', version: 'tdd' }, { kind: 'item', version: 'mine' },
+  ]);
 });
