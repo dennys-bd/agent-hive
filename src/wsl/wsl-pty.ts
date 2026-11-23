@@ -115,7 +115,10 @@ async function planRun(deps: WslPtyDeps, spec: RunSpec, tmp: string): Promise<Pl
 async function writeRun(machine: Machine, tmp: string, files: readonly RunFile[]): Promise<void> {
   await privateDir(machine, tmp);
   for (const dir of new Set(files.map((f) => machine.paths.dirname(f.path)))) await privateDir(machine, dir);
-  await Promise.all(files.map((f) => writePrivate(machine, f)));
+  // every write settled before a failure is thrown: a cleanup racing a write still under way would leave that file (the MCP secret) behind
+  const results = await Promise.allSettled(files.map((f) => writePrivate(machine, f)));
+  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (failed !== undefined) throw failed.reason;
 }
 
 function removeAll(machine: Machine, tmp: string, files: readonly string[], onError: PtyHandlers['onError']): void {
@@ -144,7 +147,12 @@ function spawnRun(deps: WslPtyDeps, spec: RunSpec, handlers: PtyHandlers): PtyHa
     planned = plan;
     await writeRun(machine, tmp, plan.files);
     ptys.spawn(spec.ptyId, plan.argv, deps.hostCwd, plan.env, spec.terminal === undefined ? {} : spec.keep, spec.size);
-    ptys.subscribe(spec.ptyId, () => {}, exitOnce);
+    try {
+      ptys.subscribe(spec.ptyId, () => {}, exitOnce);
+    } catch (err) {
+      ptys.kill(spec.ptyId); // a pty nobody hears the exit of would outlive its rejected start, unkillable through this handle
+      throw err;
+    }
   }).catch((err: unknown) => {
     if (planned !== undefined) removeAll(machine, tmp, planned.files.map((f) => f.path), handlers.onError);
     throw err;

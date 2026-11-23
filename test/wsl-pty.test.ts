@@ -158,6 +158,15 @@ test('a start that fails after its writes removes the run files it wrote', async
   assert.ok(disk.removed.includes(`${ROOT}/prompts/P1.protocol.md`));
 });
 
+test('a subscribe that throws after the spawn kills the pty before started rejects', async () => {
+  const fake = fakePtys();
+  const host = createPtyHost(fake.spawnPty);
+  const ptys: WslPtyDeps['ptys'] = { ...host, subscribe: () => { throw new Error('no subscribe'); } };
+  const { pty } = setup({ ptys });
+  await assert.rejects(pty.spawn(agentSpec(), HANDLERS).started, /no subscribe/);
+  assert.equal(fake.ptys[0]?.killed, 1);
+});
+
 test('a leftover file is removed before the write, so the new one is made with its own mode', async () => {
   const { disk, pty } = setup();
   await pty.spawn(agentSpec(), HANDLERS).started;
