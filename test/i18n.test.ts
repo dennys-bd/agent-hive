@@ -811,3 +811,18 @@ test('the empty stages\' copy (#914): both languages', () => {
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['{stage} · vazia · abre quando uma tarefa entrar', '{stage}, vazia, recolhida', 'mover para {stage}', 'nenhuma tarefa',
     'etapas vazias', 'não recolher', 'recolher', 'recolher e juntar', 'ficam abertas, do tamanho das outras etapas.', 'cada etapa vazia vira uma faixa estreita.', 'recolhem, e as vizinhas viram uma faixa só.']);
 });
+
+test('a refused account\'s short messages exist for every provider and code in both languages; the agents\' name their agent through {agent}, GitHub\'s name none (#953)', () => {
+  for (const language of ['en', 'pt'] as const) {
+    for (const provider of ['claude', 'copilot', 'github'] as const) {
+      for (const code of ['missing', 'mismatch', 'unreachable'] as const) {
+        const text = MESSAGES[language][`start.failed.account_${provider}_${code}` as const];
+        assert.equal(text.includes('{agent}'), provider !== 'github', `${language} ${provider} ${code}`);
+      }
+    }
+  }
+  assert.deepEqual([MESSAGES.en['start.failed.account_github_missing'], MESSAGES.pt['start.failed.account_github_missing']], [
+    'the GitHub login chosen in Settings has no saved token: add it again or choose another',
+    'o login do GitHub escolhido na configuração não tem token salvo: adicione de novo ou escolha outro',
+  ]);
+});
