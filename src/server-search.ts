@@ -248,7 +248,7 @@ export function registerSearchRoutes(app: Express, { requireLive, machineFor, lo
     const current = requireLive(res);
     if (!current) return;
     const id = req.params.id as string;
-    const root = treeRoot(current.state, current.runtime.config, id);
+    const root = treeRoot(current.state, current.runtime.config, id, machineFor);
     if (typeof root !== 'string') return void res.status(root.status).json({ error: root.message, code: root.code, workspace: root.workspace });
     const query = searchQueryOf(req.query);
     if (query === undefined) return void res.status(HTTP_BAD_REQUEST).json({ error: QUERY_MESSAGE });

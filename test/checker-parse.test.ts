@@ -1,12 +1,12 @@
 import { test } from 'node:test';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { parseCheck } from '../src/checker-parse.js';
 import type { CheckFormat } from '../src/checkers.js';
+import { pathsOf } from '../src/machine.js';
 import type { CheckDiagnostic } from '../src/types.js';
 
 const F = '/w';
+const LINUX = pathsOf('linux');
 const lines = (...objects: object[]): string => `${objects.map((o) => JSON.stringify(o)).join('\n')}\n`;
 
 const CASES: [CheckFormat, string, CheckDiagnostic[]][] = [
@@ -56,7 +56,7 @@ const CASES: [CheckFormat, string, CheckDiagnostic[]][] = [
     { path: 'src/main.zig', line: 3, column: 5, severity: 'error', message: "expected ';' after statement" },
   ]],
   ['sarif', JSON.stringify({ version: '2.1.0', runs: [{ tool: { driver: { name: 'detekt' } }, results: [
-    { ruleId: 'detekt.style.MagicNumber', level: 'warning', message: { text: 'This expression contains a magic number.' }, locations: [{ physicalLocation: { artifactLocation: { uri: pathToFileURL(join(resolve(F), 'src', 'A.kt')).href }, region: { startLine: 3, startColumn: 17, endLine: 3, endColumn: 19 } } }] },
+    { ruleId: 'detekt.style.MagicNumber', level: 'warning', message: { text: 'This expression contains a magic number.' }, locations: [{ physicalLocation: { artifactLocation: { uri: 'file:///w/src/A.kt' }, region: { startLine: 3, startColumn: 17, endLine: 3, endColumn: 19 } } }] },
   ] }] }), [{ path: 'src/A.kt', line: 3, column: 17, endLine: 3, endColumn: 19, severity: 'warning', message: 'This expression contains a magic number.', code: 'detekt.style.MagicNumber' }]],
   ['markdownlint', JSON.stringify([{ fileName: '/w/README.md', lineNumber: 1, ruleNames: ['MD041'], ruleDescription: 'First line in a file should be a top-level heading', errorDetail: null, errorContext: null, errorRange: null }]), [
     { path: 'README.md', line: 1, column: 1, severity: 'warning', message: 'First line in a file should be a top-level heading', code: 'MD041' },
@@ -64,7 +64,7 @@ const CASES: [CheckFormat, string, CheckDiagnostic[]][] = [
 ];
 
 test('each format reads as diagnostics with paths relative to the activity\'s folder; tsc\'s code is its number (#782)', () => {
-  for (const [format, output, expected] of CASES) assert.deepEqual(parseCheck(format, output, F), expected, format);
+  for (const [format, output, expected] of CASES) assert.deepEqual(parseCheck(format, output, F, LINUX), expected, format);
 });
 
 test('a finding outside the folder is dropped; selene\'s findings take the checked file (#782)', () => {
@@ -73,22 +73,20 @@ test('a finding outside the folder is dropped; selene\'s findings take the check
     { file: '/elsewhere/b.py', line: 1, column: 0, message: 'dropped', hint: null, code: 'x', severity: 'error' },
     { file: '../w2/c.py', line: 1, column: 0, message: 'dropped too', hint: null, code: 'x', severity: 'error' },
   );
-  assert.deepEqual((parseCheck('mypy', out, F) as CheckDiagnostic[]).map((d) => d.message), ['kept']);
+  assert.deepEqual((parseCheck('mypy', out, F, LINUX) as CheckDiagnostic[]).map((d) => d.message), ['kept']);
   const selene = lines({ type: 'Diagnostic', severity: 'Error', code: 'parse_error', message: 'unexpected token', primary_label: { span: { start_line: 4, start_column: 0, end_line: 4, end_column: 1 } } });
-  assert.deepEqual((parseCheck('selene', selene, F, { file: '/w/init.lua' }) as CheckDiagnostic[]).map((d) => [d.path, d.line]), [['init.lua', 5]]);
+  assert.deepEqual((parseCheck('selene', selene, F, LINUX, { file: '/w/init.lua' }) as CheckDiagnostic[]).map((d) => [d.path, d.line]), [['init.lua', 5]]);
 });
 
 test('a report that does not read is an error naming its format; lines a line format does not read are skipped (#782)', () => {
-  assert.match((parseCheck('pylint', 'Traceback (most recent call last):\n  File "x"', F) as { error: string }).error, /^pylint output does not read: /);
-  assert.match((parseCheck('sarif', '{"runs":{}}', F) as { error: string }).error, /^sarif output does not read: runs is not an array$/);
-  assert.deepEqual(parseCheck('tsc', "error TS18003: No inputs were found in config file 'tsconfig.json'.\n", F), []);
+  assert.match((parseCheck('pylint', 'Traceback (most recent call last):\n  File "x"', F, LINUX) as { error: string }).error, /^pylint output does not read: /);
+  assert.match((parseCheck('sarif', '{"runs":{}}', F, LINUX) as { error: string }).error, /^sarif output does not read: runs is not an array$/);
+  assert.deepEqual(parseCheck('tsc', "error TS18003: No inputs were found in config file 'tsconfig.json'.\n", F, LINUX), []);
 });
 
-const WIN32_ONLY = { skip: process.platform !== 'win32' && 'win32 only: its native separator is \\ (#641)' };
-
-test('on win32 a finding\'s path is relative to the folder with / only; one past it is dropped (#641)', WIN32_ONLY, () => {
+test('on win32 a finding\'s path is relative to the folder with / only; one past it is dropped (#641)', () => {
   const out = "src\\a.ts(12,5): error TS2304: Cannot find name 'x'.\n..\\b.ts(1,1): error TS2322: Type 'y'.\n";
-  const found = parseCheck('tsc', out, 'C:\\repo');
+  const found = parseCheck('tsc', out, 'C:\\repo', pathsOf('win32'));
   assert.ok(Array.isArray(found));
   assert.deepEqual(found.map((d) => d.path), ['src/a.ts']);
 });

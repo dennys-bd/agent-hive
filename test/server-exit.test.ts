@@ -10,7 +10,7 @@ import { initialState } from '../src/orchestrator.js';
 import { exitEvent } from '../src/server-exit.js';
 import type { Activity, Item, State, Worker } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { machineWith } from './fake-machine.js';
+import { HOST_PATHS, machineWith } from './fake-machine.js';
 import { combConfig, LOCAL_STAGES, WORKSPACE } from './fakes.js';
 import { withLocal, withWork } from './fixtures/work.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
@@ -38,7 +38,7 @@ test('exitEvent flags a task run whose session has no transcript in its worktree
   const flagged = { type: 'exit', ptyId: RUN, noTranscript: true };
   assert.deepEqual(await exitEvent(live(state), RUN, () => machine), flagged);
   assert.deepEqual(await exitEvent(live(withRun({ sessionId: undefined })), RUN, () => machine), flagged, 'stopped before its SessionStart: the activity\'s id, which the spawn set');
-  const dir = transcriptDir(machine, taskDir(REPO, activityOf(state, ITEM.itemId)!));
+  const dir = transcriptDir(machine, taskDir(HOST_PATHS, REPO, activityOf(state, ITEM.itemId)!));
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
   assert.deepEqual(await exitEvent(live(state), RUN, () => machine), { type: 'exit', ptyId: RUN });
@@ -61,7 +61,7 @@ test('exitEvent finds a transcript written under the resolved cwd of a workspace
   const link = join(await tempDir(t, 'link-'), 'repo');
   await symlink(real, link);
   const linked = { state: withRun(), runtime: { config: parseConfig(combConfig({ path: link, stages: LOCAL_STAGES })) } };
-  const cwd = taskDir(link, activityOf(linked.state, ITEM.itemId)!);
+  const cwd = taskDir(HOST_PATHS, link, activityOf(linked.state, ITEM.itemId)!);
   await mkdir(cwd, { recursive: true });
   const dir = transcriptDir(machine, await realpath(cwd)); // where an agent that resolves its cwd writes it
   await mkdir(dir, { recursive: true });

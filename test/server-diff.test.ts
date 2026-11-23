@@ -14,6 +14,7 @@ import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // GET /activities/:id/diff (#270, #629) over a Comb with no source and no worker: its tasks are local ones saved in state.json before the first save. git is
 // a fake that answers the index path, the merge-base and the diff, and records every call.
@@ -69,8 +70,8 @@ async function startDiffs(t: TestContext, tasks: (repo: string) => WithWork[]): 
 }
 
 test('GET /activities/:id/diff answers the worktree on disk against the stage start, or against the merge-base with origin/HEAD, parsed, running git in the worktree the slug names (#270)', async (t) => {
-  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task'), stageStart: { stage: 'fila', commit: START } })]);
-  const worktree = worktreePath(f.repo, 'hive-1-task');
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task'), stageStart: { stage: 'fila', commit: START } })]);
+  const worktree = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   const stage = await get(f, 'local:1', 'stage');
   assert.deepEqual([stage.status, await stage.json()], [200, { scope: 'stage', base: 'f0e1d2c', files: FILES }]);
   assert.deepEqual(f.calls.map((args) => args.slice(0, 2)), [['-C', worktree], ['-C', worktree], ['-C', worktree]], 'rev-parse, add and diff, all in the worktree');
@@ -84,11 +85,11 @@ test('GET /activities/:id/diff answers the worktree on disk against the stage st
 
 test('GET /activities/:id/diff refuses an unknown task (404), a scope that is not stage or worktree (400), and a task with no workspace, no worktree on disk or no start in its current stage (409), running no git (#270)', async (t) => {
   const f = await startDiffs(t, (repo) => [
-    task(1, { worktree: worktreePath(repo, 'hive-1-task') }),
+    task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') }),
     task(2),
-    task(3, { worktree: worktreePath(repo, 'hive-3-task'), worktreeGone: true }),
-    task(4, { worktree: worktreePath(repo, 'hive-4-task'), stageStart: { stage: 'other', commit: START } }),
-    task(5, { workspace: 'gone', worktree: worktreePath(repo, 'hive-5-task') }),
+    task(3, { worktree: worktreePath(HOST_PATHS, repo, 'hive-3-task'), worktreeGone: true }),
+    task(4, { worktree: worktreePath(HOST_PATHS, repo, 'hive-4-task'), stageStart: { stage: 'other', commit: START } }),
+    task(5, { workspace: 'gone', worktree: worktreePath(HOST_PATHS, repo, 'hive-5-task') }),
   ]);
   const refusals: [string, string | undefined, number, string | Record<string, string>][] = [
     ['local:9', 'stage', 404, 'atividade desconhecida'], // #629: no activity under that id, checked first
@@ -108,7 +109,7 @@ test('GET /activities/:id/diff refuses an unknown task (404), a scope that is no
 });
 
 test('GET /activities/:id/diff answers 413 when the diff passes DIFF_MAX_BYTES and 500 with git\'s own words on any other failure (#270)', async (t) => {
-  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
   f.fail(Object.assign(new RangeError('stdout maxBuffer length exceeded'), { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }));
   const large = await get(f, 'local:1', 'worktree');
   assert.deepEqual([large.status, await large.json()], [413, { error: 'diff grande demais para o visualizador' }]);
@@ -118,8 +119,8 @@ test('GET /activities/:id/diff answers 413 when the diff passes DIFF_MAX_BYTES a
 });
 
 test('GET /activities/:id/diff?scope=commit answers HEAD^ against HEAD in the worktree, and 409 on a root commit (#591)', async (t) => {
-  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
-  const worktree = worktreePath(f.repo, 'hive-1-task');
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })]);
+  const worktree = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   const res = await get(f, 'local:1', 'commit');
   assert.deepEqual([res.status, await res.json()], [200, { scope: 'commit', base: '0f1e2d3 (HEAD^)', files: FILES }]);
   assert.deepEqual(f.calls.map((args) => args.slice(0, 3)), [['-C', worktree, 'rev-parse'], ['-C', worktree, '-c']], 'no index copy, no add');
@@ -131,7 +132,7 @@ test('GET /activities/:id/diff?scope=commit answers HEAD^ against HEAD in the wo
 
 test('GET /activities/:id/diff?scope=checkpoint&checkpoint=<n> diffs the worktree against that checkpoint\'s point; a missing or unknown n is a 400, a task with no checkpoint a 409 (#619)', async (t) => {
   const A1: Checkpoint = { n: 1, stage: 'fila', start: START, head: START, commit: PARENT, branch: '', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
-  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task'), checkpoints: [A1] }), task(2, { worktree: worktreePath(repo, 'hive-2-task') })]);
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task'), checkpoints: [A1] }), task(2, { worktree: worktreePath(HOST_PATHS, repo, 'hive-2-task') })]);
   const res = await get(f, 'local:1', 'checkpoint&checkpoint=1');
   assert.deepEqual([res.status, await res.json()], [200, { scope: 'checkpoint', base: '0f1e2d3 (checkpoint 1)', files: FILES }]);
   assert.equal(f.calls.at(-1)?.at(-1), PARENT, 'the diff runs against the point');
@@ -150,7 +151,7 @@ test('GET /activities/:id/diff?scope=checkpoint&checkpoint=<n> diffs the worktre
 
 test('GET /activities/:id/diff?scope=checkpoint leaves the scope\'s marks alone: they are shared by every checkpoint number, so one diff cannot tell which are stale (#619)', async (t) => {
   const A1: Checkpoint = { n: 1, stage: 'fila', start: START, head: START, commit: PARENT, branch: '', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
-  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task'), checkpoints: [A1] })]);
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task'), checkpoints: [A1] })]);
   const review = { reviewed: [{ scope: 'checkpoint', path: 'other-checkpoint-file.txt', hash: 'abc' }, { scope: 'worktree', path: 'gone.txt', hash: 'abc' }], drafts: [], threads: [] };
   await mkdir(join(f.home, 'reviews'), { recursive: true });
   await writeFile(reviewPath(f.home, 'local:1'), JSON.stringify(review));

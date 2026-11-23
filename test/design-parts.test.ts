@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { assemble, OUTPUT_MAX, PART_BYTES_MAX, PART_REASONS, SLOTS_MAX, type PartReason, partNotice, type ReadPart, readPartFrom, readPartFromGit } from '../src/design-parts.js';
 import { tempDir } from './temp-dir.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 const run = promisify(execFile);
 
@@ -86,7 +87,7 @@ test('readPartFrom reads a regular file of the folder and refuses a symbolic lin
   await symlink(join(root, 'secret.html'), join(folder, 'parts', 'out.html'));
   await symlink(join(folder, 'parts', 'nav.html'), join(folder, 'parts', 'alias.html'));
   await symlink(join(folder, 'parts'), join(folder, 'linked'));
-  const read = readPartFrom(folder);
+  const read = readPartFrom(folder, HOST_PATHS);
   assert.deepEqual(await read('parts/nav.html'), { text: '<nav>n</nav>' });
   for (const path of ['parts/out.html', 'parts/alias.html', 'linked/nav.html']) assert.deepEqual(await read(path), { refused: PART_REASONS.symlink }, path);
   assert.deepEqual([await read('parts/none.html'), await read('parts')], [{ refused: PART_REASONS.missing }, { refused: PART_REASONS.missing }]);
@@ -148,7 +149,7 @@ test('a wide fan-out reads each part once and expands at most 256 includes; the 
 test('a part over the size cap gets the too-large notice (#421)', async (t) => {
   const folder = await realpath(await tempDir(t, 'parts-'));
   await writeFile(join(folder, 'big.html'), `<p>${'x'.repeat(PART_BYTES_MAX)}</p>`);
-  const { html } = await assemble('s.hv.html', '<hv-include src="big.html"></hv-include>', readPartFrom(folder));
+  const { html } = await assemble('s.hv.html', '<hv-include src="big.html"></hv-include>', readPartFrom(folder, HOST_PATHS));
   assert.equal(html, partNotice(PART_REASONS.tooLarge, 'big.html'));
 });
 
@@ -200,7 +201,7 @@ test('a file of thousands of unclosed hv-slot markers is scanned in linear time 
 test('readPartFrom does not hang on a FIFO named .html and refuses it (#421)', async (t) => {
   const folder = await realpath(await tempDir(t, 'parts-'));
   await promisify(execFile)('mkfifo', [join(folder, 'x.html')]);
-  assert.deepEqual(await readPartFrom(folder)('x.html'), { refused: PART_REASONS.missing });
+  assert.deepEqual(await readPartFrom(folder, HOST_PATHS)('x.html'), { refused: PART_REASONS.missing });
 });
 
 test('readPartFromGit reads a part from the commit, not the disk, and refuses a symbolic link, a folder, a part past PART_BYTES_MAX and one the commit lacks (#675)', async (t) => {

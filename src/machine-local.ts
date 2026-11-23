@@ -36,7 +36,7 @@ const machineExec = (exec: Exec): MachineExec => async (file, args, opts) => {
 export const localDisk = (exec: Exec): Pick<Machine, 'exec' | 'fs'> => ({ fs: localFs, exec: machineExec(exec) });
 
 /** workspacePathProblem's own (#202): always the real git, never an injected one, as it was before the machine. */
-export const LOCAL_DISK: Pick<Machine, 'exec' | 'fs'> = localDisk(promisify(execFile));
+export const LOCAL_DISK: Pick<Machine, 'exec' | 'fs' | 'paths'> = { ...localDisk(promisify(execFile)), paths: pathsOf(process.platform) };
 
 // #806: win32's env names ignore case; elsewhere PATH is PATH
 function infoOf(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, agents: readonly AgentAvailability[]): MachineInfo {

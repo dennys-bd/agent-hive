@@ -1,4 +1,3 @@
-import { basename, win32 } from 'node:path';
 import { AGENTS } from './agents.js';
 import type { Machine } from './machine.js';
 import { AGENT_IDS } from './types.js';
@@ -60,9 +59,9 @@ async function commandLines(machine: Machine, pid: number): Promise<{ pid: numbe
 const AGENT_COMMANDS = AGENT_IDS.map((id) => AGENTS[id].command);
 
 // The agent a command line runs: its program, or the script an interpreter (node) runs, named as one of AGENTS' commands
-function agentIn(line: string): string | undefined {
+function agentIn(line: string, paths: Machine['paths']): string | undefined {
   const [program = '', script = ''] = line.split(/\s+/);
-  const names = [basename(program), basename(script)];
+  const names = [paths.basename(program), paths.basename(script)];
   return AGENT_COMMANDS.find((command) => names.includes(command));
 }
 
@@ -72,14 +71,14 @@ const WIN_WORD = /(?:"[^"]*"|[^\s"])+/g;
 const WIN_PROGRAM = /^.*?\.(?:exe|cmd|bat)(?=\s|$)/i;
 const WIN_EXT = /\.(?:exe|cmd|bat)$/i;
 
-const winName = (word: string): string => win32.basename(WIN_PROGRAM.exec(word)?.[0] ?? word).replace(WIN_EXT, '').toLowerCase();
+const winName = (word: string, paths: Machine['paths']): string => paths.basename(WIN_PROGRAM.exec(word)?.[0] ?? word).replace(WIN_EXT, '').toLowerCase();
 
 // win32's agentIn (#638): the program, or the first later word that is not a switch (an interpreter's script, cmd.exe /c's payload), named
 // case-insensitively and without .exe/.cmd/.bat as one of AGENTS' commands. Any later word would count `git grep claude`.
-function winAgentIn(line: string): string | undefined {
+function winAgentIn(line: string, paths: Machine['paths']): string | undefined {
   const [program = '', ...rest] = (line.match(WIN_WORD) ?? []).map((word) => word.replaceAll('"', ''));
   const script = rest.find((word) => !word.startsWith('/') && !word.startsWith('-')) ?? '';
-  const names = [winName(program), winName(script)];
+  const names = [winName(program, paths), winName(script, paths)];
   return AGENT_COMMANDS.find((command) => names.includes(command));
 }
 
@@ -107,7 +106,7 @@ async function winStrayAgents(machine: Machine, ptyPid: number, held: Held): Pro
   const winHeld: Held = { captured: held.captured.map(winForm), shims: held.shims.map(winForm) };
   // only the comparison takes winForm: the agent is read from the line as is, whose cmd.exe /c a slash swap would turn into \c
   const lines = subtree(rows, ptyPid, (row) => isShim(winHeld, winForm(row.line))).map((row) => row.line);
-  return unheld(lines, winHeld, winAgentIn, winForm);
+  return unheld(lines, winHeld, (line) => winAgentIn(line, machine.paths), winForm);
 }
 
 /** The agents running in a terminal that no captured session accounts for (#696): the shell's children and theirs, whose command is an
@@ -121,5 +120,5 @@ export async function strayAgents(machine: Machine, ptyId: string, held: Held): 
   if (shell === undefined) return [];
   const children = await commandLines(machine, shell);
   const grandchildren = await Promise.all(children.map(async (child) => (isShim(held, child.line) ? [] : commandLines(machine, child.pid))));
-  return unheld([...children, ...grandchildren.flat()].map(({ line }) => line), held, agentIn);
+  return unheld([...children, ...grandchildren.flat()].map(({ line }) => line), held, (line) => agentIn(line, machine.paths));
 }

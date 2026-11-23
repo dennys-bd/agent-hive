@@ -12,7 +12,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
-import { machineWith } from './fake-machine.js';
+import { HOST_PATHS, machineWith } from './fake-machine.js';
 
 // The sleep routes of one flow (#672), end to end through the server: the route, the reducer and the record. No worker (maxConcurrent 0):
 // every run below is a local session the test opened
@@ -102,7 +102,7 @@ test('removeTaskTranscript removes the session\'s transcript in its task\'s work
   const activity: Activity = { id: 'a-board:1', kind: 'task', workspace: 'hive', slug: 'hive-1-t' };
   const [run, other] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
   const session: Session = { id: run, startedAt: at, stages: ['spec'], lastUsedAt: at, agent: 'claude' };
-  const dir = transcriptDir(machine, worktreePath('/repo', 'hive-1-t'));
+  const dir = transcriptDir(machine, worktreePath(HOST_PATHS, '/repo', 'hive-1-t'));
   await mkdir(dir, { recursive: true });
   for (const id of [run, other]) await writeFile(join(dir, `${id}.jsonl`), '{}\n');
   const errors: string[] = [];

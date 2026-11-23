@@ -84,7 +84,7 @@ async function shellFolder(current: LiveView, id: string, raw: unknown, machineF
   const { folder } = (raw ?? {}) as { folder?: unknown };
   if (folder === undefined) return undefined;
   if (typeof folder !== 'string' || folder === '') return { status: HTTP_BAD_REQUEST, message: FOLDER_BODY_MESSAGE };
-  const root = treeRoot(current.state, current.runtime.config, id);
+  const root = treeRoot(current.state, current.runtime.config, id, machineFor);
   return typeof root === 'string' ? treeFolder(root, folder, pathFs(treeMachine(current.state, id, machineFor))) : root;
 }
 
@@ -158,7 +158,7 @@ async function openTaskSession(deps: OpenDeps, current: LiveView, record: Activi
   if (!workspace) return refuse(res, { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task), ...noWorkspaceFields(task) });
   const activity = activityOf(current.state, task.item.itemId);
   const machine = deps.machineFor(activity ?? {});
-  const dir = workDir(workspace.path, task, activity, record); // a kept session's transcript waits there until adopted (#208, #629)
+  const dir = workDir(machine.paths, workspace.path, task, activity, record); // a kept session's transcript waits there until adopted (#208, #629)
   if (copyPending(current.state.workers, resume, runners[session.agent].transcriptDir(machine, session.repo ? workspace.path : dir))) {
     return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
   }

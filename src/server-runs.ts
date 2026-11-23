@@ -11,7 +11,7 @@ import { recordCheckpoint, registerCheckpointRoutes } from './server-checkpoints
 import { type TaskRouteDeps, type LiveView, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { removeTranscripts } from './transcript.js';
 import type { Logger } from './log.js';
-import type { Machine } from './machine.js';
+import type { Machine, MachineFor } from './machine.js';
 import type { Activity, ActivityRecord, HiveEvent, Session, Task, State, Worker } from './types.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn } from './terminal-wire.js';
@@ -133,7 +133,7 @@ function registerContinueRoute(app: Express, { requireLive, dispatch }: TaskRout
 // The task a Restart acts on, its repo and worktree, the branch it is on and the stage's starting commit (#283), or why not.
 interface RestartTarget { task: Task & { stage: string }; activity: Activity; repo: string; worktree: string; branch: string; template: string; commit: string }
 
-function restartTarget(current: LiveView, activityId: string): RestartTarget | Refusal {
+function restartTarget(current: LiveView, activityId: string, machineFor: MachineFor): RestartTarget | Refusal {
   const target = taskTarget(current.state, activityId);
   if ('status' in target) return target;
   const { task, activity } = target;
@@ -146,7 +146,7 @@ function restartTarget(current: LiveView, activityId: string): RestartTarget | R
   const workspace = workspaceOf(current.runtime.config, task);
   if ('status' in workspace) return workspace;
   const template = branchFor(current.runtime.config, task.item);
-  return { task, activity, repo: workspace.path, worktree: workDir(workspace.path, task, activity), branch: taskBranch(activity, template), template, commit: activity.stageStart.commit };
+  return { task, activity, repo: workspace.path, worktree: workDir(machineFor(activity).paths, workspace.path, task, activity), branch: taskBranch(activity, template), template, commit: activity.stageStart.commit };
 }
 
 // Restart (#283): GET is the confirmation's preview; POST marks the task, runs the git, then dispatches. The server runs the git, never the
@@ -156,7 +156,7 @@ function registerRestartRoutes(app: Express, deps: TaskRouteDeps): void {
   app.get('/activities/:id/restart', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const target = restartTarget(current, activityParam(req));
+    const target = restartTarget(current, activityParam(req), machineFor);
     if ('status' in target) return refuse(res, target);
     try {
       const machine = machineFor(target.activity);
@@ -170,7 +170,7 @@ function registerRestartRoutes(app: Express, deps: TaskRouteDeps): void {
     const current = requireLive(res);
     if (!current) return;
     const activityId = activityParam(req);
-    const target = restartTarget(current, activityId);
+    const target = restartTarget(current, activityId, machineFor);
     if ('status' in target) return refuse(res, target);
     await dispatch({ type: 'restarting', activityId }); // marked before any git: nothing else may start on the worktree meanwhile
     const marked = requireLive(res)?.state;
@@ -232,7 +232,7 @@ export async function removeTaskTranscript(
   log: Pick<Logger, 'debug' | 'error'>,
 ): Promise<void> {
   if (repo === undefined) return;
-  await removeTranscripts(machine, workDir(repo, task, activity, record), repo, [session], log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
+  await removeTranscripts(machine, workDir(machine.paths, repo, task, activity, record), repo, [session], log).catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
 async function clearLocal({ dispatch, log, machineFor }: TaskRouteDeps, current: LiveView, activityId: string, sessionId: string, res: Response): Promise<void> {

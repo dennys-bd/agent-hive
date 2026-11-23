@@ -136,7 +136,7 @@ export async function workspacesRefusal(next: Config, live?: { config: Config; s
 export async function nestedRefusal(next: { comb: Pick<CombConfig, 'workspaces'> }): Promise<Refusal | undefined> {
   for (const workspace of next.comb.workspaces) {
     for (const path of workspace.nestedRepos) {
-      const problem = await nestedRepoProblem(workspace.path, path);
+      const problem = await nestedRepoProblem(workspace.path, path, LOCAL_DISK.paths);
       if (problem) return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: nested repo ${path}: ${nestedProblemText(path, problem)}` };
     }
   }
@@ -152,7 +152,7 @@ export function setupRefusal(next: Config): Refusal | undefined {
   for (const workspace of next.comb.workspaces) {
     for (const [key, prefix] of SCRIPTS) {
       try {
-        parseSetup(workspace[key] ?? '', { allowLoad: true });
+        parseSetup(workspace[key] ?? '', { allowLoad: true, paths: LOCAL_DISK.paths });
       } catch (err) {
         return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: ${prefix}${(err as Error).message}` };
       }

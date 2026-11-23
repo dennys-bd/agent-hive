@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { pathsOf } from '../src/machine.js';
 import { checkRelativePath, describeStep, parseSetup } from '../src/setup-script.js';
+
+const LINUX = pathsOf('linux'); // the cases below are POSIX text
 
 const refused = (text: string, allowLoad = true): string => {
   try {
-    parseSetup(text, { allowLoad });
+    parseSetup(text, { allowLoad, paths: LINUX });
   } catch (err) {
     return (err as Error).message;
   }
@@ -13,14 +16,14 @@ const refused = (text: string, allowLoad = true): string => {
 
 test('parseSetup reads one COPY, RUN or LOAD per line with the rest of the line as its argument and its own line number; blank lines and # comments are skipped (#299)', () => {
   const text = '# the worktree\n\nCOPY .env\n  RUN   pnpm install && pnpm build  \r\nLOAD setup/worktree.hive\nCOPY config/local.json\n';
-  assert.deepEqual(parseSetup(text, { allowLoad: true }), [
+  assert.deepEqual(parseSetup(text, { allowLoad: true, paths: LINUX }), [
     { line: 3, kind: 'copy', arg: '.env' },
     { line: 4, kind: 'run', arg: 'pnpm install && pnpm build' },
     { line: 5, kind: 'load', arg: 'setup/worktree.hive' },
     { line: 6, kind: 'copy', arg: 'config/local.json' },
   ]);
-  assert.deepEqual(parseSetup('', { allowLoad: true }), [], 'an empty setup has no steps');
-  assert.deepEqual(parseSetup('# only\n   # comments\n', { allowLoad: false }), [], 'nor does one of comments only');
+  assert.deepEqual(parseSetup('', { allowLoad: true, paths: LINUX }), [], 'an empty setup has no steps');
+  assert.deepEqual(parseSetup('# only\n   # comments\n', { allowLoad: false, paths: LINUX }), [], 'nor does one of comments only');
 });
 
 test('parseSetup refuses, with the line number, an unknown or lowercase instruction, a missing argument, a COPY / LOAD path that is absolute, climbs out, names nothing or starts at .git / .hive, and LOAD when not allowed (#299)', () => {
@@ -38,19 +41,19 @@ test('parseSetup refuses, with the line number, an unknown or lowercase instruct
 });
 
 test('checkRelativePath passes a path inside the workspace, .gitignore and a nested .git included; describeStep writes the instruction and its argument (#299)', () => {
-  for (const path of ['.env', 'config/local.json', './.env', '.gitignore', 'vendor/lib/.git', 'node_modules']) assert.equal(checkRelativePath(path), undefined, path);
+  for (const path of ['.env', 'config/local.json', './.env', '.gitignore', 'vendor/lib/.git', 'node_modules']) assert.equal(checkRelativePath(path, LINUX), undefined, path);
   assert.equal(describeStep({ line: 4, kind: 'run', arg: 'pnpm install' }), 'RUN pnpm install');
   assert.equal(describeStep({ line: 1, kind: 'copy', arg: '.env' }), 'COPY .env');
   assert.equal(describeStep({ line: 2, kind: 'load', arg: 'setup.hive' }), 'LOAD setup.hive');
 });
 
 test('inside a loaded file a bad COPY / LOAD path is refused without echoing the path, which is the file\'s text (#299)', () => {
-  assert.throws(() => parseSetup('COPY ../shared/secret-name\n', { allowLoad: false }), (err: Error) => err.message === 'line 1: COPY: the path cannot contain ".."');
-  assert.throws(() => parseSetup('COPY ../x\n', { allowLoad: true }), { message: 'line 1: COPY ../x: the path cannot contain ".."' }, 'the Settings text is the user\'s own: named');
+  assert.throws(() => parseSetup('COPY ../shared/secret-name\n', { allowLoad: false, paths: LINUX }), (err: Error) => err.message === 'line 1: COPY: the path cannot contain ".."');
+  assert.throws(() => parseSetup('COPY ../x\n', { allowLoad: true, paths: LINUX }), { message: 'line 1: COPY ../x: the path cannot contain ".."' }, 'the Settings text is the user\'s own: named');
 });
 
 test('parseSetup reads DEL with its path and COPY with an optional destination, relative, absolute, ~ or ~/…; describeStep writes the destination (#654)', () => {
-  assert.deepEqual(parseSetup('DEL tmp/\nCOPY docs/xpto\nCOPY docs/superpowers/ docs/\nCOPY .env /srv/x.env\nCOPY a ~\nCOPY b ~/notes/', { allowLoad: true }), [
+  assert.deepEqual(parseSetup('DEL tmp/\nCOPY docs/xpto\nCOPY docs/superpowers/ docs/\nCOPY .env /srv/x.env\nCOPY a ~\nCOPY b ~/notes/', { allowLoad: true, paths: LINUX }), [
     { line: 1, kind: 'del', arg: 'tmp/' },
     { line: 2, kind: 'copy', arg: 'docs/xpto' },
     { line: 3, kind: 'copy', arg: 'docs/superpowers/', dest: 'docs/' },
@@ -76,5 +79,11 @@ test('parseSetup refuses a third COPY word, a ~user destination, a relative dest
   assert.equal(refused('DEL ../x'), 'line 1: DEL ../x: the path cannot contain ".."');
   assert.equal(refused('DEL ~/x'), 'line 1: DEL ~/x: the path must be relative to the workspace');
   assert.equal(refused('RM x'), 'line 1: unknown instruction RM (COPY, RUN, LOAD or DEL)');
-  assert.throws(() => parseSetup('COPY a ../secret\n', { allowLoad: false }), { message: 'line 1: COPY: the path cannot contain ".."' }, 'a loaded file\'s paths are never echoed');
+  assert.throws(() => parseSetup('COPY a ../secret\n', { allowLoad: false, paths: LINUX }), { message: 'line 1: COPY: the path cannot contain ".."' }, 'a loaded file\'s paths are never echoed');
+});
+
+test('a COPY source absolute on a win32 machine is refused, and a destination absolute there is written as is, on any host (#928)', () => {
+  const win32 = pathsOf('win32');
+  assert.equal(checkRelativePath('C:\\secret', win32), 'the path must be relative to the workspace');
+  assert.deepEqual(parseSetup('COPY .env C:\\srv\\x.env', { allowLoad: true, paths: win32 }), [{ line: 1, kind: 'copy', arg: '.env', dest: 'C:\\srv\\x.env' }]);
 });

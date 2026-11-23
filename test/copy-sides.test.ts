@@ -8,10 +8,11 @@ import type { Activity, Task, Config, Exec, Worker, State } from '../src/types.j
 import { countMessages, transcriptDir } from '../src/agents/claude-transcript.js';
 import { worktreePath } from '../src/worktree.js';
 import { localActivityId } from '../src/activities.js';
-import { fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 const LOCAL = fakeMachine({ env: {} });
+const FOR = fakeMachines(LOCAL).for;
 import { activityIdOf, withLocal, withWork } from './fixtures/work.js';
 
 const ID = 'a1b2c3d4-0000-4000-8000-000000000001';
@@ -21,34 +22,34 @@ const task = (n: number, extra: Partial<Task> = {}): Task => ({
 });
 // Task n's activity (#629): slug hive-<n>, its worktree on disk unless `live` says otherwise, and what its record holds
 const on = (s: State, n: number, live: Partial<Activity> = {}, made: Parameters<typeof withWork>[3] = {}): State =>
-  withWork(s, `local:${n}`, { slug: `hive-${n}`, worktree: worktreePath('/repo', `hive-${n}`), ...live }, made);
+  withWork(s, `local:${n}`, { slug: `hive-${n}`, worktree: worktreePath(HOST_PATHS, '/repo', `hive-${n}`), ...live }, made);
 const state = (tasks: Task[], extra: Partial<State> = {}): State =>
   tasks.reduce((acc, c) => on(acc, Number(c.item.itemId.split(':')[1])), { ...initialState(0), workspaces: ['hive'], tasks, ...extra });
 const listed = { id: ID, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' };
 
 test('sourceSide: a worktree session is looked for in its worktree\'s dir, a repo one in the worktree\'s then the main repo\'s and runs in the main repo, a local one in the checkout; refusals name the unknown task, workspace or session (#587)', () => {
-  const worktree = worktreePath('/repo', 'hive-1');
-  assert.deepEqual(sourceSide(on(state([task(1)]), 1, {}, { sessions: [listed] }), config, { activityId: activityIdOf('local:1'), sessionId: ID }),
+  const worktree = worktreePath(HOST_PATHS, '/repo', 'hive-1');
+  assert.deepEqual(sourceSide(on(state([task(1)]), 1, {}, { sessions: [listed] }), config, { activityId: activityIdOf('local:1'), sessionId: ID }, FOR),
     { session: listed, side: { cwd: worktree, onDisk: true, transcriptCwds: [worktree], label: 'task HIVE-1 (task 1)' } });
   const repo = { ...listed, repo: true as const };
-  assert.deepEqual(sourceSide(on(state([task(1)]), 1, { worktree: undefined }, { sessions: [repo] }), config, { activityId: activityIdOf('local:1'), sessionId: ID }),
+  assert.deepEqual(sourceSide(on(state([task(1)]), 1, { worktree: undefined }, { sessions: [repo] }), config, { activityId: activityIdOf('local:1'), sessionId: ID }, FOR),
     { session: repo, side: { cwd: '/repo', onDisk: true, transcriptCwds: [worktree, '/repo'], label: 'task HIVE-1 (task 1)' } });
   const local = { ...listed, stages: [] };
-  assert.deepEqual(sourceSide(withLocal(state([]), 'hive', [local]), config, { activityId: localActivityId('hive'), sessionId: ID }),
+  assert.deepEqual(sourceSide(withLocal(state([]), 'hive', [local]), config, { activityId: localActivityId('hive'), sessionId: ID }, FOR),
     { session: local, side: { cwd: '/repo', onDisk: true, transcriptCwds: ['/repo'], label: 'the local checkout of hive' } });
-  assert.deepEqual(sourceSide(state([]), config, { activityId: 'nope', sessionId: ID }), { status: 404, message: 'atividade desconhecida' }); // #629: no record has that id
-  assert.deepEqual(sourceSide(withLocal(state([]), 'site', [local]), config, { activityId: localActivityId('site'), sessionId: ID }), { status: 404, message: 'workspace desconhecido' });
-  assert.deepEqual(sourceSide(state([task(1)]), config, { activityId: activityIdOf('local:1'), sessionId: ID }), { status: 409, message: 'sessão desconhecida' });
+  assert.deepEqual(sourceSide(state([]), config, { activityId: 'nope', sessionId: ID }, FOR), { status: 404, message: 'atividade desconhecida' }); // #629: no record has that id
+  assert.deepEqual(sourceSide(withLocal(state([]), 'site', [local]), config, { activityId: localActivityId('site'), sessionId: ID }, FOR), { status: 404, message: 'workspace desconhecido' });
+  assert.deepEqual(sourceSide(state([task(1)]), config, { activityId: activityIdOf('local:1'), sessionId: ID }, FOR), { status: 409, message: 'sessão desconhecida' });
 });
 
 test('targetSide: a task with a directory, or a workspace\'s checkout; the source\'s own end, a task with no directory and an unknown workspace are refused (#587)', () => {
   const s = withLocal(withLocal(on(state([task(1), task(2)]), 2, { worktree: undefined }), 'hive'), 'site'); // #629: a target is a live activity
   const from = { activityId: activityIdOf('local:1'), sessionId: ID };
-  assert.deepEqual(targetSide(s, config, { activityId: localActivityId('hive') }, from), { cwd: '/repo', onDisk: true, transcriptCwds: ['/repo'], label: 'the local checkout of hive' });
-  assert.deepEqual(targetSide(s, config, { activityId: activityIdOf('local:1') }, from), { status: 409, message: 'a sessão já está aqui' });
-  assert.deepEqual(targetSide(s, config, { activityId: activityIdOf('local:2') }, from), { status: 409, message: 'esta atividade não tem diretório' });
-  assert.deepEqual(targetSide(s, config, { activityId: localActivityId('site') }, from), { status: 404, message: 'workspace desconhecido' });
-  assert.deepEqual(targetSide(s, config, { activityId: 'nope' }, from), { status: 404, message: 'atividade desconhecida' });
+  assert.deepEqual(targetSide(s, config, { activityId: localActivityId('hive') }, from, FOR), { cwd: '/repo', onDisk: true, transcriptCwds: ['/repo'], label: 'the local checkout of hive' });
+  assert.deepEqual(targetSide(s, config, { activityId: activityIdOf('local:1') }, from, FOR), { status: 409, message: 'a sessão já está aqui' });
+  assert.deepEqual(targetSide(s, config, { activityId: activityIdOf('local:2') }, from, FOR), { status: 409, message: 'esta atividade não tem diretório' });
+  assert.deepEqual(targetSide(s, config, { activityId: localActivityId('site') }, from, FOR), { status: 404, message: 'workspace desconhecido' });
+  assert.deepEqual(targetSide(s, config, { activityId: 'nope' }, from, FOR), { status: 404, message: 'atividade desconhecida' });
 });
 
 test('readBranch and uncommitted read git through exec with argv arrays; a failure reads as no branch and no change (#587)', async () => {
@@ -83,7 +84,7 @@ test('countMessages counts the user\'s prompts and each assistant message once, 
 test('trustedCopies keeps a saved copy mark only when its dir is the transcript dir of its own worker\'s task or workspace, and never one naming the worker\'s own session (#587)', () => {
   const NEW = 'b1b2c3d4-0000-4000-8000-000000000002';
   const mark = (id: string, owner: Partial<Worker>, dir: string): Worker => ({ id, status: 'working', runId: ID, sessionId: NEW, freeSession: true, ...owner, copyOf: { from: ID, dir } });
-  const own = transcriptDir(LOCAL, worktreePath('/repo', 'hive-1'));
+  const own = transcriptDir(LOCAL, worktreePath(HOST_PATHS, '/repo', 'hive-1'));
   const workers = [
     mark('a', { activityId: activityIdOf('local:1') }, own), mark('b', { activityId: localActivityId('hive') }, transcriptDir(LOCAL, '/repo')),
     mark('c', { activityId: activityIdOf('local:1') }, transcriptDir(LOCAL, '/repo')), mark('d', { activityId: localActivityId('hive') }, '/Users/someone/.ssh'),

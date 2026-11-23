@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
 import type { Machine } from './machine.js';
 import { describeStep, parseSetup, type SetupStep } from './setup-script.js';
 import { EDITOR_FILE_MAX, type Workspace } from './types.js';
@@ -30,7 +29,7 @@ async function passedSteps(machine: Machine, path: string, hash: string, total: 
 
 // A setup run's resume (#390): what it skips, and the record each passing step writes
 async function resumeOf(machine: Machine, gitDir: string, steps: SetupStep[]): Promise<Resume> {
-  const path = join(gitDir, SETUP_PROGRESS);
+  const path = machine.paths.join(gitDir, SETUP_PROGRESS);
   const hash = hashOf(steps);
   return { skip: await passedSteps(machine, path, hash, steps.length), passed: (done) => machine.fs.writeFile(path, JSON.stringify({ steps: hash, done })) };
 }
@@ -40,9 +39,9 @@ export interface SetupDeps extends StepDeps {
 
 /** Whether the workspace's setup has anything to run (#351), from the text alone. A text that does not parse counts: runSetup then fails
  * with the parse error, which reaches the user like any failed step instead of being skipped in silence. */
-export function hasSetup(workspace: Workspace): boolean {
+export function hasSetup(workspace: Workspace, paths: Machine['paths']): boolean {
   try {
-    return parseSetup(workspace.setup ?? '', { allowLoad: true }).length > 0;
+    return parseSetup(workspace.setup ?? '', { allowLoad: true, paths }).length > 0;
   } catch {
     return true;
   }
@@ -50,8 +49,8 @@ export function hasSetup(workspace: Workspace): boolean {
 
 /** runSetup's two "nothing to do" checks (#351): no steps, or the marker already in the worktree's git dir. */
 export async function needsSetup(machine: Machine, workspace: Workspace, worktree: string): Promise<boolean> {
-  if (!hasSetup(workspace)) return false;
-  const marker = join(await gitDirOf(machine, worktree), SETUP_MARKER);
+  if (!hasSetup(workspace, machine.paths)) return false;
+  const marker = machine.paths.join(await gitDirOf(machine, worktree), SETUP_MARKER);
   return !(await machine.fs.access(marker).then(() => true, () => false));
 }
 
@@ -78,15 +77,15 @@ export function withReused(err: unknown, reused: string | undefined): unknown {
  * progress record. Answers the number of steps it ran (0 when it skipped).
  */
 export async function runSetup(machine: Machine, workspace: Workspace, worktree: string, deps: SetupDeps): Promise<number> {
-  const steps = parseSetup(workspace.setup ?? '', { allowLoad: true });
+  const steps = parseSetup(workspace.setup ?? '', { allowLoad: true, paths: machine.paths });
   if (steps.length === 0) return 0;
   const gitDir = await gitDirOf(machine, worktree);
-  const marker = join(gitDir, SETUP_MARKER);
+  const marker = machine.paths.join(gitDir, SETUP_MARKER);
   if (await machine.fs.access(marker).then(() => true, () => false)) return 0;
   const phase = { name: 'setup', from: workspace.path, fromName: workspace.name, to: worktree, toName: WORKTREE_NAME, timeout: workspace.setupTimeout } as const;
   const expanded = await expandSteps(machine, phase, workspace, steps); // #390: hashed before it runs, so a resume never skips a step that changed
   const ran = await runSteps(machine, phase, workspace, worktree, expanded, { ...deps, resume: await resumeOf(machine, gitDir, expanded) });
   await machine.fs.writeFile(marker, '');
-  await machine.fs.rm(join(gitDir, SETUP_PROGRESS), { force: true });
+  await machine.fs.rm(machine.paths.join(gitDir, SETUP_PROGRESS), { force: true });
   return ran;
 }

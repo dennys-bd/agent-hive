@@ -113,7 +113,7 @@ export function registerMoveRoutes(app: Express, { requireLive, language, machin
   app.post('/activities/:id/tree/move', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    const root = treeRoot(current.state, current.runtime.config, req.params.id as string, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     const body = moveBody(req.body);
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, MOVE_BODY_MESSAGE));

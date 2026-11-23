@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { AGENTS } from '../agents.js';
 import { MCP_ROUTE, mcpConfigPattern } from '../hooks-settings.js';
 import { posixShell } from '../posix-shell.js';
+import { pathsOf } from '../machine.js';
 import { runTmpDir } from '../run-tmp.js';
 import { SECRET_HEADER } from '../secret.js';
 import { installShim } from '../shim.js';
@@ -23,7 +24,7 @@ const APPLY_TO_ALL = '---\napplyTo: "**"\n---\n\n';
 const ALL_TOOLS: readonly string[] = ['*']; // which of a server's tools load, not which are approved (spike §1)
 
 /** The run's instructions folder, in its own tmp dir (#428), so it goes with the run. */
-export const instructionsDir = (ptyId: string): string => join(runTmpDir(ptyId), 'copilot-instructions');
+export const instructionsDir = (ptyId: string): string => join(runTmpDir(ptyId, pathsOf(process.platform)), 'copilot-instructions');
 
 type McpEntry =
   | { type: 'http'; url: string; headers?: Record<string, string>; tools: readonly string[] }

@@ -4,7 +4,7 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
-import { fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { initialState } from '../src/orchestrator.js';
 import { registerDecompositionRoutes } from '../src/server-decomposition.js';
 import { CREATE_PULL_REQUEST, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
@@ -51,7 +51,7 @@ function fakeSource() {
 
 async function routes(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY, JIRA_ENTRY]) {
   const repo = await realpath(await tempDir(t, 'hive-832-'));
-  const worktree = worktreePath(repo, SLUG);
+  const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(worktree, { recursive: true });
   await writeFile(join(worktree, 'decomposition.md'), EXAMPLE);
   const state: State = withWork({ ...initialState(0), tasks: [GOAL] }, GOAL.item.itemId, { slug: SLUG, approval: { since: SINCE } }, { result: PENDING });

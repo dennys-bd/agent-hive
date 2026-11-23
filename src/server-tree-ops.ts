@@ -141,7 +141,7 @@ function treeRoute(app: Express, name: string, { requireLive, machineFor }: Pick
   app.post(`/activities/:id/${name}`, async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    const root = treeRoot(current.state, current.runtime.config, req.params.id as string, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     try {
       await handle(res, root, req.body, treeMachine(current.state, req.params.id as string, machineFor));

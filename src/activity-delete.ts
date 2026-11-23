@@ -45,9 +45,10 @@ export async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveVi
   await deps.dispatch({ type: 'deletingTask', taskId });
   try {
     const sessions = sessionsOf(current.state, task.item.itemId);
-    const workspace = stranded ? await strandedWorkspace(activity, task, deps.machineFor(activity).exec) : own;
+    const machine = deps.machineFor(activity);
+    const workspace = stranded ? await strandedWorkspace(activity, task, machine.exec, machine.paths) : own;
     if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
-    else await strandedTranscripts(deps.machineFor(activity), activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
+    else await strandedTranscripts(machine, activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
   } catch (err) {
     await deps.dispatch({ type: 'activityKept', activityId: activity.id });
     return { status: HTTP_CONFLICT, message: closeFailure(err, deps.log, task.item.id) };
@@ -86,7 +87,7 @@ export async function deleteActivityOnDisk(
     await dropCheckpoints(machine, repo, activity.slug ?? slugFor(task.item)); // #619: every checkpoint's restore point goes with the activity; none is nothing
   }
   if (!scope.transcripts) return;
-  await removeTranscripts(machine, taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
+  await removeTranscripts(machine, taskDir(machine.paths, repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)
     .catch((err: Error) => log.error(`transcripts #${task.item.id}: ${err.message}`));
 }
 
@@ -120,9 +121,10 @@ export function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): 
     await dispatch({ type: 'deletingActivity', activityId: live.id });
     try {
       const sessions = sessionsOf(current.state, task.item.itemId);
-      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, deps.machineFor(live).exec) : own;
+      const machine = deps.machineFor(live);
+      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, machine.exec, machine.paths) : own;
       if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
-      else if (stranded && !nothing) await strandedTranscripts(deps.machineFor(live), live, task, sessions, scope, log);
+      else if (stranded && !nothing) await strandedTranscripts(machine, live, task, sessions, scope, log);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId: live.id });
       const label = `deleteActivity #${task.item.id}`;

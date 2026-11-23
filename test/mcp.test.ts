@@ -29,6 +29,7 @@ import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flowed } from './fixtures/main-flow.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // One worker: the fake source's task runs in it, so its worker is the live one. `later` is a second Comb stage without a prompt.
 const MCP_STAGES = [...STAGES, { name: 'later', from: {} }];
@@ -426,7 +427,7 @@ test('hive_remember saves a lesson with its task and stage from a stage run and 
   const BODY = 'Run it before every commit.\n\tWhy: CI runs the same.';
   assert.deepEqual(await call(await connect(t, base, ptyId), 'hive_remember', { kind: 'fact', description: '  pnpm test is the gate here  ', body: `  ${BODY}  ` }), { text: 'saved as m-1', isError: false });
   const slug = work0(server)!.slug!;
-  await server.dispatch({ type: 'worktreeReady', activityId: work0(server)!.id, path: worktreePath(repo, slug), branch: `hive/${slug}`, base: null, local: false }); // a session needs the activity's worktree
+  await server.dispatch({ type: 'worktreeReady', activityId: work0(server)!.id, path: worktreePath(HOST_PATHS, repo, slug), branch: `hive/${slug}`, base: null, local: false }); // a session needs the activity's worktree
   await server.dispatch({ type: 'openSession', activityId: work0(server)!.id }); // appended beside the stage run (#459)
   const free = server.getState()!.workers.find((w) => w.freeSession)?.runId;
   assert.ok(free !== undefined, 'the free session runs');

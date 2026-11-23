@@ -11,6 +11,7 @@ import { assertMode } from './posix-only.js';
 import { runners } from '../src/agents/registry.js';
 import { shellQuote } from '../src/shell-init.js';
 import { claudeLaunch, LAUNCH, plainArgs } from './fakes.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { SECRET } from './secret-client.js';
 
 const SECRET_FILE_PATH = '/home/agent-hive/hive.secret';
@@ -93,8 +94,8 @@ test('withoutHiveEnv drops COPILOT_ALLOW_ALL: an inherited one would trust every
 });
 
 test('runTmpDir is <base>/hive-runs/<ptyId>, under os.tmpdir() by default (#428)', () => {
-  assert.equal(runTmpDir('W1', '/base'), join('/base', 'hive-runs', 'W1'));
-  assert.equal(runTmpDir('W1'), join(tmpdir(), 'hive-runs', 'W1'));
+  assert.equal(runTmpDir('W1', HOST_PATHS, '/base'), join('/base', 'hive-runs', 'W1'));
+  assert.equal(runTmpDir('W1', HOST_PATHS), join(tmpdir(), 'hive-runs', 'W1'));
 });
 
 test('shellQuote single-quotes and escapes embedded quotes', () => {

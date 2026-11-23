@@ -147,16 +147,16 @@ export const formArgs = (value: unknown): string[] =>
   (typeof value === 'string' ? [value] : Array.isArray(value) && value.every((arg): arg is string => typeof arg === 'string') ? value : []);
 
 // Whether a held session's folder is the terminal's activity's (#347): Codex would run a rollout of another checkout from here
-function sameFolder(state: State, config: Config, terminalId: string, ref: SessionRef): boolean {
+function sameFolder(state: State, config: Config, terminalId: string, ref: SessionRef, machineFor: MachineFor): boolean {
   const terminal = state.terminals.find((t) => t.terminalId === terminalId);
-  const source = sourceSide(state, config, ref);
-  return terminal !== undefined && !('status' in source) && source.side.cwd === activityDir(state, config, terminal.activityId);
+  const source = sourceSide(state, config, ref, machineFor);
+  return terminal !== undefined && !('status' in source) && source.side.cwd === activityDir(state, config, terminal.activityId, machineFor);
 }
 
 // #347: what a resume registers as. A live run already on its id refuses it: two workers on one session id would break every hook's routing. A
 // held id runs in the activity holding it, unless the agent resumes from any folder (Codex) and that activity's folder is not this terminal's.
 // An id no activity holds, or none yet (-c, the picker, Codex's --last), is named by the run's first SessionStart. Undefined: a new conversation
-function resumeTarget(live: { state: State; runtime: Runtime }, terminalId: string, agent: AgentId, read: ShimResume): CaptureResume | Refusal | undefined {
+function resumeTarget(live: { state: State; runtime: Runtime }, terminalId: string, agent: AgentId, read: ShimResume, machineFor: MachineFor): CaptureResume | Refusal | undefined {
   if (read.kind === 'new') return undefined;
   const { sessionId } = read;
   if (sessionId === undefined) return {};
@@ -164,7 +164,7 @@ function resumeTarget(live: { state: State; runtime: Runtime }, terminalId: stri
   const held = heldSession(live.state, sessionId);
   if (!held) return {};
   const ref = { activityId: held.record.id, sessionId };
-  if (AGENTS[agent].resumesAnyFolder && !sameFolder(live.state, live.runtime.config, terminalId, ref)) return { status: HTTP_CONFLICT, message: OTHER_CHECKOUT_MESSAGE };
+  if (AGENTS[agent].resumesAnyFolder && !sameFolder(live.state, live.runtime.config, terminalId, ref, machineFor)) return { status: HTTP_CONFLICT, message: OTHER_CHECKOUT_MESSAGE };
   return ref;
 }
 
@@ -188,7 +188,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const agent = knownAgent(form.agent);
     if (agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: UNKNOWN_AGENT_MESSAGE });
     const terminalId = terminalParam(req);
-    const resume = resumeTarget(current, terminalId, agent, resumeOf(agent, formArgs(form.arg))); // #347
+    const resume = resumeTarget(current, terminalId, agent, resumeOf(agent, formArgs(form.arg)), deps.machineFor); // #347
     if (resume !== undefined && 'status' in resume) return refuse(res, resume);
     const runId = randomUUID();
     // #932: Codex picks its own, recorded at its SessionStart. #347: a resume runs the user's own conversation, under no id of the Hive's

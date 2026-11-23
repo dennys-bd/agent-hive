@@ -95,7 +95,7 @@ function epicOf(config: Pick<Config, 'comb'>, task: Task): Item['epic'] {
 // The file the result names, wherever it is (#936: a docsRepo outside the worktree included), resolved as the file routes resolve it (#258,
 // #697): absolute, or relative to the goal's worktree. Still under FILE_MAX, and a read failure keeps its fixed words
 async function readDecompositionFile(config: Pick<Config, 'comb'>, target: { task: Task; activity: NonNullable<Parameters<typeof activityFolders>[1]['activity']> }, path: string, machine: Machine): Promise<{ text: string; file: string } | Refusal> {
-  const folders = activityFolders(config, target);
+  const folders = activityFolders(config, target, machine.paths);
   if ('status' in folders) return folders;
   const resolved = await resolveActivityPath({ ...folders, path, ...fileFs(machine) });
   if ('reason' in resolved) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };

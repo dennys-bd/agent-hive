@@ -4,7 +4,7 @@ import { join, sep } from 'node:path';
 import { ownsRollout, readRollout, rolloutFiles, sessionsRoot } from '../../src/agents/codex-transcript.js';
 import { ZERO_TOKENS } from '../../src/facts.js';
 import { CHILD, CWD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, usageRecord, writeRollout } from '../codex-rollouts.js';
-import { fakeMachine, machineWith } from '../fake-machine.js';
+import { fakeMachine, HOST_PATHS, machineWith } from '../fake-machine.js';
 import { tempDir } from '../temp-dir.js';
 
 const LOCAL = fakeMachine({ env: {} });
@@ -78,9 +78,9 @@ test('ownsRollout takes only <sessions root>/YYYY/MM/DD/…-<session id>.jsonl, 
 });
 
 test('sessionsRoot is the machine\'s codexHome/sessions when it is absolute, else <its home>/.codex/sessions (#929, #161)', () => {
-  assert.equal(sessionsRoot({ homedir: '/actor/home' }), join('/actor/home', '.codex', 'sessions'));
-  assert.equal(sessionsRoot({ homedir: '/actor/home', codexHome: '/codex-home' }), join('/codex-home', 'sessions'));
-  for (const codexHome of ['', '  ', 'codex', './codex']) assert.equal(sessionsRoot({ homedir: '/actor/home', codexHome }), join('/actor/home', '.codex', 'sessions'), codexHome);
+  assert.equal(sessionsRoot({ homedir: '/actor/home' }, HOST_PATHS), join('/actor/home', '.codex', 'sessions'));
+  assert.equal(sessionsRoot({ homedir: '/actor/home', codexHome: '/codex-home' }, HOST_PATHS), join('/codex-home', 'sessions'));
+  for (const codexHome of ['', '  ', 'codex', './codex']) assert.equal(sessionsRoot({ homedir: '/actor/home', codexHome }, HOST_PATHS), join('/actor/home', '.codex', 'sessions'), codexHome);
 });
 
 test('rolloutFiles lists the session\'s rollout, then every rollout whose first line names it as parent, in any date folder (#929)', async (t) => {

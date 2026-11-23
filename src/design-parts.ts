@@ -4,9 +4,12 @@
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import { open, realpath } from 'node:fs/promises';
-import { posix, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { attrOf, enclosingStart, matchingEnds, scanTags, type Tag, topLevelStarts } from './design-markup.js';
+import { type Machine, pathsOf } from './machine.js';
+
+// A part's src and git's paths are `/` on every machine, so these two work in POSIX space whatever the disk's flavour is.
+const GIT_PATHS = pathsOf('linux');
 
 /** How deep includes nest, counted from the screen: a header inside a shell is a real case, and the bound caps the work. */
 export const PART_DEPTH_MAX = 4;
@@ -116,7 +119,7 @@ export function partPath(file: string, src: string | undefined): { path: string 
   if (raw === '') return { refused: PART_REASONS.noSrc };
   if (raw.startsWith('/') || raw.includes('\\') || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return { refused: PART_REASONS.notRelative };
   if (raw.split('/').includes('..')) return { refused: PART_REASONS.parent };
-  const path = posix.join(posix.dirname(file), raw);
+  const path = GIT_PATHS.join(GIT_PATHS.dirname(file), raw);
   if (path.split('/').some((segment) => segment.startsWith('.'))) return { refused: PART_REASONS.dot };
   const lower = path.toLowerCase();
   if (lower.endsWith(SCREEN_SUFFIX)) return { refused: PART_REASONS.screen };
@@ -222,9 +225,9 @@ async function fillsOf(inner: string, at: At, run: Run): Promise<Map<string, str
 /** The route's reader: a regular file whose realpath is its own path under `folder`, itself a real path, so a symbolic link anywhere on the
  *  way is refused, one to a file inside included, as check-hv refuses every link. The file is opened with O_NOFOLLOW and sized through the
  *  handle, so a link swapped in after the realpath check is refused as well, and a part over PART_BYTES_MAX is not read (#421). */
-export function readPartFrom(folder: string): ReadPart {
+export function readPartFrom(folder: string, paths: Machine['paths']): ReadPart {
   return async (path) => {
-    const asked = resolve(folder, path);
+    const asked = paths.resolve(folder, path);
     const real = await realpath(asked).catch(() => undefined);
     if (real === undefined) return { refused: PART_REASONS.missing };
     if (real !== asked) return { refused: PART_REASONS.symlink };
@@ -277,7 +280,7 @@ export async function gitBlob(top: string, oid: string, max: number): Promise<Bu
  *  link (mode 120000) as a symbolic link, anything but a regular blob as not found, one past PART_BYTES_MAX as too large, before it is read. */
 export function readPartFromGit(top: string, commit: string, folder: string): ReadPart {
   return async (path) => {
-    const entry = await gitEntry(top, commit, posix.join(folder, path));
+    const entry = await gitEntry(top, commit, GIT_PATHS.join(folder, path));
     if (entry?.mode === SYMLINK_MODE) return { refused: PART_REASONS.symlink };
     if (entry === undefined || !isRegularBlob(entry)) return { refused: PART_REASONS.missing };
     if (entry.size > PART_BYTES_MAX) return { refused: PART_REASONS.tooLarge };

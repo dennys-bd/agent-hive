@@ -128,7 +128,7 @@ import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccou
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
-import type { MachineFor, Machines } from './machine.js';
+import { type MachineFor, type Machines, pathsOf } from './machine.js';
 import { killStray, runTmpDir, withoutHiveEnv, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool, type PtyPool } from './ptys.js';
@@ -437,7 +437,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #876: a captured run's own tmp dir (Copilot's instructions). It has no pty of the Hive's, so launchInternalPty's dropTmp never runs for it;
   // no process uses it as TMPDIR (the agent keeps its terminal's), so no retry. A failure only leaves a stray dir the OS purges
   const dropCapturedTmp = (ptyId: string): Promise<void> =>
-    rm(runTmpDir(ptyId), { recursive: true, force: true }).catch((err: unknown) => log.error(`captured run tmp: ${errorMessage(err)}`));
+    rm(runTmpDir(ptyId, pathsOf(process.platform)), { recursive: true, force: true }).catch((err: unknown) => log.error(`captured run tmp: ${errorMessage(err)}`));
   // #927: a live run's own runner's pattern; a run already gone has no agent to read, and its bare pty id is in every agent's argv (Claude's
   // <id>.mcp.json path, Codex's x-hive-pty header)
   const strayOf = (ptyId: string): string => {
@@ -937,11 +937,13 @@ export function createServer(deps: ServerDeps): HiveServer {
   // Reads the transcript only at a turn end, only for a worker this Hive spawned, and only the worker's own `.jsonl` (scopeTranscript): its
   // tokens and its session's /rename title come from the one read (#489).
   async function readTurn(ptyId: string, payload: HookPayload): Promise<TranscriptTurn | undefined> {
-    if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
+    if (!TURN_END_EVENTS.includes(payload.hook_event_name)) return undefined;
     const worker = workerOf(ptyId);
     if (!worker || worker.status === 'empty') return undefined;
     const activity = live ? activityOfWorker(live.state, worker) : undefined;
-    return runners[ranAgent(worker)].readTurn(machineFor(activity ?? {}), payload.transcript_path, wiring.usageSince(ptyId)).catch(() => undefined); // unreadable or over TRANSCRIPT_MAX_BYTES: the hook goes through without tokens or a title; usage from the open stage run's start (#742)
+    const machine = machineFor(activity ?? {});
+    if (!isTranscriptPath(payload.transcript_path, machine.paths)) return undefined;
+    return runners[ranAgent(worker)].readTurn(machine, payload.transcript_path, wiring.usageSince(ptyId)).catch(() => undefined); // unreadable or over TRANSCRIPT_MAX_BYTES: the hook goes through without tokens or a title; usage from the open stage run's start (#742)
   }
 
   // Builds a Runtime for `config` on the port listen() bound (#466): hooks.json and every worker target the daemon actually listening.

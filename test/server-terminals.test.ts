@@ -14,6 +14,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
 
@@ -80,7 +81,7 @@ function replyOf(text: string): Reply {
 // A copilot register (#876): its instructions land in the real tmp dir under runTmpDir(runId), which the test removes after
 async function copilotReply(t: TestContext, base: string, id: string, args: string[] = []): Promise<Reply> {
   const reply = replyOf(await (await registerArgs(base, id, 'copilot', args)).text());
-  t.after(() => rm(runTmpDir(reply.runId), { recursive: true, force: true }));
+  t.after(() => rm(runTmpDir(reply.runId, HOST_PATHS), { recursive: true, force: true }));
   return reply;
 }
 
@@ -323,12 +324,12 @@ test('a copilot register writes its instructions under the run\'s own tmp dir; i
   const id = await openShell(base);
   const exited = await copilotReply(t, base, id);
   const file = join(instructionsDir(exited.runId), 'hive.instructions.md');
-  assert.ok(file.startsWith(runTmpDir(exited.runId)));
+  assert.ok(file.startsWith(runTmpDir(exited.runId, HOST_PATHS)));
   assert.match(await readFile(file, 'utf8'), /^---\napplyTo: "\*\*"\n---\n\n/, 'the workspace\'s local protocol behind Copilot\'s frontmatter');
   assert.equal((await hiveFetch(`${base}/hooks/exit`, { method: 'POST', headers: { 'x-hive-pty': exited.runId } })).status, 200);
-  await waitFor(() => !existsSync(runTmpDir(exited.runId)));
+  await waitFor(() => !existsSync(runTmpDir(exited.runId, HOST_PATHS)));
   const stopped = await copilotReply(t, base, id);
-  assert.ok(existsSync(runTmpDir(stopped.runId)));
+  assert.ok(existsSync(runTmpDir(stopped.runId, HOST_PATHS)));
   assert.equal((await postJson(`${base}/ptys/${stopped.runId}/stop`)).status, 200); // killCaptured: the shim's later exit report finds no worker
-  await waitFor(() => !existsSync(runTmpDir(stopped.runId)));
+  await waitFor(() => !existsSync(runTmpDir(stopped.runId, HOST_PATHS)));
 });

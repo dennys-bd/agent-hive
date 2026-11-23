@@ -9,7 +9,7 @@ import type { Machine } from '../src/machine.js';
 import { createGrepParser, grepArgs, grepError, type GrepLine, MATCH_END, MATCH_START, searchQueryOf, searchTree, stripMatches, toWireMatch } from '../src/server-search.js';
 import { type SearchLine, SEARCH_CAP } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { fakeFiles, fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeFiles, fakeMachine } from './fake-machine.js';
 import { grepMachine } from './fixtures/grep-machine.js';
 import { workPath } from './fixtures/work.js';
 import { startTree, task } from './fixtures/tree-server.js';
@@ -186,7 +186,7 @@ test('searchQueryOf: a single string q and 0/1 toggles; anything else is refused
 const LOCAL = `/activities/${encodeURIComponent(localActivityId('hive'))}`;
 
 test('GET /activities/local:hive/search on a real repository: the root, then docs (ignored, holding its own repository), NDJSON per file, a 409 for a task with no worktree (#868)', async (t) => {
-  const f = await startTree(t, (repo) => [task(2, { worktree: worktreePath(repo, 'hive-2-task'), worktreeGone: true })], { exec: promisify(execFile) });
+  const f = await startTree(t, (repo) => [task(2, { worktree: worktreePath(HOST_PATHS, repo, 'hive-2-task'), worktreeGone: true })], { exec: promisify(execFile) });
   await writeFile(join(f.repo, '.gitignore'), '/docs/\n');
   await writeFile(join(f.repo, 'a.ts'), 'const daemonPort = 1;\nlog(daemonPort, daemonPort);\n');
   await mkdir(join(f.repo, 'docs', 'agent'), { recursive: true });

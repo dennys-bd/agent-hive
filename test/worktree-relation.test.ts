@@ -11,6 +11,7 @@ import { baseOptions, ensureWorktree, worktreePath } from '../src/worktree.js';
 import { cleanWorktree } from '../src/worktree-remove.js';
 import { fakeMachine } from './fakes.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // #267 with the real git: a branch's class against the start, and what each class makes of the task's worktree and branch.
 
@@ -101,7 +102,7 @@ test('ensureWorktree on a branch with no history in common with the start keeps 
   const old = await unrelatedBranch(repo);
   const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
   const prepared = await ensureWorktree(fakeMachine({ exec }), repo, SLUG, BRANCH, ORIGIN, undefined);
-  assert.deepEqual([prepared.path, prepared.reused], [worktreePath(repo, SLUG), undefined]);
+  assert.deepEqual([prepared.path, prepared.reused], [worktreePath(HOST_PATHS, repo, SLUG), undefined]);
   assert.deepEqual([await git(repo, 'rev-parse', BRANCH), await git(repo, 'rev-parse', kept)], [tip, old]);
   assert.ok(prepared.line?.endsWith(` · branch ${BRANCH} shares no history with origin/main: kept as ${kept}, started from origin/main`), prepared.line);
 });
@@ -162,7 +163,7 @@ test('deleting an activity removes its branch, so the task\'s next worktree is o
 
 test('with the real git, the branch of a merged PR whose remote branch was deleted goes with its worktree: an upstream git reads [gone] counts as none (#660)', async (t) => {
   const { repo } = await repoWithOrigin(t);
-  const path = worktreePath(repo, SLUG);
+  const path = worktreePath(HOST_PATHS, repo, SLUG);
   await git(repo, 'worktree', 'add', '--quiet', '-b', BRANCH, '--', path, 'main');
   await commit(path, 'c.txt');
   await git(path, 'push', '--quiet', '-u', 'origin', BRANCH);

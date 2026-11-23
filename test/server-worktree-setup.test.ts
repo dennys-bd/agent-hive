@@ -14,7 +14,7 @@ import { worktreePath } from '../src/worktree.js';
 import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
 import { bodyFlows, AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
-import { fakeMachine, fakeMachines } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workPath } from './fixtures/work.js';
 
@@ -103,7 +103,7 @@ test('a stage spawn marks the task before its git and runs the git and the works
   assert.ok(firstIndex(after, 'DEBUG setupStarted') < firstIndex(after, 'GIT '), 'marked before the git');
   assert.ok(!lines.some((l) => l.includes('> git')), 'the run\'s git lines never reach the log');
   assert.equal(workers.length, 1, 'the spawn and its setup ran inside the dispatch');
-  assert.equal(await readFile(join(worktreePath(repo, SLUG), '.env'), 'utf8'), 'TOKEN=x\n');
+  assert.equal(await readFile(join(worktreePath(HOST_PATHS, repo, SLUG), '.env'), 'utf8'), 'TOKEN=x\n');
   assert.equal(work0(server)?.setup, undefined, 'setupEnded dropped it');
   const [status, view] = await channel(base, task0(server));
   assert.equal(status, 200);
@@ -159,8 +159,8 @@ test('a first /open whose workspace has a setup marks the task before any git, r
   assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'worktreeReady', 'setupEnded', 'openTerminal']);
   const after = lines.slice(from);
   assert.ok(after.findIndex((l) => l.startsWith('DEBUG setupStarted')) < after.findIndex((l) => l.startsWith('GIT ')), 'marked before the git');
-  assert.deepEqual([work0(server)?.setup, work0(server)?.worktree, work0(server)?.error], [undefined, worktreePath(repo, SLUG), undefined]);
-  assert.equal(await readFile(join(worktreePath(repo, SLUG), '.env'), 'utf8'), 'TOKEN=x\n');
+  assert.deepEqual([work0(server)?.setup, work0(server)?.worktree, work0(server)?.error], [undefined, worktreePath(HOST_PATHS, repo, SLUG), undefined]);
+  assert.equal(await readFile(join(worktreePath(HOST_PATHS, repo, SLUG), '.env'), 'utf8'), 'TOKEN=x\n');
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`^${RUN_HEADER}${GIT}${CMD(String.raw`RUN sleep 0\.3`)}${OK_MS}${CMD(String.raw`COPY \.env`)}${COPIED}${OK_MS}${SETUP_OK}$`));
 });
 
@@ -177,7 +177,7 @@ test('a first /open whose setup fails answers the 500 as before, puts the reason
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at step 1 of 1 \(line 1, COPY \.env\): not found in hive`)}$`));
   await writeFile(join(repo, '.env'), 'TOKEN=x\n');
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
-  assert.deepEqual([work0(server)?.error, work0(server)?.worktree, workers.length], [undefined, worktreePath(repo, SLUG), 1]);
+  assert.deepEqual([work0(server)?.error, work0(server)?.worktree, workers.length], [undefined, worktreePath(HOST_PATHS, repo, SLUG), 1]);
 });
 
 test('while a task\'s setup runs, a second /open, Start, Continue and Restart answer 409; a bad /open is still refused before anything is marked (#351)', async (t) => {
@@ -211,7 +211,7 @@ test('a first /open while a stage spawn is still making the task\'s worktree ans
 
 test('a first /open on a worktree folder already there and set up emits no setup event and opens no console run (#351)', async (t) => {
   const { base, repo, gitDir, server, workers, lines } = await start(t, 'RUN false');
-  await mkdir(worktreePath(repo, SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, SLUG), { recursive: true });
   await writeFile(join(gitDir, SETUP_MARKER), '');
   const from = lines.length;
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
@@ -223,7 +223,7 @@ test('a first /open asks the task\'s machine whether its worktree folder is ther
   const local = fakeMachine();
   const machine = fakeMachine({ fs: { access: async (path, mode) => { if (path.endsWith(SLUG)) throw new MachineError('ENOENT', { code: 'ENOENT' }); return local.fs.access(path, mode); } } });
   const { base, repo, gitDir, server, lines } = await start(t, '# nothing yet\n', undefined, machine);
-  await mkdir(worktreePath(repo, SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, SLUG), { recursive: true });
   await writeFile(join(gitDir, SETUP_MARKER), '');
   const from = lines.length;
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
@@ -242,7 +242,7 @@ test('a first /open on a workspace with no setup steps marks the task, runs the 
 
 test('a first /open on a worktree folder already there deletes its teardown marker (#654)', async (t) => {
   const { base, repo, gitDir } = await start(t, 'RUN false');
-  await mkdir(worktreePath(repo, SLUG), { recursive: true });
+  await mkdir(worktreePath(HOST_PATHS, repo, SLUG), { recursive: true });
   await writeFile(join(gitDir, SETUP_MARKER), '');
   await writeFile(join(gitDir, TEARDOWN_MARKER), '');
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);

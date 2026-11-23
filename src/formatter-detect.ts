@@ -1,7 +1,6 @@
-import { delimiter, join, win32 } from 'node:path';
 import { type ExecLookup, findExec } from './exec-path.js';
 import { FORMATTERS } from './formatters.js';
-import type { MachineFs, MachineInfo } from './machine.js';
+import { type Machine, type MachineFs, type MachineInfo, pathsOf } from './machine.js';
 import type { FormatterId } from './types.js';
 
 // "Installed" (#749): a few stats per formatter on every ask, never cached, since a worker may install a dependency at any time. Every probe
@@ -12,7 +11,7 @@ const X_OK = 1; // node:fs's constants.X_OK: node:fs is a restricted import here
 /** What a lookup probes (#160): a machine's fs, or HOST's for a host-only caller. */
 export type ExecProbe = Pick<MachineFs, 'access' | 'stat'>;
 /** What a lookup reads of a machine: its probes, and its platform and PATH. A Machine is one; so is HOST (host-fs.ts). */
-export interface ExecHost { fs: ExecProbe; info(): Pick<MachineInfo, 'platform' | 'path'> }
+export interface ExecHost { fs: ExecProbe; info(): Pick<MachineInfo, 'platform' | 'path'>; readonly paths: Machine['paths'] }
 
 // A regular file this process may run: access alone also passes a folder
 async function isExecutable(fs: ExecProbe, path: string): Promise<boolean> {
@@ -25,8 +24,8 @@ async function isExecutable(fs: ExecProbe, path: string): Promise<boolean> {
 }
 
 // Where a candidate may be: one with a slash under the activity's folder (the project pins its version there), a bare name in each PATH folder
-const placesOf = (candidate: string, folder: string, dirs: string[]): string[] =>
-  candidate.includes('/') ? [join(folder, candidate)] : dirs.map((dir) => join(dir, candidate));
+const placesOf = (candidate: string, folder: string, dirs: string[], paths: Machine['paths']): string[] =>
+  candidate.includes('/') ? [paths.join(folder, candidate)] : dirs.map((dir) => paths.join(dir, candidate));
 
 async function firstExecutable(fs: ExecProbe, paths: string[]): Promise<string | undefined> {
   for (const path of paths) {
@@ -46,7 +45,7 @@ export interface DetectLookup {
 const findWin32 = (candidates: readonly string[], folder: string, pathList: string, isFile: (file: string) => boolean): string | undefined => {
   const env = { PATH: pathList, PATHEXT: process.env.PATHEXT };
   for (const candidate of candidates) {
-    const name = candidate.includes('/') ? win32.join(folder, candidate) : candidate;
+    const name = candidate.includes('/') ? pathsOf('win32').join(folder, candidate) : candidate;
     const found = findExec(name, { platform: 'win32', env, isFile });
     if (found !== undefined) return found;
   }
@@ -75,8 +74,8 @@ async function onWin32(fs: ExecProbe, candidates: readonly string[], folder: str
  * copy) before a bare name in each of `path`'s folders, the machine's own PATH unless the caller passes the run's. */
 export const findCandidate = (on: ExecHost, candidates: readonly string[], folder: string, path = on.info().path): Promise<string | undefined> => {
   if (on.info().platform === 'win32') return onWin32(on.fs, candidates, folder, path);
-  const dirs = path.split(delimiter).filter((dir) => dir !== '');
-  return firstExecutable(on.fs, candidates.flatMap((c) => placesOf(c, folder, dirs)));
+  const dirs = path.split(on.paths.delimiter).filter((dir) => dir !== '');
+  return firstExecutable(on.fs, candidates.flatMap((c) => placesOf(c, folder, dirs, on.paths)));
 };
 
 /** Each of `ids`' binary when it is installed for `folder` (#749): its first candidate that is an executable file, the project's local one
@@ -87,7 +86,9 @@ export async function detectFormatters(on: ExecHost, folder: string, ids: readon
 }
 
 /** The first executable `name` in `path`'s folders (#780): an install's requires check and a server's run check, on the host (HOST.fs). */
-export const findOnPath = (fs: ExecProbe, name: string, path: string, lookup: DetectLookup = {}): Promise<string | undefined> =>
-  (lookup.platform ?? process.platform) === 'win32'
-    ? onWin32(fs, [name], '', path, lookup.isFile)
-    : firstExecutable(fs, path.split(delimiter).filter((dir) => dir !== '').map((dir) => join(dir, name)));
+export const findOnPath = (fs: ExecProbe, name: string, path: string, lookup: DetectLookup = {}): Promise<string | undefined> => {
+  const platform = lookup.platform ?? process.platform;
+  if (platform === 'win32') return onWin32(fs, [name], '', path, lookup.isFile);
+  const paths = pathsOf(platform);
+  return firstExecutable(fs, path.split(paths.delimiter).filter((dir) => dir !== '').map((dir) => paths.join(dir, name)));
+};

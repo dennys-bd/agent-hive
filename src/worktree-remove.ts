@@ -1,7 +1,6 @@
 // The forced and the clean removal of a task's worktree live here, out of worktree.ts (#159); everything goes through the machine that hosts it.
-import { join } from 'node:path';
 import type { Logger } from './log.js';
-import type { Machine, MachineExec } from './machine.js';
+import { type Machine, type MachineExec, pathsOf } from './machine.js';
 import { ownBranch } from './task-runs.js';
 import { branchAt, gitAnswers, gitOrWords, refuseDirty, RemovalRefusal, setAside, wordsOf } from './worktree-base.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
@@ -23,10 +22,10 @@ export async function removeWorktree(
 ): Promise<void> {
   const { exec } = machine;
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
-  const path = worktreePath(repo, slugOfWork(activity));
-  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, process.platform);
+  const path = worktreePath(machine.paths, repo, slugOfWork(activity));
+  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, machine.paths);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
-  await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
+  await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, machine.paths, exec); // #653: inside out, forced as the outer removal is
   // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
   if (await exists(machine, path)) await git('worktree', 'remove', '--force', '--force', '--', path);
   await git('worktree', 'prune');
@@ -35,7 +34,8 @@ export async function removeWorktree(
       if (!BRANCH_NOT_FOUND.test(err.message)) throw err;
     });
   }
-  await machine.fs.unlink(join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
+  // promptsDir is the Hive's own home, written with the host's join (spawn.ts writePrompt): joined the host's way, not the task machine's
+  await machine.fs.unlink(pathsOf(process.platform).join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== 'ENOENT') throw err;
   });
 }
@@ -69,23 +69,23 @@ export async function cleanWorktree(
   { unmerged = 'refuse', nested = [], prs = [], log }: CleanOptions = {},
 ): Promise<void> {
   const { exec } = machine;
-  const path = worktreePath(repo, slugOfWork(activity));
+  const path = worktreePath(machine.paths, repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };
-  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, process.platform);
+  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, machine.paths);
   const present = listed !== undefined && (await exists(machine, path));
   // a hook can forge the branch: trusted only when it is the template's name or a Restart's `-r<n>` of it (#283)
   const named = listed ?? ownBranch(activity, branch);
   const found = named !== undefined && (await hasBranch(machine, repo, named)) ? named : undefined;
   if (present) {
     await refuseDirty(path, exec);
-    await refuseDirtyNested(nestedOf, path, exec); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
+    await refuseDirtyNested(nestedOf, path, machine.paths, exec); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
   }
   const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
   // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway
   const byPr = found !== undefined && check?.merged === false ? await mergedByPr(machine, repo, found, prs, log) : undefined;
   if (found !== undefined && check?.merged === false && byPr === undefined && unmerged === 'refuse') throw unmergedError(found, check.target);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
-  await removeNested(nestedOf, path, named, false, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
+  await removeNested(nestedOf, path, named, false, machine.paths, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
   if (found === undefined) return;
   // #660: branch -d refuses a squashed branch whatever was checked; update-ref deletes only the tip mergedByPr verified, so a commit made since

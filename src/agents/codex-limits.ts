@@ -3,7 +3,7 @@
 import { lstat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { localFs } from '../machine-local-fs.js';
-import type { Machine } from '../machine.js';
+import { type Machine, pathsOf } from '../machine.js';
 import { collectWindows, isPercent, isRecord, PERCENT_MAX } from '../rate-limits.js';
 import type { RateLimits, RateLimitWindow } from '../types.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
@@ -11,8 +11,8 @@ import { dateFolders, parseRolloutLine, rolloutsIn, sessionsRoot } from './codex
 import { eachLine } from './jsonl.js';
 
 // The host's own disk and Codex home (#161): plan limits are the account's, read where the Hive runs, never on a task's machine
-const HOST: Pick<Machine, 'fs'> = { fs: localFs };
-const hostRoot = (env: NodeJS.ProcessEnv | undefined): string => sessionsRoot({ homedir: homedir(), ...(env?.CODEX_HOME === undefined ? {} : { codexHome: env.CODEX_HOME }) });
+const HOST: Pick<Machine, 'fs' | 'paths'> = { fs: localFs, paths: pathsOf(process.platform) };
+const hostRoot = (env: NodeJS.ProcessEnv | undefined): string => sessionsRoot({ homedir: homedir(), ...(env?.CODEX_HOME === undefined ? {} : { codexHome: env.CODEX_HOME }) }, HOST.paths);
 
 const MS_PER_SECOND = 1000;
 // ponytail: only the durations seen or assumed: the free plan's 30 days (finding §9), a paid plan's 5 h and week (unverified). Any other is

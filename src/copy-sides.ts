@@ -36,7 +36,7 @@ function localSource(config: Pick<Config, 'comb'>, name: string, session: Sessio
 
 /** The session a copy starts from and where it lives, or the refusal naming what is unknown. `from` names a record (#629): a deleted activity's
  * kept session copies as it did from its task. */
-export function sourceSide(state: State, config: Pick<Config, 'comb'>, from: SessionRef): { side: CopySide; session: Session } | Refusal {
+export function sourceSide(state: State, config: Pick<Config, 'comb'>, from: SessionRef, machineFor: MachineFor): { side: CopySide; session: Session } | Refusal {
   const kept = keptTarget(state, from.activityId);
   if ('status' in kept) return kept;
   const { record, task } = kept;
@@ -48,7 +48,7 @@ export function sourceSide(state: State, config: Pick<Config, 'comb'>, from: Ses
   const workspace = workspaceOf(config, task);
   if ('status' in workspace) return workspace;
   const live = activityOf(state, task.item.itemId);
-  const dir = workDir(workspace.path, task, live, record); // a kept session's transcript still sits in the deleted worktree's dir (#208, #629)
+  const dir = workDir(machineFor(live ?? {}).paths, workspace.path, task, live, record); // a kept session's transcript still sits in the deleted worktree's dir (#208, #629)
   const label = taskLabel(task);
   // A repo session (#208) runs in the main repo, and its transcript may still sit in the worktree's dir
   return session.repo
@@ -57,7 +57,7 @@ export function sourceSide(state: State, config: Pick<Config, 'comb'>, from: Ses
 }
 
 /** Where the copy goes: a live activity (#629), a task's with a directory or a workspace's checkout; never the source's own end. */
-export function targetSide(state: State, config: Pick<Config, 'comb'>, to: SessionTarget, from: SessionRef): CopySide | Refusal {
+export function targetSide(state: State, config: Pick<Config, 'comb'>, to: SessionTarget, from: SessionRef, machineFor: MachineFor): CopySide | Refusal {
   if (sameOwner(from, to)) return { status: HTTP_CONFLICT, message: SAME_END };
   const target = liveTarget(state, to.activityId);
   if ('status' in target) return target;
@@ -71,7 +71,7 @@ export function targetSide(state: State, config: Pick<Config, 'comb'>, to: Sessi
   if (!activity || !hasDirectory(activity)) return { status: HTTP_CONFLICT, message: NO_DIRECTORY };
   const workspace = workspaceOf(config, task);
   if ('status' in workspace) return workspace;
-  const cwd = taskDir(workspace.path, activity);
+  const cwd = taskDir(machineFor(activity).paths, workspace.path, activity);
   return { cwd, onDisk: true, transcriptCwds: [cwd], label: taskLabel(task) };
 }
 
@@ -99,17 +99,17 @@ export const copyNotice = (from: string, to: string): string => `Hive: this conv
 
 /** The directory an activity's runs work in: its task's (workDir) or its workspace's checkout; undefined when neither is known any more. The
  * register compares a held session's folder with its terminal's by it (#347). */
-export function activityDir(state: State, config: Pick<Config, 'comb'>, activityId: string): string | undefined {
+export function activityDir(state: State, config: Pick<Config, 'comb'>, activityId: string, machineFor: MachineFor): string | undefined {
   const activity = state.activities.find((a) => a.id === activityId);
   if (activity?.kind === 'local') return workspaceByName(config, activity.workspace)?.path;
   const task = taskOfActivity(state, activityId);
   const workspace = task && taskWorkspace(config, task);
-  return task && workspace && workDir(workspace.path, task, activity);
+  return task && workspace && workDir(machineFor(activity ?? {}).paths, workspace.path, task, activity);
 }
 
 // The directory a worker's run works in
-const workerCwd = (state: State, config: Pick<Config, 'comb'>, worker: Worker): string | undefined =>
-  (worker.activityId === undefined ? undefined : activityDir(state, config, worker.activityId));
+const workerCwd = (state: State, config: Pick<Config, 'comb'>, worker: Worker, machineFor: MachineFor): string | undefined =>
+  (worker.activityId === undefined ? undefined : activityDir(state, config, worker.activityId, machineFor));
 
 /** A saved state's copy marks (#587), each kept only when its dir is the transcript dir of its own worker's directory, where the route put the
  * temporary copy: a forged state.json never points the boot's removal at any other file. */
@@ -117,7 +117,7 @@ export function trustedCopies(state: State, config: Pick<Config, 'comb'>, machin
   const trusted = (worker: Worker): Worker => {
     // #161: the mark's dir is on the worker's own machine
     const machine = machineFor(state.activities.find((a) => a.id === worker.activityId) ?? {});
-    const cwd = worker.copyOf === undefined ? undefined : workerCwd(state, config, worker);
+    const cwd = worker.copyOf === undefined ? undefined : workerCwd(state, config, worker, machineFor);
     // never the worker's own session: the mark names the source's id, so a from equal to it can only be forged
     if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === runners[ranAgent(worker)].transcriptDir(machine, cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
     const { copyOf: _copyOf, ...unmarked } = worker;

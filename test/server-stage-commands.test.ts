@@ -12,6 +12,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { taskDir } from '../src/worktree.js';
 import { bodyFlows, AUTH, combConfig, fakeMachine, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, SOURCE, tempHive, WORKSPACE } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // A commands stage's commands on the server (#755): the runner alone over fakes, then end to end through a server over fake ptys.
 
@@ -21,7 +22,7 @@ const STAGE: Stage = { name: 'checks', from: {}, action: 'commands', commands: [
 const TASK: Task = { item: { itemId: 'board:I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'checks', boardColumn: '', auto: true, workspace: 'hive' };
 const runAt = (at: number): StageCommands => ({ stage: 'checks', at, ptyId: `P${at}`, runId: 'P0', failed: [], workerId: 'w1', started: [] });
 const ACTIVITY: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: 'hive-1-task-1', commands: runAt(0) };
-const CWD = taskDir('/repo', ACTIVITY);
+const CWD = taskDir(HOST_PATHS, '/repo', ACTIVITY);
 const E2E: Command = { name: 'e2e', impls: [{ workspace: 'site', command: 'pnpm e2e' }], menu: true, env: {} };
 const DEPLOY: Command = { name: 'deploy', impls: [{ workspace: 'site', command: 'fly deploy' }], menu: false, env: {} };
 const runtimeWith = (commands: Command[], stage: Stage = STAGE): Runtime => ({

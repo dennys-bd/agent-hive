@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path';
+import type { Machine } from './machine.js';
 
 /** One step of a workspace's worktree setup or teardown (#299, #654): its line in the text it came from, the instruction, its argument (a
  * COPY's source) and, for a COPY that names one, its destination. */
@@ -15,8 +15,8 @@ const HIVE_OWNED = ['.git', '.hive']; // git's and the Hive's own state: a setup
 /** Why a COPY / LOAD / DEL path cannot be used, lexically (#299): absolute, a `..` segment, nothing named (`.` would copy the whole checkout,
  * `.git` included), or a first segment `.git` / `.hive`. Undefined when it is fine. runSetup checks the real path too: a symlink can
  * still lead out. */
-export function checkRelativePath(path: string): string | undefined {
-  if (isAbsolute(path)) return 'the path must be relative to the workspace';
+export function checkRelativePath(path: string, paths: Machine['paths']): string | undefined {
+  if (paths.isAbsolute(path)) return 'the path must be relative to the workspace';
   const segments = path.split(/[\\/]/).filter((s) => s !== '' && s !== '.');
   if (segments.includes('..')) return 'the path cannot contain ".."';
   if (segments.length === 0) return 'the path must name a file or folder in the workspace';
@@ -27,22 +27,22 @@ export function checkRelativePath(path: string): string | undefined {
 export const describeStep = (step: SetupStep): string => `${WORDS[step.kind]} ${step.arg}${step.dest === undefined ? '' : ` ${step.dest}`}`;
 
 // A path read or deleted on the Hive's own side (#654): relative inside the repo, never `~…`, which only a COPY destination expands.
-const checkInside = (path: string): string | undefined => (path.startsWith(HOME) ? 'the path must be relative to the workspace' : checkRelativePath(path));
+const checkInside = (path: string, paths: Machine['paths']): string | undefined => (path.startsWith(HOME) ? 'the path must be relative to the workspace' : checkRelativePath(path, paths));
 
 // A COPY destination (#654): absolute, `~` or `~/…` is written exactly there (the user's own line, with the power a RUN cp has); `~user` is
 // refused, as is a `..` under `~/`; anything else is relative to the other side and checked as a source is.
-function checkDestination(dest: string): string | undefined {
+function checkDestination(dest: string, paths: Machine['paths']): string | undefined {
   if (dest.startsWith(HOME)) {
     if (dest !== HOME && !dest.startsWith(`${HOME}/`)) return 'only ~ and ~/ expand to the home folder';
     // the home folder is the user's, but a `..` would climb out of it: only an absolute path says that outright
     return dest.split(/[\\/]/).includes('..') ? 'the path cannot contain ".."' : undefined;
   }
-  return isAbsolute(dest) ? undefined : checkRelativePath(dest);
+  return paths.isAbsolute(dest) ? undefined : checkRelativePath(dest, paths);
 }
 
 // One line already trimmed, neither blank nor a comment. The first word is the instruction; a COPY splits the rest on whitespace into a source
 // and an optional destination, any other instruction takes the rest of the line.
-function parseLine(text: string, line: number, allowLoad: boolean): SetupStep {
+function parseLine(text: string, line: number, allowLoad: boolean, paths: Machine['paths']): SetupStep {
   const word = text.split(/\s/, 1)[0];
   const fail = (reason: string): never => {
     throw new Error(`line ${line}: ${reason}`);
@@ -60,16 +60,16 @@ function parseLine(text: string, line: number, allowLoad: boolean): SetupStep {
   const refuse = (path: string, problem: string | undefined): void => {
     if (problem) fail(`${word}${allowLoad ? ` ${path}` : ''}: ${problem}`);
   };
-  refuse(arg, checkInside(arg));
-  if (dest !== undefined) refuse(dest, checkDestination(dest));
+  refuse(arg, checkInside(arg, paths));
+  if (dest !== undefined) refuse(dest, checkDestination(dest, paths));
   return dest === undefined ? { line, kind, arg } : { line, kind, arg, dest };
 }
 
 /** A workspace's setup text as steps (#299): one instruction per line, blank lines and `#` comments skipped, lines counted from 1 over the
  * whole text. The first bad line throws `line <n>: <reason>`. `allowLoad` is off inside a loaded file: one level only. */
-export function parseSetup(text: string, { allowLoad }: { allowLoad: boolean }): SetupStep[] {
+export function parseSetup(text: string, { allowLoad, paths }: { allowLoad: boolean; paths: Machine['paths'] }): SetupStep[] {
   return text.split('\n').flatMap((raw, i) => {
     const line = raw.trim();
-    return line === '' || line.startsWith(COMMENT) ? [] : [parseLine(line, i + 1, allowLoad)];
+    return line === '' || line.startsWith(COMMENT) ? [] : [parseLine(line, i + 1, allowLoad, paths)];
   });
 }

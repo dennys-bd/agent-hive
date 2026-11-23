@@ -1,4 +1,3 @@
-import { isAbsolute, join, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Machine } from './machine.js';
 import { slugFor } from './tasks.js';
@@ -17,7 +16,7 @@ const LOCK_TRIES = 6;
 const LOCK_WAIT_MS = 50;
 
 /** Where a task's worker runs: the Hive's own folder, already excluded from git, and the only path the Hive ever creates or removes. */
-export const worktreePath = (repo: string, slug: string): string => join(repo, HIVE_DIR, WORKTREES_DIR, slug);
+export const worktreePath = (paths: Machine['paths'], repo: string, slug: string): string => paths.join(repo, HIVE_DIR, WORKTREES_DIR, slug);
 
 // A task's activity is born with its slug (ensureActivity) and the store drops one without (#629): a path git acts on is never the worktrees
 // folder itself
@@ -27,14 +26,14 @@ export function slugOfWork(activity: Pick<Activity, 'slug'>): string {
 }
 
 /** Where a task's runs happen: its workspace's own checkout for a local task (#444, #573), its worktree otherwise. */
-export const taskDir = (repo: string, activity: Pick<Activity, 'slug' | 'local'>): string =>
-  (activity.local ? repo : worktreePath(repo, slugOfWork(activity)));
+export const taskDir = (paths: Machine['paths'], repo: string, activity: Pick<Activity, 'slug' | 'local'>): string =>
+  (activity.local ? repo : worktreePath(paths, repo, slugOfWork(activity)));
 
 /** Where a task's work happens (#629): its live activity's directory, or, for a record of a deleted activity (or with none live), the worktree
  * the record's slug named, where a kept session's transcript still sits until its first open moves it to the main repo (#208). The title's slug
  * only for a record with none. */
-export const workDir = (repo: string, task: Task, activity: Activity | undefined, record?: Pick<ActivityRecord, 'id' | 'slug'>): string =>
-  (activity && (record === undefined || record.id === activity.id) ? taskDir(repo, activity) : worktreePath(repo, record?.slug ?? slugFor(task.item)));
+export const workDir = (paths: Machine['paths'], repo: string, task: Task, activity: Activity | undefined, record?: Pick<ActivityRecord, 'id' | 'slug'>): string =>
+  (activity && (record === undefined || record.id === activity.id) ? taskDir(paths, repo, activity) : worktreePath(paths, repo, record?.slug ?? slugFor(task.item)));
 
 /** What a spawn needs from the worktree step: where the worker runs, the `base: …` line to log when one was decided, and a fork's sync when
  * one ran for a worktree just made (#854). `reused` is the existing branch the worktree was added on as it was (#267); absent when the branch
@@ -49,8 +48,8 @@ export const exists = (machine: Pick<Machine, 'fs'>, path: string): Promise<bool
  * worktree command runs `git -C <workspace>`. git answers the top level by its real path (/private/var on macOS), so both sides go
  * through realpath. Its callers without a machine hand LOCAL_DISK, the real git and disk: the settings save and the boot's proposal each run it once.
  */
-export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs'>, path: string): Promise<string | undefined> {
-  if (!isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;
+export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs' | 'paths'>, path: string): Promise<string | undefined> {
+  if (!machine.paths.isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;
   let top: string;
   try {
     top = (await machine.exec('git', ['-C', path, 'rev-parse', '--show-toplevel'])).stdout.trim();
@@ -84,9 +83,9 @@ export async function ensureWorktree(
   machine: Machine, repo: string, slug: string, branch: string, base: WorkspaceBase, chosen: string | undefined,
 ): Promise<PreparedWorktree> {
   const { exec } = machine;
-  const path = worktreePath(repo, slug);
+  const path = worktreePath(machine.paths, repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
-  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, process.platform);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, machine.paths);
   if (listed !== undefined && (await exists(machine, path))) {
     // Adopt only our own branch: on anything else (another branch, a detached HEAD) the path was staged by someone else, and a
     // forced removal would delete the branch found there with the work on it.
@@ -102,7 +101,7 @@ export async function ensureWorktree(
   const reused = kept?.action === 'reuse';
   const start = decided.start === undefined ? [] : [decided.start];
   const add = reused ? ['worktree', 'add', '--', path, branch] : ['worktree', 'add', kept?.action === 'reset' ? '-B' : '-b', branch, '--', path, ...start];
-  await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(machine, repo, branch));
+  await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(machine, repo, branch), machine.paths);
   const sync = await settleSync(decided, reused ? undefined : (...args) => gitOrWords(path, args, exec)); // #854: the local merge in the new tree only
   const line = kept?.note === undefined ? withSync(decided.line, sync) : `${withSync(decided.line, sync)} · ${kept.note}`;
   const started = reused || decided.start === undefined ? {} : { start: decided.start }; // #653: a reused branch's start is its upstream, prepareNested reads it
@@ -111,13 +110,13 @@ export async function ensureWorktree(
 
 // A lost config lock means git made the branch, and maybe the worktree, but not its upstream: the add is never repeated as it was (the
 // branch now exists); a missing worktree is added on that branch, then only the upstream is retried. Any other refusal rejects.
-async function addWorktree(git: Git, add: string[], at: { path: string; branch: string; start?: string }, branchMade: () => Promise<boolean>): Promise<void> {
+async function addWorktree(git: Git, add: string[], at: { path: string; branch: string; start?: string }, branchMade: () => Promise<boolean>, paths: Machine['paths']): Promise<void> {
   try {
     await git(...add);
     return;
   } catch (err) {
     if (!CONFIG_LOCK.test(wordsOf(err))) throw err;
-    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path, process.platform) !== at.branch) {
+    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path, paths) !== at.branch) {
       if (!(await branchMade())) throw err;
       await git('worktree', 'add', '--', at.path, at.branch);
     }
@@ -140,13 +139,13 @@ async function retryLocked(run: () => Promise<string>, tries = 1): Promise<strin
  * where a worktree's would (defaultBase / chosenBase) and `line` says so. `nested` (#653): the workspace's nested repos, checked for uncommitted changes with the checkout itself; switchNested moves them after it. Every call goes through gitOrWords, so a refusal carries git's words.
  */
 export async function ensureCheckout(
-  machine: Pick<Machine, 'exec'>, repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, nested: readonly string[] = [],
+  machine: Pick<Machine, 'exec' | 'paths'>, repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, nested: readonly string[] = [],
 ): Promise<PreparedWorktree> {
   const { exec } = machine;
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   if ((await git('branch', '--show-current')).trim() === branch) return { path: repo }; // no switch: the task's own work in progress stays
   await refuseDirty(repo, exec);
-  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, exec, branch); // #653: no half-switched state; one already on the branch stays as it is
+  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, machine.paths, exec, branch); // #653: no half-switched state; one already on the branch stays as it is
   if (branch.startsWith('-')) throw new Error(`${branch}: a branch cannot start with "-"`); // switch would read it as an option
   if (await hasBranch(machine, repo, branch)) {
     await git('switch', branch);
@@ -167,15 +166,15 @@ export async function ensureCheckout(
  * (null = detached). A row's path is the Hive's own, never git's string (#640): git prints `C:/…` on Windows. Read-only; a failure
  * carries git's words.
  */
-export async function listWorktrees(machine: Pick<Machine, 'exec'>, repo: string, platform: NodeJS.Platform): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
+export async function listWorktrees(machine: Pick<Machine, 'exec' | 'paths'>, repo: string): Promise<Pick<WorktreeRow, 'slug' | 'path' | 'branch'>[]> {
   const porcelain = await gitOrWords(repo, ['worktree', 'list', '--porcelain'], machine.exec);
-  const names = platform === 'win32' ? win32 : posix; // a `C:/…` line's last name is its slug only for win32's basename
+  const { paths } = machine; // a `C:/…` line's last name is its slug only for win32's basename
   return porcelain.split('\n').flatMap((line) => {
     if (!line.startsWith(WORKTREE_PREFIX)) return [];
     const listed = line.slice(WORKTREE_PREFIX.length);
-    const slug = names.basename(listed);
-    const path = worktreePath(repo, slug);
-    return samePath(path, listed, platform) ? [{ slug, path, branch: branchAt(porcelain, path, platform) ?? null }] : [];
+    const slug = paths.basename(listed);
+    const path = worktreePath(paths, repo, slug);
+    return samePath(path, listed, paths) ? [{ slug, path, branch: branchAt(porcelain, path, paths) ?? null }] : [];
   });
 }
 
@@ -224,13 +223,13 @@ export async function baseOptions(
     base.branch === undefined ? remoteHead(git, base.remote, false) : Promise.resolve(base.branch), // read-only: never set-head here (#854)
   ]);
   const defaultRef = `${base.remote}/${branch}`;
-  const own = worktreePath(repo, slug);
-  const adoptable = branchAt(porcelain, own, process.platform) !== undefined && (await exists(machine, own));
+  const own = worktreePath(machine.paths, repo, slug);
+  const adoptable = branchAt(porcelain, own, machine.paths) !== undefined && (await exists(machine, own));
   const orphan = orphanBranch === undefined ? undefined : await orphanOf(machine, repo, orphanBranch, adoptable, defaultRef);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
-    const ref = branchAt(porcelain, worktreePath(repo, other), process.platform);
+    const ref = branchAt(porcelain, worktreePath(machine.paths, repo, other), machine.paths);
     return typeof ref === 'string' ? [{ ref, id, title }] : [];
   });
   const taken = new Set([branch, ...tasks.map((c) => c.ref)]);

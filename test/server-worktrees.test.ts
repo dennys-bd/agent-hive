@@ -12,6 +12,7 @@ import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { savedTasks, type WithWork } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // GET /activities/worktrees (#586) over a Comb with no source and no worker: its tasks are local ones saved in state.json before the first save.
 // git is a fake that answers the merge-base, the commit count and the status, fails in the worktree `broken` names, and records every call.
@@ -48,7 +49,7 @@ async function startRows(t: TestContext, tasks: (repo: string) => WithWork[], br
   const saved = tasks(repo);
   for (const c of saved) if (c.worktree !== undefined && !c.worktreeGone) await mkdir(c.worktree, { recursive: true });
   await saveState(home, savedTasks({ ...initialState(0), localCount: saved.length }, saved, SLUG_OF)); // #629: each worktree on its activity
-  const broken = brokenSlug === undefined ? undefined : worktreePath(repo, brokenSlug);
+  const broken = brokenSlug === undefined ? undefined : worktreePath(HOST_PATHS, repo, brokenSlug);
   const calls: string[][] = [];
   const exec: Exec = async (_file, args) => {
     calls.push(args);
@@ -64,11 +65,11 @@ async function startRows(t: TestContext, tasks: (repo: string) => WithWork[], br
 
 test('GET /activities/worktrees answers a task with a worktree on disk with its changed files and its commits ahead of the diff\'s base, running git in the worktree the slug names; a task with none answers no row and runs no git (#586)', async (t) => {
   const f = await startRows(t, (repo) => [
-    task(1, { worktree: worktreePath(repo, 'hive-1-task') }),
+    task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') }),
     task(2),
-    task(3, { worktree: worktreePath(repo, 'hive-3-task'), worktreeGone: true }),
+    task(3, { worktree: worktreePath(HOST_PATHS, repo, 'hive-3-task'), worktreeGone: true }),
   ]);
-  const worktree = worktreePath(f.repo, 'hive-1-task');
+  const worktree = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
   const res = await get(f);
   assert.deepEqual([res.status, await res.json()], [200, [{ itemId: 'local:1', changed: 3, ahead: 2 }]]);
   assert.deepEqual(f.calls, [
@@ -80,8 +81,8 @@ test('GET /activities/worktrees answers a task with a worktree on disk with its 
 
 test('GET /activities/worktrees leaves out a task git cannot read and still answers the others (#586)', async (t) => {
   const f = await startRows(t, (repo) => [
-    task(1, { worktree: worktreePath(repo, 'hive-1-task') }),
-    task(2, { worktree: worktreePath(repo, 'hive-2-task') }),
+    task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') }),
+    task(2, { worktree: worktreePath(HOST_PATHS, repo, 'hive-2-task') }),
   ], 'hive-2-task');
   const res = await get(f);
   assert.deepEqual([res.status, await res.json()], [200, [{ itemId: 'local:1', changed: 3, ahead: 2 }]]);
@@ -89,13 +90,13 @@ test('GET /activities/worktrees leaves out a task git cannot read and still answ
 
 test('GET /activities/worktrees counts from the task\'s chosen base, passed after --end-of-options, and reads a checkout task in the workspace\'s checkout (#586)', async (t) => {
   const f = await startRows(t, (repo) => [
-    task(1, { worktree: worktreePath(repo, 'hive-1-task'), base: { ref: 'feature/x', tellWorker: false } }),
+    task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task'), base: { ref: 'feature/x', tellWorker: false } }),
     task(2, { local: true }),
   ]);
   const res = await get(f);
   assert.deepEqual(await res.json(), [{ itemId: 'local:1', changed: 3, ahead: 2 }, { itemId: 'local:2', changed: 3, ahead: 2 }]);
   assert.deepEqual(f.calls.filter((args) => args.includes('merge-base')), [
-    ['-C', worktreePath(f.repo, 'hive-1-task'), 'merge-base', '--end-of-options', 'HEAD', 'feature/x'],
+    ['-C', worktreePath(HOST_PATHS, f.repo, 'hive-1-task'), 'merge-base', '--end-of-options', 'HEAD', 'feature/x'],
     ['-C', f.repo, 'merge-base', '--end-of-options', 'HEAD', 'origin/HEAD'],
   ]);
 });
@@ -109,7 +110,7 @@ test('GET /activities/worktrees reads at most four tasks at once, so many activi
     await new Promise((resolve) => setTimeout(resolve, 5));
     if (args.includes('rev-list')) inFlight -= 1;
   };
-  const f = await startRows(t, (repo) => [1, 2, 3, 4, 5, 6].map((n) => task(n, { worktree: worktreePath(repo, `hive-${n}-task`) })), undefined, onCall);
+  const f = await startRows(t, (repo) => [1, 2, 3, 4, 5, 6].map((n) => task(n, { worktree: worktreePath(HOST_PATHS, repo, `hive-${n}-task`) })), undefined, onCall);
   const res = await get(f);
   assert.equal(((await res.json()) as unknown[]).length, 6);
   assert.equal(most, 4);
@@ -124,13 +125,13 @@ async function startGone(t: TestContext, { listFails = false, sameRepo = false, 
   const { home, repo } = await tempHive(t);
   const gone = sameRepo ? repo : await tempDir(t, 'gone-');
   await mkdir(join(gone, '.git'), { recursive: true });
-  const worktree = worktreePath(gone, GONE_SLUG);
+  const worktree = worktreePath(HOST_PATHS, gone, GONE_SLUG);
   await mkdir(worktree, { recursive: true });
   await saveState(home, savedTasks({ ...initialState(0), localCount: 7 }, [task(7, { workspace: 'gone', worktree, stopped: true }), ...(liveOwner ? [task(8, { worktree, stopped: true })] : [])], () => GONE_SLUG));
   const goneListing = `worktree ${worktree}\nHEAD 2\n`;
   const listings: Record<string, string> = sameRepo
-    ? { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(repo, ORPHAN_SLUG)}\nHEAD 2\n\n${goneListing}` }
-    : { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(repo, ORPHAN_SLUG)}\nHEAD 2\n`, [gone]: `worktree ${gone}\nHEAD 1\n\n${goneListing}` };
+    ? { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(HOST_PATHS, repo, ORPHAN_SLUG)}\nHEAD 2\n\n${goneListing}` }
+    : { [repo]: `worktree ${repo}\nHEAD 1\n\nworktree ${worktreePath(HOST_PATHS, repo, ORPHAN_SLUG)}\nHEAD 2\n`, [gone]: `worktree ${gone}\nHEAD 1\n\n${goneListing}` };
   const calls: string[][] = [];
   const exec: Exec = async (_file, args) => {
     calls.push(args);
@@ -153,7 +154,7 @@ test('GET /worktrees lists a removed workspace\'s task worktree under its name w
     ['hive', ORPHAN_SLUG, 'noTask', undefined, undefined],
     ['gone', GONE_SLUG, undefined, 'local:7', true],
   ]);
-  assert.equal(rows[1]?.path, worktreePath(f.gone, GONE_SLUG));
+  assert.equal(rows[1]?.path, worktreePath(HOST_PATHS, f.gone, GONE_SLUG));
 });
 
 test('GET /worktrees still answers the configured rows when a removed workspace\'s listing fails, without its row (#747)', async (t) => {

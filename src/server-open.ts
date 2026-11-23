@@ -98,7 +98,7 @@ async function makeWorktree(deps: TaskRouteDeps, machine: Machine, current: Live
   const { path, sync, line, reused } = prepared;
   if (line) deps.log.info(line); // #267: the base and what became of an existing branch, as a spawn logs them
   if (sync) await deps.dispatch({ type: 'forkSynced', activityId, sync }); // #854: an open's worktree keeps its sync as a spawn's does
-  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, machine.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
+  for (const nested of await prepareNested(workspace, prepared, branch, place.local, base.remote, machine.paths, machine.exec, run?.nested)) deps.log.info(nested); // #653: before the setup
   if (run) await run.setUp(workspace, path).catch((err: unknown) => { throw withReused(err, reused); });
   await deps.dispatch({ type: 'worktreeReady', activityId, path, branch, base: place.base ?? null, local: place.local });
 }
@@ -179,7 +179,7 @@ async function openRechecked(deps: OpenRouteDeps, plan: WorktreePlan, open: Open
 // turn as the checks with no git before it. A local task never sets up (#444), nor does a folder already set up: those make it unmarked.
 async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, plan: WorktreePlan, open: OpenAsk, res: Response, machine: Machine): Promise<void> {
   if (!plan.place.local) {
-    const path = worktreePath(plan.workspace.path, plan.slug);
+    const path = worktreePath(machine.paths, plan.workspace.path, plan.slug);
     const isThere = await machine.fs.access(path).then(() => true, () => false); // #160: the worktree is on the task's machine
     if (!isThere) return openWithSetup(deps, current, task, plan, open, res);
     await clearTeardownMarker(machine, plan.workspace, path); // #654: a worktree brought back to life gets its teardown on the next removal

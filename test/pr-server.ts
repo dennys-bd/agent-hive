@@ -17,6 +17,7 @@ import { NO_GQL } from './read-model/fixtures.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { savedActivityId, withKeptRecord, withWork } from './fixtures/work.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 export const PR = 'https://github.com/acme/app/pull/7'; // task 1's, awaiting approval
 export const PR2 = 'https://github.com/acme/app/pull/9'; // task 2's
@@ -119,7 +120,7 @@ export interface StartOpts { worktree?: boolean; prs?: TaskPr[]; kept?: TaskPr[]
 export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, opts: StartOpts = {}): Promise<Prs> {
   const { worktree = false, prs = [{ url: PR, state: 'open' }], kept } = opts;
   const { home, repo } = await tempHive(t);
-  const path = worktreePath(repo, 'hive-1-task');
+  const path = worktreePath(HOST_PATHS, repo, 'hive-1-task');
   if (worktree) await mkdir(path, { recursive: true });
   const task = (n: number, more: Partial<Task>): Task => ({
     item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `Task ${n}`, body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive', ...more,

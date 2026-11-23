@@ -14,7 +14,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { worktreePath } from '../src/worktree.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -77,7 +77,7 @@ async function twoActivities(t: TestContext, body: Omit<SettingsBody, 'workspace
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { ...body, workspaces: workspacesAt(repo) })).status, 200);
   for (const title of ['one', 'two']) await server.dispatch({ type: 'createTask', title, body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
-  for (const c of server.getState()!.tasks) await readyOn(server, c.item.itemId, { path: worktreePath(repo, slugFor(c.item)), branch: `hive/${slugFor(c.item)}`, base: null, local: false });
+  for (const c of server.getState()!.tasks) await readyOn(server, c.item.itemId, { path: worktreePath(HOST_PATHS, repo, slugFor(c.item)), branch: `hive/${slugFor(c.item)}`, base: null, local: false });
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'local:1') });
   const [one, two] = ['local:1', 'local:2'].map((id) => activityOf(server.getState()!, id)!); // #629: the worktrees are the activities'
   const source = sessionsOf(server.getState()!, 'local:1')[0].id;
@@ -309,7 +309,7 @@ test('a Codex session copies with codex fork <id>: its rollout found by id, noth
 // (#586), so the session stays listed while Copilot's transcripts read nothing yet (node 6); the copy is dispatched, since the route needs one
 const COPILOT_ON: Omit<SettingsBody, 'workspaces'> = { ...BODY, agentEnabled: { claude: true, codex: true, copilot: true } };
 const NOTICE = 'Hive: this conversation was copied from task HIVE-1 (one).';
-const dropRunTmp = (t: TestContext, ptyId: string): void => { t.after(() => rm(runTmpDir(ptyId), { recursive: true, force: true })); }; // the fake pool never runs the pty that would remove it
+const dropRunTmp = (t: TestContext, ptyId: string): void => { t.after(() => rm(runTmpDir(ptyId, HOST_PATHS), { recursive: true, force: true })); }; // the fake pool never runs the pty that would remove it
 
 async function copilotLocalSource(t: TestContext, two: Two): Promise<string> {
   await two.server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE), agent: 'copilot' });
@@ -332,7 +332,7 @@ test('a Copilot copy resumes its source and runs /fork behind -i, writes no prom
   dropRunTmp(t, launch.ptyId);
   assert.deepEqual([launch.cwd, launch.agent?.command, launch.promptPath], [two.two, 'copilot', undefined]);
   assert.deepEqual([plainArgs(launch).slice(-2), launch.agent?.argv.at(-1)], [['--resume', source], ['-i', '/fork']]);
-  const dir = join(runTmpDir(launch.ptyId), 'copilot-instructions');
+  const dir = join(runTmpDir(launch.ptyId, HOST_PATHS), 'copilot-instructions');
   const instructions = await readFile(join(dir, 'hive.instructions.md'), 'utf8');
   assert.ok(instructions.startsWith('---\napplyTo: "**"\n---\n\n') && instructions.endsWith(`\n\n${NOTICE}`), instructions);
   assert.equal(launch.env?.COPILOT_CUSTOM_INSTRUCTIONS_DIRS, dir);

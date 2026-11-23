@@ -125,7 +125,7 @@ async function diskServed(machine: Machine, folder: string, segments: string[]):
   if (file === undefined) return undefined;
   const bytes = await machine.fs.readFile(file, { maxBytes: IMAGE_MAX }).catch(() => undefined); // over the cap, or gone since the check: the bare 404
   if (bytes === undefined) return undefined;
-  return { name: file, bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(folder)) };
+  return { name: file, bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(folder, machine.paths)) };
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an

@@ -142,7 +142,7 @@ export function registerReplaceRoute(app: Express, { requireLive, machineFor }: 
     const current = requireLive(res);
     if (!current) return;
     const id = req.params.id as string;
-    const root = treeRoot(current.state, current.runtime.config, id);
+    const root = treeRoot(current.state, current.runtime.config, id, machineFor);
     if (typeof root !== 'string') return void res.status(root.status).json({ error: root.message, code: root.code, workspace: root.workspace });
     const request = replaceRequestOf(req.body);
     if (request === undefined) return void res.status(HTTP_BAD_REQUEST).json({ error: BODY_MESSAGE });

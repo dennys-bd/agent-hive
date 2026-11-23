@@ -11,6 +11,7 @@ import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { withLocal, withWork, savedActivityId } from './fixtures/work.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 export const SESSION_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 export const SESSION_B = 'bbbbbbbb-2222-4222-8222-222222222222';
@@ -33,7 +34,7 @@ export const settingsBody = (repo: string, stages: Stage[] = LOCAL_STAGES): Sett
  * diff route; `extra` reaches createServer (a fake deliverReview, #591). */
 export async function startReviews(t: TestContext, extra: Partial<ServerDeps> = {}): Promise<Reviews> {
   const { home, repo } = await tempHive(t);
-  const worktree = worktreePath(repo, 'hive-1-task');
+  const worktree = worktreePath(HOST_PATHS, repo, 'hive-1-task');
   await mkdir(worktree, { recursive: true });
   const task = (n: number, more: Partial<Task>): Task => ({
     item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `Task ${n}`, body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive', ...more,

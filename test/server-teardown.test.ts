@@ -12,6 +12,7 @@ import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
 import { bodyFlows, AUTH, fakeLog, fakeSourceFactory, fakeSpawn, GITHUB_ENTRY, STAGES, tempHive, workspacesAt } from './fakes.js';
 import { readyOn, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // A workspace's teardown (#654) through the server: the fake source's task, a local task and an orphan, each listed by git under
 // .hive/worktrees on its own branch. No worker unless a test asks for one.
@@ -48,7 +49,7 @@ async function start(t: TestContext, teardown: string, extra: Partial<Omit<Setti
   const { home, repo } = await tempHive(t, cap);
   const gitDir = join(repo, '.git', 'worktrees', SLUG); // the worktree's admin dir, where the teardown marker lives
   await Promise.all([SLUG, LOCAL_SLUG, ORPHAN_SLUG].map((slug) => mkdir(join(repo, '.git', 'worktrees', slug), { recursive: true })));
-  const listing = [`worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n`, ...BRANCHES.map(([slug, branch]) => `worktree ${worktreePath(repo, slug)}\nHEAD 2222\nbranch refs/heads/${branch}\n`)].join('\n');
+  const listing = [`worktree ${repo}\nHEAD 1111\nbranch refs/heads/main\n`, ...BRANCHES.map(([slug, branch]) => `worktree ${worktreePath(HOST_PATHS, repo, slug)}\nHEAD 2222\nbranch refs/heads/${branch}\n`)].join('\n');
   const calls: string[][] = [];
   const exec: Exec = async (_file, args) => {
     calls.push(args.slice(2));
@@ -68,7 +69,7 @@ async function start(t: TestContext, teardown: string, extra: Partial<Omit<Setti
 
 // A worktree on disk that the task owns, as a first open would leave it
 async function withWorktree(s: Started, taskId: string, slug: string, branch: string): Promise<string> {
-  const path = worktreePath(s.repo, slug);
+  const path = worktreePath(HOST_PATHS, s.repo, slug);
   await mkdir(path, { recursive: true });
   await readyOn(s.server, taskId, { path, branch, base: null, local: false }); // #629: the activity first
   return path;
@@ -125,7 +126,7 @@ test('the delete activity stage\'s teardown failure is deleteActivityFailed: the
 
 test('an orphan\'s removal runs the teardown in a run labelled by its slug: a failure is the refused answer, a teardown that goes through removes (#181, #654)', async (t) => {
   const s = await start(t, 'RUN exit 3');
-  const path = worktreePath(s.repo, ORPHAN_SLUG);
+  const path = worktreePath(HOST_PATHS, s.repo, ORPHAN_SLUG);
   await mkdir(path, { recursive: true });
   assert.deepEqual(await json(postJson(`${s.base}/worktrees/hive/${ORPHAN_SLUG}/remove`)), { removed: false, refused: { reason: 'unexpected' } });
   assert.match(await history(s.base), /── hive-9-gone · teardown · /);

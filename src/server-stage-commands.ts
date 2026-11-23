@@ -71,7 +71,7 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
 
   // Index 0 prepares the worktree (readyWorktree); a later index runs where the first one did
   async function workDir(runtime: Runtime, { activity, task, at, ptyId }: StageCommandEffect, repo: string): Promise<string | undefined> {
-    if (at > 0) return taskDir(repo, activity);
+    if (at > 0) return taskDir(deps.machineFor(activity).paths, repo, activity);
     return readyWorktree(deps, runtime, activity, task, ptyId, () => current(activity.id)?.ptyId === ptyId);
   }
 

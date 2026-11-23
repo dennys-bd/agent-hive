@@ -1,4 +1,3 @@
-import { basename, dirname, isAbsolute, join } from 'node:path';
 import type { Tokens } from '../facts.js';
 import type { Machine } from '../machine.js';
 import { cleanTitle, type TranscriptTurn } from '../usage.js';
@@ -56,13 +55,13 @@ function parseTitleLine(line: string): string | undefined {
 // Claude Code writes each subagent's transcript to <transcript dir>/<session_id>/subagents/agent-<id>.jsonl, beside the main one. Only the
 // .jsonl regular files directly in that folder, through no linked folder: anything else is not this session's. No folder: none. A file
 // last written before the stage run holds none of its turns, so it is never opened: an old session's subagents would slow every Stop
-async function subagentTranscripts(machine: Pick<Machine, 'fs'>, path: string, since: number): Promise<string[]> {
-  const session = join(dirname(path), basename(path, '.jsonl'));
-  const dir = join(session, 'subagents');
+async function subagentTranscripts(machine: Pick<Machine, 'fs' | 'paths'>, path: string, since: number): Promise<string[]> {
+  const session = machine.paths.join(machine.paths.dirname(path), machine.paths.basename(path, '.jsonl'));
+  const dir = machine.paths.join(session, 'subagents');
   if (!(await isRealDir(machine, session)) || !(await isRealDir(machine, dir))) return [];
   const entries = await machine.fs.readdir(dir, { withFileTypes: true }).catch(() => []);
   // readdir's order is the file system's (APFS sorts, ext4 does not): sorted, so the models list the same on every machine
-  const files = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => join(dir, e.name)).sort();
+  const files = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => machine.paths.join(dir, e.name)).sort();
   const fresh = await Promise.all(files.map((file) => writtenSince(machine, file, since)));
   return files.filter((_, i) => fresh[i]);
 }
@@ -74,7 +73,7 @@ async function subagentTranscripts(machine: Pick<Machine, 'fs'>, path: string, s
  * transcript's alone. Rejects when the file cannot be opened or read; the server treats that as "no tokens and no title this turn".
  * ponytail: reads the whole file at every turn end; if transcripts ever weigh, keep a byte offset per worker and tail from it.
  */
-export async function readTranscript(machine: Pick<Machine, 'fs'>, path: string, since?: number): Promise<TranscriptTurn> {
+export async function readTranscript(machine: Pick<Machine, 'fs' | 'paths'>, path: string, since?: number): Promise<TranscriptTurn> {
   const stage = newTally();
   const seen = new Set<string>();
   let total = 0;
@@ -106,23 +105,23 @@ export async function readTranscript(machine: Pick<Machine, 'fs'>, path: string,
 
 /** Where Claude Code keeps the transcripts of a cwd: `<config dir>/projects/<cwd with every non-alphanumeric as '-'>`, on the machine's home (#161). An empty or relative
  * CLAUDE_CONFIG_DIR falls back to ~/.claude: it would resolve against the daemon's cwd, not Claude Code's, and removeTranscripts deletes there (#236). */
-export function transcriptDir(machine: Pick<Machine, 'info'>, cwd: string): string {
+export function transcriptDir(machine: Pick<Machine, 'info' | 'paths'>, cwd: string): string {
   const { claudeConfigDir, homedir } = machine.info();
   const configured = claudeConfigDir?.trim();
-  const root = configured && isAbsolute(configured) ? configured : join(homedir, '.claude');
-  return join(root, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  const root = configured && machine.paths.isAbsolute(configured) ? configured : machine.paths.join(homedir, '.claude');
+  return machine.paths.join(root, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
 }
 
 /** A transcript the Claude run of `cwd` owns (#929, out of usage.ts and server.ts): directly in its transcript dir and, with a session id, that
  * session's own file, never the checkout's other transcripts (#590). */
-export function ownsTranscript(machine: Pick<Machine, 'info'>, path: string, cwd: string, sessionId: string | undefined): boolean {
-  return dirname(path) === transcriptDir(machine, cwd) && (sessionId === undefined || basename(path) === `${sessionId}.jsonl`);
+export function ownsTranscript(machine: Pick<Machine, 'info' | 'paths'>, path: string, cwd: string, sessionId: string | undefined): boolean {
+  return machine.paths.dirname(path) === transcriptDir(machine, cwd) && (sessionId === undefined || machine.paths.basename(path) === `${sessionId}.jsonl`);
 }
 
 /** What deleting a session's transcripts removes (#236): <id>.jsonl and <id>/, its subagents', in the transcript dir of `cwd`. */
-export function sessionFiles(machine: Pick<Machine, 'info'>, cwd: string, id: string): string[] {
+export function sessionFiles(machine: Pick<Machine, 'info' | 'paths'>, cwd: string, id: string): string[] {
   const dir = transcriptDir(machine, cwd);
-  return [join(dir, `${id}.jsonl`), join(dir, id)];
+  return [machine.paths.join(dir, `${id}.jsonl`), machine.paths.join(dir, id)];
 }
 
 const messageId = (line: string): { user: boolean; assistant?: string } => {

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { activityOf, recordOf, taskOfActivity, workersIn } from './activities.js';
 import { workspaceByName } from './config.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from './server-memory.js';
+import { pathsOf } from './machine.js';
 import { workspaceRows, type WorktreeRouteDeps } from './server-worktrees.js';
 import { removalBlocker, taskId, taskLabel } from './tasks.js';
 import type { Activity, Exec, HeldActivity, HoldingBlocker, State, Task, TaskPr, UnmergedBranch, Workspace, WorkspaceHoldings, WorktreeRow } from './types.js';
@@ -67,7 +68,7 @@ const prsOfRow = (state: Pick<State, 'activityRecords'>, row: WorktreeRow): read
   (row.task === undefined ? [] : recordOf(state, row.task.activityId)?.prs ?? []);
 
 async function holdingsOf(workspace: Workspace, state: State, deps: HoldingsRouteDeps): Promise<WorkspaceHoldings> {
-  const worktrees = await workspaceRows({ exec: deps.exec }, workspace, state, process.platform); // decision 7: GET /worktrees' rows; the holdings read runs on the host's git
+  const worktrees = await workspaceRows({ exec: deps.exec, paths: pathsOf(process.platform) }, workspace, state); // decision 7: GET /worktrees' rows; the holdings read runs on the host's git
   const branches = await Promise.all(worktrees.map((row) => unmergedOf(workspace.path, row, prsOfRow(state, row), deps))); // the listing's order
   const { name } = workspace;
   return { activities: heldActivities(state, name), worktrees, branches: branches.flat(), tasks: heldTasks(state, name), running: isRunningIn(state, name) };

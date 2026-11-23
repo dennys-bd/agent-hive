@@ -1,11 +1,11 @@
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Machine } from './machine.js';
+import { type Machine, pathsOf } from './machine.js';
 import { APPROVAL_HOLD_MAX_MIN, EDITOR_FILE_MAX } from './types.js';
 
 export const HIVE_DIR = '.hive'; // the workspace's folder for the Hive: only worktrees/ lives there (#202)
 export const PROMPTS_DIR = 'prompts';
 export const PROTOCOL_DIR = 'protocol'; // <home>/protocol: the files behind every agent's protocol flag (#167)
+const HOME_PATHS = pathsOf(process.platform); // the Hive's home is the host's own folder, never a task's disk
 const HOOKS_FILE = 'hooks.json'; // what every run's hooks settings flag points at
 
 const WORKSPACES_DIR = 'workspaces'; // <home>/protocol/workspaces/<workspace> (#797): apart from the global stage.md / session.md, which a workspace could be named after
@@ -18,7 +18,7 @@ export interface ProtocolPaths {
 }
 
 // One file per protocol kind, in the global folder and in each workspace's (#167, #797, #256)
-export const protocolFiles = (dir: string): ProtocolPaths => ({ stage: join(dir, 'stage.md'), session: join(dir, 'session.md'), local: join(dir, 'local.md') });
+export const protocolFiles = (dir: string): ProtocolPaths => ({ stage: HOME_PATHS.join(dir, 'stage.md'), session: HOME_PATHS.join(dir, 'session.md'), local: HOME_PATHS.join(dir, 'local.md') });
 export const MCP_ROUTE = '/hooks/mcp'; // the Hive's MCP server for its workers (#99): under /hooks/ for the host guard and the UI-header exemption
 
 const HOOK_TIMEOUT_S = 30; // a Stop is answered after the source writes of its dispatch (gh takes seconds); the reply is the continuation
@@ -57,13 +57,13 @@ export const mcpConfigPattern = (ptyId: string): string => `${ptyId}\\.mcp\\.jso
 
 /** Keeps <repo>/.hive/ (the worktrees) out of git, on the machine the workspace's clone is on (#159): once per repo, nothing without a .git/info. */
 export async function excludeFromGit(machine: Machine, repo: string): Promise<void> {
-  const infoDir = join(repo, '.git', 'info');
+  const infoDir = machine.paths.join(repo, '.git', 'info');
   try {
     if (!(await machine.fs.stat(infoDir)).isDirectory()) return;
   } catch {
     return;
   }
-  const excludePath = join(infoDir, 'exclude');
+  const excludePath = machine.paths.join(infoDir, 'exclude');
   // Only a missing file reads as empty: any other failure (over the cap, unreadable) appends nothing, never glued onto a last pattern
   const current = await machine.fs.readFile(excludePath, { maxBytes: EDITOR_FILE_MAX, encoding: 'utf8' }).catch((err: { code?: unknown }) => (err?.code === 'ENOENT' ? '' : undefined));
   if (current === undefined) return;
@@ -79,11 +79,11 @@ export function pluginSource(): string {
 
 /** A workspace's protocol files (#797): the protocol with the workspace's memory under it, in <home>/protocol/workspaces/<workspace>/. No I/O. */
 export function workspaceProtocolPaths(home: string, workspace: string): ProtocolPaths {
-  return protocolFiles(join(home, PROTOCOL_DIR, WORKSPACES_DIR, encodeURIComponent(workspace)));
+  return protocolFiles(HOME_PATHS.join(home, PROTOCOL_DIR, WORKSPACES_DIR, encodeURIComponent(workspace)));
 }
 
 /** A protocol with a workspace's memory section under it (#797): what its runs read. */
 export const withMemory = (protocol: string, memory: string): string => (memory === '' ? protocol : `${protocol}\n${memory}`);
 
 /** hooks.json in `home`: what every run's hooks settings flag points at; the runner writes it (#924). No I/O. */
-export const hooksPath = (home: string): string => join(home, HOOKS_FILE);
+export const hooksPath = (home: string): string => HOME_PATHS.join(home, HOOKS_FILE);

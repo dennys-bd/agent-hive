@@ -41,7 +41,7 @@ interface Ops { base: string; wt: string; outside: string; calls: [string, strin
 
 async function startOps(t: TestContext, machine?: Machine): Promise<Ops> {
   const { home, repo } = await tempHive(t);
-  const wt = worktreePath(repo, 'hive-1-task');
+  const wt = worktreePath(HOST_PATHS, repo, 'hive-1-task');
   for (const [path, text] of Object.entries(FILES)) {
     await mkdir(join(wt, path, '..'), { recursive: true });
     await writeFile(join(wt, path), text);

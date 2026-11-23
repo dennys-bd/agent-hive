@@ -77,12 +77,12 @@ export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'requ
     if (reason) return refuse(res, { status: HTTP_CONFLICT, message: reason });
     const checkpoint = scope === 'checkpoint' ? activity.checkpoints?.find((a) => String(a.n) === req.query.checkpoint) : undefined; // #619: only an n the activity lists reaches git, as a sha it stored
     if (scope === 'checkpoint' && checkpoint === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: CHECKPOINT_MESSAGE });
-    const worktree = taskDir(workspace.path, activity); // the checkout for a local task (#444)
+    const machine = deps.machineFor(activity);
+    const worktree = taskDir(machine.paths, workspace.path, activity); // the checkout for a local task (#444)
     const key = `${task.item.itemId}\n${scope}${checkpoint?.n ?? ''}`;
     const mine = (latest.get(key) ?? 0) + 1;
     latest.set(key, mine);
     try {
-      const machine = deps.machineFor(activity);
       const base = await diffBase(task, activity, workspaceBase(config, workspace), worktree, scope, machine.exec, checkpoint);
       const files = scope === 'commit' ? await commitDiff(machine, worktree) : await taskDiff(machine, worktree, base.commit);
       const answer: TaskDiff = { scope, base: base.label, files };

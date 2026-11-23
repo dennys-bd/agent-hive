@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
-import { join, resolve } from 'node:path';
 import type { WorkspaceBase } from './fork.js';
-import type { MachineFs, MachineInfo } from './machine.js';
+import type { Machine, MachineFs, MachineInfo } from './machine.js';
 import type { Activity, Checkpoint, Task, DiffHunk, DiffLine, DiffScope, Exec, FileDiff } from './types.js';
 import { SHORT_SHA } from './tasks.js';
 import { gitOrWords, wordsOf } from './worktree.js';
@@ -125,17 +124,17 @@ async function diffGit(worktree: string, args: string[], opts: { env: NodeJS.Pro
 }
 
 /** What the diff reads of a machine (#160): git, and the temp index's folder, copy and removal on its own disk. A Machine is one. */
-export interface DiffOn { exec: Exec; fs: Pick<MachineFs, 'mkdtemp' | 'copyFile' | 'rm'>; info(): Pick<MachineInfo, 'tmpdir'> }
+export interface DiffOn { exec: Exec; fs: Pick<MachineFs, 'mkdtemp' | 'copyFile' | 'rm'>; info(): Pick<MachineInfo, 'tmpdir'>; readonly paths: Machine['paths'] }
 
 const DIFF_FLAGS = ['--no-color', '--no-ext-diff', '--no-textconv', '-M', '--src-prefix=a/', '--dst-prefix=b/'];
 
 // The worktree's index copied to a temp dir, every file added there only, and `fn` run against it; the temp dir goes whatever happens (#270)
 async function withIndexCopy<T>(on: DiffOn, worktree: string, fn: (opts: { env: NodeJS.ProcessEnv; maxBuffer: number }) => Promise<T>): Promise<T> {
   // a linked worktree's index lives under the main repo's .git/worktrees/; git answers a path relative to the worktree or an absolute one
-  const index = resolve(worktree, (await gitOrWords(worktree, ['rev-parse', '--git-path', 'index'], on.exec)).trim());
-  const dir = await on.fs.mkdtemp(join(on.info().tmpdir, 'hive-diff-'));
+  const index = on.paths.resolve(worktree, (await gitOrWords(worktree, ['rev-parse', '--git-path', 'index'], on.exec)).trim());
+  const dir = await on.fs.mkdtemp(on.paths.join(on.info().tmpdir, 'hive-diff-'));
   try {
-    const copy = join(dir, 'index');
+    const copy = on.paths.join(dir, 'index');
     await on.fs.copyFile(index, copy);
     const opts = { env: { ...process.env, GIT_INDEX_FILE: copy }, maxBuffer: DIFF_MAX_BYTES };
     await diffGit(worktree, ['add', '-A'], opts, on.exec);

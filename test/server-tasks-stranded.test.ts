@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
+import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { activityOf } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -41,7 +41,7 @@ const ran = (s: Started, ...words: string[]): boolean => s.calls.some((c) => wor
 
 // `worktree` is where the activity says its worktree is, from the repo (default: the Hive's own place). Git lists the main checkout and, while
 // fake.listed, that worktree on BRANCH; `status` answers fake.dirty[<dir>] and everything else passes every check.
-async function start(t: TestContext, where: (repo: string) => string = (repo) => worktreePath(repo, SLUG), scope: DeleteActivityScope = DELETE_ACTIVITY_DEFAULTS, sessions = false): Promise<Started> {
+async function start(t: TestContext, where: (repo: string) => string = (repo) => worktreePath(HOST_PATHS, repo, SLUG), scope: DeleteActivityScope = DELETE_ACTIVITY_DEFAULTS, sessions = false): Promise<Started> {
   const { home, repo } = await tempHive(t);
   const worktree = where(repo);
   await mkdir(worktree, { recursive: true });
@@ -92,7 +92,7 @@ const transcriptAt = async (cwd: string): Promise<string> => {
 test('delete activity on a removed workspace\'s activity removes its worktree and branch through the repo the path names, and the task loses its activity', async (t) => {
   const s = await start(t);
   assert.deepEqual(await json(del(s)), { removed: true });
-  assert.equal(ran(s, 'worktree', 'remove', '--', worktreePath(s.repo, SLUG)), true);
+  assert.equal(ran(s, 'worktree', 'remove', '--', worktreePath(HOST_PATHS, s.repo, SLUG)), true);
   assert.equal(ran(s, 'branch', '-d', '--', BRANCH), true);
   assert.equal(hasActivity(s), false);
   assert.equal(hasTask(s), true);
@@ -100,7 +100,7 @@ test('delete activity on a removed workspace\'s activity removes its worktree an
 
 test('delete activity on a removed workspace answers the refusal a live workspace does for a dirty worktree and an unmerged branch, and removes nothing', async (t) => {
   const s = await start(t);
-  const path = worktreePath(s.repo, SLUG);
+  const path = worktreePath(HOST_PATHS, s.repo, SLUG);
   s.fake.dirty[path] = ' M a.txt\n';
   assert.deepEqual(await json(del(s)), { removed: false, refused: { reason: 'dirty', path, files: ' M a.txt' } });
   s.fake.dirty = {};
@@ -113,14 +113,14 @@ test('delete activity on a removed workspace answers the refusal a live workspac
 test('delete activity on a removed workspace removes the session transcripts when the scope covers them', async (t) => {
   await claudeConfigDir(t);
   const s = await start(t, undefined, TRANSCRIPTS, true);
-  const file = await transcriptAt(worktreePath(s.repo, SLUG));
+  const file = await transcriptAt(worktreePath(HOST_PATHS, s.repo, SLUG));
   assert.deepEqual(await json(del(s)), { removed: true });
   assert.equal(await exists(file), false);
 });
 
 test('a stranded worktree holding a nested worktree with uncommitted work is refused without force, and nothing is deleted', async (t) => {
   const s = await start(t);
-  const path = worktreePath(s.repo, SLUG);
+  const path = worktreePath(HOST_PATHS, s.repo, SLUG);
   s.fake.ignored = 'docs/\0';
   await mkdir(join(s.repo, 'docs', '.git'), { recursive: true });
   await mkdir(join(path, 'docs', '.git'), { recursive: true });
@@ -142,7 +142,7 @@ test('delete activity on a removed workspace whose repo folder is gone answers r
 test('delete task on a created task whose workspace is gone removes the task, through git when the repo is on disk', async (t) => {
   const s = await start(t);
   assert.deepEqual(await json(close(s)), { ok: true });
-  assert.equal(ran(s, 'worktree', 'remove', '--', worktreePath(s.repo, SLUG)), true);
+  assert.equal(ran(s, 'worktree', 'remove', '--', worktreePath(HOST_PATHS, s.repo, SLUG)), true);
   assert.equal(ran(s, 'branch', '-d', '--', BRANCH), true);
   assert.equal(hasTask(s), false);
 });
@@ -171,7 +171,7 @@ test('a path git does not confirm runs only the confirmation, removes no worktre
   await claudeConfigDir(t);
   const s = await start(t, undefined, TRANSCRIPTS, true);
   s.fake.listed = false; // the folder is on disk, but git lists no such worktree
-  const path = worktreePath(s.repo, SLUG);
+  const path = worktreePath(HOST_PATHS, s.repo, SLUG);
   const file = await transcriptAt(path);
   assert.deepEqual(await json(del(s)), { removed: true });
   assert.deepEqual(s.calls.map((c) => c.slice(0, 2)), [['worktree', 'list']]);
