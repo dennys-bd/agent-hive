@@ -2599,6 +2599,10 @@ const en = {
   'plugins.delete.callers.other': '{callers} still call /{name} and the reviewer will flag it.',
   'plugins.delete.undone': 'this cannot be undone.',
   'plugins.delete.confirm': 'delete',
+  'plugins.delete.version': 'delete {version}…',
+  'plugins.delete.item': 'delete {name}…',
+  'plugins.delete.inUse': "move {version}'s workspaces to another version before deleting it.",
+  'plugins.delete.onlyVersion': '{version} is the only version: deleting it deletes the {kind}.',
   // #320: the based-on link and its card
   'plugins.origin.link': 'based on {name}',
   'plugins.origin.title': 'based on',
@@ -6143,6 +6147,10 @@ const pt: Record<MessageKey, string> = {
   'plugins.delete.callers.other': '{callers} ainda chamam /{name} e o revisor vai acusar isso.',
   'plugins.delete.undone': 'não dá para desfazer.',
   'plugins.delete.confirm': 'excluir',
+  'plugins.delete.version': 'excluir {version}…',
+  'plugins.delete.item': 'excluir {name}…',
+  'plugins.delete.inUse': 'mova os workspaces de {version} para outra versão antes de excluí-la.',
+  'plugins.delete.onlyVersion': '{version} é a única versão: excluí-la exclui a {kind}.',
   // #320: the based-on link and its card
   'plugins.origin.link': 'baseada em {name}',
   'plugins.origin.title': 'baseada em',

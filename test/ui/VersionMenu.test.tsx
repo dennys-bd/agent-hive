@@ -32,5 +32,5 @@ test('the selector names the open version between the name and the chip; its men
     ['tdd-firstcustomizadahive-siteeditada 09:00 · a partir de mine', 'false'],
     ['original da hive 0.15sempre disponível · não editável', 'false'],
   ]);
-  expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['nova versão a partir de mine…', 'usar em…', 'renomear']);
+  expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['nova versão a partir de mine…', 'usar em…', 'renomear', 'excluir mine…']);
 });
