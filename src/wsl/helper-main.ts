@@ -24,6 +24,7 @@ export const RELAY_PORT_FILE = 'relay-port';
 const PORT_MAX = 65_535;
 const DECIMAL = /^\d+$/;
 const FILE_MODE = 0o600; // the distro's Hive folder is this user's only
+const FOLDER_MODE = 0o700; // what #945 writes there later (hive.secret, hooks.json) must not sit in a world-readable folder
 const EXIT_BAD_FRAME = 1; // also a start that failed
 const EXIT_USAGE = 2;
 const EXIT_GRACE_MS = 2_000; // what a handle still open (a child exec) gets before the exit is forced
@@ -45,7 +46,7 @@ export async function keptPort(folder: string): Promise<number | undefined> {
 /** Writes `port` to <folder>/relay-port through a temp file and a rename, so the next start never reads half a number; the folder is
  *  created if it is missing. The temp file is removed first and created exclusively: wx never follows a link planted at its path. */
 export async function keepPort(folder: string, port: number): Promise<void> {
-  await mkdir(folder, { recursive: true });
+  await mkdir(folder, { recursive: true, mode: FOLDER_MODE });
   const file = join(folder, RELAY_PORT_FILE);
   const temp = `${file}.tmp`;
   await rm(temp, { force: true });
@@ -53,7 +54,8 @@ export async function keepPort(folder: string, port: number): Promise<void> {
   await replaceFile(temp, file);
 }
 
-/** The WSL version osrelease names (#941): 2 for microsoft-standard-WSL2, 1 for WSL1's Microsoft, null off WSL or when it cannot be read. */
+/** The WSL version osrelease names (#941): 2 for microsoft-standard (4.19 kernels lack the -WSL2 suffix), 1 for WSL1's capitalised
+ *  Microsoft, null off WSL or when it cannot be read. */
 export function wslVersionOf(readOsRelease: () => string): 1 | 2 | null {
   let release: string;
   try {
@@ -61,7 +63,7 @@ export function wslVersionOf(readOsRelease: () => string): 1 | 2 | null {
   } catch {
     return null;
   }
-  if (release.includes('microsoft-standard-WSL2')) return 2;
+  if (release.includes('microsoft-standard')) return 2;
   return release.includes('Microsoft') ? 1 : null;
 }
 

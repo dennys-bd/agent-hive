@@ -54,9 +54,9 @@ test('agentsOnPath looks in <home>/.local/bin after PATH: ~/.local/bin/claude ma
   assert.deepEqual(asked.filter((file) => file.endsWith('/claude')), ['/usr/bin/claude', '/home/u/.local/bin/claude']);
 });
 
-test('agentsOnPath skips a Windows drive WSL appended (/mnt/<letter>/…) and an empty entry, never a /mnt dir with a longer name (#941)', () => {
+test('agentsOnPath skips a Windows drive WSL appended (/mnt/<letter>/…) and a relative entry (empty, ., bin), never a /mnt dir with a longer name (#941)', () => {
   const { asked, isExecutable } = pathDisk(['/mnt/c/Users/u/AppData/Roaming/npm/claude', '/mnt/data/bin/codex']);
-  const path = '/mnt/c/Users/u/AppData/Roaming/npm::/mnt/D/tools:/mnt/data/bin';
+  const path = '/mnt/c/Users/u/AppData/Roaming/npm::.:bin:/mnt/D/tools:/mnt/data/bin';
   assert.deepEqual(foundOf(agentsOnPath({ path, home: '/home/u', isExecutable })), ['codex']);
   assert.deepEqual(asked.filter((file) => file.endsWith('/claude')), ['/mnt/data/bin/claude', '/home/u/.local/bin/claude']);
 });

@@ -19,13 +19,14 @@ import { type HelperHello, helperMachine, isExecutableFile, keepPort, keptPort, 
 import { NO_POSIX_FAULTS } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
-test('wslVersionOf reads osrelease: 2 for WSL2, 1 for WSL1, null for plain Linux and for a read that fails (#941)', () => {
+test('wslVersionOf reads osrelease: 2 for WSL2 (with or without the -WSL2 suffix), 1 for WSL1, null for plain Linux and for a read that fails (#941)', () => {
   assert.deepEqual([
     wslVersionOf(() => '5.15.167.4-microsoft-standard-WSL2\n'),
+    wslVersionOf(() => '4.19.128-microsoft-standard\n'),
     wslVersionOf(() => '4.4.0-19041-Microsoft\n'),
     wslVersionOf(() => '6.8.0-45-generic\n'),
     wslVersionOf(() => { throw new Error('ENOENT: /proc/sys/kernel/osrelease'); }),
-  ], [2, 1, null, null]);
+  ], [2, 2, 1, null, null]);
 });
 
 test('keptPort answers the port relay-port holds, and undefined for a missing file or anything that is no port (#941)', async (t) => {
