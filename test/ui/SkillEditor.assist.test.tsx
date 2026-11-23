@@ -6,8 +6,15 @@ import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
 import { type AssistBody, BUILD_TEXT, CATALOGUE, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems, VARS_ORIGINAL, VARS_TEXT } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
+import type { MarginAnnotations, TemplateTextProps } from '@/components/plugins/TemplateText';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
+// #982: the annotations TemplateText receives, as #981's margin will read them; the real TemplateText renders as before
+const seen = vi.hoisted(() => ({ annotations: undefined as MarginAnnotations | undefined }));
+vi.mock('@/components/plugins/TemplateText', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/components/plugins/TemplateText')>();
+  return { ...real, TemplateText: (props: TemplateTextProps) => { seen.annotations = props.annotations; return real.TemplateText(props); } };
+});
 
 const BUILD = readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': BUILD_TEXT, 'scripts/slice.py': 'print(1)\n' });
 const SPEC = readOf('hive:new-spec', null, { 'SKILL.md': SPEC_TEXT });
@@ -21,6 +28,8 @@ const NEVER = (): Promise<Response> => new Promise<Response>(() => undefined);
 const serverOf = (extra: Partial<ItemsServer> = {}): ItemsServer => ({ catalogue: CATALOGUE, reads: { 'hive:new-build@mine': BUILD, 'hive:new-spec@': SPEC }, ...extra });
 const echo = (_id: string, body: SaveBody): Response => json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text, 'scripts/slice.py': 'print(1)\n' }));
 const view = (): FakeEditor => FakeEditor.all.at(-1)!;
+const PASSAGE = 'pedir ao agente… o pedido muda só essas linhas';
+const passageField = (): HTMLInputElement => screen.getByPlaceholderText(PASSAGE);
 const field = (): HTMLInputElement => screen.getByPlaceholderText(PLACEHOLDER);
 const fileTab = (name: string): HTMLElement => screen.getByRole('tab', { name });
 const mapChip = (name: string): HTMLElement => within(screen.getByRole('navigation', { name: 'mapa' })).getByRole('button', { name });
@@ -30,9 +39,9 @@ async function open(name: string): Promise<void> {
   fireEvent.click(await within(await screen.findByRole('region', { name: 'skills' })).findByRole('button', { name: new RegExp(`^${name}`) }));
   await waitFor(() => expect(view().hiddenAreas.length).toBeGreaterThan(0));
 }
-function ask(request: string): void {
-  fireEvent.change(field(), { target: { value: request } });
-  fireEvent.keyDown(field(), { key: 'Enter' });
+function ask(request: string, input: () => HTMLInputElement = field): void {
+  fireEvent.change(input(), { target: { value: request } });
+  fireEvent.keyDown(input(), { key: 'Enter' });
 }
 
 beforeEach(() => {
@@ -75,7 +84,7 @@ test('a request over selected lines posts them; the proposal marks old and new l
   render(<PluginsWindow />);
   await open('new-build');
   act(() => view().select({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 26 }));
-  ask('two sentences');
+  ask('two sentences', passageField);
   await waitFor(() => expect(view().model.getValue()).toBe(LOOK_TEXT));
   expect(bodies).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: BUILD_TEXT, request: 'two sentences', selection: { startLine: 9, endLine: 9 }, agent: 'claude' }]);
   const marks = view().decorations.filter((d) => d.options.isWholeLine && d.options.className?.startsWith('template-proposal'));
@@ -175,4 +184,43 @@ test("a map chip's jump puts the caret on the line that calls it and paints that
   expect(jumps()).toEqual([9]);
   act(() => view().setPosition({ lineNumber: 12, column: 1 }));
   expect(jumps()).toEqual([]);
+});
+
+test('a selection names its lines in the bar and a request then sends them; × clears the editor selection and the chip (#982)', async () => {
+  const bodies: AssistBody[] = [];
+  stubItems(serverOf({ assist: (_id, body) => { bodies.push(body); return json({ ...ANSWER, text: body.text, changed: false }); } }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  act(() => view().select({ startLineNumber: 9, startColumn: 3, endLineNumber: 11, endColumn: 4 }));
+  expect(screen.getByText('linhas 9–11')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'soltar a seleção' }));
+  expect(view().selection).toEqual({ startLineNumber: 9, startColumn: 3, endLineNumber: 9, endColumn: 3 });
+  expect([screen.queryByText('linhas 9–11'), field().placeholder]).toEqual([null, PLACEHOLDER]);
+  act(() => view().select({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 26 }));
+  expect(screen.getByText('linha 9')).toBeInTheDocument();
+  ask('shorter', passageField);
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(bodies[0]?.selection).toEqual({ startLine: 9, endLine: 9 });
+});
+
+test("a map chip's jump leaves the bar without a passage chip (#982)", async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open('new-build');
+  act(() => view().select({ startLineNumber: 9, startColumn: 1, endLineNumber: 11, endColumn: 4 }));
+  expect(screen.getByText('linhas 9–11')).toBeInTheDocument();
+  fireEvent.click(mapChip('hive:new-pr'));
+  await waitFor(() => expect(view().position).toEqual({ lineNumber: 9, column: 1 }));
+  expect([screen.queryByText('linhas 9–11'), screen.queryByRole('button', { name: 'soltar a seleção' }), jumps()]).toEqual([null, null, [9]]);
+});
+
+test('annotations.passage hands the bar a request and a source line: the field holds it, focused, the editor selects that line, and the chip reads linha 9 (#982)', async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open('new-build');
+  act(() => seen.annotations?.passage('do x', 9));
+  expect(passageField()).toHaveValue('do x');
+  expect(passageField()).toHaveFocus();
+  expect(view().selection).toEqual({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 26 }); // 'Intro, then /hive:new-pr.' is 25 long
+  expect(screen.getByText('linha 9')).toBeInTheDocument();
 });

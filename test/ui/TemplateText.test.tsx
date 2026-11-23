@@ -1,9 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { TemplateText, type TemplateTextProps } from '@/components/plugins/TemplateText';
+import { type MarginAnnotations, TemplateText, type TemplateTextProps } from '@/components/plugins/TemplateText';
 import type { AgentAnnotation } from '../../src/reviewer';
 import { REVIEWER_DEFAULTS } from '../../src/types';
-import type { Annotations } from '@/hooks/use-annotations';
 import { setLanguage } from '@/i18n';
 import { FAKE_LINE_HEIGHT, FakeEditor, FakeModel, resetMonacoFakes } from './monaco-fake';
 
@@ -100,9 +99,9 @@ test('a note chip is plain text, not a button (#492)', async () => {
 });
 
 const agentAt = (line: number, severity: AgentAnnotation['severity']): AgentAnnotation => ({ line, severity, title: `t${line}${severity}`, body: 'b', source: 'agent' });
-const annotationsOf = (list: readonly AgentAnnotation[]): Annotations => ({
+const annotationsOf = (list: readonly AgentAnnotation[]): MarginAnnotations => ({
   list, review: { config: { ...REVIEWER_DEFAULTS, when: 'demand', version: 'strict' }, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
-  canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(),
+  canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(), passage: vi.fn(),
 });
 const glyphs = (view: FakeEditor) => view.decorations.filter((d) => d.options.glyphMarginClassName !== undefined).map((d) => [d.range.startLineNumber, d.options.glyphMarginClassName]);
 

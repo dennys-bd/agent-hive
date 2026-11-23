@@ -18,6 +18,8 @@ export interface Reveal { line: number; n: number; isJump?: boolean }
 export interface SelectCommand { lines?: LineSelection; n: number }
 /** The open chip's popover (#322): the content of the chain's form at the chip of `line`; Esc and a click outside call onClose. */
 export interface ChipPopover { line: number; content: ReactNode; onClose(): void }
+/** #982: the margin's annotations plus the agent bar's entry point, which #981's "pedir ao agente" calls with a source line. */
+export interface MarginAnnotations extends Annotations { passage(request: string, line: number): void }
 export interface TemplateTextProps {
   modelKey: string; // a new key, a new model: the item, the file and the preview's workspace
   path: string; text: string; isReadOnly: boolean; fontFamily: string;
@@ -25,7 +27,7 @@ export interface TemplateTextProps {
   onChange(text: string): void; onSave(): void;
   onChip?(line: number): void; // #322: opens the chain's popover
   popover?: ChipPopover;
-  annotations?: Annotations; anchorOf?(line: number): number; // #327: the margin's annotations, each at the line the look shows it on
+  annotations?: MarginAnnotations; anchorOf?(line: number): number; // #327: the margin's annotations, each at the line the look shows it on
   isProposal?: boolean; // #331: the text is an agent's proposal look; only a flip swaps the model's text
   onSelection?(lines: LineSelection | undefined): void; // #331: the selection's lines, undefined when it is empty
   select?: SelectCommand; // #982: Monaco's selection, set once per n; Monaco's own event then reports it through onSelection
