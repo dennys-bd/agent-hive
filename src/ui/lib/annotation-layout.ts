@@ -4,7 +4,7 @@ import type { LintAnnotation, Severity } from '../../template-lint.js';
 import type { MapBlock, TemplateMap } from '../../template-map.js';
 import type { Decoration, LookClass } from './template-view.js';
 
-/** The card's fixed height in the margin (px): Annotations.tsx draws it this tall, so the layout knows what it covers. */
+/** The closed card's fixed height in the margin (px): Annotations.tsx draws it this tall, so the layout knows what it covers; an open card is its content's height (#980). */
 export const CARD_HEIGHT = 104;
 export const NOTE_HEIGHT = 20;
 export interface MarginSlot { kind: 'card' | 'note'; top: number }
@@ -26,6 +26,25 @@ export function layoutMargin(chipTops: readonly number[], tops: readonly number[
     slots.push(!hitsChip && !hitsCard ? { kind: 'card', top } : { kind: 'note', top: top + stacked * NOTE_HEIGHT });
   }
   return slots;
+}
+
+export type OpenPlacement = { top: number } | { bottom: number };
+
+/** Where an open card stands (#980): at its line's top when it fits the column; else its bottom on its line's bottom, growing upward, since
+ * the column's overflow-hidden would cut it above the agent bar. A card taller than the column keeps that bottom, its top above the column. */
+export function openPlacement(top: number, height: number, lineHeight: number, columnHeight: number): OpenPlacement {
+  return top + height > columnHeight ? { bottom: columnHeight - (top + lineHeight) } : { top };
+}
+
+export interface Glyph { line: number; severity: Severity }
+
+/** The dots of a closed margin (#980): one per shown line, at the line its card would sit on; red wins, as the most severe. */
+export function glyphsOf(list: readonly Placed[], anchorOf: (line: number) => number): Glyph[] {
+  const lines = list.reduce((seen, annotation) => {
+    const line = anchorOf(annotation.line);
+    return new Map(seen).set(line, seen.get(line) === 'red' ? 'red' : annotation.severity);
+  }, new Map<number, Severity>());
+  return [...lines].map(([line, severity]) => ({ line, severity }));
 }
 
 interface Row { line: number; endLine: number; children: readonly MapBlock[] }
