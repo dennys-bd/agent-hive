@@ -122,7 +122,7 @@ import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { accountsRefusal } from './accounts-config.js';
-import { accountEnv, createRunAccounts, type AccountEnvDeps, type AccountSeam } from './account-env.js';
+import { accountEnv, createRunAccounts, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
@@ -1111,7 +1111,8 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
-    await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits }); // #929: the worker's agent's reading
+    const account = reportedAccount(runAccounts, ptyId, agent); // #953: the account its run started on, never the one selected now
+    await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits, ...(account === undefined ? {} : { account }) }); // #929: the worker's agent's reading
   });
   let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.

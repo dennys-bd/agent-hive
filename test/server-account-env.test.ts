@@ -98,3 +98,31 @@ test('a terminal\'s launch goes through the seam: a refusal there leaves no pty 
   await waitFor(() => server.getState()?.error === 'account github missing');
   assert.deepEqual([workers.length, server.getState()?.terminals.length], [0, 0]);
 });
+
+const STATUS = { rate_limits: { five_hour: { used_percentage: 23.4, resets_at: 1759744800 }, seven_day: { used_percentage: 41, resets_at: 1760263200 } } };
+const postStatus = (base: string, ptyId: string): Promise<Response> =>
+  hiveFetch(`${base}/hooks/status`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-pty': ptyId }, body: JSON.stringify(STATUS) });
+const rateLines = (lines: readonly string[]): string[] => lines.filter((line) => line.includes('rateLimits agent='));
+
+test('a worker\'s status line dispatches rateLimits with the account its run resolved; an unknown pty and the run after its exit carry none (#953)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: {}, account: 'work' }));
+  const { base, server, workers, lines } = await start(t);
+  await postJson(`${base}/tasks/${TASK}/open`, { kind: 'claude' });
+  await waitFor(() => workers.length === 1);
+  const ptyId = workers[0]?.launch.ptyId ?? '';
+  await postStatus(base, ptyId);
+  await postStatus(base, 'ghost');
+  await server.dispatch({ type: 'exit', ptyId });
+  await postStatus(base, ptyId);
+  await waitFor(() => rateLines(lines).length === 3);
+  assert.deepEqual(rateLines(lines).map((line) => line.endsWith(' account=work')), [true, false, false]);
+});
+
+test('a run on the machine\'s login posts a status line with no account (#953)', async (t) => {
+  const { base, workers, lines } = await start(t);
+  await postJson(`${base}/tasks/${TASK}/open`, { kind: 'claude' });
+  await waitFor(() => workers.length === 1);
+  await postStatus(base, workers[0]?.launch.ptyId ?? '');
+  await waitFor(() => rateLines(lines).length === 1);
+  assert.equal(rateLines(lines)[0]?.includes('account='), false);
+});
