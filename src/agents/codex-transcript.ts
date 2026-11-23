@@ -1,6 +1,5 @@
 // Codex's rollouts (#929): where it keeps them, which of them a run owns, the per-response usage the Hive reads from them (its subagents'
 // included) and every file deleting a session removes. Layout and records: finding.codex-surface §9, §11.
-import { basename, dirname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import type { Tokens } from '../facts.js';
 import type { Machine, MachineInfo } from '../machine.js';
 import { isRecord } from '../rate-limits.js';
@@ -19,18 +18,18 @@ export interface RolloutLine { timestamp?: unknown; type?: unknown; payload: Rec
 
 /** Where Codex keeps its rollouts on a machine: `$CODEX_HOME/sessions`, `<its home>/.codex/sessions` when CODEX_HOME is empty or relative. It would resolve against
  * the daemon's cwd, and removeTranscripts deletes there, as Claude's transcriptDir does with CLAUDE_CONFIG_DIR (#236). */
-export function sessionsRoot(info: Pick<MachineInfo, 'homedir' | 'codexHome'>): string {
+export function sessionsRoot(info: Pick<MachineInfo, 'homedir' | 'codexHome'>, paths: Machine['paths']): string {
   const configured = info.codexHome?.trim();
-  return join(configured && isAbsolute(configured) ? configured : join(info.homedir, '.codex'), 'sessions');
+  return paths.join(configured && paths.isAbsolute(configured) ? configured : paths.join(info.homedir, '.codex'), 'sessions');
 }
 
 /** A rollout the run of `sessionId` owns: absolute, directly in a date folder of the sessions root, named after that session. Without a session
  * id nothing is: a forged hook can only name a rollout of an id it already knows, and gets a token count. */
-export function ownsRollout(machine: Pick<Machine, 'info'>, path: string, sessionId: string | undefined): boolean {
+export function ownsRollout(machine: Pick<Machine, 'info' | 'paths'>, path: string, sessionId: string | undefined): boolean {
   // a full session id only (a tail of one would match), and a normalized path: readRollout derives the root from its folders
-  if (!sessionId || !SESSION_ID.test(sessionId) || !isAbsolute(path) || normalize(path) !== path) return false;
-  if (!basename(path).endsWith(`-${sessionId}.jsonl`)) return false;
-  const parts = relative(sessionsRoot(machine.info()), dirname(path)).split(sep);
+  if (!sessionId || !SESSION_ID.test(sessionId) || !machine.paths.isAbsolute(path) || machine.paths.normalize(path) !== path) return false;
+  if (!machine.paths.basename(path).endsWith(`-${sessionId}.jsonl`)) return false;
+  const parts = machine.paths.relative(sessionsRoot(machine.info(), machine.paths), machine.paths.dirname(path)).split(machine.paths.sep);
   return parts.length === DATE_PARTS.length && parts.every((part, i) => DATE_PARTS[i].test(part));
 }
 
@@ -46,23 +45,23 @@ export function parseRolloutLine(text: string): RolloutLine | undefined {
 }
 
 // readdir's order is the file system's (APFS sorts, ext4 does not): every listing is sorted, so every machine reads the same order
-async function subdirs(machine: Pick<Machine, 'fs'>, dir: string, pattern: RegExp): Promise<string[]> {
+async function subdirs(machine: Pick<Machine, 'fs' | 'paths'>, dir: string, pattern: RegExp): Promise<string[]> {
   const entries = await machine.fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-  return entries.filter((e) => e.isDirectory() && pattern.test(e.name)).map((e) => join(dir, e.name)).sort();
+  return entries.filter((e) => e.isDirectory() && pattern.test(e.name)).map((e) => machine.paths.join(dir, e.name)).sort();
 }
 
 /** Every date folder under `root`, oldest first. A link is no directory to a Dirent, so none is followed. */
-export async function dateFolders(machine: Pick<Machine, 'fs'>, root: string): Promise<string[]> {
+export async function dateFolders(machine: Pick<Machine, 'fs' | 'paths'>, root: string): Promise<string[]> {
   let level = [root];
   for (const pattern of DATE_PARTS) level = (await Promise.all(level.map((dir) => subdirs(machine, dir, pattern)))).flat();
   return level;
 }
 
 /** The .jsonl regular files directly in `folder`, in name order; none when it is not a real folder. */
-export async function rolloutsIn(machine: Pick<Machine, 'fs'>, folder: string): Promise<string[]> {
+export async function rolloutsIn(machine: Pick<Machine, 'fs' | 'paths'>, folder: string): Promise<string[]> {
   if (!(await isRealDir(machine, folder))) return [];
   const entries = await machine.fs.readdir(folder, { withFileTypes: true }).catch(() => []);
-  return entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => join(folder, e.name)).sort();
+  return entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => machine.paths.join(folder, e.name)).sort();
 }
 
 // A rollout's first line, its session_meta: the session's id and cwd and, for a subagent, the session that spawned it
@@ -80,8 +79,8 @@ function sessionMetaOf(text: string | undefined): SessionMeta {
   };
 }
 
-const metaOf = async (machine: Pick<Machine, 'fs'>, path: string): Promise<SessionMeta> => sessionMetaOf(await firstLine(machine, path).catch(() => undefined));
-const parentOf = async (machine: Pick<Machine, 'fs'>, path: string): Promise<string | undefined> => (await metaOf(machine, path)).parent;
+const metaOf = async (machine: Pick<Machine, 'fs' | 'paths'>, path: string): Promise<SessionMeta> => sessionMetaOf(await firstLine(machine, path).catch(() => undefined));
+const parentOf = async (machine: Pick<Machine, 'fs' | 'paths'>, path: string): Promise<string | undefined> => (await metaOf(machine, path)).parent;
 
 // One response's usage (§9): input_tokens includes the cached ones; output_tokens already includes the reasoning, which is not added again
 function usageEntry(payload: Record<string, unknown>, at: number, model: string | undefined): UsageEntry | undefined {
@@ -96,7 +95,7 @@ function usageEntry(payload: Record<string, unknown>, at: number, model: string 
 
 // One pass: turn_context maps its turn to the model (no usage record names one, §9); each token_usage_record moves the session total to its
 // thread_token_usage and hands its response to onEntry. Answers the last session total
-async function readUsage(machine: Pick<Machine, 'fs'>, path: string, onEntry: (entry: UsageEntry) => void): Promise<number> {
+async function readUsage(machine: Pick<Machine, 'fs' | 'paths'>, path: string, onEntry: (entry: UsageEntry) => void): Promise<number> {
   const models = new Map<string, string>();
   let total = 0;
   await eachLine(machine, path, (text) => {
@@ -117,29 +116,29 @@ async function readUsage(machine: Pick<Machine, 'fs'>, path: string, onEntry: (e
   return total;
 }
 
-const dayFolder = (root: string, day: Date): string =>
-  join(root, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0'));
+const dayFolder = (root: string, day: Date, paths: Machine['paths']): string =>
+  paths.join(root, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0'));
 
 // The local date of a rollout's own folder: no subagent of it is older
-const folderDay = (path: string): number => {
-  const [year, month, day] = relative(dirname(dirname(dirname(dirname(path)))), dirname(path)).split(sep).map(Number);
+const folderDay = (path: string, paths: Machine['paths']): number => {
+  const [year, month, day] = paths.relative(paths.dirname(paths.dirname(paths.dirname(paths.dirname(path)))), paths.dirname(path)).split(paths.sep).map(Number);
   return new Date(year, month - 1, day).getTime();
 };
 
 // The folders a stage run's subagents can be in: Codex names them by its local date, from the day before `since` (never before the parent's
 // own folder, nor SCAN_DAYS_MAX back) to the day after today. Rounded up: a DST day of 23 hours never drops the last folder, at the cost of
 // one more folder that is not there
-function folderRange(root: string, since: number, now: number, floor: number): string[] {
+function folderRange(root: string, since: number, now: number, floor: number, paths: Machine['paths']): string[] {
   const from = new Date(Math.max(since, floor + MS_PER_DAY, now - SCAN_DAYS_MAX * MS_PER_DAY));
   const first = new Date(from.getFullYear(), from.getMonth(), from.getDate() - 1);
   const days = Math.max(0, Math.ceil((now - first.getTime()) / MS_PER_DAY) + 2);
-  return Array.from({ length: days }, (_, i) => dayFolder(root, new Date(first.getFullYear(), first.getMonth(), first.getDate() + i)));
+  return Array.from({ length: days }, (_, i) => dayFolder(root, new Date(first.getFullYear(), first.getMonth(), first.getDate() + i), paths));
 }
 
 // The session's direct subagents written since the stage run, in path order. A file last written before it holds none of its turns and is
 // never opened, so an old session's subagents never slow a Stop. One at a time: a busy folder must not open every file at once
-async function subagentRollouts(machine: Pick<Machine, 'fs'>, root: string, id: string, since: number, now: number, floor: number): Promise<string[]> {
-  const files = (await Promise.all(folderRange(root, since, now, floor).map((folder) => rolloutsIn(machine, folder)))).flat();
+async function subagentRollouts(machine: Pick<Machine, 'fs' | 'paths'>, root: string, id: string, since: number, now: number, floor: number): Promise<string[]> {
+  const files = (await Promise.all(folderRange(root, since, now, floor, machine.paths).map((folder) => rolloutsIn(machine, folder)))).flat();
   const kept: string[] = [];
   for (const file of files) if ((await writtenSince(machine, file, since)) && (await parentOf(machine, file)) === id) kept.push(file);
   return kept;
@@ -151,16 +150,16 @@ async function subagentRollouts(machine: Pick<Machine, 'fs'>, root: string, id: 
  * server treats that as "no tokens this turn".
  * ponytail: reads the whole rollout at every turn end, as Claude's reader does; keep a byte offset per worker if rollouts ever weigh.
  */
-export async function readRollout(machine: Pick<Machine, 'fs'>, path: string, since?: number, now = Date.now()): Promise<TranscriptTurn> {
+export async function readRollout(machine: Pick<Machine, 'fs' | 'paths'>, path: string, since?: number, now = Date.now()): Promise<TranscriptTurn> {
   const stage = newTally();
   const tokens = await readUsage(machine, path, (entry) => {
     if (since !== undefined) tally(stage, entry, since, false);
   });
   if (since === undefined) return { tokens };
-  const id = ROLLOUT_ID.exec(basename(path))?.[1];
-  const root = dirname(dirname(dirname(dirname(path)))); // <root>/YYYY/MM/DD/<file>: ownsRollout checked the depth
+  const id = ROLLOUT_ID.exec(machine.paths.basename(path))?.[1];
+  const root = machine.paths.dirname(machine.paths.dirname(machine.paths.dirname(machine.paths.dirname(path)))); // <root>/YYYY/MM/DD/<file>: ownsRollout checked the depth
   // A subagent file that fails to read costs only its own share; one after the other, so the models list in the order they are met
-  for (const sub of id === undefined ? [] : await subagentRollouts(machine, root, id, since, now, folderDay(path))) {
+  for (const sub of id === undefined ? [] : await subagentRollouts(machine, root, id, since, now, folderDay(path, machine.paths))) {
     await readUsage(machine, sub, (entry) => tally(stage, entry, since, true)).catch(() => undefined);
   }
   if (!finiteTokens(stage.tokens)) throw new Error(`${path}: token total is not finite`);
@@ -172,12 +171,12 @@ export async function readRollout(machine: Pick<Machine, 'fs'>, path: string, si
  * a forged id never deletes a session the user ran elsewhere. ponytail: opens every rollout's first line once per deletion; index the
  * parents if a sessions folder ever holds thousands. */
 export async function rolloutFiles(machine: Machine, id: string, cwd: string): Promise<string[]> {
-  const files = (await Promise.all((await dateFolders(machine, sessionsRoot(machine.info()))).map((folder) => rolloutsIn(machine, folder)))).flat();
+  const files = (await Promise.all((await dateFolders(machine, sessionsRoot(machine.info(), machine.paths))).map((folder) => rolloutsIn(machine, folder)))).flat();
   const own: string[] = [];
   const children: string[] = [];
   for (const file of files) { // one at a time: thousands at once run out of file descriptors
     const meta = await metaOf(machine, file);
-    if (basename(file).endsWith(`-${id}.jsonl`) && meta.id === id && meta.cwd === cwd) own.push(file);
+    if (machine.paths.basename(file).endsWith(`-${id}.jsonl`) && meta.id === id && meta.cwd === cwd) own.push(file);
     else if (meta.parent === id) children.push(file);
   }
   return own.length === 0 ? [] : [...own, ...children];

@@ -1,7 +1,6 @@
 // Copilot's transcripts (#878, node 6 of #608). Its sessions live by id under the copilot home (spike §6), never per cwd, so transcriptDir stays
 // undefined for good: <home>/session-state/<session id>/events.jsonl, one event per line, and a workspace.yaml beside it. A subagent writes into
 // its parent's file, its events marked by a non-null agentId.
-import { dirname, isAbsolute, join, normalize } from 'node:path';
 import type { Machine } from '../machine.js';
 import { isRecord } from '../rate-limits.js';
 import { cleanTitle } from '../title.js';
@@ -17,13 +16,13 @@ const YAML_MAX_BYTES = 64 * 1024;
 
 export const transcriptDir = (): string | undefined => undefined;
 
-const stateRoot = (machine: Pick<Machine, 'info'>): string => join(copilotHomeOf(machine.info()), STATE_DIR);
+const stateRoot = (machine: Pick<Machine, 'info' | 'paths'>): string => machine.paths.join(copilotHomeOf(machine.info(), machine.paths), STATE_DIR);
 
 /** The events file of `sessionId` and nothing else: absolute, normalized, exactly <home>/session-state/<id>/events.jsonl. Without a full session
  * id nothing is owned: a forged hook can only name the file of an id it already knows. */
-export function ownsTranscript(machine: Pick<Machine, 'info'>, path: string, _cwd: string, sessionId: string | undefined): boolean {
-  if (!sessionId || !SESSION_ID.test(sessionId) || !isAbsolute(path) || normalize(path) !== path) return false;
-  return path === join(stateRoot(machine), sessionId, EVENTS_FILE);
+export function ownsTranscript(machine: Pick<Machine, 'info' | 'paths'>, path: string, _cwd: string, sessionId: string | undefined): boolean {
+  if (!sessionId || !SESSION_ID.test(sessionId) || !machine.paths.isAbsolute(path) || machine.paths.normalize(path) !== path) return false;
+  return path === machine.paths.join(stateRoot(machine), sessionId, EVENTS_FILE);
 }
 
 // workspace.yaml is flat `key: value` lines; a line regex keeps a YAML parser out of the dependencies
@@ -34,17 +33,17 @@ function yamlValue(text: string, key: string): string | undefined {
   return quoted ? quoted[2] : raw;
 }
 
-const workspaceOf = (machine: Pick<Machine, 'fs'>, folder: string): Promise<string | undefined> =>
-  machine.fs.readFile(join(folder, WORKSPACE_FILE), { maxBytes: YAML_MAX_BYTES, encoding: 'utf8' }).catch(() => undefined);
+const workspaceOf = (machine: Pick<Machine, 'fs' | 'paths'>, folder: string): Promise<string | undefined> =>
+  machine.fs.readFile(machine.paths.join(folder, WORKSPACE_FILE), { maxBytes: YAML_MAX_BYTES, encoding: 'utf8' }).catch(() => undefined);
 
 /** Every file deleting session `id` of `cwd` removes: its events file, then its folder (findTranscript takes the first). Only a real folder
  * directly under session-state/ whose own workspace.yaml names that cwd, so a forged id never deletes a session run elsewhere. */
 export async function sessionFiles(machine: Machine, cwd: string, id: string): Promise<string[]> {
   if (!SESSION_ID.test(id)) return [];
-  const folder = join(stateRoot(machine), id);
+  const folder = machine.paths.join(stateRoot(machine), id);
   if (!(await isRealDir(machine, folder))) return [];
   const yaml = await workspaceOf(machine, folder);
-  return yaml !== undefined && yamlValue(yaml, 'cwd') === cwd ? [join(folder, EVENTS_FILE), folder] : [];
+  return yaml !== undefined && yamlValue(yaml, 'cwd') === cwd ? [machine.paths.join(folder, EVENTS_FILE), folder] : [];
 }
 
 function parseEvent(text: string): Record<string, unknown> | undefined {
@@ -88,7 +87,7 @@ export async function readTurn(machine: Machine, path: string, since?: number): 
     seen.add(entry.id);
     if (since !== undefined) tally(stage, entry, since, subagent);
   });
-  const yaml = await workspaceOf(machine, dirname(path));
+  const yaml = await workspaceOf(machine, machine.paths.dirname(path));
   const title = yaml !== undefined && yamlValue(yaml, 'user_named') === 'true' ? cleanTitle(yamlValue(yaml, 'name')) : undefined;
   // before the early return: a total with no stage run must not carry Infinity into State.usage either
   if (!Number.isFinite(tokens) || !finiteTokens(stage.tokens)) throw new Error(`${path}: token total is not finite`);

@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { basename, join } from 'node:path';
 import type { Logger } from './log.js';
 import type { Machine } from './machine.js';
 import { isUuid } from './orchestrator.js';
@@ -14,7 +13,7 @@ export const COPYFILE_EXCL = 1;
 async function removePath(machine: Machine, path: string, log: Pick<Logger, 'debug'>): Promise<void> {
   await machine.fs.rm(path, { recursive: true }).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== 'ENOENT') throw err;
-    log.debug(`transcript ${basename(path)}: already gone`);
+    log.debug(`transcript ${machine.paths.basename(path)}: already gone`);
   });
 }
 
@@ -51,10 +50,10 @@ export async function adoptTranscript(machine: Machine, worktree: string, repo: 
   if (!isUuid(id)) return false;
   const [from, to] = [runners[agent].transcriptDir(machine, worktree), runners[agent].transcriptDir(machine, repo)];
   if (from === undefined || to === undefined) return false; // #929: an agent with no transcript dir has nothing to move
-  if (await isFile(machine, join(to, `${id}.jsonl`))) return true;
-  if (!(await isFile(machine, join(from, `${id}.jsonl`)))) return false;
+  if (await isFile(machine, machine.paths.join(to, `${id}.jsonl`))) return true;
+  if (!(await isFile(machine, machine.paths.join(from, `${id}.jsonl`)))) return false;
   await machine.fs.mkdir(to, { recursive: true });
-  for (const name of [`${id}.jsonl`, id]) await machine.fs.rename(join(from, name), join(to, name)).catch(ignoreMissing);
+  for (const name of [`${id}.jsonl`, id]) await machine.fs.rename(machine.paths.join(from, name), machine.paths.join(to, name)).catch(ignoreMissing);
   return true;
 }
 
@@ -63,7 +62,7 @@ export async function adoptTranscript(machine: Machine, worktree: string, repo: 
 async function transcriptIn(machine: Machine, cwd: string, id: string, agent: AgentId): Promise<string | undefined> {
   const dir = runners[agent].transcriptDir(machine, cwd);
   if (dir === undefined) return (await runners[agent].sessionFiles(machine, cwd, id))[0];
-  return (await isFile(machine, join(dir, `${id}.jsonl`))) ? join(dir, `${id}.jsonl`) : undefined;
+  return (await isFile(machine, machine.paths.join(dir, `${id}.jsonl`))) ? machine.paths.join(dir, `${id}.jsonl`) : undefined;
 }
 
 /** A session's transcript as its agent's resume finds it from one of `cwds` (#587): the first, in order, that has it. */
@@ -84,11 +83,11 @@ export async function copyTranscript(machine: Machine, from: string[], to: strin
   const source = await findTranscript(machine, from, id, agent);
   if (source === undefined) return 'missing';
   if (dir === undefined) return 'same';
-  const target = join(dir, `${id}.jsonl`);
+  const target = machine.paths.join(dir, `${id}.jsonl`);
   if (source === target) return 'same';
   await machine.fs.mkdir(dir, { recursive: true });
   // Copied under a name of its own, then linked in: link fails with EEXIST atomically, so a failure never removes a transcript already there
-  const staged = join(dir, `.${id}.${randomUUID()}.tmp`);
+  const staged = machine.paths.join(dir, `.${id}.${randomUUID()}.tmp`);
   try {
     await machine.fs.copyFile(source, staged, COPYFILE_EXCL);
     return await machine.fs.link(staged, target).then(() => 'copied' as const, (err: NodeJS.ErrnoException) => {
@@ -103,7 +102,7 @@ export async function copyTranscript(machine: Machine, from: string[], to: strin
 /** The temporary <id>.jsonl a copy put in `dir` (#587), once the new session has its own: that file only. Gone already is a debug line. */
 export async function dropCopiedTranscript(machine: Machine, dir: string, id: string, log: Pick<Logger, 'debug'>): Promise<void> {
   if (!isUuid(id)) return;
-  await machine.fs.rm(join(dir, `${id}.jsonl`)).catch((err: NodeJS.ErrnoException) => {
+  await machine.fs.rm(machine.paths.join(dir, `${id}.jsonl`)).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== 'ENOENT') throw err;
     log.debug(`transcript ${id}.jsonl: already gone`);
   });

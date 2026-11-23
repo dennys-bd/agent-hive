@@ -6,7 +6,8 @@ import type { Exec, Workspace } from '../src/types.js';
 import { excludeFromGit } from '../src/hooks-settings.js';
 import { ensureWorktree } from '../src/worktree.js';
 import { runSetup } from '../src/worktree-setup.js';
-import { fakeMachine, statsOf } from './fake-machine.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
+import { fakeMachine, machineWith, statsOf } from './fake-machine.js';
 import { runResult } from './fakes.js';
 
 // #928: a machine's paths are its own platform's whatever the host: the same calls on a linux and a win32 fake machine, on every lane
@@ -105,3 +106,8 @@ for (const side of EXCLUDE_SIDES) {
     assert.deepEqual(touched, [side.info, side.exclude, `${side.exclude} << .hive/\n`]);
   });
 }
+
+test("Claude's transcript dir is joined on its machine's home with that machine's separator, on any host (#928)", () => {
+  assert.equal(transcriptDir(machineWith({ platform: 'linux', homedir: '/actor/home' }), '/w/x'), '/actor/home/.claude/projects/-w-x');
+  assert.equal(transcriptDir(machineWith({ platform: 'win32', homedir: 'C:\\actor' }), 'C:\\w'), 'C:\\actor\\.claude\\projects\\C--w');
+});
