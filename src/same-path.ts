@@ -1,6 +1,7 @@
 import { type Machine, pathsOf } from './machine.js';
 
-/** A machine's flavour is one of two shared objects, so identity tells win32 from the rest without naming a platform. */
+/** A machine's flavour is one of two shared objects, so identity tells win32 from the rest without naming a platform. Every Machine gets its
+ * paths from pathsOf; a copied or hand-built paths object would read as POSIX here. */
 export const isWin32Paths = (paths: Machine['paths']): boolean => paths === pathsOf('win32');
 
 /**

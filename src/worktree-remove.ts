@@ -1,6 +1,6 @@
 // The forced and the clean removal of a task's worktree live here, out of worktree.ts (#159); everything goes through the machine that hosts it.
 import type { Logger } from './log.js';
-import type { Machine, MachineExec } from './machine.js';
+import { type Machine, type MachineExec, pathsOf } from './machine.js';
 import { ownBranch } from './task-runs.js';
 import { branchAt, gitAnswers, gitOrWords, refuseDirty, RemovalRefusal, setAside, wordsOf } from './worktree-base.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
@@ -34,7 +34,8 @@ export async function removeWorktree(
       if (!BRANCH_NOT_FOUND.test(err.message)) throw err;
     });
   }
-  await machine.fs.unlink(machine.paths.join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
+  // promptsDir is the Hive's own home, written with the host's join (spawn.ts writePrompt): joined the host's way, not the task machine's
+  await machine.fs.unlink(pathsOf(process.platform).join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== 'ENOENT') throw err;
   });
 }
