@@ -1,7 +1,20 @@
 // A conflict side read against the merge base (#325, decision 10): no dependency, since a conflict hunk is a few lines. Compiled by the main
-// tsc too; it imports nothing.
+// tsc too, so it imports types only, with their .js extension.
+import type { DiffHunk, DiffLine } from '../../types.js';
 
 export interface SideLine { mark: ' ' | '+' | '−'; text: string }
+
+/** #984: a clean row's diff header range, "lines a–b": its hunks' first to last new-side number, the old side when the hunks only remove. */
+export function diffRange(hunks: readonly DiffHunk[]): { start: number; end: number } | undefined {
+  const lines = hunks.flatMap((hunk) => hunk.lines);
+  const news = lines.flatMap((line) => (line.new === undefined ? [] : [line.new]));
+  const numbers = news.length > 0 ? news : lines.flatMap((line) => (line.old === undefined ? [] : [line.old]));
+  return numbers.length === 0 ? undefined : { start: Math.min(...numbers), end: Math.max(...numbers) };
+}
+
+/** #984: the one number column of a row diff: a removed line's old number, an added or context line's new one. parseDiff numbers every
+ * line on the side it exists on, so the 0 is never shown. */
+export const diffLineNumber = (line: DiffLine): number => (line.kind === 'del' ? line.old : line.new) ?? 0;
 
 /** `side` against `base` as a line diff: shared lines ' ', base-only '−', side-only '+', in reading order, removals before additions within
  * a gap. ponytail: an O(n·m) LCS table; a whole-file conflict of a few hundred lines is the ceiling, Myers if one ever grows past that. */
