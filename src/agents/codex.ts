@@ -139,6 +139,7 @@ export const codexRunner: AgentRunner = {
   headlessAnswer: (_stdout, answerFile) => (answerFile?.trim() ? answerFile.trim() : undefined), // stdout is exec's progress, never the answer
   headlessPrompt: (prompt) => prompt, // the schema rides --output-schema
   headlessEnv: () => ({}), // auth and config come from the inherited CODEX_HOME
+  accountEnv: async () => ({ env: {} }), // #953: Codex has no accounts (#950)
   // its shim (#932) and the roles' old folder (#316). Each workspace's plugin copy and roles are the render's (plugin-render.ts); the run
   // inherits the Hive's CODEX_HOME, so it reads them
   prepareHome: async (home) => {

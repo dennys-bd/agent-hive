@@ -227,6 +227,17 @@ export interface JiraSiteStatus {
 export const JIRA_CONNECT_ERRORS = ['invalid-site', 'refused', 'unreachable'] as const;
 export type JiraConnectError = (typeof JIRA_CONNECT_ERRORS)[number];
 
+/** #955: why a Claude account route refused; #965 maps each to copy. */
+export type ClaudeAccountError = 'name-empty' | 'name-too-long' | 'name-taken' | 'add-pending' | 'unknown' | 'selected';
+
+/** #955: the add flow's state as GET /settings/accounts/claude/add answers it. Never the token. */
+export type ClaudeAddStatus =
+  | { state: 'idle' }
+  | { state: 'pending'; name: string; url?: string } // url once the screen has printed it
+  | { state: 'connected'; name: string }
+  | { state: 'failed'; name: string; reason: 'exited' | 'timeout' | 'store' }
+  | { state: 'cancelled'; name: string };
+
 /** The task filter's criteria and operators (#245), in the order the settings form lists them. */
 export const FILTER_FIELDS = ['assignee', 'label', 'milestone', 'repository', 'projectField', 'blocked'] as const;
 export const FILTER_OPS = ['any', 'none'] as const;
@@ -1705,7 +1716,7 @@ export type HiveEvent =
   | { type: 'setStages'; flows: Flow[] } // #134: the transitions travel with the stages; #564: in their flows, the reducer derives the flattened pair
   | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string>; workspaceMachines: Record<string, MachineId> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78), and machine (#931)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
-  | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
+  | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean; account?: string } // account: the run's account for its agent's provider (#953), absent for the machine's login, the Hive's own reading and a pty with no entry; the reducer's use is #957. agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }
   | { type: 'sourceBackoff'; source: string; until: string } // #812: a call the source rate limited reports its retry time (ISO); the later time wins
   | { type: 'pollFailed'; source: string; message: string } // that source's listItems rejected (#180): its tasks stay as they are

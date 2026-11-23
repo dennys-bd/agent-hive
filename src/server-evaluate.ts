@@ -4,7 +4,8 @@ import { DiffTooLarge, diffBase, taskPatch } from './diff.js';
 import { cutPatch, JUDGE_SCHEMA, judgePrompt, parseFindings, parseScores, REVIEW_SCHEMA, reviewerPrompt, type Work } from './evaluate-prompt.js';
 import { workspaceBase } from './fork.js';
 import { HOST } from './host-fs.js';
-import { type HeadlessDeps, type HeadlessResult, runHeadless } from './headless-run.js';
+import type { AccountEnvDeps } from './account-env.js';
+import { type HeadlessSeams, type HeadlessResult, runHeadless } from './headless-run.js';
 import { launchRun, type SpecializedAgent, specializedAgents } from './launch-options.js';
 import type { Logger } from './log.js';
 import type { Runtime } from './server.js';
@@ -34,7 +35,8 @@ export interface EvaluateDeps {
   prepare(runtime: Runtime, activity: Activity, task: Task, key: string): Promise<string>; // the spawner's: the worktree and its setup
   current(activityId: string): StageEvaluate | undefined; // the mark the State holds now: a Stop during the setup dropped it
   pluginDir(workspace: string): Promise<string>; // the workspace's rendered plugin folder, once its renders landed
-  headless?: HeadlessDeps; // tests: a fake CLI first on PATH, a shorter timeout
+  accountDeps(): AccountEnvDeps; // #953: the live selection and the credential store, read at each run
+  headless?: HeadlessSeams; // tests: a fake CLI first on PATH, a shorter timeout
 }
 
 export interface EvaluateRunner { run(runtime: Runtime, effect: EvaluateEffect): Promise<void>; abort(runId: string): void; abortAll(): void }
@@ -96,7 +98,7 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
     let result: HeadlessResult;
     try {
       const input = { agent: row.agent, prompt, schema, signal, cwd, readOnlyTools: true as const, timeoutMs: EVALUATE_TIMEOUT_MS };
-      result = await runHeadless({ ...input, ...(row.model === undefined ? {} : { model: row.model }) }, deps.headless);
+      result = await runHeadless({ ...input, ...(row.model === undefined ? {} : { model: row.model }) }, { ...deps.headless, account: deps.accountDeps() });
     } catch (err) {
       result = { failure: 'could not start', detail: errorMessage(err) };
     }

@@ -10,7 +10,7 @@ import pty from 'node-pty';
 import { AGENTS } from '../src/agents.js';
 import { envValue, resolveExec } from '../src/exec-path.js';
 import { posixShell } from '../src/posix-shell.js';
-import { capturedReply, installShim, renderShim, resumeOf, shimCmdPath, shimDir, shimPath, type ShimAgent, type ShimResume } from '../src/shim.js';
+import { capturedReply, installShim, refusedReply, renderShim, resumeOf, shimCmdPath, shimDir, shimPath, type ShimAgent, type ShimResume } from '../src/shim.js';
 import { runners } from '../src/agents/registry.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { AGENT_IDS, type AgentId } from '../src/types.js';
@@ -343,4 +343,16 @@ test('in a terminal too, copilot --connect and every copilot passthrough flag an
   const typed = [['--connect', 'x'], ['--connect=x'], ...AGENTS.copilot.subcommands.map((word) => [word, 'x']), ...AGENTS.copilot.shimFlags.map((flag) => ['-i', 'a prompt', flag])];
   for (const args of typed) assert.deepEqual(await copilot(...args), ['pty=T1', ...args], args.join(' '));
   assert.deepEqual(hive.seen, []);
+});
+
+test('refusedReply answers the marker, then the message\'s first line only (#953)', () => {
+  assert.equal(refusedReply('account claude missing: no token named work'), 'refused\naccount claude missing: no token named work');
+  assert.equal(refusedReply('account github unreachable\nmore'), 'refused\naccount github unreachable');
+});
+
+test('a register refused for its account prints the reason and exits 1, running neither the real CLI nor an exit report (#953)', POSIX_ONLY, async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: refusedReply('account claude missing: no token named work') });
+  const claude = await shimmed(t, hive.port);
+  await assert.rejects(claude('hello'), (err: { code?: number; stderr?: string }) => err.code === 1 && /claude: account claude missing: no token named work/.test(err.stderr ?? ''));
+  assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session']);
 });

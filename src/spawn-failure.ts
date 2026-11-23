@@ -1,11 +1,21 @@
 // The known spawn failures (#742), by the start of the message each site writes: agents.ts, config.ts, server-spawn.ts, worktree-steps.ts,
-// worktree.ts, git and node-pty. The message itself can carry a path or a setup's output: only the code reaches a record. No import, so the
+// worktree.ts, git, node-pty and account-env.ts (AccountError, #953). The message itself can carry a path or a setup's output: only the code reaches a record. No import, so the
 // page reads the same table for its short message (#945)
 
+// #953: AccountError's message, one code per provider and code, so the page has copy for each. The lists stay local: no import
+const ACCOUNT_PROVIDERS = ['claude', 'copilot', 'github'] as const;
+const ACCOUNT_CODES = ['missing', 'mismatch', 'unreachable'] as const;
+type AccountFailureCode = `account_${(typeof ACCOUNT_PROVIDERS)[number]}_${(typeof ACCOUNT_CODES)[number]}`;
+
 export type SpawnFailureCode =
-  | 'agent_missing' | 'no_workspace' | 'workspace_gone' | 'command_disabled' | 'setup_failed' | 'checkout_dirty' | 'git_failed' | 'pty_failed' | 'error';
+  | 'agent_missing' | 'no_workspace' | 'workspace_gone' | 'command_disabled' | 'setup_failed' | 'checkout_dirty' | 'git_failed' | 'pty_failed' | 'error'
+  | AccountFailureCode;
+
+const ACCOUNT_FAILURES = ACCOUNT_PROVIDERS.flatMap((provider) =>
+  ACCOUNT_CODES.map((code): [RegExp, SpawnFailureCode] => [new RegExp(`^account ${provider} ${code}\\b`), `account_${provider}_${code}`]));
 
 const SPAWN_FAILURES: readonly [RegExp, SpawnFailureCode][] = [
+  ...ACCOUNT_FAILURES,
   [/^agent \S+ is not on PATH/, 'agent_missing'], [/^choose a workspace$/, 'no_workspace'], [/^workspace .+ (?:is gone|não existe mais)$/, 'workspace_gone'],
   [/^comando ".*" não está habilitado/, 'command_disabled'], [/^(?:setup|teardown) failed at (?:step \d+ of \d+|line) /, 'setup_failed'],
   [/ has changes that are not committed:$/, 'checkout_dirty'], // #945: ensureCheckout's refusal, git's porcelain lines after it

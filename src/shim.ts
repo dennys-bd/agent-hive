@@ -56,7 +56,7 @@ export async function installShim(home: string, agent: ShimAgent, { platform, sh
 const LINE_BREAK = /[\r\n]/;
 
 // An env line the shim's export takes as one assignment: a valid name (export would refuse another, or read it as an option) and no line break
-const isEnvLine = ([name, value]: readonly [string, string]): boolean => ENV_NAME.test(name) && !LINE_BREAK.test(value);
+export const isEnvLine = ([name, value]: readonly [string, string]): boolean => ENV_NAME.test(name) && !LINE_BREAK.test(value);
 
 /** The register's answer (#696, #876): the run id, the count of env lines in decimal, each NAME=value, then each arg the agent gets before the
  * user's own on a line of its own. The shim reads all of it as data and never evaluates it; a count, not a marker line, since an arg could
@@ -65,6 +65,10 @@ export const capturedReply = (runId: string, env: readonly (readonly [string, st
   (env.every(isEnvLine) && !args.some((arg) => LINE_BREAK.test(arg))
     ? [runId, String(env.length), ...env.map(([name, value]) => `${name}=${value}`), ...args].join('\n')
     : undefined);
+
+export const REFUSED_LINE = 'refused'; // #953: the reply's first line on a refused account; no run id (a uuid) can equal it
+/** The register's refusal the shim exits on (#953): the marker, then the message's first line, which names no token. A 200: curl -f drops a 4xx body. */
+export const refusedReply = (message: string): string => `${REFUSED_LINE}\n${message.split(/[\r\n]/)[0] ?? ''}`;
 
 /** What the args the shim posted run (#347): a new conversation, or a resume, with the session id they name when they name one. */
 export type ShimResume = { kind: 'new' } | { kind: 'resume'; sessionId?: string };

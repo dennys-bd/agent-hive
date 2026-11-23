@@ -17,3 +17,13 @@ test('ensureCheckout\'s refusal is checkout_dirty by its first line; without the
   assert.equal(spawnFailureCode('/repo has changes that are not committed:\n M src/app.ts\n?? notes.md'), 'checkout_dirty');
   assert.equal(spawnFailureCode('/repo has changes that are not committed'), 'error');
 });
+
+test('an account refusal is account_<provider>_<code> by its first words; a reason after the colon does not change it (#953)', () => {
+  for (const provider of ['claude', 'copilot', 'github'] as const) {
+    for (const code of ['missing', 'mismatch', 'unreachable'] as const) {
+      assert.equal(spawnFailureCode(`account ${provider} ${code}`), `account_${provider}_${code}`);
+      assert.equal(spawnFailureCode(`account ${provider} ${code}: no token named work`), `account_${provider}_${code}`);
+    }
+  }
+  for (const other of ['account codex missing', 'account claude gone', 'the account claude missing', 'account claude missingly']) assert.equal(spawnFailureCode(other), 'error', other);
+});

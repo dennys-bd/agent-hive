@@ -1,3 +1,4 @@
+import { AccountError, ptyAccountEnv, refusalLine, type AccountSeam, type RunAccountsStore } from './account-env.js';
 import type { Machine, MachineFor, RunInputs, RunSpec } from './machine.js';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
@@ -67,6 +68,8 @@ export interface SpawnerDeps {
   dispatch(event: HiveEvent): Promise<Effect[]>;
   exitOf(ptyId: string): Promise<HiveEvent>; // #586: the run's exit event, its transcript check made (server-exit.ts)
   fail(context: string, err: unknown): Promise<void>;
+  accountEnv: AccountSeam; // #953: the seam bound to the live selection and the credential store (server.ts)
+  runAccounts: Pick<RunAccountsStore, 'set' | 'drop'>; // #953: the run's accounts, under its pty
   isLive(ptyId: string): boolean; // the worker still holds this run (#299): a Stop during the setup freed it
   ptys: Pick<PtyHost, 'has' | 'subscribe' | 'adopt'>; // a run command's output (#353) and a worktree setup's (#351) reach the console through the pty host
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
@@ -152,7 +155,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, home, facts, lspDir, plugin, externalMcp, machineFor } = deps;
+  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, home, facts, lspDir, plugin, externalMcp, machineFor, runAccounts } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -162,6 +165,13 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   });
   // #159: the machine launches after writing its files; a spawn resolves once the pty exists, as when it wrote them itself. A rejection is onSpawnFailed's
   const launched = (ptyId: string): Promise<void> => pool.started(ptyId).catch(() => undefined);
+  // #953: the run's env: the seam resolved before anything starts, its accounts kept under the pty, the workspace's env over the account's
+  const accountEnvOf = (ptyId: string, agent: AgentId | undefined, env: Record<string, string>): Promise<Record<string, string>> => ptyAccountEnv(deps, ptyId, agent, env);
+  // A start that fails before its pty (#945): spawnFailed frees the worker with the reason; undefined, for the caller to return on
+  const failed = async (ptyId: string, err: unknown): Promise<undefined> => {
+    await dispatch({ type: 'spawnFailed', ptyId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) });
+    return undefined;
+  };
 
   // Where a stage starts (#283): HEAD in the worktree, kept as the stage-start ref and on the activity, which is what Restart resets to. One
   // per stage (#812): a start the stage already has (a free session's, an earlier run's, a feedback or handoff turn's) stays, so Restart undoes
@@ -240,15 +250,15 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       const resolved = requireWorkspace(config, task);
       workspace = resolved.name;
       external = await externalMcp(config, resolved.name); // #333
-      env = await runEnv(machine, resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
+      env = await accountEnvOf(ptyId, agent, await runEnv(machine, resolved)); // #738, #854, #953: before prepare, so a refused account leaves no worktree; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
       protocol = await readProtocolText(protocolPath); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
-      await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) });
+      await dispatch({ type: 'spawnFailed', ptyId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) });
       return;
     }
     // A Stop during the setup aborted it (abortSetup) and its exit freed the worker; one that landed right after the setup freed it too: no worker then.
-    if (!isLive(ptyId)) return;
+    if (!isLive(ptyId)) { runAccounts.drop(ptyId); return; } // a Stop before the seam set its entry left nothing else to drop it
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before the machine reads the folder
     // picked: runModel's model, the config's args (#924) then the picks' (#290)
@@ -279,18 +289,20 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       await dispatch({ type: 'spawnFailed', ptyId, message: picked.refusal });
       return;
     }
+    const machine = machineFor(effect.activity);
+    // #854, #953: before the stage start is recorded, as every refusal above; a refused account or a gone env frees the worker through spawnFailed
+    const env = await accountEnvOf(ptyId, agent, await runEnv(machine, place.workspace)).catch((err: unknown) => failed(ptyId, err));
+    if (env === undefined) return;
     // Refused above, before the stage start is recorded: a session that never runs leaves no mark
     // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && inFlow(task) && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
-    const machine = machineFor(effect.activity);
-    const env = await runEnv(machine, place.workspace); // #854
     const external = await externalMcp(config, place.workspace.name); // #333; #256: a local session has the Hive's tools too
     const [first, notice] = runners[agent].copyNotice === 'prompt' ? [copy?.notice ?? prompt, undefined] : [prompt, copy?.notice]; // #875: Copilot's one -i holds /fork
     // #797: a task's session reads its workspace's session protocol; #256: a local one its workspace's local protocol
     const protocolPath = task === undefined ? workspaceProtocolPaths(home, place.workspace.name).local : taskProtocol(home, runtime, task).session;
     // An unreadable protocol leaves no run to exit: spawnFailed frees the worker; a write or a copy the machine refuses rejects started, which does the same (#587)
-    const protocol = await readProtocolText(protocolPath).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); return undefined; });
+    const protocol = await readProtocolText(protocolPath).catch((err: unknown) => failed(ptyId, err));
     if (protocol === undefined) return;
     await plugin.ready(); // #316: as spawn's, after the last await
     const model = picked.model ?? defaultModel(config, agent); // #482: a session, a copy included, runs the default when it picked none
@@ -336,7 +348,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     const machine = machineFor(activity);
     const startDir = taskDir(machine.paths, workspace.path, activity);
-    const env = await runEnv(machine, workspace); // #854: a fork's GH_REPO, resolved once per launch
+    const env = await accountEnvOf(ptyId, undefined, await runEnv(machine, workspace)); // #854, #953: a fork's GH_REPO, resolved once per launch; a rejection is server.ts' spawnFailed
     const where = found ? { cwd: startDir, env } : await keptLaunch(machine, terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({
       ptyId, machine,
@@ -359,9 +371,10 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       return;
     }
     const machine = machineFor({}); // a workspace's shell: the local machine until node 9
+    const env = await accountEnvOf(ptyId, undefined, await runEnv(machine, workspace)); // #953
     pool.start({
       ptyId, machine,
-      spec: { ptyId, slug: LOCAL_SLUG, terminal: true, ...sized(size), ...(await keptLaunch(machine, terminal, workspace.path, await runEnv(machine, workspace))) },
+      spec: { ptyId, slug: LOCAL_SLUG, terminal: true, ...sized(size), ...(await keptLaunch(machine, terminal, workspace.path, env)) },
       ...handlers(ptyId, LOCAL_SLUG),
     });
     await launched(ptyId);
