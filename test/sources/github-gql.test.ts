@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { apiGql, cliGql, cliGqlJson, ghExecFor, githubLoginName, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import { apiGql, cliGql, cliGqlJson, ghExecFor, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
 import type { SelectedGithub } from '../../src/github-account.js';
 import type { GhToken } from '../../src/github-token.js';
 import { PROJECT_FIELDS, VIEWER } from '../../src/sources/github-queries.js';
@@ -60,13 +60,6 @@ test('both transports treat a non-empty errors array as a failure, even with par
   await assert.rejects(cliGql(async () => JSON.stringify(body))(VIEWER), { message: 'Could not resolve to a User' });
   // a poll must never silently degrade into "no blockers": partial data is not a result
   await assert.rejects(bound(fakeFetch(json({ data: { a: 1 }, errors: [{ message: 'partial' }] })).doFetch)(VIEWER), { message: 'partial' });
-});
-
-test('githubLoginName answers only the login, never the token, and undefined when nobody is stored', async (t) => {
-  const env = { XDG_CONFIG_HOME: await tempDir(t, 'gql-') };
-  assert.equal(await githubLoginName(env), undefined);
-  await writeCredentials({ github: { ana: { token: TOKEN } } }, env);
-  assert.equal(await githubLoginName(env), 'ana');
 });
 
 test('apiGql without a stored token rejects with the instruction, and a non-2xx rejects with the status alone', async (t) => {

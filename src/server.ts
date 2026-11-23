@@ -15,7 +15,7 @@ import { replaceFile } from './replace-file.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
-import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
+import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, gqlFor } from './sources/github-gql.js';
 import { createGithubAccount, selectionOf, switchSelection, type GithubAccount } from './github-account.js';
 import { createGhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
@@ -122,6 +122,7 @@ import { registerViewStateRoutes } from './server-view-state.js';
 import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
+import { registerGithubAccountRoutes } from './server-github-accounts.js';
 import { accountsRefusal } from './accounts-config.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
@@ -1217,15 +1218,16 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // What the settings screen polls every 2 s while a flow is pending. The token is never part of the answer.
   app.get('/settings/github/auth', async (_req: Request, res: Response) => {
-    const login = await githubLoginName(deps.githubLogin?.env);
+    const login = await account.selected.login().catch(() => ''); // #959: the resolver's login; a failed selection is not connected
     const status: GithubAuthStatus = {
-      connected: login !== undefined,
-      ...(login !== undefined ? { login } : {}),
+      connected: login !== '',
+      ...(login !== '' ? { login } : {}),
       ...(githubFlow?.pending ? { pending: { userCode: githubFlow.pending.userCode, verificationUri: githubFlow.pending.verificationUri } } : {}),
       ...(githubFlow?.error ? { error: githubFlow.error } : {}),
     };
     res.json(status);
   });
+  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env }); // #959: the logins' list and remove, outside requireLive
   registerJiraRoutes(app, jiraDeps); // #817: next to the GitHub login, outside requireLive: the first Jira source is created in setup mode
   registerJiraSettingsRoutes(app, jiraDeps); // #821: the same, for what the form reads before the source is saved
 

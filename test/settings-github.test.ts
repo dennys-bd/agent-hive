@@ -104,3 +104,12 @@ test('a save whose check fails as the new login leaves the account on the previo
   assert.equal(await h.account.selected.login(), 'alice');
   assert.equal(h.kicks(), 1);
 });
+
+test('GET /settings/github/auth answers gh\'s login with nothing selected in cli, then the selected stored login, never a token (#959)', async (t) => {
+  const h = await start(t);
+  assert.deepEqual(await (await hiveFetch(`${h.base}/settings/github/auth`)).json(), { connected: true, login: 'gh-user' });
+  assert.equal((await save(h, { github: 'alice' })).status, 200);
+  const body = await (await hiveFetch(`${h.base}/settings/github/auth`)).text();
+  assert.deepEqual(JSON.parse(body), { connected: true, login: 'alice' });
+  assert.ok(!body.includes('fake-alice-token'), body);
+});

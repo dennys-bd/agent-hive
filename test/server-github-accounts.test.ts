@@ -1,0 +1,58 @@
+import { test, type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
+import { readCredentials, saveGithubCredential } from '../src/credentials.js';
+import { createGithubAccount } from '../src/github-account.js';
+import type { GhToken } from '../src/github-token.js';
+import { registerGithubAccountRoutes } from '../src/server-github-accounts.js';
+import type { AccountsConfig } from '../src/types.js';
+import { fakeLog } from './fakes.js';
+import { tempDir } from './temp-dir.js';
+
+interface Harness { base: string; env: NodeJS.ProcessEnv; lines: string[] }
+
+const machineAs = (login: string): GhToken => ({ login: async () => login, token: async () => { throw new Error('the machine token was read'); }, invalidate: () => undefined });
+
+// The routes alone on express, over a temp store holding bob and alice, gh's login `machine` and the saved selection `accounts`
+async function routes(t: TestContext, machine: string, accounts: AccountsConfig = {}): Promise<Harness> {
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'gh-accounts-') };
+  for (const login of ['bob', 'alice']) await saveGithubCredential(login, { token: `fake-${login}-token` }, env);
+  const { log, lines } = fakeLog();
+  const app = express();
+  registerGithubAccountRoutes(app, { account: createGithubAccount({ machine: machineAs(machine), env }), accounts: () => accounts, log, env });
+  const server = app.listen(0);
+  t.after(() => server.close());
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, env, lines };
+}
+
+const remove = (h: Harness, login: string): Promise<Response> => fetch(`${h.base}/settings/github/accounts/${encodeURIComponent(login)}`, { method: 'DELETE' });
+
+test('GET /settings/github/accounts answers the stored logins sorted and gh\'s own, never a token (#959)', async (t) => {
+  const h = await routes(t, 'gh-user');
+  const body = await (await fetch(`${h.base}/settings/github/accounts`)).text();
+  assert.deepEqual(JSON.parse(body), { logins: ['alice', 'bob'], machine: 'gh-user' });
+  assert.ok(!body.includes('fake-'), body);
+  const bare = await routes(t, '');
+  assert.deepEqual(await (await fetch(`${bare.base}/settings/github/accounts`)).json(), { logins: ['alice', 'bob'] }, 'no machine when gh has no login');
+});
+
+test('DELETE refuses the login accounts.github or accounts.copilot selects with 409 and an absent one with 404, and removes any other (#959)', async (t) => {
+  const h = await routes(t, '', { github: 'alice', copilot: 'bob' });
+  for (const [login, key] of [['alice', 'github'], ['bob', 'copilot']]) {
+    const res = await remove(h, login);
+    assert.equal(res.status, 409);
+    assert.deepEqual(await res.json(), { error: `"accounts.${key}" selects this login` });
+  }
+  const absent = await remove(h, 'carol');
+  assert.equal(absent.status, 404);
+  assert.deepEqual(await absent.json(), { error: 'no stored GitHub login by that name' });
+  assert.equal((await remove(h, 'toString')).status, 404, 'own entries only');
+  const free = await routes(t, '', { github: 'alice' });
+  const removed = await remove(free, 'bob');
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), { ok: true });
+  assert.deepEqual((await readCredentials(free.env)).github, { alice: { token: 'fake-alice-token' } });
+  assert.ok(free.lines.includes('INFO github login removed: bob'));
+  assert.ok(free.lines.every((line) => !line.includes('fake-')), free.lines.join('\n'));
+});

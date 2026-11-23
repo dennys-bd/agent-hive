@@ -7,6 +7,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CONFIG } from '../src/config.js';
 import { readCredentials, saveClaudeCredential } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
+import { createGithubAccount, type GithubAccount } from '../src/github-account.js';
+import type { GhToken } from '../src/github-token.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State, Flow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, type McpSettings } from '../src/types.js';
@@ -1084,6 +1086,14 @@ test('POST /hooks/status answers in the effective language: the system one first
 
 const DEVICE = { device_code: 'DC1', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 };
 
+// #959: in api with nothing named the device flow's only login is the selected one; no gh login on this machine
+const NO_GH: GhToken = { login: async () => '', token: async () => { throw new Error('the machine token was read'); }, invalidate: () => undefined };
+function apiAccount(env: NodeJS.ProcessEnv): GithubAccount {
+  const account = createGithubAccount({ machine: NO_GH, env });
+  account.use({ auth: 'api' });
+  return account;
+}
+
 /** A server whose GitHub login talks to `tokenAnswers` instead of github.com, in its own config home. */
 async function withLogin(t: TestContext, tokenAnswers: unknown[]): Promise<{ base: string; env: NodeJS.ProcessEnv }> {
   const env = { XDG_CONFIG_HOME: await tempDir(t, 'setup-cred-'), HIVE_GITHUB_CLIENT_ID: 'Ov23liTEST' };
@@ -1093,7 +1103,7 @@ async function withLogin(t: TestContext, tokenAnswers: unknown[]): Promise<{ bas
     if (target.endsWith('/access_token')) return jsonResponse(tokenAnswers.shift() ?? { error: 'authorization_pending' });
     return jsonResponse({ data: { viewer: { login: 'ana' } } });
   }) as unknown as typeof fetch;
-  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env } });
+  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env }, githubAccount: apiAccount(env) });
   return { base: started.base, env };
 }
 
@@ -1157,7 +1167,7 @@ test('a second login replaces the first: its poll stops (no further calls) and a
     }
     return jsonResponse({ data: { viewer: { login: 'ana' } } });
   }) as unknown as typeof fetch;
-  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env } });
+  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env }, githubAccount: apiAccount(env) });
   assert.equal((await postJson(`${started.base}/settings/github/login`)).status, 200);
   await waitFor(async () => (firstTokenCalls === 2 ? true : undefined)); // the first flow is now parked on firstGate, mid-poll
   assert.equal((await postJson(`${started.base}/settings/github/login`)).status, 200); // replaces the first flow and aborts its controller
@@ -1202,7 +1212,7 @@ test('a login attempt that fails to get a device code leaves an already-running 
     if (tokenCalls === 1) await sleepGate;
     await new Promise((resolve) => setImmediate(resolve));
   };
-  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep, env } });
+  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep, env }, githubAccount: apiAccount(env) });
   assert.equal((await postJson(`${started.base}/settings/github/login`)).status, 200);
   await waitFor(async () => (tokenCalls === 1 ? true : undefined)); // first poll landed; now parked before the second
   const res = await postJson(`${started.base}/settings/github/login`); // the second attempt: fails before ever reaching the flow worker

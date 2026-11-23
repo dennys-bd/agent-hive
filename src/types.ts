@@ -217,6 +217,9 @@ export interface GithubAuthStatus {
   error?: string;
 }
 
+/** What GET /settings/github/accounts answers (#959): logins only, never a token. machine: gh's own login, absent when gh has none. */
+export interface GithubLogins { logins: string[]; machine?: string }
+
 /** What GET /settings/jira/sites answers per site (#817): never the stored email or the token. */
 export interface JiraSiteStatus {
   site: string;

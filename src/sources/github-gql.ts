@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { githubLoginsStored } from '../credentials.js';
 import { resolveExec } from '../exec-path.js';
 import { defaultGithubToken, refusalOf, unauthorized, type SelectedGithub } from '../github-account.js';
 import { bearer, type GhToken } from '../github-token.js';
@@ -67,12 +66,6 @@ export type GqlJson = (query: string, variables: Record<string, unknown>) => Pro
  * as flags. The answer is unwrapped as cliGql's. */
 export function cliGqlJson(exec: Exec = ghExec): GqlJson {
   return async (query, variables) => unwrap(JSON.parse(await exec(['api', 'graphql', '--input', '-'], JSON.stringify({ query, variables }))));
-}
-
-/** The stored login GET /settings/github/auth reports, never the token: the only one, undefined with none or several. Until #959's routes read the account. */
-export async function githubLoginName(env?: NodeJS.ProcessEnv): Promise<string | undefined> {
-  const logins = await githubLoginsStored(env);
-  return logins.length === 1 ? logins[0] : undefined;
 }
 
 const UNAUTHORIZED = 401;
