@@ -5,8 +5,10 @@ import express from 'express';
 import { createClaudeAdd } from '../src/claude-account.js';
 import { readCredentials, saveClaudeCredential, writeCredentials } from '../src/credentials.js';
 import { registerClaudeAccountRoutes } from '../src/server-claude-accounts.js';
+import { createServer } from '../src/server.js';
 import type { AccountsConfig } from '../src/types.js';
 import { fakeLog, type FakePty, fakePtys } from './fakes.js';
+import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
 // Obviously fake: 13 + 95 characters, one digit repeated, so two accounts hold different tokens
@@ -144,4 +146,29 @@ test('a remove waits behind a queued save, so a selection that save makes is hon
   h.saved.accounts = { claude: 'ana' }; // what the queued save wrote
   release();
   assert.deepEqual(await removing, [409, { error: 'selected' }]);
+});
+
+test('the server runs claude setup-token in a pty of its own at 512 columns in its home, without CLAUDECODE, and its close kills it (#955)', async (t) => {
+  const previous = process.env.CLAUDECODE;
+  process.env.CLAUDECODE = '1'; // a Hive started from inside Claude Code: the child must not inherit it
+  t.after(() => { if (previous === undefined) delete process.env.CLAUDECODE; else process.env.CLAUDECODE = previous; });
+  const home = await tempDir(t, 'claude-home-');
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'claude-cfg-') };
+  const { log } = fakeLog();
+  const { spawnPty, ptys } = fakePtys();
+  const server = createServer({ home, log, secret: SECRET, credentialsEnv: env, spawnPty });
+  const port = await server.listen(undefined);
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${port}/settings/accounts/claude`;
+  const res = await hiveFetch(`${url}/add`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ name: 'ana' }) });
+  assert.deepEqual([res.status, await res.json()], [202, { state: 'pending', name: 'ana' }]);
+  const pty = ptys.find((p) => p.args.includes('setup-token'));
+  assert.ok(pty, 'setup-token spawned through deps.spawnPty');
+  assert.match(pty.file, /claude(\.exe)?$/i);
+  assert.deepEqual(pty.args, ['setup-token']);
+  assert.deepEqual([pty.options.cols, pty.options.rows, pty.options.cwd], [512, 50, home]);
+  assert.equal(pty.options.env.CLAUDECODE, undefined);
+  assert.deepEqual(await (await hiveFetch(url)).json(), { names: [] });
+  await server.close();
+  assert.equal(pty.killed, 1, 'a pending add never outlives the daemon');
 });
