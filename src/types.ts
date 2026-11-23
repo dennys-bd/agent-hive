@@ -199,7 +199,8 @@ export type Gql = (query: string, variables?: Record<string, string | number | b
 
 /** What the credential store holds, one key per provider. Never leaves the process except as an Authorization header. */
 export interface Credentials {
-  github?: { token: string; login: string };
+  /** A GitHub login's token by login (#959): the device flow's and gh's browser login's (#960). */
+  github?: Record<string, { token: string }>;
   /** An external MCP server's header value by server name (#333). */
   mcp?: Record<string, { value: string }>;
   /** A Jira Cloud login by bare site host (#816). */
@@ -215,6 +216,9 @@ export interface GithubAuthStatus {
   pending?: { userCode: string; verificationUri: string };
   error?: string;
 }
+
+/** What GET /settings/github/accounts answers (#959): logins only, never a token. machine: gh's own login, absent when gh has none. */
+export interface GithubLogins { logins: string[]; machine?: string }
 
 /** What GET /settings/jira/sites answers per site (#817): never the stored email or the token. */
 export interface JiraSiteStatus {

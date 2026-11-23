@@ -1,5 +1,5 @@
 import { setTimeout as defaultSleep } from 'node:timers/promises';
-import { updateCredentials } from '../credentials.js';
+import { saveGithubCredential } from '../credentials.js';
 import { apiGql } from './github-gql.js';
 import { VIEWER, type ViewerData } from './github-queries.js';
 
@@ -82,7 +82,7 @@ async function store(token: string, deps: GithubLoginDeps): Promise<string> {
   const data = (await apiGql({ fetch: deps.fetch, readToken: async () => token })(VIEWER)) as ViewerData;
   const login = data.viewer?.login;
   if (!login) throw new Error('github login: the token has no viewer');
-  await updateCredentials((current) => ({ ...current, github: { token, login } }), deps.env);
+  await saveGithubCredential(login, { token }, deps.env);
   return login;
 }
 

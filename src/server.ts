@@ -15,8 +15,9 @@ import { replaceFile } from './replace-file.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
-import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
-import { createGhToken, type GhToken } from './github-token.js';
+import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, gqlFor } from './sources/github-gql.js';
+import { createGithubAccount, selectionOf, switchSelection, type GithubAccount } from './github-account.js';
+import { createGhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
 import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
@@ -87,7 +88,7 @@ import type { ItemStore } from './read-model/items.js';
 import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { jiraRoundSources } from './read-model/jira-round.js';
-import { createReadModelLoop, readModelEvent, type RefetchOutcome } from './read-model/loop.js';
+import { createReadModelLoop, readModelEvent, type ReadModelLoop, type RefetchOutcome } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
@@ -123,6 +124,7 @@ import { registerViewStateRoutes } from './server-view-state.js';
 import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
+import { registerGithubAccountRoutes } from './server-github-accounts.js';
 import { accountsRefusal } from './accounts-config.js';
 import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
@@ -225,8 +227,10 @@ export interface ServerDeps {
   usage?: UsageStore;
   /** #187: the read sync's login and transports; tests inject a fake, the default is accessFor with auth.github's transport. */
   readAccess?: () => Promise<ReadAccess | undefined>;
-  /** #503: the daemon's gh credential holder (login and token, in memory). Absent (tests, an embedded server): the server builds its own. */
-  ghToken?: GhToken;
+  /** #959: the daemon's GitHub account (the selected login and gh's own). Absent (tests, an embedded server): the server builds its own. */
+  githubAccount?: GithubAccount;
+  /** #959: tests hand a loop that counts kicks; absent, the read model's own when there is one. */
+  readLoop?: ReadModelLoop;
   /** #475: a benchmark run's home (benchmark.json): GET /benchmark-run, the viewer's writes and first terminal input recorded or, frozen, refused. */
   runMode?: RunMode;
   /** #955: the draw.io webapp's folder; tests inject a fixture. Absent: DRAWIO_ROOT, which a skipped fetch leaves missing (every answer a 404). */
@@ -295,7 +299,10 @@ function authFromQuery(query: Request['query']): AuthConfig {
 export function createServer(deps: ServerDeps): HiveServer {
   const { home } = deps;
   const log = deps.log ?? createLogger(home);
-  const ghToken = deps.ghToken ?? createGhToken(); // #503: one holder for the poll, Settings and the read sync
+  // #959: one account for the poll, Settings and the read sync; hive.ts used it before its boot adapters, so this is a no-op on the same config
+  const account = deps.githubAccount ?? createGithubAccount({ machine: createGhToken(), env: deps.githubLogin?.env });
+  if (deps.runtime) account.use(selectionOf(deps.runtime.config));
+  const ghToken = account.selected;
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
   const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
   const protocolFor = protocolRenderer(passages, log);
@@ -349,7 +356,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
   const treeWatch = deps.treeWatch ?? createTreeWatch({ log, notify: notifyTree });
-  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
+  // #959: the form may list with an auth it has not saved yet (setup in api): then the selection's holder would read as the wrong transport
+  const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ...(auth === account.selection().auth ? { ghToken } : {}) }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
@@ -1228,10 +1236,10 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // What the settings screen polls every 2 s while a flow is pending. The token is never part of the answer.
   app.get('/settings/github/auth', async (_req: Request, res: Response) => {
-    const login = await githubLoginName(deps.githubLogin?.env);
+    const login = await account.selected.login().catch(() => ''); // #959: the resolver's login; a failed selection is not connected
     const status: GithubAuthStatus = {
-      connected: login !== undefined,
-      ...(login !== undefined ? { login } : {}),
+      connected: login !== '',
+      ...(login !== '' ? { login } : {}),
       ...(githubFlow?.pending ? { pending: { userCode: githubFlow.pending.userCode, verificationUri: githubFlow.pending.verificationUri } } : {}),
       ...(githubFlow?.error ? { error: githubFlow.error } : {}),
     };
@@ -1252,6 +1260,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   app.post('/settings', (req: Request, res: Response) => queueSave(() => saveSettings((req.body ?? {}) as Partial<SettingsBody>, res)));
+  // #959: the logins' list and remove, outside requireLive; a remove queues behind a save that may be selecting the login
+  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env, queueSave });
 
   async function saveSettings(body: Partial<SettingsBody>, res: Response, afterSave?: () => Promise<void>): Promise<void> {
     let config: Config;
@@ -1269,9 +1279,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     // An entry whose baked-in parts match the live runtime's keeps its instance, so a write already in flight keeps its chain (#180: per source).
     const sources = createSources(config, (spec) => sourceFactory(spec, itemStore), live && { config: live.runtime.config, sources: live.runtime.sources });
+    // #959: the check below reads as the login the save selects; any failure after this puts the previous selection back
+    const switched = switchSelection(account, selectionOf(config));
     try {
       await resolveSources(sources); // validates every source against the real one before the config is written; the message names the source
     } catch (err) {
+      switched.undo();
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;
     }
@@ -1280,9 +1293,11 @@ export function createServer(deps: ServerDeps): HiveServer {
       log.info('settings saved');
       await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
     } catch (err) {
+      switched.undo();
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
       return;
     }
+    if (switched.changed) readLoop?.kick(); // #959: rows are the login's: the new one's board fills now, not a round later
     try {
       await afterSave?.(); // #333: a server's stored value follows its rename or removal before the answer
     } catch (err) {
@@ -1412,11 +1427,11 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
-  const readLoop = deps.readModel && createReadModelLoop({
+  const readLoop = deps.readLoop ?? (deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machines.local) : []),
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
-  });
+  }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
   // #567: after the loop, whose refetch reads an issue the Project no longer holds
   const itemStore: ItemStore | undefined = deps.readModel && readLoop && {

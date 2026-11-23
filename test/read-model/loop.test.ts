@@ -513,3 +513,58 @@ test('stop() waits for a Jira group in flight: its writes land before the databa
   assert.deepEqual(order, ['round', 'stop']);
   assert.notEqual(db.items.cursor(JIRA_ROWS, 'ABC'), null, 'the group finished its writes');
 });
+
+// Turns the event loop until `check` holds; fails instead of hanging when it never does
+async function settled(check: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 1000 && !check(); turn += 1) await setImmediate();
+  assert.ok(check(), 'the loop never got there');
+}
+
+// A loop whose every round reads the access once and parks on `gate` at its first request
+function gatedLoop(db: ReadModel, gate: { promise: Promise<void> }): { loop: ReadModelLoop; reads(): number } {
+  let reads = 0;
+  const rest: RestGet = async () => {
+    await gate.promise;
+    return { status: 304 };
+  };
+  const { loop } = loopOn(db, rest, { access: async () => { reads += 1; return { source: SOURCE, rest, gql: NO_GQL }; } });
+  return { loop, reads: () => reads };
+}
+
+test('kick() starts a round when none runs, and one more right after a running one, which reads the access anew (#959)', async (t) => {
+  const gate = deferred();
+  const { loop, reads } = gatedLoop(await tempModel(t), gate);
+  loop.kick();
+  await settled(() => reads() === 1);
+  loop.kick(); // the round is parked on the gate
+  await setImmediate();
+  assert.equal(reads(), 1, 'no second round while one runs');
+  gate.resolve();
+  await settled(() => reads() === 2);
+  await loop.stop();
+});
+
+test('three kicks during one round run one more round, and stop() drops a pending one (#959)', async (t) => {
+  const gate = deferred();
+  const { loop, reads } = gatedLoop(await tempModel(t), gate);
+  void loop.runOnce();
+  await settled(() => reads() === 1);
+  loop.kick();
+  loop.kick();
+  loop.kick();
+  gate.resolve();
+  await settled(() => reads() === 2);
+  for (let turn = 0; turn < 50; turn += 1) await setImmediate(); // room for a wrong third round
+  assert.equal(reads(), 2);
+  await loop.stop();
+
+  const held = deferred();
+  const other = gatedLoop(await tempModel(t), held);
+  void other.loop.runOnce();
+  await settled(() => other.reads() === 1);
+  other.loop.kick();
+  const stopped = other.loop.stop();
+  held.resolve();
+  await stopped;
+  assert.equal(other.reads(), 1, 'the pending round never ran');
+});

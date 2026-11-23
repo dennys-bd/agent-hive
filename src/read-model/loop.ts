@@ -108,6 +108,7 @@ export interface ReadModelLoopDeps {
 
 export interface ReadModelLoop {
   runOnce(): Promise<void>;
+  kick(): void; // #959: a round now, or one right after the running one; several kicks during a round leave one
   refetch(repository: string, number: number, options?: { again?: boolean }): Promise<RefetchOutcome>; // again: past the cooldown (#187)
   refreshOptions(repositories: string[]): Promise<void>; // #282: the tab's refresh: the option scopes of these repositories now; never rejects
   start(): void;
@@ -183,8 +184,9 @@ function repositoriesRound(deps: ReadModelLoopDeps, core: LoopCore, isStopped: (
   };
 }
 
-function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { runOnce(): Promise<void>; running(): Promise<void> | undefined } {
+function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { runOnce(): Promise<void>; kick(): void; running(): Promise<void> | undefined } {
   let round: Promise<void> | undefined;
+  let pending = false; // #959: a kick during a round: one more right after it, however many kicks came
   const repositories = repositoriesRound(deps, core, isStopped);
   const jira = jiraDepsOf(deps, core, isStopped);
   // #824: the repositories first, so GitHub's round keeps its timing; each part in its own try, so neither stops the other
@@ -196,15 +198,24 @@ function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => bool
       deps.log.error(`read model: the Jira round failed: ${reasonOf(err)}`);
     }
   }
+  function runOnce(): Promise<void> {
+    // a round still running makes this tick a no-op; GitHub's backoff is the repositories' own check now (#824)
+    if (isStopped() || round !== undefined) return Promise.resolve();
+    round = runRound().finally(() => {
+      round = undefined;
+      if (!pending) return;
+      pending = false;
+      void runOnce(); // after a stop() a no-op: the pending round is dropped
+    });
+    return round;
+  }
   return {
     running: () => round,
-    runOnce: () => {
-      // a round still running makes this tick a no-op; GitHub's backoff is the repositories' own check now (#824)
-      if (isStopped() || round !== undefined) return Promise.resolve();
-      round = runRound().finally(() => {
-        round = undefined;
-      });
-      return round;
+    runOnce,
+    // #959: a changed selection's round: now, or once the running one, which took the old login's access, settles
+    kick: () => {
+      if (round === undefined) void runOnce();
+      else pending = true;
     },
   };
 }
@@ -304,6 +315,7 @@ export function createReadModelLoop(deps: ReadModelLoopDeps): ReadModelLoop {
   const options = optionsRefreshOf(deps, core, isStopped);
   return {
     runOnce: rounds.runOnce,
+    kick: rounds.kick,
     refetch: refetches.refetch,
     refreshOptions: options.refreshOptions,
     start: () => {

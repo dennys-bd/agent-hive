@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { accountsRefusal } from '../src/accounts-config.js';
-import { saveClaudeCredential } from '../src/credentials.js';
+import { saveClaudeCredential, saveGithubCredential } from '../src/credentials.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 // A relative HIVE_HOME makes credentialsPath throw (home.ts): a refusal that resolves under it never read the credential store
@@ -17,7 +17,8 @@ const storeWithWork = async (t: AfterHost): Promise<NodeJS.ProcessEnv> => {
 test('accountsRefusal reads no credential when the save names no Claude account (#952)', async () => {
   assert.equal(await accountsRefusal(undefined, UNREADABLE), undefined, 'a body without accounts');
   assert.equal(await accountsRefusal({}, UNREADABLE), undefined);
-  assert.equal(await accountsRefusal({ github: 'me', copilot: 'me' }, UNREADABLE), undefined, 'their check is #959\'s');
+  await assert.rejects(accountsRefusal({ github: 'me' }, UNREADABLE), /HIVE_HOME/, 'a GitHub login does read the store (#959)');
+  await assert.rejects(accountsRefusal({ copilot: 'me' }, UNREADABLE), /HIVE_HOME/);
   await assert.rejects(accountsRefusal({ claude: 'work' }, UNREADABLE), /HIVE_HOME/, 'the guard holds: a Claude name does read the store');
 });
 
@@ -33,4 +34,15 @@ test('accountsRefusal passes a Claude name with a saved credential and refuses o
 test('accountsRefusal counts own entries only: __proto__ and toString name no account (#952)', async (t) => {
   const env = await storeWithWork(t);
   for (const name of ['__proto__', 'toString', 'constructor']) assert.deepEqual(await accountsRefusal({ claude: name }, env), REFUSED, name);
+});
+
+test('accountsRefusal refuses an accounts.github or accounts.copilot naming no stored GitHub login with 400, own entries only, and passes a stored one (#959)', async (t) => {
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'accounts-') };
+  await saveGithubCredential('alice', { token: 'fake-github-token-1' }, env);
+  assert.equal(await accountsRefusal({ github: 'alice', copilot: 'alice' }, env), undefined);
+  assert.deepEqual(await accountsRefusal({ github: 'bob' }, env), { status: 400, message: '"accounts.github" names no saved GitHub login' });
+  assert.deepEqual(await accountsRefusal({ copilot: 'bob' }, env), { status: 400, message: '"accounts.copilot" names no saved GitHub login' });
+  assert.deepEqual(await accountsRefusal({ claude: 'work', github: 'bob' }, env), REFUSED, 'the first problem: claude before github');
+  for (const name of ['__proto__', 'toString']) assert.equal((await accountsRefusal({ github: name }, env))?.status, 400, name);
+  assert.ok(!JSON.stringify(await accountsRefusal({ github: 'bob' }, env)).includes('fake-github-token-1'));
 });

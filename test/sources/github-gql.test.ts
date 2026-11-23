@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { apiGql, cliGql, cliGqlJson, ghExecFor, githubLoginName, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import { apiGql, cliGql, cliGqlJson, ghExecFor, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import type { SelectedGithub } from '../../src/github-account.js';
 import type { GhToken } from '../../src/github-token.js';
 import { PROJECT_FIELDS, VIEWER } from '../../src/sources/github-queries.js';
 import { writeCredentials } from '../../src/credentials.js';
@@ -61,19 +62,12 @@ test('both transports treat a non-empty errors array as a failure, even with par
   await assert.rejects(bound(fakeFetch(json({ data: { a: 1 }, errors: [{ message: 'partial' }] })).doFetch)(VIEWER), { message: 'partial' });
 });
 
-test('githubLoginName answers only the login, never the token, and undefined when nobody is stored', async (t) => {
-  const env = { XDG_CONFIG_HOME: await tempDir(t, 'gql-') };
-  assert.equal(await githubLoginName(env), undefined);
-  await writeCredentials({ github: { token: TOKEN, login: 'ana' } }, env);
-  assert.equal(await githubLoginName(env), 'ana');
-});
-
 test('apiGql without a stored token rejects with the instruction, and a non-2xx rejects with the status alone', async (t) => {
   const env = { XDG_CONFIG_HOME: await tempDir(t, 'gql-') };
   const { doFetch, calls } = fakeFetch(json(OK_BODY));
   await assert.rejects(apiGql({ fetch: doFetch, env })(VIEWER), { message: NO_TOKEN_MESSAGE });
   assert.equal(calls.length, 0, 'no call without a token');
-  await writeCredentials({ github: { token: TOKEN, login: 'ana' } }, env);
+  await writeCredentials({ github: { ana: { token: TOKEN } } }, env);
   assert.deepEqual(await apiGql({ fetch: doFetch, env })(VIEWER), { viewer: { login: 'ana' } });
   assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Bearer ${TOKEN}`, 'read per call from the store');
   await assert.rejects(bound(fakeFetch(json({ message: TOKEN }, 401)).doFetch)(VIEWER), { message: 'github api: HTTP 401' });
@@ -157,4 +151,15 @@ test('ghExecFor(win32) runs gh by the full path the resolver gives, and a gh fou
   // gh.exe exists only in the fake file system, so the spawn fails on every OS, and its ENOENT names the file execFile got
   await assert.rejects(ghExecFor('win32', { env, isFile })(['api', 'graphql']), { message: /^gh api graphql: .*C:\\hive-absent\\gh\\gh\.exe/ });
   await assert.rejects(ghExecFor('win32', { env, isFile: () => false })(['api', 'graphql']), { message: 'gh api graphql: gh was not found' });
+});
+
+test('gqlFor api with the account\'s holder reads its bearer from it, and its 401 names the refusal (#959)', async () => {
+  const token = `test-${randomUUID()}`;
+  const refused = 'the token of alice was refused: log in again in Settings';
+  const ghToken: SelectedGithub = { login: async () => 'alice', token: async () => token, invalidate: () => undefined, refusal: async () => refused };
+  const { doFetch, calls } = fakeFetch(json(OK_BODY), json({}, 401));
+  const gql = gqlFor('api', { ghToken, fetch: doFetch });
+  assert.deepEqual(await gql(VIEWER), { viewer: { login: 'ana' } });
+  assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Bearer ${token}`);
+  await assert.rejects(gql(VIEWER), { message: `github api: HTTP 401: ${refused}` });
 });

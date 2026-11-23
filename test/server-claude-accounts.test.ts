@@ -116,7 +116,7 @@ test('DELETE add kills the pending pty and answers 204; with nothing pending it 
 
 test('DELETE of a stored name removes only that entry and keeps every other key of the file (#955)', async (t) => {
   const h = await routes(t);
-  const github = { token: 'fake-gh-955', login: 'octo' };
+  const github = { octo: { token: 'fake-gh-955' } };
   await writeCredentials({ github, claude: { ana: { token: fakeToken(1) }, 'bob / work': { token: fakeToken(2) } } }, h.env);
   assert.equal((await remove(h, 'ana')).status, 204);
   assert.equal((await remove(h, encodeURIComponent('bob / work'))).status, 204);

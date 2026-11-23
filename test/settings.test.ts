@@ -5,8 +5,10 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CONFIG } from '../src/config.js';
-import { readCredentials, saveClaudeCredential } from '../src/credentials.js';
+import { readCredentials, saveClaudeCredential, saveGithubCredential } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
+import { createGithubAccount, type GithubAccount } from '../src/github-account.js';
+import type { GhToken } from '../src/github-token.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State, Flow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, type McpSettings } from '../src/types.js';
@@ -1084,6 +1086,14 @@ test('POST /hooks/status answers in the effective language: the system one first
 
 const DEVICE = { device_code: 'DC1', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 };
 
+// #959: in api with nothing named the device flow's only login is the selected one; no gh login on this machine
+const NO_GH: GhToken = { login: async () => '', token: async () => { throw new Error('the machine token was read'); }, invalidate: () => undefined };
+function apiAccount(env: NodeJS.ProcessEnv): GithubAccount {
+  const account = createGithubAccount({ machine: NO_GH, env });
+  account.use({ auth: 'api' });
+  return account;
+}
+
 /** A server whose GitHub login talks to `tokenAnswers` instead of github.com, in its own config home. */
 async function withLogin(t: TestContext, tokenAnswers: unknown[]): Promise<{ base: string; env: NodeJS.ProcessEnv }> {
   const env = { XDG_CONFIG_HOME: await tempDir(t, 'setup-cred-'), HIVE_GITHUB_CLIENT_ID: 'Ov23liTEST' };
@@ -1093,7 +1103,7 @@ async function withLogin(t: TestContext, tokenAnswers: unknown[]): Promise<{ bas
     if (target.endsWith('/access_token')) return jsonResponse(tokenAnswers.shift() ?? { error: 'authorization_pending' });
     return jsonResponse({ data: { viewer: { login: 'ana' } } });
   }) as unknown as typeof fetch;
-  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env } });
+  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env }, githubAccount: apiAccount(env) });
   return { base: started.base, env };
 }
 
@@ -1108,7 +1118,7 @@ test('POST /settings/github/login answers the code at once and the auth route re
     return status.connected ? status : undefined;
   });
   assert.deepEqual(connected, { connected: true, login: 'ana' });
-  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_secret', login: 'ana' } });
+  assert.deepEqual(await readCredentials(env), { github: { ana: { token: 'gho_secret' } } });
   const body = await (await hiveFetch(`${base}/settings/github/auth`)).text();
   assert.ok(!body.includes('gho_secret'), body);
 });
@@ -1157,7 +1167,7 @@ test('a second login replaces the first: its poll stops (no further calls) and a
     }
     return jsonResponse({ data: { viewer: { login: 'ana' } } });
   }) as unknown as typeof fetch;
-  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env } });
+  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep: async () => {}, env }, githubAccount: apiAccount(env) });
   assert.equal((await postJson(`${started.base}/settings/github/login`)).status, 200);
   await waitFor(async () => (firstTokenCalls === 2 ? true : undefined)); // the first flow is now parked on firstGate, mid-poll
   assert.equal((await postJson(`${started.base}/settings/github/login`)).status, 200); // replaces the first flow and aborts its controller
@@ -1167,11 +1177,11 @@ test('a second login replaces the first: its poll stops (no further calls) and a
   });
   assert.deepEqual(connected, { connected: true, login: 'ana' });
   assert.equal(secondTokenCalls, 1, 'the second flow authorized on its first poll, undelayed by the first');
-  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_second', login: 'ana' } }, 'the second flow, not the first, won the store');
+  assert.deepEqual(await readCredentials(env), { github: { ana: { token: 'gho_second' } } }, 'the second flow, not the first, won the store');
   releaseFirst?.(); // let the first flow's stuck fetch resolve, arriving after its own abort
   await sleep(50); // give its .then a turn to (not) run
   assert.equal(firstTokenCalls, 2, 'the aborted flow made no further poll after the second login started');
-  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_second', login: 'ana' } }, 'the late, aborted token never overwrote the store');
+  assert.deepEqual(await readCredentials(env), { github: { ana: { token: 'gho_second' } } }, 'the late, aborted token never overwrote the store');
   assert.deepEqual(await json<GithubAuthStatus>(hiveFetch(`${started.base}/settings/github/auth`)), { connected: true, login: 'ana' }, 'nor the reported status');
 });
 
@@ -1202,7 +1212,7 @@ test('a login attempt that fails to get a device code leaves an already-running 
     if (tokenCalls === 1) await sleepGate;
     await new Promise((resolve) => setImmediate(resolve));
   };
-  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep, env } });
+  const started = await start(t, undefined, { githubLogin: { fetch: doFetch, sleep, env }, githubAccount: apiAccount(env) });
   assert.equal((await postJson(`${started.base}/settings/github/login`)).status, 200);
   await waitFor(async () => (tokenCalls === 1 ? true : undefined)); // first poll landed; now parked before the second
   const res = await postJson(`${started.base}/settings/github/login`); // the second attempt: fails before ever reaching the flow worker
@@ -1316,7 +1326,9 @@ test('POST /settings writes mcp\'s defaults on a first save, keeps the saved mcp
 });
 
 test('POST /settings writes accounts {} on a first save and keeps the saved selection when the body has none (#952)', async (t) => {
-  const { base, home } = await start(t);
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'accounts-cred-') };
+  await saveGithubCredential('me', { token: 'fake-github-token-1' }, env); // #959: a GitHub login must be stored to be selected
+  const { base, home } = await start(t, 0, { credentialsEnv: env, githubLogin: { env } });
   const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).accounts;
   assert.equal((await postSettings(base, BODY)).status, 200);
   assert.deepEqual(await onDisk(), {}, 'a body without it, as the Settings form sends until #964');

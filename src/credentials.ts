@@ -14,15 +14,6 @@ export function credentialsPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(hiveHome(env), FILE_NAME);
 }
 
-// A malformed `github` field (wrong shape, or a token/login that isn't a string) is dropped rather than trusted: a
-// non-string token would stringify as `Bearer [object Object]` in the Authorization header, and a non-string login
-// would be echoed as is into GET /settings/github/auth.
-function isGithubCredential(value: unknown): value is { token: string; login: string } {
-  if (typeof value !== 'object' || value === null) return false;
-  const { token, login } = value as { token?: unknown; login?: unknown };
-  return typeof token === 'string' && typeof login === 'string';
-}
-
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // #333: an external server's header value by server name; an entry whose value is not a string is dropped, as a malformed github is: it
@@ -50,16 +41,16 @@ function jiraEntries(raw: unknown): Record<string, JiraCredential> | undefined {
 
 export type ClaudeCredential = NonNullable<Credentials['claude']>[string];
 
-// #952: a Claude token by account name; an entry whose token is not a string is dropped, as a malformed jira is: it would reach the run's env
-// as [object Object]. A map that is no object is dropped whole.
-function claudeEntries(raw: unknown): Record<string, ClaudeCredential> | undefined {
+// #952, #959: a token by account name (claude) or by login (github); an entry whose token is not a string is dropped: it would reach an env var
+// or a header as [object Object]. A map that is no object is dropped whole, and the single github entry of before #959 reads as {}.
+function tokenEntries(raw: unknown): Record<string, ClaudeCredential> | undefined {
   if (!isRecord(raw)) return undefined;
   return Object.fromEntries(Object.entries(raw).flatMap(([name, e]) => (isRecord(e) && typeof e.token === 'string' ? [[name, { token: e.token }]] : [])));
 }
 
 /**
  * What is stored, `{}` when nothing is. A missing, unreadable or corrupt file reads as "not logged in", never as a
- * boot failure. A `github` field with a non-string token or login is dropped the same way (the `mcp` map is kept entry by entry, #333), but in place: every other
+ * boot failure. A `github` or `claude` map keeps each well-formed entry (as `mcp` and `jira` do), and: every other
  * top-level key (a sibling provider's, once one exists) is kept, since `writeCredentials({ ...await readCredentials(),
  * github }, …)` is the write pattern every login uses — losing a sibling here would silently erase it on the next one.
  */
@@ -72,9 +63,10 @@ export async function readCredentials(env?: NodeJS.ProcessEnv): Promise<Credenti
     const { github, mcp, jira, claude, ...rest } = parsed as { github?: unknown; mcp?: unknown; jira?: unknown; claude?: unknown } & Record<string, unknown>;
     const values = mcpValues(mcp);
     const sites = jiraEntries(jira);
-    const accounts = claudeEntries(claude);
+    const logins = tokenEntries(github);
+    const accounts = tokenEntries(claude);
     return {
-      ...rest, ...(isGithubCredential(github) ? { github } : {}), ...(values ? { mcp: values } : {}), ...(sites ? { jira: sites } : {}), ...(accounts ? { claude: accounts } : {}),
+      ...rest, ...(logins ? { github: logins } : {}), ...(values ? { mcp: values } : {}), ...(sites ? { jira: sites } : {}), ...(accounts ? { claude: accounts } : {}),
     } as Credentials;
   } catch {
     return {};
@@ -157,4 +149,28 @@ export async function removeClaudeCredential(name: string, env?: NodeJS.ProcessE
     const { [name]: _gone, ...left } = current.claude;
     return { ...current, claude: left };
   }, env);
+}
+
+export type GithubCredential = NonNullable<Credentials['github']>[string];
+
+/** #959: the stored logins, sorted: never a token. */
+export async function githubLoginsStored(env?: NodeJS.ProcessEnv): Promise<string[]> {
+  return Object.keys((await readCredentials(env)).github ?? {}).sort();
+}
+
+/** #959: a second save of a login replaces its token; another login adds an entry. */
+export async function saveGithubCredential(login: string, cred: GithubCredential, env?: NodeJS.ProcessEnv): Promise<void> {
+  await updateCredentials((current) => ({ ...current, github: { ...current.github, [login]: cred } }), env);
+}
+
+/** #959: false, with nothing written, when the login is not stored (own entries only); an unreadable file is never rewritten. */
+export async function removeGithubCredential(login: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
+  let removed = false;
+  await updateCredentials((current) => {
+    if (current.github === undefined || !Object.hasOwn(current.github, login)) return undefined;
+    removed = true;
+    const { [login]: _gone, ...left } = current.github;
+    return { ...current, github: left };
+  }, env);
+  return removed;
 }

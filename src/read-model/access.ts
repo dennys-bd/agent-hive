@@ -1,8 +1,8 @@
-import { readCredentials } from '../credentials.js';
+import { refusalOf, type SelectedGithub } from '../github-account.js';
 import { GITHUB_HOST, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import { gqlFor } from '../sources/github-gql.js';
-import type { Credentials, GithubAuth, Gql } from '../types.js';
+import type { GithubAuth, Gql } from '../types.js';
 import { httpRest, type RestGet } from './rest.js';
 import { sourceOf } from './rows.js';
 
@@ -10,22 +10,16 @@ import { sourceOf } from './rows.js';
 export interface ReadAccess { source: string; rest: RestGet; gql: Gql }
 
 export interface AccessDeps {
-  ghToken: GhToken; // cli (#503): gh's login from hosts.yml and its token, held once per daemon
+  ghToken: GhToken | SelectedGithub; // #959: the account's selected login; gh's bare holder reads as gh's login
   log?: Logger; // gqlFor's debug lines
-  credentials?: () => Promise<Credentials>; // tests inject; default the credential store
   fetch?: typeof fetch; // tests inject; default Node's
 }
 
-/** The read model's access for `auth.github` (#180, #503). cli: hosts.yml's login, and gh's token over HTTP. api: the stored login and token
- * over HTTP. GraphQL through gqlFor, the one place that choice is made. No login: undefined. */
+/** The read model's access (#180, #503, #959): the selected login's rows, REST and GraphQL, in cli and api alike. No login: undefined. */
 export async function accessFor(auth: GithubAuth, deps: AccessDeps): Promise<ReadAccess | undefined> {
   const { ghToken, log, fetch } = deps;
-  if (auth === 'cli') {
-    const login = await ghToken.login();
-    if (login === '') return undefined;
-    return { source: sourceOf(GITHUB_HOST, login), rest: httpRest({ token: ghToken.token, onUnauthorized: ghToken.invalidate, fetch }), gql: gqlFor('cli', { log, ghToken, fetch }) };
-  }
-  const { github } = await (deps.credentials ?? (() => readCredentials()))();
-  if (github === undefined || github.token === '' || github.login === '') return undefined;
-  return { source: sourceOf(GITHUB_HOST, github.login), rest: httpRest({ token: async () => github.token, fetch }), gql: gqlFor('api', { log, fetch }) };
+  const login = await ghToken.login();
+  if (login === '') return undefined;
+  const rest = httpRest({ token: ghToken.token, onUnauthorized: ghToken.invalidate, refusal: refusalOf(ghToken), fetch });
+  return { source: sourceOf(GITHUB_HOST, login), rest, gql: gqlFor(auth, { log, ghToken, fetch }) };
 }

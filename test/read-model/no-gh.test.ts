@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { createGithubAccount } from '../../src/github-account.js';
 import { createGhToken, type GhToken } from '../../src/github-token.js';
 import type { ReadModel } from '../../src/read-model/db.js';
 import { accessFor } from '../../src/read-model/access.js';
@@ -64,9 +65,9 @@ test('cli: two sync rounds run gh once, to read the token, and revalidate by ETa
 test('api: a sync round runs no gh at all (#503)', async (t) => {
   const db = await tempModel(t);
   const { exec, runs } = countingGh();
-  const ghToken = holder(exec);
-  const credentials = async () => ({ github: { token: `test-${randomUUID()}`, login: 'bia' } });
-  const errors = await twoRounds(db, () => accessFor('api', { ghToken, credentials, fetch: fakeGithub().doFetch }));
+  const account = createGithubAccount({ machine: holder(exec), credentials: async () => ({ github: { bia: { token: `test-${randomUUID()}` } } }) });
+  account.use({ auth: 'api' });
+  const errors = await twoRounds(db, () => accessFor('api', { ghToken: account.selected, fetch: fakeGithub().doFetch }));
   assert.deepEqual(errors, []);
   assert.deepEqual(runs, []);
   assert.ok(db.scope(SOURCE, REPO, 'reconcile'));

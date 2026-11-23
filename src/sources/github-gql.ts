@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readCredentials } from '../credentials.js';
 import { resolveExec } from '../exec-path.js';
+import { defaultGithubToken, refusalOf, unauthorized, type SelectedGithub } from '../github-account.js';
 import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
@@ -11,7 +11,7 @@ const GH_MAX_BUFFER = 20 * 1024 * 1024;
 const API_URL = 'https://api.github.com/graphql';
 const FETCH_TIMEOUT_MS = 10_000;
 const QUERY_MAX = 200; // the GraphQL query is long; the head names the call, the rest is noise
-export const NO_TOKEN_MESSAGE = 'no GitHub token: run `hive login` or connect in settings';
+export { NO_TOKEN_MESSAGE } from '../github-account.js'; // #959: moved beside the rule; fork.ts's tests import it from here
 
 /** The `gh` runner: argv, and what goes to its stdin (#592), → stdout. cliGql and cliGqlJson use it. */
 export type Exec = (args: string[], input?: string) => Promise<string>;
@@ -68,18 +68,6 @@ export function cliGqlJson(exec: Exec = ghExec): GqlJson {
   return async (query, variables) => unwrap(JSON.parse(await exec(['api', 'graphql', '--input', '-'], JSON.stringify({ query, variables }))));
 }
 
-/** The stored GitHub account, or undefined when nobody logged in. Kept private: `storedToken` is the only reason to
- * hold the token, and a type-level guarantee beats trusting every future caller to destructure `login` only. */
-async function readGithubCredentials(env?: NodeJS.ProcessEnv): Promise<{ token: string; login: string } | undefined> {
-  const { github } = await readCredentials(env);
-  return github?.token ? github : undefined;
-}
-
-/** The stored GitHub account's name, or undefined when nobody logged in. What GET /settings/github/auth reports: never the token. */
-export async function githubLoginName(env?: NodeJS.ProcessEnv): Promise<string | undefined> {
-  return (await readGithubCredentials(env))?.login;
-}
-
 const UNAUTHORIZED = 401;
 
 export interface ApiGqlDeps {
@@ -87,12 +75,7 @@ export interface ApiGqlDeps {
   readToken?: () => Promise<string>; // the login binds a token it has not stored yet
   env?: NodeJS.ProcessEnv;
   onUnauthorized?: () => void; // cli (#503): a 401 drops the held token; the next poll reads it again
-}
-
-async function storedToken(env?: NodeJS.ProcessEnv): Promise<string> {
-  const stored = await readGithubCredentials(env);
-  if (!stored) throw new Error(NO_TOKEN_MESSAGE); // makes resolveFields fail on boot, which reopens setup with the reason
-  return stored.token;
+  refusal?: () => Promise<string | undefined>; // #959: why a stored login's 401 happened, named in the rejection
 }
 
 /**
@@ -101,7 +84,7 @@ async function storedToken(env?: NodeJS.ProcessEnv): Promise<string> {
  */
 export function apiGql(deps: ApiGqlDeps = {}): Gql {
   const doFetch = deps.fetch ?? globalThis.fetch;
-  const readToken = deps.readToken ?? (() => storedToken(deps.env));
+  const readToken = deps.readToken ?? (() => defaultGithubToken(deps.env));
   return async (query, variables) => {
     const token = await readToken();
     const res = await doFetch(API_URL, {
@@ -111,7 +94,7 @@ export function apiGql(deps: ApiGqlDeps = {}): Gql {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // no retry: the next poll is the retry
       redirect: 'manual', // the bearer never follows a redirect off the fixed host
     });
-    if (res.status === UNAUTHORIZED) deps.onUnauthorized?.();
+    if (res.status === UNAUTHORIZED) await unauthorized(deps, 'github api');
     if (!res.ok) throw new Error(`github api: HTTP ${res.status}`);
     const body: unknown = await res.json().catch(() => {
       throw new Error('github api: invalid JSON body'); // res.json() would quote the body
@@ -140,12 +123,13 @@ export function loggedGql(gql: Gql, log: Logger): Gql {
   };
 }
 
-export interface GqlForOptions { log?: Logger; ghToken?: GhToken; fetch?: typeof fetch }
+export interface GqlForOptions { log?: Logger; ghToken?: GhToken | SelectedGithub; fetch?: typeof fetch }
 
-// cli with the daemon's holder: gh is the credential only (#503). Without one (a caller that was not handed it) gh stays the transport
+// #959: with the account's holder both transports read as its login over HTTP, a stored login's 401 naming it. Without one (a caller that
+// was not handed it) cli stays on gh and api reads the only stored login
 function transportOf(auth: GithubAuth, { ghToken, fetch }: GqlForOptions): Gql {
-  if (auth === 'api') return apiGql({ fetch });
-  return ghToken ? apiGql({ fetch, readToken: ghToken.token, onUnauthorized: ghToken.invalidate }) : cliGql();
+  if (ghToken !== undefined) return apiGql({ fetch, readToken: ghToken.token, onUnauthorized: ghToken.invalidate, refusal: refusalOf(ghToken) });
+  return auth === 'api' ? apiGql({ fetch }) : cliGql();
 }
 
 /** The transport `auth.github` names, logged when the caller has a logger. The one place the choice is made. */

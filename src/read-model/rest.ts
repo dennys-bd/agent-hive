@@ -1,4 +1,5 @@
 import { bearer } from '../github-token.js';
+import { unauthorized } from '../github-account.js';
 const API_ORIGIN = 'https://api.github.com';
 const MS_PER_SECOND = 1000;
 // The two forms GitHub gives one repository's listing: by name, and by id in the Links of its later pages
@@ -71,8 +72,9 @@ function answerOf(status: number, headers: Headers, body: string, path: string):
 }
 
 export interface HttpRestDeps {
-  token: () => Promise<string>; // cli: the GhToken's; api: the stored one
+  token: () => Promise<string>; // the selected login's (#959): gh's when it is the machine's
   onUnauthorized?: () => void; // cli (#503): a 401 drops the held token; the next round reads it again
+  refusal?: () => Promise<string | undefined>; // #959: a stored login's 401 rejects naming it
   fetch?: typeof fetch; // tests inject; default Node's
 }
 
@@ -85,8 +87,8 @@ export function httpRest(deps: HttpRestDeps): RestGet {
       Authorization: bearer(await deps.token()), Accept: 'application/vnd.github+json', ...(etag === undefined ? {} : { 'If-None-Match': etag }),
     };
     const res = await doFetch(`${API_ORIGIN}/${path}`, { headers, redirect: 'manual', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (res.status === UNAUTHORIZED) deps.onUnauthorized?.();
     if (res.status !== 200) await res.body?.cancel(); // only a 200's body is read; cancelling frees the connection
+    if (res.status === UNAUTHORIZED) await unauthorized(deps, 'github rest');
     return answerOf(res.status, res.headers, res.status === 200 ? await res.text() : '', path);
   };
 }
