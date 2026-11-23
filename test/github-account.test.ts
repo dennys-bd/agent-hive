@@ -182,3 +182,11 @@ test('ghMachines wraps every machine the registry hands out once: local and for(
   assert.equal(r.calls[0]?.opts?.env?.GH_TOKEN, GH_TEST);
   assert.deepEqual([machines.local.id, machines.local.paths, machines.local.fs], [machine.id, machine.paths, machine.fs]);
 });
+
+test('ghMachines hands a machine that is not the local one only the selection\'s env, never the daemon\'s (#961)', async () => {
+  const r = recorder();
+  const remote = { ...fakeMachine({ exec: r.exec }), id: 'wsl:Ubuntu' };
+  const machines = ghMachines({ local: fakeMachine(), for: () => remote }, async () => ({ GH_TOKEN: GH_TEST }));
+  await machines.for({ machine: 'wsl:Ubuntu' }).exec('gh', ['api', 'user'], { timeout: 5 });
+  assert.deepEqual(r.calls[0]?.opts, { timeout: 5, env: { GH_TOKEN: GH_TEST } });
+});

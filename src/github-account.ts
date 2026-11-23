@@ -2,7 +2,7 @@
 import { readCredentials } from './credentials.js';
 import type { GhToken } from './github-token.js';
 import type { Machine, MachineExec, Machines } from './machine.js';
-import type { Config, Credentials, GithubAuth } from './types.js';
+import { type Config, type Credentials, type GithubAuth, LOCAL_MACHINE } from './types.js';
 
 export const NO_TOKEN_MESSAGE = 'no GitHub token: run `hive login` or connect in settings';
 const SEVERAL_MESSAGE = 'several GitHub logins are stored: choose one in "accounts.github"';
@@ -133,17 +133,20 @@ export async function ghEnvOf(account: Pick<GithubAccount, 'selection' | 'select
 
 /** An exec whose gh calls follow the selection (#961). A gh call with an env of its own (GhToken's, #960's login, Copilot's limits) and
  * any other file pass through; on the machine's login the options stay as given, so today's calls are byte for byte today's. */
-export function withGhEnv(exec: MachineExec, ghEnv: GhEnv): MachineExec {
+// base: what the env replaces. The local execFile replaces the whole env, so it gets the daemon's under the selection's; another machine
+// (a WSL distro) forwards each key by name and refuses PATH and names like ProgramFiles(x86), so it gets the selection's alone
+export function withGhEnv(exec: MachineExec, ghEnv: GhEnv, base: NodeJS.ProcessEnv = process.env): MachineExec {
   return async (file, args, opts) => {
     if (file !== 'gh' || opts?.env !== undefined) return exec(file, args, opts);
     const env = await ghEnv();
     if (Object.keys(env).length === 0) return exec(file, args, opts);
-    return exec(file, args, { ...opts, env: { ...process.env, ...env } });
+    return exec(file, args, { ...opts, env: { ...base, ...env } });
   };
 }
 
 /** The machine with its exec through withGhEnv (#961); everything else of it as it was. */
-export const withGhMachine = <M extends Pick<Machine, 'exec'>>(machine: M, ghEnv: GhEnv): M => ({ ...machine, exec: withGhEnv(machine.exec, ghEnv) });
+export const withGhMachine = <M extends Pick<Machine, 'exec'> & Partial<Pick<Machine, 'id'>>>(machine: M, ghEnv: GhEnv): M =>
+  ({ ...machine, exec: withGhEnv(machine.exec, ghEnv, machine.id === undefined || machine.id === LOCAL_MACHINE ? process.env : {}) });
 
 /** The registry with every machine it hands out gh-aware (#961), each wrapped once: a machine keeps one identity (distro-home.ts keys a WeakMap by it). */
 export function ghMachines(machines: Machines, ghEnv: GhEnv): Machines {
