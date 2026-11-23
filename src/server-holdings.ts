@@ -67,7 +67,7 @@ const prsOfRow = (state: Pick<State, 'activityRecords'>, row: WorktreeRow): read
   (row.task === undefined ? [] : recordOf(state, row.task.activityId)?.prs ?? []);
 
 async function holdingsOf(workspace: Workspace, state: State, deps: HoldingsRouteDeps): Promise<WorkspaceHoldings> {
-  const worktrees = await workspaceRows({ exec: deps.exec }, workspace, state); // decision 7: GET /worktrees' rows
+  const worktrees = await workspaceRows({ exec: deps.exec }, workspace, state, process.platform); // decision 7: GET /worktrees' rows; the holdings read runs on the host's git
   const branches = await Promise.all(worktrees.map((row) => unmergedOf(workspace.path, row, prsOfRow(state, row), deps))); // the listing's order
   const { name } = workspace;
   return { activities: heldActivities(state, name), worktrees, branches: branches.flat(), tasks: heldTasks(state, name), running: isRunningIn(state, name) };
