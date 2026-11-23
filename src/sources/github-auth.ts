@@ -78,7 +78,7 @@ export async function requestDeviceCode(deps: GithubLoginDeps = {}): Promise<Dev
 }
 
 // The token exists only here and as a header: the viewer call identifies the account, then both go to the store together.
-async function store(token: string, deps: GithubLoginDeps): Promise<string> {
+export async function store(token: string, deps: GithubLoginDeps): Promise<string> { // #960: gh's browser login stores through it too
   const data = (await apiGql({ fetch: deps.fetch, readToken: async () => token })(VIEWER)) as ViewerData;
   const login = data.viewer?.login;
   if (!login) throw new Error('github login: the token has no viewer');

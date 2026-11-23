@@ -242,6 +242,14 @@ export type ClaudeAddStatus =
   | { state: 'failed'; name: string; reason: 'exited' | 'timeout' | 'store' }
   | { state: 'cancelled'; name: string };
 
+/** #960: the GitHub login add, as GET /settings/github/add answers it. Never a token. */
+export type GithubAddStatus =
+  | { state: 'idle' }
+  | { state: 'pending'; code?: string; url?: string } // each once gh has printed it
+  | { state: 'connected'; login: string }
+  | { state: 'failed'; reason: 'exited' | 'token' | 'store' | 'timeout' }
+  | { state: 'cancelled' };
+
 /** The task filter's criteria and operators (#245), in the order the settings form lists them. */
 export const FILTER_FIELDS = ['assignee', 'label', 'milestone', 'repository', 'projectField', 'blocked'] as const;
 export const FILTER_OPS = ['any', 'none'] as const;

@@ -5,25 +5,57 @@ import express from 'express';
 import { readCredentials, saveGithubCredential } from '../src/credentials.js';
 import { createGithubAccount } from '../src/github-account.js';
 import type { GhToken } from '../src/github-token.js';
+import type { GithubAdd } from '../src/github-login-gh.js';
 import { registerGithubAccountRoutes } from '../src/server-github-accounts.js';
-import type { AccountsConfig } from '../src/types.js';
+import { createServer } from '../src/server.js';
+import type { AccountsConfig, GithubAddStatus } from '../src/types.js';
 import { fakeLog } from './fakes.js';
+import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
-interface Harness { base: string; env: NodeJS.ProcessEnv; lines: string[] }
+interface StubAdd { add: GithubAdd; cancels: number; closes: number }
+interface Harness { base: string; env: NodeJS.ProcessEnv; lines: string[]; stub: StubAdd }
+
+const PENDING: GithubAddStatus = { state: 'pending', code: 'AB12-CD34', url: 'https://github.com/login/device' };
+
+// The add as the routes see it: one pending at a time, counted cancels and closes. Its behaviour is test/github-login-gh.test.ts's
+function stubAdd(): StubAdd {
+  let status: GithubAddStatus = { state: 'idle' };
+  const stub: StubAdd = {
+    cancels: 0,
+    closes: 0,
+    add: {
+      start: () => {
+        if (status.state === 'pending') return undefined;
+        status = PENDING;
+        return status;
+      },
+      status: () => status,
+      cancel: () => {
+        stub.cancels += 1;
+        status = { state: 'cancelled' };
+      },
+      close: async () => {
+        stub.closes += 1;
+      },
+    },
+  };
+  return stub;
+}
 
 const machineAs = (login: string): GhToken => ({ login: async () => login, token: async () => { throw new Error('the machine token was read'); }, invalidate: () => undefined });
 
-// The routes alone on express, over a temp store holding bob and alice, gh's login `machine` and the saved selection `accounts`
+// The routes alone on express, over a temp store holding bob and alice, gh's login `machine`, the saved selection `accounts` and a stub add
 async function routes(t: TestContext, machine: string, accounts: AccountsConfig = {}): Promise<Harness> {
   const env = { XDG_CONFIG_HOME: await tempDir(t, 'gh-accounts-') };
   for (const login of ['bob', 'alice']) await saveGithubCredential(login, { token: `fake-${login}-token` }, env);
   const { log, lines } = fakeLog();
+  const stub = stubAdd();
   const app = express();
-  registerGithubAccountRoutes(app, { account: createGithubAccount({ machine: machineAs(machine), env }), accounts: () => accounts, log, env, queueSave: (save) => save() });
+  registerGithubAccountRoutes(app, { account: createGithubAccount({ machine: machineAs(machine), env }), accounts: () => accounts, log, env, queueSave: (save) => save(), add: stub.add });
   const server = app.listen(0);
   t.after(() => server.close());
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, env, lines };
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, env, lines, stub };
 }
 
 const remove = (h: Harness, login: string): Promise<Response> => fetch(`${h.base}/settings/github/accounts/${encodeURIComponent(login)}`, { method: 'DELETE' });
@@ -55,4 +87,36 @@ test('DELETE refuses the login accounts.github or accounts.copilot selects with 
   assert.deepEqual((await readCredentials(free.env)).github, { alice: { token: 'fake-alice-token' } });
   assert.ok(free.lines.includes('INFO github login removed: bob'));
   assert.ok(free.lines.every((line) => !line.includes('fake-')), free.lines.join('\n'));
+});
+
+test('POST /settings/github/add answers 202 with the status, then 409 add-pending; GET answers the status; DELETE cancels with 204 (#960)', async (t) => {
+  const h = await routes(t, '');
+  const url = `${h.base}/settings/github/add`;
+  const first = await fetch(url, { method: 'POST' });
+  assert.deepEqual([first.status, await first.json()], [202, PENDING]);
+  const second = await fetch(url, { method: 'POST' });
+  assert.deepEqual([second.status, await second.json()], [409, { error: 'add-pending' }]);
+  assert.deepEqual(await (await fetch(url)).json(), PENDING);
+  assert.equal((await remove(h, 'add')).status, 404, 'a login named add is still a login: its remove is not the cancel');
+  assert.equal(h.stub.cancels, 0);
+  assert.equal((await fetch(url, { method: 'DELETE' })).status, 204);
+  assert.equal(h.stub.cancels, 1);
+  assert.deepEqual(await (await fetch(url)).json(), { state: 'cancelled' });
+});
+
+test('the daemon serves the add routes outside requireLive, and its close closes the add (#960)', async (t) => {
+  const home = await tempDir(t, 'gh-add-home-');
+  const { log } = fakeLog();
+  const stub = stubAdd();
+  const server = createServer({ home, log, secret: SECRET, githubAdd: stub.add });
+  const port = await server.listen(undefined);
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${port}/settings/github/add`;
+  const res = await hiveFetch(url, { method: 'POST', headers: { 'x-hive-ui': '1' } });
+  assert.deepEqual([res.status, await res.json()], [202, PENDING]);
+  assert.deepEqual(await (await hiveFetch(url)).json(), PENDING);
+  assert.equal((await hiveFetch(url, { method: 'DELETE', headers: { 'x-hive-ui': '1' } })).status, 204);
+  assert.equal(stub.cancels, 1);
+  await server.close();
+  assert.equal(stub.closes, 1, 'a pending gh never outlives the daemon');
 });
