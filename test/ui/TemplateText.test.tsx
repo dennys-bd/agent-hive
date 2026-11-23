@@ -98,7 +98,7 @@ test('a note chip is plain text, not a button (#492)', async () => {
   expect(column.getByRole('button', { name: 'if a' })).toBeInTheDocument();
 });
 
-const agentAt = (line: number, severity: AgentAnnotation['severity']): AgentAnnotation => ({ line, severity, title: `t${line}${severity}`, body: 'b', source: 'agent' });
+const agentAt = (line: number, severity: AgentAnnotation['severity']): AgentAnnotation => ({ line, severity, title: `t${line}${severity}`, body: 'b', source: 'agent', kind: 'advice' });
 const annotationsOf = (list: readonly AgentAnnotation[]): MarginAnnotations => ({
   list, review: { config: { ...REVIEWER_DEFAULTS, when: 'demand', version: 'strict' }, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
   canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(), passage: vi.fn(),

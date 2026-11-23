@@ -72,7 +72,7 @@ test("a template with two contradicting conditional blocks answers the run's ann
   const { base, calls, use } = await serve(t, f, async () => answer([NOTE]));
   const [status, body] = await review(base, BUILD, BODY);
   assert.equal(status, 200, JSON.stringify(body));
-  assert.deepEqual(body, { annotations: [{ ...NOTE, source: 'agent' }] });
+  assert.deepEqual(body, { annotations: [{ ...NOTE, source: 'agent', kind: 'advice' }] });
   assert.deepEqual([calls[0].agent, 'model' in calls[0], calls[0].schema], ['claude', false, REVIEW_SCHEMA], 'defaultAgent, the CLI\'s model');
   const { prompt } = calls[0];
   assert.ok(prompt.startsWith('You review the shipped way.\n\n'), 'the shipped reviewer\'s body comes first, without its header');
@@ -175,4 +175,15 @@ test('a reviewer with model null runs its agent\'s default model; a reviewer nam
   const [status, body] = await review(off.base, BUILD, BODY);
   assert.deepEqual([status, body.code, body.error], [409, 'agent_unavailable', 'agent codex is disabled: enable it in Settings › execution › agents']);
   assert.equal(off.calls.length, 0);
+});
+
+test('a fix whose span is not in the posted text answers as an advice, one whose span is keeps its fix, and one review: warn line says how many and why (#981)', async (t) => {
+  const f = await reviewFixture(t);
+  const kept = { ...NOTE, line: 9, kind: 'fix', span: 'Never run the tests.', replacement: 'Skip the tests.' } as const;
+  const lost = { ...NOTE, line: 7, kind: 'fix', span: 'Run every test first.', replacement: 'Run the tests.' } as const;
+  const { base, lines } = await serve(t, f, async () => answer([kept, lost]));
+  const [status, body] = await review(base, BUILD, BODY);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.deepEqual(body, { annotations: [{ ...kept, source: 'agent' }, { ...NOTE, line: 7, source: 'agent', kind: 'advice' }] });
+  assert.deepEqual(lines.filter((l) => l.startsWith('WARN review:')), [`WARN review: ${BUILD} 1 fixes read as advice: line 7: the span is not on its line`]);
 });

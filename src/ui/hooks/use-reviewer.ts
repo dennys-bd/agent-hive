@@ -70,10 +70,13 @@ interface Ctx {
 const lineText = (lines: readonly string[], line: number): string => (lines[line - 1] ?? '').replace(/\r$/, '');
 const reviewUrl = (id: string): string => `/api/items/${encodeURIComponent(id)}/review`;
 
+type Field = 'line' | 'severity' | 'title' | 'body' | 'source' | 'kind' | 'span' | 'replacement';
+// #981: the two shapes the route answers, an advice or a fix with both its strings, so the card and the apply never check for a span
 function isAgentAnnotation(value: unknown): value is AgentAnnotation {
   if (typeof value !== 'object' || value === null) return false;
-  const a = value as Partial<Record<keyof AgentAnnotation, unknown>>;
-  return Number.isInteger(a.line) && SEVERITIES.includes(String(a.severity)) && typeof a.title === 'string' && typeof a.body === 'string' && a.source === 'agent';
+  const a = value as Partial<Record<Field, unknown>>;
+  const isFinding = Number.isInteger(a.line) && SEVERITIES.includes(String(a.severity)) && typeof a.title === 'string' && typeof a.body === 'string' && a.source === 'agent';
+  return isFinding && (a.kind === 'advice' || (a.kind === 'fix' && typeof a.span === 'string' && typeof a.replacement === 'string'));
 }
 // The route's answer checked at the boundary: another shape is a bad answer, as the route itself would call one
 function annotationsOf(answer: unknown): AgentAnnotation[] | undefined {

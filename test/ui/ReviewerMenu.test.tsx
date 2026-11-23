@@ -14,8 +14,8 @@ vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule
 
 // VARS_TEXT with e2eCommand valued in every workspace: one lint annotation, reviewDepth unused on line 6 (annotations.test.tsx's ONE_VARS)
 const ONE_VARS = VARS_TEXT.replace('{ hive-site: pnpm e2e,', '{ agent-hive: pnpm e2e, hive-site: pnpm e2e,');
-const ON_RUN: AgentAnnotation = { line: 11, severity: 'yellow', title: 'the commands run in no stated order', body: 'say whether the tests wait for e2e', source: 'agent' };
-const ON_DEPTH: AgentAnnotation = { line: 6, severity: 'yellow', title: 'reviewDepth reads like a level', body: 'name its values', source: 'agent' };
+const ON_RUN: AgentAnnotation = { line: 11, severity: 'yellow', title: 'the commands run in no stated order', body: 'say whether the tests wait for e2e', source: 'agent', kind: 'advice' };
+const ON_DEPTH: AgentAnnotation = { line: 6, severity: 'yellow', title: 'reviewDepth reads like a level', body: 'name its values', source: 'agent', kind: 'advice' };
 const SAVED: ReviewerConfig = { ...REVIEWER_DEFAULTS, when: 'demand', version: 'strict' };
 const echo = (_id: string, body: SaveBody): Response => json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text }));
 const serverOf = (extra: Partial<ItemsServer> = {}): ItemsServer => ({
@@ -154,7 +154,7 @@ test('without a scope (a non-markdown file) review now is disabled (#329)', asyn
 });
 
 const annotationsOf = (severities: readonly ('red' | 'yellow')[]): Annotations => ({
-  list: severities.map((severity, line): AgentAnnotation => ({ line, severity, title: `t${line}`, body: 'b', source: 'agent' })),
+  list: severities.map((severity, line): AgentAnnotation => ({ line, severity, title: `t${line}`, body: 'b', source: 'agent', kind: 'advice' })),
   review: { config: SAVED, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
   canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(),
 });

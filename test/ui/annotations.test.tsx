@@ -1,8 +1,13 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { removeVariable } from '../../src/template-edit';
 import { CARD_HEIGHT } from '@/lib/annotation-layout';
 import { setLanguage } from '@/i18n';
+import { AnnotationMargin } from '@/components/plugins/Annotations';
+import type { Annotations } from '@/hooks/use-annotations';
+import type { AgentAnnotation } from '../../src/reviewer';
+import type { LintAnnotation } from '../../src/template-lint';
+import { REVIEWER_DEFAULTS } from '../../src/types';
 import { FAKE_LINE_HEIGHT, FakeEditor, resetMonacoFakes } from './monaco-fake';
 import { CATALOGUE, type ItemsServer, json, readOf, type SaveBody, stubItems, VARS_ORIGINAL, VARS_TEXT } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
@@ -154,4 +159,68 @@ test("an open card that would pass the margin column grows upward, its bottom on
   fireEvent.click(within(card).getByRole('button', { name: BODY }));
   await waitFor(() => expect(card.style.bottom).toBe(`${200 - (5 * FAKE_LINE_HEIGHT + FAKE_LINE_HEIGHT)}px`));
   expect(card.style.top).toBe('');
+});
+
+// The margin on its own (#981): a lint fix, a lint advice, an agent fix and an agent advice, 200px apart, so each is a card
+const LINT_FIX: LintAnnotation = { line: 1, severity: 'yellow', check: 'unused', title: 'unused variable depth', body: 'b', variable: 'depth' };
+const LINT_ADVICE: LintAnnotation = { line: 20, severity: 'red', check: 'reference', title: 'unknown /nowhere', body: 'b', ref: '/nowhere' };
+const AGENT_FIX: AgentAnnotation = {
+  line: 40, severity: 'yellow', title: 'Ambiguous step', body: 'fine is not a check.', source: 'agent', kind: 'fix',
+  span: 'If it looks fine, continue to the PR.', replacement: 'If no finding is high or critical,\ncontinue to the PR.',
+};
+const AGENT_ADVICE: AgentAnnotation = { line: 60, severity: 'red', title: 'No tie-break', body: 'say whether the plan or the spec wins.', source: 'agent', kind: 'advice' };
+const ACTIONS = ['aplicar correção', 'pedir ao agente', 'dispensar'];
+type Stub = Annotations & { passage?(request: string, line: number): void };
+
+function marginOf(extra: Partial<Stub> = {}, canFix = true): Stub {
+  const annotations: Stub = {
+    list: [LINT_FIX, LINT_ADVICE, AGENT_FIX, AGENT_ADVICE],
+    review: { config: { ...REVIEWER_DEFAULTS, when: 'demand' }, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
+    canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(), passage: vi.fn(), ...extra,
+  };
+  render(<AnnotationMargin annotations={annotations} tops={[0, 200, 400, 600]} chipTops={[]} canFix={canFix} lineHeight={20} columnHeight={1000} />);
+  return annotations;
+}
+const card = (name: string): HTMLElement => screen.getByRole('article', { name });
+const actionsOf = (name: string): (string | null)[] =>
+  within(card(name)).getAllByRole('button').map((button) => button.textContent).filter((text) => ACTIONS.includes(text ?? ''));
+
+test.each([
+  ['pt', ['variável não usada depthcorreção', '/nowhere desconhecidaconselho', 'Ambiguous stepagentecorreção', 'No tie-breakagenteconselho']],
+  ['en', ['unused variable depthfix', 'unknown /nowhereadvice', 'Ambiguous stepagentfix', 'No tie-breakagentadvice']],
+] as const)('in %s, each card names its kind after its title, after the agent tag on an agent finding (#981)', (language, heads) => {
+  setLanguage(language);
+  marginOf();
+  expect(screen.getAllByRole('article').map((article) => article.firstElementChild?.textContent)).toEqual(heads);
+});
+
+test('an open agent fix shows its proposed fix, the span as − lines on diff-del and the replacement as + lines on diff-add, in foreground mono; closed, it does not (#981)', () => {
+  marginOf({ open: AGENT_FIX });
+  const group = within(card('Ambiguous step')).getByRole('group', { name: 'correção proposta' });
+  expect(group).toHaveClass('font-mono', 'text-foreground');
+  expect([...group.children].map((row) => [row.textContent, row.classList.contains('bg-diff-del') ? 'del' : 'add'])).toEqual([
+    ['−If it looks fine, continue to the PR.', 'del'], ['+If no finding is high or critical,', 'add'], ['+continue to the PR.', 'add'],
+  ]);
+  cleanup();
+  marginOf();
+  expect(screen.queryByRole('group', { name: 'correção proposta' })).not.toBeInTheDocument();
+});
+
+test('only a fix offers apply; only an agent advice offers ask the agent, which hands the bar its title: body and its line; every card keeps dismiss (#981)', () => {
+  const annotations = marginOf();
+  expect(['variável não usada depth', '/nowhere desconhecida', 'Ambiguous step', 'No tie-break'].map(actionsOf)).toEqual([
+    ['aplicar correção', 'dispensar'], ['dispensar'], ['aplicar correção', 'dispensar'], ['pedir ao agente', 'dispensar'],
+  ]);
+  fireEvent.click(within(card('No tie-break')).getByRole('button', { name: 'pedir ao agente' }));
+  expect(annotations.passage).toHaveBeenCalledWith('No tie-break: say whether the plan or the spec wins.', 60);
+  fireEvent.click(within(card('Ambiguous step')).getByRole('button', { name: 'aplicar correção' }));
+  expect(annotations.apply).toHaveBeenCalledWith(AGENT_FIX);
+});
+
+test("while the text is read-only neither apply nor ask the agent shows, and without the bar's entry point ask the agent does not either; dismiss stays (#981)", () => {
+  marginOf({}, false);
+  expect(['variável não usada depth', '/nowhere desconhecida', 'Ambiguous step', 'No tie-break'].map(actionsOf)).toEqual([['dispensar'], ['dispensar'], ['dispensar'], ['dispensar']]);
+  cleanup();
+  marginOf({ passage: undefined });
+  expect(actionsOf('No tie-break')).toEqual(['dispensar']);
 });
