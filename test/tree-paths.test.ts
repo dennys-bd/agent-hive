@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { HOST_PATHS } from './fake-machine.js';
-import { destination, existingItem, GIT_MESSAGE, newItem, type PathFs, refusal, rootsOf, sourceItem, treeFolder, treeItem } from '../src/tree-paths.js';
+import { linkedDisk } from './fixtures/linked-disk.js';
+import { destination, existingItem, GIT_MESSAGE, newItem, OUTSIDE_MESSAGE, type PathFs, refusal, rootsOf, sourceItem, treeFolder, treeItem } from '../src/tree-paths.js';
 
 // Every path exists and is its own real path, so only the guards under test can refuse
 const FS: PathFs = { realpath: async (path) => path, stat: async () => ({ isDirectory: () => true }), paths: HOST_PATHS };
@@ -28,3 +29,18 @@ test('treeFolder and treeItem check with the PathFs they are handed (#160)', asy
   assert.equal(await treeItem('/root', 'a.ts', FS), resolve('/root', 'a.ts'));
   assert.deepEqual(await treeItem('/root', '.git/x', FS), BAD);
 });
+
+for (const platform of ['linux', 'win32'] as const) {
+  test(`the guards on a fake ${platform} disk refuse ../x and a symlink out of the root and take an item inside it, whatever the host (#929)`, async () => {
+    const disk = linkedDisk(platform);
+    const fs: PathFs = { realpath: disk.realpath, stat: disk.stat, paths: disk.paths };
+    const roots = await rootsOf(disk.root, fs);
+    const OUT = refusal(400, OUTSIDE_MESSAGE);
+    for (const path of ['../x', 'link']) assert.deepEqual(await destination(roots, path, fs), OUT, `destination ${path}`);
+    for (const path of ['../x', 'link/new.ts']) assert.deepEqual(await newItem(roots, path, fs), OUT, `new ${path}`);
+    for (const path of ['../x.ts', 'link/b.ts']) assert.deepEqual(await sourceItem(roots, path, false, fs), OUT, `source ${path}`);
+    assert.equal(await destination(roots, 'sub', fs), disk.at('sub'));
+    assert.equal(await newItem(roots, 'sub/new.ts', fs), disk.at('sub', 'new.ts'));
+    assert.equal(await sourceItem(roots, 'a.ts', false, fs), disk.at('a.ts'));
+  });
+}

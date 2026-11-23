@@ -1,7 +1,7 @@
 // The files tree's path guards (#594, #818), shared by tree/move (server-move.ts) and the tree's own operations (server-tree-ops.ts): every
 // path a route takes is relative to the tree's root and stays inside it, as written and as real (a symlink out is refused), and never
-// reaches .git. Every disk touch goes through PathFs, so node:test can fake one.
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+// reaches .git. Every disk touch goes through PathFs, so node:test can fake one;
+// every path is joined and compared with its machine's paths (#929), so node:test fakes either flavour on any host.
 import { isInside } from './ide.js';
 import type { Machine } from './machine.js';
 import type { Refusal } from './server-tasks.js';
@@ -28,18 +28,20 @@ export const refusal = (status: number, message: string): Refusal => ({ status, 
 export const exists = (fs: PathFs, path: string): Promise<boolean> => fs.stat(path).then(() => true, () => false);
 export const isRootOrInside = (base: string, target: string, paths: PathFs['paths']): boolean => target === base || isInside(base, target, paths);
 // Any segment, not only the first (a nested checkout's .git/hooks runs code), and case-insensitive: APFS resolves `.GIT` to `.git` by default
-const isGitPath = (root: string, target: string): boolean => relative(root, target).split(sep).some((segment) => segment.toLowerCase() === '.git');
+const isGitPath = (root: string, target: string, paths: PathFs['paths']): boolean =>
+  paths.relative(root, target).split(paths.sep).some((segment) => segment.toLowerCase() === '.git');
 
 /** The folder a drop lands in (#594), or a terminal starts in (#818): relative ('' is the root), inside the root as written and as real (a
  *  symlink out is refused), and a folder. Its real path. */
 export async function destination({ root, realRoot }: Roots, into: string, fs: PathFs): Promise<string | Refusal> {
-  const target = resolve(root, into);
-  if (isAbsolute(into) || !isRootOrInside(root, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
-  if (isGitPath(root, target)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
+  const { paths } = fs;
+  const target = paths.resolve(root, into);
+  if (paths.isAbsolute(into) || !isRootOrInside(root, target, paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (isGitPath(root, target, paths)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
   const real = await fs.realpath(target).catch(() => undefined);
   if (real === undefined) return refusal(HTTP_BAD_REQUEST, FOLDER_MISSING_MESSAGE);
-  if (!isRootOrInside(realRoot, real, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
-  if (isGitPath(realRoot, real)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE); // a symlink to .git
+  if (!isRootOrInside(realRoot, real, paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (isGitPath(realRoot, real, paths)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE); // a symlink to .git
   const isFolder = await fs.stat(real).then((s) => s.isDirectory(), () => false);
   return isFolder ? real : refusal(HTTP_BAD_REQUEST, FOLDER_MISSING_MESSAGE);
 }
@@ -48,42 +50,45 @@ export async function destination({ root, realRoot }: Roots, into: string, fs: P
  *  inside the root like `into`; an absolute one is only ever a Finder file, copied in, and may be anywhere (the daemon's secret gates the
  *  route, #467). */
 export async function sourceItem({ root, realRoot }: Roots, source: string, copy: boolean, fs: PathFs): Promise<string | Refusal> {
-  const isFromFinder = isAbsolute(source);
+  const { paths } = fs;
+  const isFromFinder = paths.isAbsolute(source);
   // A move would remove the original, and an absolute path may lie anywhere: only a copy may take one in (Finder's drop always copies)
   if (isFromFinder && !copy) return refusal(HTTP_BAD_REQUEST, ABSOLUTE_MOVE_MESSAGE);
-  const target = resolve(root, source);
-  if (!isFromFinder && !isInside(root, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
-  if (!isFromFinder && isGitPath(root, target)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
-  const parent = await fs.realpath(dirname(target)).catch(() => undefined);
+  const target = paths.resolve(root, source);
+  if (!isFromFinder && !isInside(root, target, paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (!isFromFinder && isGitPath(root, target, paths)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
+  const parent = await fs.realpath(paths.dirname(target)).catch(() => undefined);
   if (parent === undefined) return refusal(HTTP_NOT_FOUND, MISSING_FILE_MESSAGE);
-  const item = join(parent, basename(target));
-  if (!isFromFinder && !isInside(realRoot, item, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
-  if (!isFromFinder && isGitPath(realRoot, item)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE); // a symlinked parent to .git
+  const item = paths.join(parent, paths.basename(target));
+  if (!isFromFinder && !isInside(realRoot, item, paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (!isFromFinder && isGitPath(realRoot, item, paths)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE); // a symlinked parent to .git
   return (await exists(fs, item)) ? item : refusal(HTTP_NOT_FOUND, MISSING_FILE_MESSAGE);
 }
 
 /** An existing item of the tree (#818): a relative path, checked as a dragged one is; an absolute one is refused. */
 export const existingItem = (roots: Roots, path: string, fs: PathFs): Promise<string | Refusal> =>
-  (isAbsolute(path) ? Promise.resolve(refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE)) : sourceItem(roots, path, false, fs));
+  (fs.paths.isAbsolute(path) ? Promise.resolve(refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE)) : sourceItem(roots, path, false, fs));
 
 // `target` through the deepest folder above it that exists, made real: the root always exists, so the walk ends there at the latest
 async function throughNearestReal(root: string, target: string, fs: PathFs): Promise<string> {
-  for (let folder = dirname(target); ; folder = dirname(folder)) {
+  const { paths } = fs;
+  for (let folder = paths.dirname(target); ; folder = paths.dirname(folder)) {
     const real = await fs.realpath(folder).catch(() => undefined);
-    if (real !== undefined) return join(real, relative(folder, target));
-    if (folder === root || folder === dirname(folder)) return target;
+    if (real !== undefined) return paths.join(real, paths.relative(folder, target));
+    if (folder === root || folder === paths.dirname(folder)) return target;
   }
 }
 
 /** A path that may not exist yet (#818): a new file or folder, a rename's target. Relative, inside the root as written and through its
  *  nearest existing folder's real path (a symlink out is refused), never under .git. Its real-based absolute path. */
 export async function newItem({ root, realRoot }: Roots, path: string, fs: PathFs): Promise<string | Refusal> {
-  const target = resolve(root, path);
-  if (isAbsolute(path) || !isInside(root, target, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
-  if (isGitPath(root, target)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
+  const { paths } = fs;
+  const target = paths.resolve(root, path);
+  if (paths.isAbsolute(path) || !isInside(root, target, paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  if (isGitPath(root, target, paths)) return refusal(HTTP_BAD_REQUEST, GIT_MESSAGE);
   const item = await throughNearestReal(root, target, fs);
-  if (!isInside(realRoot, item, fs.paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
-  return isGitPath(realRoot, item) ? refusal(HTTP_BAD_REQUEST, GIT_MESSAGE) : item;
+  if (!isInside(realRoot, item, paths)) return refusal(HTTP_BAD_REQUEST, OUTSIDE_MESSAGE);
+  return isGitPath(realRoot, item, paths) ? refusal(HTTP_BAD_REQUEST, GIT_MESSAGE) : item;
 }
 
 /** Once each (#594): a repeated item, or one under another item, would fail on a path the first already moved or trashed. */
