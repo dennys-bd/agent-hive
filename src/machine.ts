@@ -119,13 +119,14 @@ export interface RunProcess {
 /** Never a rejection: failure says why a run did not end with 0. code: the exit code, a signal, timeout / stopped / too_large, or an errno. */
 export interface RunResult { code: number | string; stdout: Buffer; stderr: string; tail: string; failure?: string }
 
-/** An agent run's inputs: AgentRun without what the machine fills from its own disk and daemon. */
-export type RunInputs = Omit<AgentRun, 'ptyId' | 'cwd' | 'port' | 'hooksPath' | 'mcpPath' | 'protocolPath' | 'protocolText'>;
+/** An agent run's inputs: AgentRun without what the machine fills from its own disk and daemon, its plugin folders included (#947). */
+export type RunInputs = Omit<AgentRun, 'ptyId' | 'cwd' | 'port' | 'hooksPath' | 'mcpPath' | 'protocolPath' | 'protocolText' | 'pluginDir' | 'lspPluginDir'>;
 
 /** A pty launch with no host path in it (#158): the files' contents instead, which the machine writes on its own disk. */
 export interface RunSpec {
   ptyId: string;
   slug: string;
+  workspace: string; // the workspace's name: the machine resolves its plugin folders and anything else of the workspace on its own disk (#947)
   cwd: string;
   terminal?: true;
   run?: { command: string; env: Record<string, string> };

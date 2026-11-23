@@ -25,9 +25,9 @@ export interface AgentRun {
   withHive: boolean; // #927: the run has the Hive's MCP server; every run the Hive launches does (#256), only the runners' own tests pass false
   external: readonly RunMcpServer[]; // #333: the external MCP servers of the run's workspace (Codex renders its -c overrides from the run)
   hooksPath: string;
-  pluginDir: string;
+  pluginDir: string; // #947: the machine fills it from RunSpec.workspace, so RunInputs omits it; the capture route sets its own
   mcpPath?: string;
-  lspPluginDir?: string;
+  lspPluginDir?: string; // #803, #947: the workspace's language-server plugin, filled as pluginDir is
   protocolPath?: string;
   protocolText?: string; // #927: protocolPath's content, read by the shared spawn, for an agent that takes the protocol as text (Codex)
   notice?: string; // #875: a copy's notice, for a runner whose copyNotice is 'instructions' (Copilot's one -i holds /fork)

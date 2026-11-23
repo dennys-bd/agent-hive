@@ -344,7 +344,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #158: every task's machine; #931: a wsl: id gets a machine that refuses every call until 5.3 hands a factory. listen() binds the port after this
   const machines = deps.machines ?? createMachines({
     local: createLocalMachine({
-      exec, launch, ...spawnOptions, home, secret: deps.secret, agents,
+      exec, launch, ...spawnOptions, home, secret: deps.secret, agents, pluginDir: pluginRender.dir, lspDir: workerLsp.dir, // #947: what a RunSpec's workspace resolves to
       port: () => {
         if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
         return boundPort;
@@ -364,7 +364,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const runAccounts = createRunAccounts();
   const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv) });
   const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
-  const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them

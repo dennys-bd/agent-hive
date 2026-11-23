@@ -78,12 +78,12 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
   // The command's pty, launched as a command terminal is: the worktree as cwd, the workspace's env under the command's own; its output fed
   // to the stage's channel and kept as a bounded tail. Its timeout kills it through the pool, never through the reducer's stop, which would
   // drop the run and lose the verdict
-  async function start({ activity, task, stage, at, ptyId }: StageCommandEffect, command: ResolvedCommand, cwd: string, env: Record<string, string>): Promise<void> {
+  async function start({ activity, task, stage, at, ptyId }: StageCommandEffect, command: ResolvedCommand, cwd: string, workspace: string, env: Record<string, string>): Promise<void> {
     const ended = (code: number, output: string): void => void dispatch({ type: 'stageCommandEnded', activityId: activity.id, ptyId, code, output });
     pool.start({
       ptyId,
       machine: deps.machineFor(activity),
-      spec: { ptyId, slug: activity.slug ?? slugFor(task.item), cwd, env, terminal: true, run: { command: command.command, env: command.env } },
+      spec: { ptyId, slug: activity.slug ?? slugFor(task.item), workspace, cwd, env, terminal: true, run: { command: command.command, env: command.env } },
       onExit: () => undefined, // the end and its code come from the pty host's subscription below; the pool's exit carries no code
       onError: (message) => void dispatch({ type: 'error', message: `stage ${stage.name}: ${message}` }),
       onSpawnFailed: (message) => ended(NOT_STARTED_EXIT, message),
@@ -147,7 +147,7 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
     if (cwd === undefined) return;
     const command = commandIn(commands, workspace.name, names[at] ?? '');
     if (command === undefined) return skip(effect, workspace.name);
-    await start(effect, command, cwd, await runEnv(deps.machineFor(activity), workspace)); // #854: a fork's GH_REPO under the workspace's env
+    await start(effect, command, cwd, workspace.name, await runEnv(deps.machineFor(activity), workspace)); // #854: a fork's GH_REPO under the workspace's env
   }
 
   return { run };

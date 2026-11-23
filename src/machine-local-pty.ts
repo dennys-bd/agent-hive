@@ -1,6 +1,7 @@
 // The local machine's ptys (#158): a RunSpec's files written under the home where today's spawns put them, so `pkill -f <ptyId>.mcp.json`
 // still matches, then today's PtyLaunch through the daemon's own launcher, whose `sh -c ptyCommand` stays in spawn-internal.ts where it is
-// tested. The machine's own paths enter the argv only here, so node 8's remote machine renders the same argv over its own.
+// tested. The machine's own paths enter the argv only here, so node 8's remote machine renders the same argv over its own. The plugin
+// folders are the machine's to fill too, from the spec's workspace (#947): a distro's disk has its own copy, the host's is no use there.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AGENTS } from './agents.js';
@@ -26,6 +27,8 @@ export interface LocalPtyDeps {
   port(): number; // bound by listen() after the machines are built
   env: NodeJS.ProcessEnv; // the daemon's: what agentCommand looks the agent up in
   platform: NodeJS.Platform;
+  pluginDir(workspace: string): string; // #316, #947: the workspace's rendered plugin folder (pluginRender.dir); throws when it has none
+  lspDir(workspace: string): string | undefined; // #803, #947: its language-server plugin as the last write left it (workerLsp.dir)
 }
 
 type AgentSpec = NonNullable<RunSpec['agent']>;
@@ -55,6 +58,9 @@ async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec):
   const { ptyId, cwd } = spec;
   requirePlainName(ptyId);
   if (spec.prompt !== undefined) requirePlainName(spec.prompt.name);
+  // Before any write: a workspace with no rendered folder writes nothing and rejects started, as a bad name does
+  const pluginDir = deps.pluginDir(spec.workspace);
+  const lsp = deps.lspDir(spec.workspace);
   const dir = join(deps.home, PROMPTS_DIR);
   const port = deps.port();
   const runner = runners[agent.id];
@@ -65,7 +71,7 @@ async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec):
     protocolFile(dir, ptyId, spec.protocol),
   ]);
   const protocol = protocolPath === undefined || spec.protocol === undefined ? {} : { protocolPath, protocolText: spec.protocol };
-  const run: AgentRun = { ...agent.run, ptyId, cwd, port, hooksPath: hooksPath(deps.home), mcpPath, ...protocol };
+  const run: AgentRun = { ...agent.run, ptyId, cwd, port, hooksPath: hooksPath(deps.home), mcpPath, pluginDir, ...(lsp === undefined ? {} : { lspPluginDir: lsp }), ...protocol };
   const argv = agent.copy ? runner.copy(run, agent.copy.from, agent.copy.name) : runner.launch(run);
   if (argv === undefined) throw new Error(`${AGENTS[agent.id].label} cannot copy a session`);
   await writeRunFiles(runner.runFiles(run)); // #873: the run's own files (Copilot's protocol), before its pty reads them

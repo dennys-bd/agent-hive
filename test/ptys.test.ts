@@ -7,7 +7,7 @@ import { fakeMachine, fakeSpawn, type FakeSpawnOptions, type FakeWorker, LAUNCH 
 const noop = (): void => {};
 const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-const SPEC: RunSpec = { ptyId: 'W1', slug: 'hive-1-task', cwd: '/repo/.hive/worktrees/hive-1-task' };
+const SPEC: RunSpec = { ptyId: 'W1', slug: 'hive-1-task', workspace: 'hive', cwd: '/repo/.hive/worktrees/hive-1-task' };
 
 // A machine whose pty.spawn is fakeSpawn's: each spec it was handed, in order, and the workers to drive
 function machineOver(options: FakeSpawnOptions = {}): { machine: Machine; specs: RunSpec[]; workers: FakeWorker[] } {
