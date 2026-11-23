@@ -122,6 +122,7 @@ import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { accountsRefusal } from './accounts-config.js';
+import { accountEnv, createRunAccounts, type AccountEnvDeps, type AccountSeam } from './account-env.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
@@ -180,6 +181,7 @@ export interface Runtime {
 
 export interface ServerDeps {
   treeWatch?: TreeWatch; // #502: the files sidebar's watches; tests inject a recording fake, the default watches each root on its activity's machine (#935)
+  accountEnv?: typeof accountEnv; // #953: tests: a seam that refuses where no runner is asked (a terminal); the default is account-env.ts'
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
@@ -342,7 +344,11 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ghToken }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
-  const spawner = createRunSpawner({ pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
+  const runAccounts = createRunAccounts();
+  const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv) });
+  const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
+  const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
@@ -513,6 +519,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // sources against the runtime this event actually reduced against, never whatever live.runtime holds by the time it runs.
     const runtime = live.runtime;
     live = { runtime, state: result.state };
+    if (event.type === 'exit' || event.type === 'spawnFailed') runAccounts.drop(event.ptyId); // #953: a run's accounts live as long as it does
     if (event.type === 'exit') semaphores?.ended(event.ptyId); // #798: a captured session ending inside its terminal frees what its run holds
     backoffs.sync(result.state.workers); // #805: a new wait arms its timer, a resumed or gone run's goes
     keepAwake.sync(result.state.keepAwake === true); // #226: every path that sets or clears it; before the effects, so the shutdown's drain releases it first
