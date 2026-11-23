@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { XIcon } from 'lucide-react';
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { LintAnnotation, LintCheck, Severity } from '../../../template-lint';
 import { Button } from '@/components/ui/button';
 import { type Annotations, checkOf, type EditorAnnotation, isAgent } from '@/hooks/use-annotations';
 import { type MessageKey, t } from '@/i18n';
 import { hasFix } from '@/lib/annotation-fix';
-import { CARD_HEIGHT, layoutMargin } from '@/lib/annotation-layout';
+import { CARD_HEIGHT, layoutMargin, openPlacement } from '@/lib/annotation-layout';
 
 // A headline and a body per check: the lint's own title and body are English, so the card fills the viewer's language from the fields
 const COPY: Record<LintCheck, { title: MessageKey; body: MessageKey }> = {
@@ -34,21 +35,42 @@ const keyOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.ti
 export const headlineOf = (a: EditorAnnotation): string => (isAgent(a) ? a.title : t(COPY[a.check].title, varsOf(a)));
 const bodyOf = (a: EditorAnnotation): string => (isAgent(a) ? a.body : t(COPY[a.check].body, varsOf(a)));
 
-interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number; canFix: boolean }
+interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number; canFix: boolean; lineHeight: number; columnHeight: number }
+type Place = Pick<SlotProps, 'top' | 'lineHeight' | 'columnHeight'>;
 
-function Card({ annotation, annotations, top, canFix }: SlotProps) {
+// #980: closed, the card is as tall as the layout reserves; open, it is its content's height, measured once drawn, placed by openPlacement
+function useCardPlace(isOpen: boolean, annotation: EditorAnnotation, { top, lineHeight, columnHeight }: Place) {
+  const ref = useRef<HTMLElement>(null);
+  const [height, setHeight] = useState<number>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: annotation is a trigger, not read inside: another text is another height
+  useLayoutEffect(() => { setHeight(isOpen ? ref.current?.offsetHeight : undefined); }, [isOpen, annotation]);
+  let style: CSSProperties = { top, height: CARD_HEIGHT };
+  if (isOpen) style = height === undefined ? { top } : openPlacement(top, height, lineHeight, columnHeight);
+  return { ref, style };
+}
+
+function Card({ annotation, annotations, canFix, ...place }: SlotProps) {
   const isOpen = annotations.open === annotation;
+  const { ref, style } = useCardPlace(isOpen, annotation, place);
   return (
     <article
-      aria-label={headlineOf(annotation)} data-open={isOpen} style={{ top, height: CARD_HEIGHT }}
-      className={`absolute right-2 left-2 flex flex-col gap-1.5 overflow-hidden rounded-[6px] border bg-card px-2.5 py-2 text-xs ${EDGE[annotation.severity]} ${isOpen ? 'z-10 ring-1 ring-ring' : ''}`}
+      ref={ref} aria-label={headlineOf(annotation)} data-open={isOpen} style={style}
+      className={`absolute right-2 left-2 flex flex-col gap-1.5 rounded-[6px] border bg-card px-2.5 py-2 text-xs ${EDGE[annotation.severity]} ${isOpen ? 'z-10 ring-1 ring-ring' : 'overflow-hidden'}`}
     >
       <span className="flex min-w-0 items-center gap-1.5 font-semibold">
-        <span className="truncate">{headlineOf(annotation)}</span>
+        <span className={isOpen ? 'min-w-0' : 'truncate'}>{headlineOf(annotation)}</span>
         {/* #329: the issue's "marked as the agent's", after the title (#492); the severity stays the card's one colour */}
         {isAgent(annotation) && <span className="shrink-0 rounded border px-1 font-normal text-muted-foreground">{t('plugins.annotations.agent')}</span>}
+        {isOpen && (
+          <Button type="button" size="icon-xs" variant="ghost" aria-label={t('plugins.annotations.close')} title={t('plugins.annotations.closeHint')} onClick={annotations.close} className="ml-auto shrink-0">
+            <XIcon />
+          </Button>
+        )}
       </span>
-      <p className="line-clamp-2 text-soft">{bodyOf(annotation)}</p>
+      {/* #980: closed, two lines of the body open the card; open, the whole body is text to select */}
+      {isOpen
+        ? <p className="cursor-text text-soft">{bodyOf(annotation)}</p>
+        : <button type="button" onClick={() => annotations.openAt(annotation)} className="line-clamp-2 cursor-pointer text-left text-soft hover:text-foreground">{bodyOf(annotation)}</button>}
       {!isAgent(annotation) && ENGINE_CHECKS.includes(annotation.check) && <p title={annotation.title} className="truncate font-mono text-muted-foreground">{annotation.title}</p>}
       <span className="mt-auto flex gap-1.5">
         {canFix && hasFix(annotation) && <Button type="button" size="xs" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
@@ -70,9 +92,10 @@ function Note({ annotation, annotations, top }: SlotProps) {
 }
 
 /** The margin's annotations (#327, handoff 11b): a card where it covers nothing, else a one-line note that opens it. The open one is always a
- * card, drawn over the rest; Esc closes it. `tops[i]` is `annotations.list[i]`'s top, as the chips' are theirs. #331: no fix while the text
+ * card, drawn over the rest, whole and growing upward near the column's end (#980); × or Esc closes it. `tops[i]` is `annotations.list[i]`'s top, as the chips' are theirs. #331: no fix while the text
  * is read-only (the agent working or proposing, the read-only original). */
-export function AnnotationMargin({ annotations, tops, chipTops, canFix = true }: { annotations: Annotations; tops: readonly number[]; chipTops: readonly number[]; canFix?: boolean }) {
+interface MarginProps { annotations: Annotations; tops: readonly number[]; chipTops: readonly number[]; canFix?: boolean; lineHeight: number; columnHeight: number }
+export function AnnotationMargin({ annotations, tops, chipTops, canFix = true, lineHeight, columnHeight }: MarginProps) {
   const { list, open, close } = annotations;
   useEffect(() => {
     if (open === undefined) return undefined;
@@ -88,7 +111,7 @@ export function AnnotationMargin({ annotations, tops, chipTops, canFix = true }:
       {list.map((annotation, index) => {
         const slot = slots[index];
         const Slot = slot.kind === 'card' || annotation === open ? Card : Note;
-        return <Slot key={keyOf(annotation)} annotation={annotation} annotations={annotations} top={slot.top} canFix={canFix} />;
+        return <Slot key={keyOf(annotation)} annotation={annotation} annotations={annotations} top={slot.top} canFix={canFix} lineHeight={lineHeight} columnHeight={columnHeight} />;
       })}
     </div>
   );

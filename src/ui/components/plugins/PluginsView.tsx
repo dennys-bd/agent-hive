@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { CatalogueItem } from '../../../types';
 import { HeaderSlot } from '@/components/HeaderSlot';
 import { ListScreen } from '@/components/plugins/ListScreen';
@@ -23,11 +24,12 @@ interface PluginsViewProps {
  * while the view is shown, so the slot holds its head and no other view's. */
 export function PluginsView({ plugins, editor, annotations, protocol, workspaces, fontFamily, pick, onPick }: PluginsViewProps) {
   const { screen } = plugins;
+  const [isMarginOpen, setMarginOpen] = useState(true); // #980: the view's, in memory: it holds across items and files, and a reload opens it
   return (
     <div data-plugins-screen={screen.kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <HeaderSlot><PluginsHead plugins={plugins} editor={editor} annotations={annotations} workspaces={workspaces} /></HeaderSlot>
       {screen.kind === 'list' && <ListScreen key={screen.section} plugins={plugins} section={screen.section} workspaces={workspaces} />}
-      {editor.item && <SkillEditor editor={editor} annotations={annotations} items={plugins.items ?? NO_ITEMS} workspaces={workspaces} fontFamily={fontFamily} pick={pick} onPick={onPick} />}
+      {editor.item && <SkillEditor editor={editor} annotations={annotations} items={plugins.items ?? NO_ITEMS} workspaces={workspaces} fontFamily={fontFamily} pick={pick} onPick={onPick} isMarginOpen={isMarginOpen} onMargin={setMarginOpen} />}
       {screen.kind === 'update' && <UpdateScreen key={`${screen.id}/${screen.version}`} plugins={plugins} id={screen.id} version={screen.version} />}
       {screen.kind === 'mcp' && <McpScreen plugins={plugins} workspaces={workspaces} />}
       {screen.kind === 'protocol' && <ProtocolScreen protocol={protocol} workspaces={workspaces} />}

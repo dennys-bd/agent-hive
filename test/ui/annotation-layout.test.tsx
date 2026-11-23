@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { parseTemplate } from '../../src/template';
 import type { LintAnnotation } from '../../src/template-lint';
 import { buildMap } from '../../src/template-map';
-import { dotsOf, layoutMargin, NOTE_HEIGHT, underlinesOf } from '@/lib/annotation-layout';
+import { dotsOf, glyphsOf, layoutMargin, NOTE_HEIGHT, openPlacement, underlinesOf } from '@/lib/annotation-layout';
 import { BUILD_TEXT } from './plugins-fixtures';
 
 const at = (line: number, severity: LintAnnotation['severity'] = 'yellow'): LintAnnotation => ({ line, severity, check: 'reference', title: `t${line}`, body: '' });
@@ -25,5 +25,20 @@ test('an underline runs from the first non-blank column to the end of each annot
   expect(underlinesOf([at(1, 'red'), at(2), at(3, 'red'), at(4)], 'a\n  b c\n   \n')).toEqual([
     { line: 1, from: 1, className: 'template-annotation-red' },
     { line: 2, from: 3, className: 'template-annotation-yellow' },
+  ]);
+});
+
+test('an open card that fits keeps its top; one that would pass the column anchors its bottom to its line, even when taller than the column (#980)', () => {
+  expect(openPlacement(40, 100, 18, 300)).toEqual({ top: 40 });
+  expect(openPlacement(200, 100, 18, 300)).toEqual({ top: 200 }); // ends exactly at the column's bottom: fits
+  expect(openPlacement(250, 100, 18, 300)).toEqual({ bottom: 300 - (250 + 18) });
+  // taller than the column: the bottom still sits at the line, the top goes above the column (300 - 262 - 400 < 0)
+  expect(openPlacement(20, 400, 18, 300)).toEqual({ bottom: 262 });
+});
+
+test('a dot per shown line, at the line anchorOf gives, red over yellow (#980)', () => {
+  const shown = (line: number): number => (line === 7 ? 5 : line); // 7 is hidden, drawn at 5 as its card would be
+  expect(glyphsOf([at(3), at(5, 'red'), at(3, 'red'), at(7), at(9)], shown)).toEqual([
+    { line: 3, severity: 'red' }, { line: 5, severity: 'red' }, { line: 9, severity: 'yellow' },
   ]);
 });

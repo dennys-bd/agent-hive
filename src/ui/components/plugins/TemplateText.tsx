@@ -1,11 +1,13 @@
 import type { editor, IRange } from 'monaco-editor';
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationMargin } from '@/components/plugins/Annotations';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import type { Annotations } from '@/hooks/use-annotations';
+import type { Annotations, EditorAnnotation } from '@/hooks/use-annotations';
 import type { LineSelection } from '@/lib/assist-view';
 import { t } from '@/i18n';
+import { type Glyph, glyphsOf } from '@/lib/annotation-layout';
 import { languageOf, loadMonaco } from '@/lib/editor-models';
+import type { Severity } from '../../../template-lint';
 import { type Chip, type Decoration, isMarkdown, type LineRange } from '@/lib/template-view';
 
 type View = editor.IStandaloneCodeEditor;
@@ -24,6 +26,8 @@ export interface TemplateTextProps {
   isProposal?: boolean; // #331: the text is an agent's proposal look; only a flip swaps the model's text
   onSelection?(lines: LineSelection | undefined): void; // #331: the selection's lines, undefined when it is empty
   onCaret?(line: number): void; // #492: the caret's line, for the map to raise its block
+  isMarginOpen?: boolean; // #980: the view's switch, open when absent; closed, no column and a dot per annotated line in the glyph margin
+  onDot?(annotation: EditorAnnotation): void; // #980: a click on a dot, with its line's first annotation
 }
 
 const SAME_LINE = (line: number): number => line;
@@ -42,11 +46,25 @@ function toDecoration(d: Decoration): editor.IModelDeltaDecoration {
   const range = { startLineNumber: d.line, startColumn: d.from ?? 1, endLineNumber: d.line, endColumn: d.to ?? LAST_COLUMN };
   return { range, options: d.isBackground === true ? { isWholeLine: true, className: d.className } : { inlineClassName: d.className } };
 }
+const NO_MARKS: readonly EditorAnnotation[] = [];
+const NO_GLYPHS: readonly Glyph[] = [];
+const GLYPH: Record<Severity, string> = { red: 'template-glyph-red', yellow: 'template-glyph-yellow' }; // index.css
+// #980: a dot in the glyph margin, which Monaco already reserves left of the numbers, so the text keeps its width
+const toGlyph = ({ line, severity }: Glyph): editor.IModelDeltaDecoration => ({
+  range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 }, options: { glyphMarginClassName: GLYPH[severity] },
+});
+// #980: dots stand only while the margin is closed, at the line a card would sit on; a click gives that line's first annotation
+function dotAt({ isMarginOpen = true, annotations, anchorOf = SAME_LINE, onDot }: TemplateTextProps, line: number): void {
+  if (isMarginOpen) return;
+  const annotation = annotations?.list.find((a) => anchorOf(a.line) === line);
+  if (annotation !== undefined) onDot?.(annotation);
+}
 
 // The editor over a model of its own, made per modelKey and disposed with it: the buffer is useItemEditor's, the model only shows it. The
 // latest props reach Monaco's listeners through a ref
-function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: TemplateTextProps): View | undefined {
+function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: TemplateTextProps): { view: View | undefined; lineHeight: number } {
   const [view, setView] = useState<View>();
+  const [lineHeight, setLineHeight] = useState(0);
   const latest = useRef(props);
   useEffect(() => { latest.current = props; });
   const { modelKey, path } = props;
@@ -65,16 +83,20 @@ function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: Templa
       // a text the props gave is not reported back as an edit
       const typing = model.onDidChangeContent(() => { if (model.getValue() !== latest.current.text) latest.current.onChange(model.getValue()); });
       const selecting = open.editor.onDidChangeCursorSelection(({ selection }) => latest.current.onSelection?.(selectedLines(selection)));
+      const clicking = open.editor.onMouseDown(({ target }) => {
+        if (target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) dotAt(latest.current, target.position?.lineNumber ?? 0);
+      });
+      setLineHeight(open.editor.getOption(monaco.editor.EditorOption.lineHeight)); // #980: an open card that grows upward ends at its line's bottom
       setView(open.editor);
-      dispose = () => { typing.dispose(); selecting.dispose(); open.dispose(); model.dispose(); };
+      dispose = () => { typing.dispose(); selecting.dispose(); clicking.dispose(); open.dispose(); model.dispose(); };
     });
     return () => { live = false; dispose(); setView(undefined); };
   }, [host, modelKey, path]);
-  return view;
+  return { view, lineHeight };
 }
 
 // What the props say Monaco shows: the text, read-only and the font, the hidden lines, the marks, and the cursor of a map click
-function useLook(view: View | undefined, { text, isProposal = false, isReadOnly, fontFamily, hidden, decorations, reveal }: TemplateTextProps): void {
+function useLook(view: View | undefined, { text, isProposal = false, isReadOnly, fontFamily, hidden, decorations, reveal }: TemplateTextProps, glyphs: readonly Glyph[]): void {
   // #331: a swap into or out of a proposal sets the value, which clears the undo stack, so ⌘Z after a discard cannot bring the proposal back
   // into the buffer; any other text is a move, one undoable edit. setValue's content event stays quiet: the latest text prop is the new text
   const shownProposal = useRef(isProposal);
@@ -96,9 +118,9 @@ function useLook(view: View | undefined, { text, isProposal = false, isReadOnly,
   useEffect(() => {
     if (view === undefined) return undefined;
     const marks = view.createDecorationsCollection();
-    marks.set(decorations.map(toDecoration));
+    marks.set([...decorations.map(toDecoration), ...glyphs.map(toGlyph)]);
     return () => marks.clear();
-  }, [view, decorations]);
+  }, [view, decorations, glyphs]);
   // A reveal is one click: a view rebuilt for another "view as" must not replay the last one on lines of the old look
   const applied = useRef<number>(undefined);
   useEffect(() => {
@@ -130,6 +152,22 @@ function useCaret(view: View | undefined, onCaret: TemplateTextProps['onCaret'])
     const moving = view.onDidChangeCursorPosition(({ position }) => latest.current?.(position.lineNumber));
     return () => moving.dispose();
   }, [view]);
+}
+
+// #980: the margin column's height, in state, so the render that mounts the column (a dot reopening the margin with its card open) re-renders
+// once it is known, and a resize re-places an open card. A callback ref, since the column mounts and unmounts with the switch
+function useColumnHeight(): [(element: HTMLDivElement | null) => void, number] {
+  const [height, setHeight] = useState(0);
+  const observer = useRef<ResizeObserver>(undefined);
+  const ref = useCallback((element: HTMLDivElement | null): void => {
+    observer.current?.disconnect();
+    observer.current = undefined;
+    if (element === null) return;
+    setHeight(element.clientHeight);
+    observer.current = new ResizeObserver(() => setHeight(element.clientHeight));
+    observer.current.observe(element);
+  }, []);
+  return [ref, height];
 }
 
 // The conditions column (#319): each chip at its marker's line as the text scrolls; the open one anchors its popover, upward (#322, decision 13)
@@ -169,24 +207,29 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
 
 /** The skill editor's text (#319, handoff 11b): the buffer in Monaco with the look SkillEditor computed, ⌘S through Monaco's own save action
  * as EditorPane binds it, and the margin beside it: each condition chip at its marker's line and, #327, each annotation's card or note at its
- * line, as the text scrolls. */
+ * line, as the text scrolls. #980: the switch closes the column; closed, each annotated line keeps a dot in the glyph margin, and a click on
+ * one calls onDot. */
 export function TemplateText(props: TemplateTextProps) {
   const host = useRef<HTMLDivElement>(null);
-  const view = useTemplateEditor(host, props);
-  useLook(view, props);
+  const [column, columnHeight] = useColumnHeight();
+  const { view, lineHeight } = useTemplateEditor(host, props);
+  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE, isReadOnly, isMarginOpen = true } = props;
+  const marks = annotations?.list ?? NO_MARKS;
+  const glyphs = useMemo(() => (isMarginOpen ? NO_GLYPHS : glyphsOf(marks, anchorOf)), [isMarginOpen, marks, anchorOf]);
+  useLook(view, props, glyphs);
   useCaret(view, props.onCaret);
   const scrollTop = useScrollTop(view);
-  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE, isReadOnly } = props;
   const topOf = (line: number): number => (view?.getTopForLineNumber(line) ?? 0) - scrollTop;
-  const marks = annotations?.list ?? [];
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <div ref={host} className="min-h-0 min-w-0 flex-1" />
-      {(chips.length > 0 || marks.length > 0) && (
-        <div className="relative w-[230px] shrink-0 overflow-hidden border-l">
+      {isMarginOpen && (chips.length > 0 || marks.length > 0) && (
+        <div ref={column} className="relative w-[230px] shrink-0 overflow-hidden border-l">
           <Chips chips={chips} topOf={topOf} onChip={onChip} popover={popover} />
           {annotations && marks.length > 0 && (
-            <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
+            <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))}
+              lineHeight={lineHeight} columnHeight={columnHeight}
+            />
           )}
         </div>
       )}

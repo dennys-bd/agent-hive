@@ -8,9 +8,10 @@ export interface FakeZone { afterLineNumber: number; heightInLines?: number; dom
 type KeyListener = (event: { browserEvent: KeyboardEvent }) => void;
 const LINE_BREAK = /\r\n|\r|\n/;
 let zoneCount = 0;
+const GUTTER_GLYPH_MARGIN = 2; // monaco.editor.MouseTargetType's
 const GUTTER_LINE_DECORATIONS = 4; // monaco.editor.MouseTargetType's
 /** A decoration as the marks set it (#668). */
-export interface FakeDecoration { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; options: { linesDecorationsClassName?: string; className?: string; inlineClassName?: string; isWholeLine?: boolean } }
+export interface FakeDecoration { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; options: { glyphMarginClassName?: string; linesDecorationsClassName?: string; className?: string; inlineClassName?: string; isWholeLine?: boolean } }
 type MouseListener = (event: { target: { type: number; position: Position | null } }) => void;
 /** A selection as Monaco's cursor event carries it (#331). */
 export interface FakeSelection { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }
@@ -140,6 +141,10 @@ export class FakeEditor {
   clickGutter(line: number): void {
     for (const listener of this.mouse) listener({ target: { type: GUTTER_LINE_DECORATIONS, position: { lineNumber: line, column: 1 } } });
   }
+  /** What a click on the glyph margin at `line` does (#980). */
+  clickGlyph(line: number): void {
+    for (const listener of this.mouse) listener({ target: { type: GUTTER_GLYPH_MARGIN, position: { lineNumber: line, column: 1 } } });
+  }
   changeViewZones(change: (accessor: { addZone(zone: FakeZone): string; removeZone(id: string): void }) => void): void {
     change({
       addZone: (zone) => {
@@ -212,7 +217,7 @@ export const monacoModule = {
     editor: {
       createModel: (text: string, language?: string) => new FakeModel(text, language ?? 'plaintext'),
       create: (host: HTMLElement, { model, fontFamily }: { model: FakeModel; fontFamily?: string }) => new FakeEditor(host, model, () => undefined, fontFamily ?? ''),
-      MouseTargetType: { GUTTER_LINE_DECORATIONS },
+      MouseTargetType: { GUTTER_GLYPH_MARGIN, GUTTER_LINE_DECORATIONS },
       EditorOption: { lineHeight: LINE_HEIGHT_OPTION },
       setModelMarkers: (model: FakeModel, owner: string, list: unknown[]) => { markers.push({ model, owner, list }); },
       setModelLanguage: (model: FakeModel, language: string) => { model.language = language; }, // an untitled buffer saved as a file (#818)
