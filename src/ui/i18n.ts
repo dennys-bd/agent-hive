@@ -2662,6 +2662,10 @@ const en = {
   'plugins.annotations.taskCondition.body': '{variable} comes from the task: the preview cannot tell which branch the run takes.',
   // #331: ask the agent in the editor
   'plugins.assist.placeholder': 'ask the agent… select a passage to change only that',
+  'plugins.assist.placeholderPassage': 'ask the agent… the request changes only these lines',
+  'plugins.assist.passageLine': 'line {n}',
+  'plugins.assist.passageLines': 'lines {from}–{to}',
+  'plugins.assist.release': 'release the selection',
   'plugins.assist.running': 'the agent is working…',
   'plugins.assist.marked': 'change marked in the text (lines {from}–{to})',
   'plugins.assist.noChange': 'the agent proposed no change',
@@ -6191,6 +6195,10 @@ const pt: Record<MessageKey, string> = {
   'plugins.annotations.taskCondition.body': '{variable} vem da tarefa: o preview não sabe qual bloco a execução toma.',
   // #331: ask the agent in the editor
   'plugins.assist.placeholder': 'pedir ao agente… selecione um trecho para mudar só ele',
+  'plugins.assist.placeholderPassage': 'pedir ao agente… o pedido muda só essas linhas',
+  'plugins.assist.passageLine': 'linha {n}',
+  'plugins.assist.passageLines': 'linhas {from}–{to}',
+  'plugins.assist.release': 'soltar a seleção',
   'plugins.assist.running': 'o agente está trabalhando…',
   'plugins.assist.marked': 'mudança marcada no texto (linhas {from}–{to})',
   'plugins.assist.noChange': 'o agente não propôs mudança',

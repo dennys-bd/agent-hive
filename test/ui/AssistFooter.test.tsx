@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { applyProposal, type AssistAnswer, proposalHunk } from '../../src/assist';
-import { AssistFooter } from '@/components/plugins/AssistFooter';
+import { AssistFooter, type Handoff } from '@/components/plugins/AssistFooter';
 import { AgentsContext } from '@/components/NewRunButton';
 import type { Assist, AssistPick } from '@/hooks/use-assist';
+import type { LineSelection } from '@/lib/assist-view';
 import { setLanguage } from '@/i18n';
 import { BUILD_TEXT, stubFetch } from './plugins-fixtures';
 
@@ -14,10 +15,15 @@ const CLAUDE: AssistPick = { agent: 'claude', model: '' };
 const assistOf = (extra: Partial<Assist> = {}): Assist => ({ status: 'idle', ask: vi.fn(() => true), accept: vi.fn(), discard: vi.fn(), ...extra });
 const field = (): HTMLInputElement => screen.getByPlaceholderText(PLACEHOLDER);
 const chip = (): HTMLButtonElement => screen.getByRole('button', { name: 'agente e modelo' });
-interface Extra { pick?: AssistPick; isDisabled?: boolean; onAsk?(request: string): boolean; onPick?(pick: AssistPick): void }
+const PASSAGE = 'pedir ao agente… o pedido muda só essas linhas';
+interface Extra { pick?: AssistPick; isDisabled?: boolean; onAsk?(request: string): boolean; onPick?(pick: AssistPick): void; passage?: LineSelection; onRelease?(): void; handoff?: Handoff }
 const footer = (assist: Assist, extra: Extra = {}) => (
-  <AssistFooter assist={assist} pick={extra.pick ?? CLAUDE} onPick={extra.onPick ?? vi.fn()} workspace="agent-hive" isDisabled={extra.isDisabled ?? false} onAsk={extra.onAsk ?? vi.fn(() => true)} />
+  <AssistFooter
+    assist={assist} pick={extra.pick ?? CLAUDE} onPick={extra.onPick ?? vi.fn()} workspace="agent-hive" isDisabled={extra.isDisabled ?? false} onAsk={extra.onAsk ?? vi.fn(() => true)}
+    passage={extra.passage} onRelease={extra.onRelease} handoff={extra.handoff}
+  />
 );
+const follows = (first: Node, second: Node): boolean => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
 beforeEach(() => {
   setLanguage('pt');
@@ -100,4 +106,48 @@ test('the request line is in sans after a chevron icon; the chip, the field and 
 test('the chip without a model reads the agent alone (#492)', () => {
   render(footer(assistOf()));
   expect(chip()).toHaveTextContent(/^claude$/);
+});
+
+test('a selection names its lines after the agent chip and before the field, in a live region, with × to release it; the placeholder says only those lines change; English too (#982)', () => {
+  const onRelease = vi.fn();
+  const { rerender } = render(footer(assistOf(), { passage: { startLine: 22, endLine: 24 }, onRelease }));
+  const lines = screen.getByText('linhas 22–24');
+  const input = screen.getByPlaceholderText(PASSAGE);
+  expect(lines.closest('[aria-live="polite"]')).not.toBeNull();
+  expect([follows(chip(), lines), follows(lines, input)]).toEqual([true, true]);
+  expect(input).toHaveAttribute('aria-label', PASSAGE);
+  const release = screen.getByRole('button', { name: 'soltar a seleção' });
+  expect(release).toHaveAttribute('title', 'soltar a seleção');
+  fireEvent.click(release);
+  expect(onRelease).toHaveBeenCalledTimes(1);
+  rerender(footer(assistOf(), { passage: { startLine: 9, endLine: 9 }, onRelease }));
+  expect(screen.getByText('linha 9')).toBeInTheDocument();
+  rerender(footer(assistOf(), { onRelease }));
+  expect([screen.queryByText('linha 9'), field().getAttribute('aria-label')]).toEqual([null, PLACEHOLDER]);
+  setLanguage('en');
+  rerender(footer(assistOf(), { passage: { startLine: 22, endLine: 24 }, onRelease }));
+  expect(screen.getByText('lines 22–24')).toBeInTheDocument();
+  expect(screen.getByPlaceholderText('ask the agent… the request changes only these lines')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'release the selection' })).toBeInTheDocument();
+  rerender(footer(assistOf(), { passage: { startLine: 9, endLine: 9 }, onRelease }));
+  expect(screen.getByText('line 9')).toBeInTheDocument();
+});
+
+test('with the field disabled, read-only or while the agent works, the bar names no passage (#982)', () => {
+  const passage = { startLine: 9, endLine: 9 };
+  const { rerender } = render(footer(assistOf(), { passage, isDisabled: true }));
+  expect([screen.queryByText('linha 9'), field().disabled]).toEqual([null, true]);
+  rerender(footer(assistOf({ status: 'running', request: 'two sentences' }), { passage }));
+  expect([screen.queryByText('linha 9'), field().disabled]).toEqual([null, true]);
+});
+
+test('a hand-off fills the field with its request and focuses it; another one with the same words counts again (#982)', () => {
+  const { rerender } = render(footer(assistOf(), { handoff: { request: 'do x', n: 1 } }));
+  expect(field()).toHaveValue('do x');
+  expect(field()).toHaveFocus();
+  fireEvent.change(field(), { target: { value: 'other' } });
+  field().blur();
+  rerender(footer(assistOf(), { handoff: { request: 'do x', n: 2 } }));
+  expect(field()).toHaveValue('do x');
+  expect(field()).toHaveFocus();
 });
