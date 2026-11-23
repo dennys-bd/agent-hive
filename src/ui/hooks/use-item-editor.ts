@@ -166,10 +166,11 @@ async function deleteOpen(c: WriteContext): Promise<MessageKey | undefined> {
   const isLast = c.item.userCreated && c.item.versions.length === 1;
   try {
     await sendJson<unknown>('DELETE', versionUrl(c.item.id, version));
-    if (!c.item.userCreated) c.put(await getJson<ItemRead>(itemUrl(c.item.id)));
   } catch {
     return 'plugins.delete.failed';
   }
+  // The version is gone by now: a failed re-read of the original must not report the delete as failed; the reload still drops the version from the menu
+  if (!c.item.userCreated) await getJson<ItemRead>(itemUrl(c.item.id)).then(c.put, () => undefined);
   await c.reload();
   c.dropVersion();
   if (isLast) c.openList();
