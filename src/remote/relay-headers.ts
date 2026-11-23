@@ -17,3 +17,6 @@ export function relayableHeaders(headers: Record<string, string | string[] | und
 
 export const isRelayHeaders = (v: unknown): v is RelayHeaders =>
   isRecord(v) && Object.values(v).every((value) => isString(value) || (Array.isArray(value) && value.every(isString)));
+
+// Both ends check it, so a path that reaches the Hive's own API through a dot segment, an encoded separator or a doubled slash is refused twice
+export const isRelayPath = (path: string): boolean => /^\/hooks\//.test(path) && !/\.\.|%2e|%2f|%5c|\\|\/\//i.test(path);

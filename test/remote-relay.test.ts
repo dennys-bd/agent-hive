@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
+import { CHANNEL } from '../src/remote/protocol.js';
 import { answerRelay } from '../src/remote/relay-answer.js';
 import { listenRelay, RELAY_MAX_BODY_BYTES } from '../src/remote/relay-listen.js';
-import { pair, settle } from './remote-pair.js';
+import { pair, remote, settle } from './remote-pair.js';
 
 type Seen = { method: string; url: string; headers: IncomingHttpHeaders; body: unknown };
 
@@ -23,13 +24,13 @@ async function startFake(routes: (app: express.Express, seen: Seen[]) => void): 
   return { server, port: (server.address() as AddressInfo).port, seen };
 }
 
-async function withRelay(routes: (app: express.Express, seen: Seen[]) => void, run: (ctx: { relayPort: number; fakePort: number; seen: Seen[]; host: ReturnType<typeof pair>['host'] }) => Promise<void>): Promise<void> {
+async function withRelay(routes: (app: express.Express, seen: Seen[]) => void, run: (ctx: { relayPort: number; fakePort: number; seen: Seen[]; host: ReturnType<typeof pair>['host']; machine: ReturnType<typeof pair>['machine'] }) => Promise<void>): Promise<void> {
   const fake = await startFake(routes);
   const { host, machine } = pair();
   answerRelay(host, { port: fake.port });
   const relay = await listenRelay(machine, { port: 0 });
   try {
-    await run({ relayPort: relay.port, fakePort: fake.port, seen: fake.seen, host });
+    await run({ relayPort: relay.port, fakePort: fake.port, seen: fake.seen, host, machine });
   } finally {
     await relay.close();
     fake.server.closeAllConnections();
@@ -40,7 +41,7 @@ async function withRelay(routes: (app: express.Express, seen: Seen[]) => void, r
 type Reply = { status: number; headers: IncomingHttpHeaders; body: string };
 const call = (port: number, opts: { method?: string; path: string; headers?: Record<string, string>; body?: string | Buffer }): Promise<Reply> =>
   new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port, method: opts.method ?? 'GET', path: opts.path, headers: { host: `127.0.0.1:${port}`, ...opts.headers } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, method: opts.method ?? 'GET', path: opts.path, headers: { host: `127.0.0.1:${port}`, 'x-hive-secret': 's', ...opts.headers } }, (res) => {
       const parts: Buffer[] = [];
       res.on('data', (c: Buffer) => parts.push(c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(parts).toString() }));
@@ -72,24 +73,24 @@ test('a response the Hive holds for 2 s still arrives (#940)', async () => {
 });
 
 test('an event stream arrives chunk by chunk, the first before the Hive ends (#940)', async () => {
-  let fakeEnded = false;
+  let clientGotFirst!: () => void;
+  const firstReceived = new Promise<void>((resolve) => { clientGotFirst = resolve; });
   await withRelay((app) => app.get('/hooks/sse', (_req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     res.write('data: 1\n\n');
-    setTimeout(() => { res.write('data: 2\n\n'); fakeEnded = true; res.end(); }, 400);
+    // the second write waits for the client to hold the first: only a streamed answer can get there
+    void firstReceived.then(() => { res.write('data: 2\n\n'); res.end(); });
   }), async ({ relayPort }) => {
     const chunks: string[] = [];
-    let firstBeforeEnd = false;
     await new Promise<void>((resolve, reject) => {
-      const req = request({ host: '127.0.0.1', port: relayPort, path: '/hooks/sse', headers: { host: `127.0.0.1:${relayPort}` } }, (res) => {
+      const req = request({ host: '127.0.0.1', port: relayPort, path: '/hooks/sse', headers: { host: `127.0.0.1:${relayPort}`, 'x-hive-secret': 's' } }, (res) => {
         assert.equal(res.headers['content-type'], 'text/event-stream');
-        res.on('data', (c: Buffer) => { if (chunks.length === 0) firstBeforeEnd = !fakeEnded; chunks.push(c.toString()); });
+        res.on('data', (c: Buffer) => { chunks.push(c.toString()); clientGotFirst(); });
         res.on('end', resolve);
       });
       req.on('error', reject);
       req.end();
     });
-    assert.ok(firstBeforeEnd);
     assert.equal(chunks.join(''), 'data: 1\n\ndata: 2\n\n');
   });
 });
@@ -102,7 +103,7 @@ test('a client that hangs up mid-response ends the request on the Hive (#940)', 
     res.write('data: 1\n\n');
   }), async ({ relayPort }) => {
     await new Promise<void>((resolve) => {
-      const req = request({ host: '127.0.0.1', port: relayPort, path: '/hooks/hang', headers: { host: `127.0.0.1:${relayPort}` } }, (res) => {
+      const req = request({ host: '127.0.0.1', port: relayPort, path: '/hooks/hang', headers: { host: `127.0.0.1:${relayPort}`, 'x-hive-secret': 's' } }, (res) => {
         res.once('data', () => { req.destroy(); resolve(); });
       });
       req.on('error', () => undefined);
@@ -145,9 +146,68 @@ test('the listener refuses a foreign Host, a path outside /hooks/, drops cookies
 
 test('a body over RELAY_MAX_BODY_BYTES gets 413 from the listener and never reaches the Hive (#940)', async () => {
   await withRelay((app) => app.post('/hooks/huge', (_req, res) => res.send('ok')), async ({ relayPort, seen }) => {
-    const reply = await call(relayPort, { method: 'POST', path: '/hooks/huge', headers: { 'content-type': 'application/json' }, body: Buffer.alloc(RELAY_MAX_BODY_BYTES + 1, 0x61) });
+    const reply = await call(relayPort, { method: 'POST', path: '/hooks/huge', headers: { 'content-type': 'application/json', 'content-length': String(RELAY_MAX_BODY_BYTES + 1) }, body: Buffer.alloc(RELAY_MAX_BODY_BYTES + 1, 0x61) });
     assert.equal(reply.status, 413);
     await sleep(50);
     assert.equal(seen.length, 0);
   });
+});
+
+test('the answer side refuses a path outside /hooks/ with bad_request, and the listener a dot segment with 404 (#940)', async () => {
+  await withRelay((app) => app.use((_req, res) => res.send('ok')), async ({ relayPort, seen, machine }) => {
+    const params = { method: 'DELETE', path: '/api/x', headers: {}, body: new Uint8Array() };
+    await assert.rejects(machine.request(CHANNEL.relay, 'http', params), remote('bad_request'));
+    for (const path of ['/hooks/../api/x', '/hooks/%2e%2e/api', '/hooks/a%2Fb', '/hooks/a%5Cb', '/hooks//x', '/hooks/a\\b']) {
+      await assert.rejects(machine.request(CHANNEL.relay, 'http', { ...params, path }), remote('bad_request'), path);
+    }
+    assert.equal((await call(relayPort, { path: '/hooks/../api/x' })).status, 404);
+    assert.equal(seen.length, 0);
+  });
+});
+
+test('the listener refuses a request without x-hive-secret with 403 before reading its body (#940)', async () => {
+  await withRelay((app) => app.post('/hooks/x', (_req, res) => res.send('ok')), async ({ relayPort, seen }) => {
+    const reply = await call(relayPort, { method: 'POST', path: '/hooks/x', headers: { 'x-hive-secret': '' }, body: 'x' });
+    assert.equal(reply.status, 200, 'an empty secret is still a header: the Hive judges its value');
+    const bare = await new Promise<number>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port: relayPort, method: 'POST', path: '/hooks/x', headers: { host: `127.0.0.1:${relayPort}` } }, (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on('error', reject);
+      req.end('x');
+    });
+    assert.equal(bare, 403);
+    assert.equal(seen.length, 1);
+  });
+});
+
+test('a head that is no head, or no head at all, gets 502 (#940)', async () => {
+  const { host, machine } = pair();
+  const heads: unknown[] = [{ status: 5, headers: {} }, { status: 200, headers: { a: 1 } }, undefined];
+  let next = 0;
+  host.onRequest(CHANNEL.relay, (_method, _params, ctx) => {
+    const head = heads[next++];
+    if (head !== undefined) ctx.emit({ head });
+    return {};
+  });
+  const relay = await listenRelay(machine, { port: 0 });
+  try {
+    for (let i = 0; i < heads.length; i++) assert.equal((await call(relay.port, { path: '/hooks/x' })).status, 502, `case ${i}`);
+  } finally {
+    await relay.close();
+  }
+});
+
+test('a Hive that cannot be reached gets a generic 502, and the Host is compared in any case (#940)', async () => {
+  const fake = await startFake(() => undefined);
+  const deadPort = fake.port;
+  await new Promise((resolve) => fake.server.close(resolve));
+  const { host, machine } = pair();
+  answerRelay(host, { port: deadPort });
+  const relay = await listenRelay(machine, { port: 0 });
+  try {
+    const reply = await call(relay.port, { path: '/hooks/x', headers: { host: `LocalHost:${relay.port}` } });
+    assert.equal(reply.status, 502);
+    assert.deepEqual(JSON.parse(reply.body), { error: 'the Hive could not be reached' });
+  } finally {
+    await relay.close();
+  }
 });
