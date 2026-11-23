@@ -16,7 +16,7 @@ import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
 import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFor } from './sources/github-gql.js';
-import { createGithubAccount, selectionOf, type GithubAccount } from './github-account.js';
+import { createGithubAccount, selectionOf, switchSelection, type GithubAccount } from './github-account.js';
 import { createGhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
@@ -88,7 +88,7 @@ import type { ItemStore } from './read-model/items.js';
 import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { jiraRoundSources } from './read-model/jira-round.js';
-import { createReadModelLoop, readModelEvent, type RefetchOutcome } from './read-model/loop.js';
+import { createReadModelLoop, readModelEvent, type ReadModelLoop, type RefetchOutcome } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
@@ -224,6 +224,8 @@ export interface ServerDeps {
   readAccess?: () => Promise<ReadAccess | undefined>;
   /** #959: the daemon's GitHub account (the selected login and gh's own). Absent (tests, an embedded server): the server builds its own. */
   githubAccount?: GithubAccount;
+  /** #959: tests hand a loop that counts kicks; absent, the read model's own when there is one. */
+  readLoop?: ReadModelLoop;
   /** #475: a benchmark run's home (benchmark.json): GET /benchmark-run, the viewer's writes and first terminal input recorded or, frozen, refused. */
   runMode?: RunMode;
   /** #955: the draw.io webapp's folder; tests inject a fixture. Absent: DRAWIO_ROOT, which a skipped fetch leaves missing (every answer a 404). */
@@ -1252,11 +1254,14 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.status(refusal.status).json({ error: refusal.message });
       return;
     }
+    // #959: the check below reads as the login the save selects; any failure after this puts the previous selection back
+    const switched = switchSelection(account, selectionOf(config));
     // An entry whose baked-in parts match the live runtime's keeps its instance, so a write already in flight keeps its chain (#180: per source).
     const sources = createSources(config, (spec) => sourceFactory(spec, itemStore), live && { config: live.runtime.config, sources: live.runtime.sources });
     try {
       await resolveSources(sources); // validates every source against the real one before the config is written; the message names the source
     } catch (err) {
+      switched.undo();
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;
     }
@@ -1265,9 +1270,11 @@ export function createServer(deps: ServerDeps): HiveServer {
       log.info('settings saved');
       await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
     } catch (err) {
+      switched.undo();
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
       return;
     }
+    if (switched.changed) readLoop?.kick(); // #959: rows are the login's: the new one's board fills now, not a round later
     try {
       await afterSave?.(); // #333: a server's stored value follows its rename or removal before the answer
     } catch (err) {
@@ -1397,11 +1404,11 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
-  const readLoop = deps.readModel && createReadModelLoop({
+  const readLoop = deps.readLoop ?? (deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machines.local) : []),
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
-  });
+  }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
   // #567: after the loop, whose refetch reads an issue the Project no longer holds
   const itemStore: ItemStore | undefined = deps.readModel && readLoop && {
