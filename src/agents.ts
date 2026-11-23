@@ -56,6 +56,19 @@ export async function detectAgents(machine: { exec: Exec }): Promise<AgentAvaila
   return AGENT_IDS.map((agent, i) => ({ agent, available: found[i] }));
 }
 
+export interface PathLookup { path: string; home: string; isExecutable(file: string): boolean }
+
+// WSL appends the Windows PATH as /mnt/<letter>/…, where npm leaves an extensionless claude shim that would run Windows' node (#941)
+const WINDOWS_DRIVE = /^\/mnt\/[a-zA-Z](\/|$)/;
+
+/** The agents a distro has (#941): each command, under exactly its name, an executable file in a dir of `path` or in <home>/.local/bin.
+ *  A distro is POSIX, so `path` splits on : and joins with /. No PATHEXT: claude.exe is never claude. A Windows drive's dir and an empty
+ *  entry (the cwd) are skipped. Nothing runs: the caller passes isExecutable, since the page imports this file. */
+export function agentsOnPath({ path, home, isExecutable }: PathLookup): AgentAvailability[] {
+  const dirs = [...path.split(':'), `${home}/.local/bin`].filter((dir) => dir !== '' && !WINDOWS_DRIVE.test(dir));
+  return AGENT_IDS.map((agent) => ({ agent, available: dirs.some((dir) => isExecutable(`${dir}/${AGENTS[agent].command}`)) }));
+}
+
 /** The agent a stage runs: its own, else the config's default. */
 export const agentOf = (stage: Pick<Stage, 'agent'>, config: Pick<Config, 'defaultAgent'>): AgentId => stage.agent ?? config.defaultAgent;
 

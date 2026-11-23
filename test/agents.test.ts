@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGENTS, agentOf, agentRefusal, defaultModel, detectAgents, disabledRefusal, isAvailable, knownAgent, liveDefaultAgent, ranAgent, runModel, savedAgent, stageAgentIn, stageModelFor, withDefaultModel } from '../src/agents.js';
+import { AGENTS, agentOf, agentRefusal, agentsOnPath, defaultModel, detectAgents, disabledRefusal, isAvailable, knownAgent, liveDefaultAgent, ranAgent, runModel, savedAgent, stageAgentIn, stageModelFor, withDefaultModel } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 import { agentCommand, agentDirs } from '../src/agents/command.js';
@@ -32,6 +32,33 @@ test('detectAgents runs `<command> --version` once per agent, in AGENT_IDS order
     throw Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' });
   };
   assert.deepEqual(await detectAgents({ exec: missing }), AGENT_IDS.map((agent) => ({ agent, available: false })));
+});
+
+// A fake disk: the files it names are executable and nothing else is; every file asked is recorded
+function pathDisk(files: readonly string[]): { asked: string[]; isExecutable(file: string): boolean } {
+  const asked: string[] = [];
+  return { asked, isExecutable: (file) => { asked.push(file); return files.includes(file); } };
+}
+const foundOf = (answer: readonly { agent: AgentId; available: boolean }[]): AgentId[] => answer.filter((a) => a.available).map((a) => a.agent);
+
+test('agentsOnPath answers every agent in AGENT_IDS order, each under its exact name: a dir holding only claude.exe has no claude (#941)', () => {
+  const { isExecutable } = pathDisk(['/opt/win/claude.exe', '/usr/bin/codex']);
+  assert.deepEqual(agentsOnPath({ path: '/opt/win:/usr/bin', home: '/home/u', isExecutable }), [
+    { agent: 'claude', available: false }, { agent: 'codex', available: true }, { agent: 'copilot', available: false },
+  ]);
+});
+
+test('agentsOnPath looks in <home>/.local/bin after PATH: ~/.local/bin/claude makes claude available (#941)', () => {
+  const { asked, isExecutable } = pathDisk(['/home/u/.local/bin/claude']);
+  assert.deepEqual(foundOf(agentsOnPath({ path: '/usr/bin', home: '/home/u', isExecutable })), ['claude']);
+  assert.deepEqual(asked.filter((file) => file.endsWith('/claude')), ['/usr/bin/claude', '/home/u/.local/bin/claude']);
+});
+
+test('agentsOnPath skips a Windows drive WSL appended (/mnt/<letter>/…) and an empty entry, never a /mnt dir with a longer name (#941)', () => {
+  const { asked, isExecutable } = pathDisk(['/mnt/c/Users/u/AppData/Roaming/npm/claude', '/mnt/data/bin/codex']);
+  const path = '/mnt/c/Users/u/AppData/Roaming/npm::/mnt/D/tools:/mnt/data/bin';
+  assert.deepEqual(foundOf(agentsOnPath({ path, home: '/home/u', isExecutable })), ['codex']);
+  assert.deepEqual(asked.filter((file) => file.endsWith('/claude')), ['/mnt/data/bin/claude', '/home/u/.local/bin/claude']);
 });
 
 test("agentOf answers the stage's own agent, else the config's default (#516)", () => {
