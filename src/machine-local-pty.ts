@@ -50,7 +50,7 @@ async function protocolFile(dir: string, ptyId: string, text: string | undefined
 // The prompt, the MCP config (none for a runner whose server rides its argv, #927) and the protocol, then the runner's argv over their paths
 // Every file name the machine joins under prompts/ is one plain name: once a RunSpec can come over the link (node 8), a `/` or `..` would write outside it
 const PLAIN_NAME = /^[\w-][\w.-]*$/;
-function requirePlainName(name: string): void {
+export function requirePlainName(name: string): void {
   if (!PLAIN_NAME.test(name)) throw new MachineError(`not a plain file name: ${JSON.stringify(name)}`, { code: MachineError.BAD_NAME });
 }
 

@@ -66,7 +66,7 @@ export function withHandoff(prompt: string, stage: Pick<Stage, 'handoff'>, resul
 // Every prompt an agent reads is this file's content as its last argv word ("$(cat file)"), so one starting with a dash (a transition's prompt
 // opening on {verdict}, an agent's evidence) would be parsed as a flag: a neutral line goes first
 const PROMPT_LEAD = 'Your instructions follow.';
-const argvSafe = (text: string): string => (text.trimStart().startsWith('-') ? `${PROMPT_LEAD}\n\n${text}` : text);
+export const argvSafe = (text: string): string => (text.trimStart().startsWith('-') ? `${PROMPT_LEAD}\n\n${text}` : text);
 
 export async function writePrompt(promptsDir: string, slug: string, text: string): Promise<string> {
   const path = join(promptsDir, `${slug}.md`);
