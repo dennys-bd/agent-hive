@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import type { AgentAnnotation } from '../../src/reviewer';
+import type { AgentAnnotation, AgentFix } from '../../src/reviewer';
 import { REVIEWER_DEFAULTS, type ReviewerConfig } from '../../src/types';
 import { REVIEW_PAUSE_MS, type ReviewerSettings, type Scope, useReviewer } from '@/hooks/use-reviewer';
 import { json } from './plugins-fixtures';
@@ -257,4 +257,21 @@ test('canReview is false without a scope and true with one (#329)', () => {
   expect(result.current.review.canReview).toBe(false);
   rerender({ scope: SCOPE, text: TEXT, config: configOf('demand') });
   expect(result.current.review.canReview).toBe(true);
+});
+
+test("the route's answer is checked at the boundary: an advice and a fix with its two strings are kept; a fix without its span, or an annotation without a kind, is a bad answer (#981)", async () => {
+  const fix: AgentFix = { line: 3, severity: 'yellow', title: 'vague step', body: 'say what runs', source: 'agent', kind: 'fix', span: 'Run it.', replacement: 'Run the tests.' };
+  const replies = [answer([noteOn(3), fix]), json({ annotations: [{ ...fix, span: undefined }] }), json({ annotations: [{ ...noteOn(3), kind: undefined }] })];
+  stubReview((n) => replies[n - 1] ?? answer([]));
+  const { result } = renderReviewer({ scope: SCOPE, text: TEXT, saved: TEXT, config: configOf('demand') });
+  const run = async (): Promise<void> => {
+    act(() => result.current.review.now());
+    await waitFor(() => expect(result.current.review.running).toBe(false));
+  };
+  await run();
+  expect([result.current.list, result.current.review.error]).toEqual([[noteOn(3), fix], undefined]);
+  await run();
+  expect(result.current.review.error).toBe('plugins.reviewer.error.badAnswer');
+  await run();
+  expect(result.current.review.error).toBe('plugins.reviewer.error.badAnswer');
 });
