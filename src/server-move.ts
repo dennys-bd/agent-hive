@@ -1,6 +1,5 @@
 // The file tree's drop (#594): an item of the activity's tree, or a file dragged from Finder, moved or copied into a folder of the tree. Every
 // path goes through tree-paths.ts's guards, every disk touch through MoveFs, so node:test fakes a volume boundary.
-import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { isInside } from './ide.js';
 import { isLocal, moveFs, REMOTE_REFUSAL } from './machine-fs.js';
@@ -42,7 +41,7 @@ export async function freeName(taken: (name: string) => Promise<boolean>, name: 
 // Finder does nothing here either: a folder into itself or below it (cp would recurse into its own output), and an item moved onto its own
 // folder. A copy onto its own folder is Finder's duplicate (#818): it lands under a free name. The UI never sends a no-op; this does not
 // trust that.
-const isNoOp = (item: string, into: string, copy: boolean, paths: PathFs['paths']): boolean => (!copy && dirname(item) === into) || isRootOrInside(item, into, paths);
+const isNoOp = (item: string, into: string, copy: boolean, paths: PathFs['paths']): boolean => (!copy && paths.dirname(item) === into) || isRootOrInside(item, into, paths);
 
 const isCrossDevice = (err: unknown): boolean => err instanceof Error && 'code' in err && err.code === 'EXDEV';
 
@@ -63,7 +62,7 @@ async function transfer(item: string, to: string, copy: boolean, fs: MoveFs): Pr
   }
 }
 
-export interface MoveJob { root: string; sources: string[]; into: string; copy: boolean; suffix: string }
+export interface MoveJob { root: string; sources: string[]; into: string; copy: boolean; suffix: string; platform: NodeJS.Platform } // platform: the machine's, for the wire (#929)
 
 /** What a drop answers (#818): each new path relative to the real root, and the item it came from, relative too unless it came from outside
  *  the tree (a Finder file); a skipped item is in neither. The tree's open tabs follow a move by them.
@@ -73,6 +72,7 @@ export interface Moved { moved: string[]; from: string[] }
 /** Every source into `into`, in order, each under a free name. The guards run on every source first, so a refusal moves nothing; an fs
  *  failure rejects, and the items before it stay moved (the tree's poll shows them). */
 export async function moveItems(job: MoveJob, fs: MoveFs): Promise<Moved | Refusal> {
+  const { paths } = fs;
   const folders = await rootsOf(job.root, fs);
   const into = await destination(folders, job.into, fs);
   if (typeof into !== 'string') return into;
@@ -80,15 +80,16 @@ export async function moveItems(job: MoveJob, fs: MoveFs): Promise<Moved | Refus
   const refused = checked.find((item): item is Refusal => typeof item !== 'string');
   if (refused) return refused;
   const done: Moved = { moved: [], from: [] }; // this call's own accumulator
-  for (const item of outermost(checked.filter((c): c is string => typeof c === 'string'), fs.paths)) {
-    if (isNoOp(item, into, job.copy, fs.paths)) continue;
+  for (const item of outermost(checked.filter((c): c is string => typeof c === 'string'), paths)) {
+    if (isNoOp(item, into, job.copy, paths)) continue;
     const isFolder = (await fs.stat(item)).isDirectory();
     // Probe then transfer can race: accepted, a single-user daemon whose concurrent agent writes the spec leaves unguarded
-    const name = await freeName((n) => exists(fs, join(into, n)), basename(item), job.suffix, isFolder);
-    await transfer(item, join(into, name), job.copy, fs);
-    done.moved.push(toWire(relative(folders.realRoot, join(into, name)), process.platform));
+    const name = await freeName((n) => exists(fs, paths.join(into, n)), paths.basename(item), job.suffix, isFolder);
+    const to = paths.join(into, name);
+    await transfer(item, to, job.copy, fs);
+    done.moved.push(toWire(paths.relative(folders.realRoot, to), job.platform));
     // a Finder file's from is absolute: it stays native, as every absolute path on the wire does (#641)
-    done.from.push(isInside(folders.realRoot, item, fs.paths) ? toWire(relative(folders.realRoot, item), process.platform) : item);
+    done.from.push(isInside(folders.realRoot, item, paths) ? toWire(paths.relative(folders.realRoot, item), job.platform) : item);
   }
   return done;
 }
@@ -118,9 +119,9 @@ export function registerMoveRoutes(app: Express, { requireLive, language, machin
     if (!body) return refuse(res, refusal(HTTP_BAD_REQUEST, MOVE_BODY_MESSAGE));
     const machine = treeMachine(current.state, req.params.id as string, machineFor);
     // #160: an absolute source is a Finder path, on the host's disk; a move between two of the task's own folders is the machine's
-    if (!isLocal(machine) && body.sources.some((source) => isAbsolute(source))) return refuse(res, REMOTE_REFUSAL);
+    if (!isLocal(machine) && body.sources.some((source) => machine.paths.isAbsolute(source))) return refuse(res, REMOTE_REFUSAL);
     try {
-      const moved = await moveItems({ root, ...body, suffix: COPY_SUFFIX[language()] }, moveFs(machine));
+      const moved = await moveItems({ root, ...body, suffix: COPY_SUFFIX[language()], platform: machine.info().platform }, moveFs(machine));
       if ('status' in moved) refuse(res, moved);
       else res.json(moved);
     } catch (err) {
