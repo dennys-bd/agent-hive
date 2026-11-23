@@ -1,4 +1,5 @@
-import { access, rm, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,7 @@ import { renderSource } from './benchmark/run-home.js';
 import { createBenchRunner } from './benchmark/runner.js';
 import { replaceFile } from './replace-file.js';
 import { createSource, createSources, resolveSources } from './source.js';
-import { awaitDeviceLogin, requestDeviceCode, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
+import { awaitDeviceLogin, requestDeviceCode, store as storeGithubLogin, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
 import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, gqlFor } from './sources/github-gql.js';
 import { createGithubAccount, selectionOf, switchSelection, type GithubAccount } from './github-account.js';
@@ -125,6 +126,7 @@ import { registerHoldingsRoute } from './server-holdings.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { createTreeWatch, type TreeWatch } from './tree-watch.js';
 import { registerGithubAccountRoutes } from './server-github-accounts.js';
+import { createGithubAdd, type GithubAdd } from './github-login-gh.js';
 import { accountsRefusal } from './accounts-config.js';
 import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
@@ -219,6 +221,7 @@ export interface ServerDeps {
   systemLanguage?: Language; // from the locale the boot saw; default en. The config's language wins when set
   /** The GitHub Device Flow's edges (fetch, sleep, the config home); tests inject fakes, the default is the real flow. */
   githubLogin?: GithubLoginDeps;
+  githubAdd?: GithubAdd; // #960: tests inject a fake, since the real one runs gh. Absent: built from githubLogin's store
   /** The settings listings' GraphQL runner for a transport (#245); tests inject a fake, the default is gqlFor with the server's log. */
   settingsGql?: (auth: GithubAuth) => Gql;
   /** #180: hive mode's read model, opened by bootHive; absent (setup mode, a failed open, every server test) no read sync runs. */
@@ -325,6 +328,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   const claudeAdd = createClaudeAdd({
     spawnPty: deps.spawnPty ?? NO_PTY, command: agentCommand('claude', process.platform, process.env), env: setupTokenEnv(withoutHiveEnv(process.env)), cwd: home, log,
     save: (name, cred) => saveClaudeCredential(name, cred, deps.credentialsEnv),
+  });
+  // #960: gh auth login on pipes, never a pty (a pty makes gh interactive), under a scratch GH_CONFIG_DIR in the home. The env is a
+  // worker's: what a child of the Hive must not inherit dropped
+  const githubAdd = deps.githubAdd ?? createGithubAdd({
+    spawn, exec: execFileAsync, env: withoutHiveEnv(process.env), platform: process.platform, home, fs: { mkdir, rm }, log,
+    store: (token) => storeGithubLogin(token, deps.githubLogin ?? {}),
   });
   const reviews = createReviewStore(home, (itemId) => live?.state.tasks.some((c) => taskId(c) === itemId) === true); // one file per task (#591)
   const localReviews = createLocalReviewStore(home, (workspace) => live?.state.workspaces.includes(workspace) === true); // one file per workspace's local (#344)
@@ -1260,9 +1269,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   app.post('/settings', (req: Request, res: Response) => queueSave(() => saveSettings((req.body ?? {}) as Partial<SettingsBody>, res)));
-  // #959, #960: the logins' list, remove and add, outside requireLive; a remove queues behind a save that may be selecting the login.
-  // Temporary (removed in Task 3): an add that never starts, until the server builds the real one
-  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env, queueSave, add: { start: () => undefined, status: () => ({ state: 'idle' }), cancel: () => undefined, close: async () => undefined } });
+  // #959, #960: the logins' list, remove and add, outside requireLive; a remove queues behind a save that may be selecting the login
+  registerGithubAccountRoutes(app, { account, accounts: () => live?.runtime.config.accounts, log, env: deps.githubLogin?.env, queueSave, add: githubAdd });
 
   async function saveSettings(body: Partial<SettingsBody>, res: Response, afterSave?: () => Promise<void>): Promise<void> {
     let config: Config;
@@ -1594,6 +1602,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     readModel = undefined; // a second close() closes nothing twice
     githubFlow?.controller.abort(); // a pending login is not a child process; without this it would poll GitHub to expiry after shutdown
     claudeAdd.close(); // #955: a pending setup-token is a child process; it never outlives the daemon
+    await githubAdd.close(); // #960: a pending gh is a child process, and its scratch dir holds what gh wrote
     // Every stop path is a Quit (#283): POST /stop (its onStop calls this), SIGTERM and SIGINT (run.ts) and the embedded close. Saved before
     // the kills, so their exits are ignored and the next boot resumes the tasks in flight instead of reporting a crash. Once: a second close()
     // finds cleanStop already set.

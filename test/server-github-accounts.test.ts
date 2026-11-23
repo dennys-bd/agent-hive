@@ -7,8 +7,10 @@ import { createGithubAccount } from '../src/github-account.js';
 import type { GhToken } from '../src/github-token.js';
 import type { GithubAdd } from '../src/github-login-gh.js';
 import { registerGithubAccountRoutes } from '../src/server-github-accounts.js';
+import { createServer } from '../src/server.js';
 import type { AccountsConfig, GithubAddStatus } from '../src/types.js';
 import { fakeLog } from './fakes.js';
+import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
 interface StubAdd { add: GithubAdd; cancels: number; closes: number }
@@ -100,4 +102,21 @@ test('POST /settings/github/add answers 202 with the status, then 409 add-pendin
   assert.equal((await fetch(url, { method: 'DELETE' })).status, 204);
   assert.equal(h.stub.cancels, 1);
   assert.deepEqual(await (await fetch(url)).json(), { state: 'cancelled' });
+});
+
+test('the daemon serves the add routes outside requireLive, and its close closes the add (#960)', async (t) => {
+  const home = await tempDir(t, 'gh-add-home-');
+  const { log } = fakeLog();
+  const stub = stubAdd();
+  const server = createServer({ home, log, secret: SECRET, githubAdd: stub.add });
+  const port = await server.listen(undefined);
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${port}/settings/github/add`;
+  const res = await hiveFetch(url, { method: 'POST', headers: { 'x-hive-ui': '1' } });
+  assert.deepEqual([res.status, await res.json()], [202, PENDING]);
+  assert.deepEqual(await (await hiveFetch(url)).json(), PENDING);
+  assert.equal((await hiveFetch(url, { method: 'DELETE', headers: { 'x-hive-ui': '1' } })).status, 204);
+  assert.equal(stub.cancels, 1);
+  await server.close();
+  assert.equal(stub.closes, 1, 'a pending gh never outlives the daemon');
 });
