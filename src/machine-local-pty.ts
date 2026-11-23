@@ -84,6 +84,7 @@ async function agentLaunch(deps: LocalPtyDeps, spec: RunSpec, agent: AgentSpec):
 // machine's), HIVE_SHELL_DIR and, on win32, the PowerShell it opens (#645), looked up on every launch. A run command is never kept: none
 function keptEnv(deps: LocalPtyDeps, spec: RunSpec): Record<string, string> {
   if (spec.keep === undefined) return {};
+  requirePlainName(spec.ptyId); // its HISTFILE is joined under terminals/, which the shell appends every typed line to
   const path = spec.env?.PATH ?? deps.env.PATH ?? '';
   return terminalEnv(deps.home, spec.ptyId, path, { platform: deps.platform, pwsh: windowsShell({ ...deps.env, ...spec.env }, deps.platform) });
 }

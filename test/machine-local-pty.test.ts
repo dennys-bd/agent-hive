@@ -186,6 +186,7 @@ test('a ptyId or a prompt name that is not one plain file name rejects started w
   const isBadName = (err: unknown): boolean => err instanceof MachineError && err.code === MachineError.BAD_NAME;
   await assert.rejects(pty.spawn({ ...stageRun('claude'), ptyId: '../escape' }, HANDLERS).started, isBadName);
   await assert.rejects(pty.spawn({ ...stageRun('claude'), prompt: { name: 'a/b', text: 'x' } }, HANDLERS).started, isBadName);
+  await assert.rejects(pty.spawn({ ptyId: '../escape', slug: SLUG, workspace: WORKSPACE, cwd: CWD, terminal: true, keep: { log: join(home, 'T.log') } }, HANDLERS).started, isBadName); // #947: a kept terminal's HISTFILE
   assert.deepEqual(handed, []);
   assert.deepEqual(await readdir(join(home, PROMPTS_DIR)), []);
 });
