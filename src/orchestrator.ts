@@ -10,7 +10,7 @@ import { liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionTarget, decompositionWritten, TARGET_KEY } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
-import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Flow, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
+import type { AccountsConfig, Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Flow, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SPAWN_FAILED } from './types.js';
 import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
@@ -180,6 +180,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'dismissCrash': return dismissCrash(state); // no fill: a display flag (#283)
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
     case 'rateLimits': return fill(setRateLimits(state, event)); // a reading is an input of the gate: a window that reset can open a job, one that filled can close it
+    case 'setAccounts': return setAccounts(state, event.accounts); // #957: fills only when it dropped the Claude windows
     case 'sourceQuota': return none(withSync(state, event.source, (s) => ({ ...s, quota: event.quota }))); // display and that source's backoff only: no fill, no effects
     case 'sourceBackoff': return none(withSync(state, event.source, (s) => withRetryWait(s, event.until))); // #812: no fill, no effects, like sourceQuota
     case 'pollFailed': return none(withSync(state, event.source, (s) => ({ ...s, error: event.message }))); // its tasks stay as they are
@@ -233,18 +234,29 @@ function step(state: State, event: HiveEvent): Reduced {
   }
 }
 
-// Account-wide data, one reading per agent (#929). From a worker it needs a live worker, as with hooks (any local process can post to the
-// route); the Hive's own reading never passes through a route, so it is always kept. The plan rules read it through limits(); the reducer
-// wraps it in fill. `replace` is the user's refresh: a fresh read taken whole, because the merge keeps the higher percent inside a window and
-// a bigger plan lowers it without moving the reset. A worker's snapshot can be hours old, so it is always merged. Only the event's own agent's
-// reading changes.
-function setRateLimits(state: State, { agent, ptyId, rateLimits, replace = false }: Extract<HiveEvent, { type: 'rateLimits' }>): Reduced {
+// Account-wide data, one reading per agent (#929). #957: a Claude reading counts only when its run started on the account selected now; the
+// Hive's own carries none (the endpoint refuses a setup token), so it counts only on the machine's login, and a worker started before a switch
+// carries the old account. From a worker it needs a live worker, as with hooks (any local process can post to the route); the Hive's own
+// reading never passes through a route. The plan rules read it through limits(); the reducer wraps it in fill. `replace` is the user's
+// refresh: a fresh read taken whole, because the merge keeps the higher percent inside a window and a bigger plan lowers it without moving the
+// reset. A worker's snapshot can be hours old, so it is always merged. Only the event's own agent's reading changes.
+function setRateLimits(state: State, { agent, ptyId, rateLimits, replace = false, account }: Extract<HiveEvent, { type: 'rateLimits' }>): Reduced {
+  if (agent === 'claude' && account !== state.accounts?.claude) return none(state);
   const readings = state.rateLimits ?? {};
   const kept = (reading: RateLimits): Reduced => none({ ...state, rateLimits: { ...readings, [agent]: reading } });
   const merged = mergeRateLimits(readings[agent], rateLimits);
   if (ptyId === undefined) return kept(replace ? rateLimits : merged);
   const worker = state.workers.find((s) => s.runId === ptyId);
   return !worker || worker.status === 'empty' ? none(state) : kept(merged);
+}
+
+// #957: the Claude windows belong to the account they were read on, so a different Claude member drops them and fills, a reading being an
+// input of the gate. Any other member keeps them: only Claude's accounts decide whose windows the Hive keeps
+function setAccounts(state: State, accounts: AccountsConfig): Reduced {
+  const next: State = { ...state, accounts };
+  if (state.accounts?.claude === accounts.claude) return none(next);
+  const { claude: _claude, ...others } = state.rateLimits ?? {};
+  return fill(none({ ...next, rateLimits: others }));
 }
 
 // The human override: no signal, cap, budget or `after` check; the task runs in the stage it is in. Unknown, running, deleting or

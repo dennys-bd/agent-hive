@@ -74,6 +74,15 @@ test('chipTitle: the agent, each window with its % and reset, and the reading\'s
   assert.equal(chipTitle('claude', CLAUDE, NOW), 'claude · 5h 5% · resets 1h39m · wk 19% · resets 5d3h · read 2 min ago');
 });
 
+test('chipTitle with an account names it after the agent and ends on the workers being the reading\'s source, with or without a reading (#957)', () => {
+  setLanguage('en');
+  assert.equal(chipTitle('claude', CLAUDE, NOW, 'work'), 'claude · account work · 5h 5% · resets 1h39m · wk 19% · resets 5d3h · read 2 min ago · read from running workers');
+  assert.equal(chipTitle('claude', undefined, NOW, 'work'), 'claude · account work · no reading · read from running workers');
+  setLanguage('pt');
+  assert.equal(chipTitle('claude', CLAUDE, NOW, 'work'), 'claude · conta work · 5h 5% · reinicia 1h39m · sem 19% · reinicia 5d3h · lido há 2 min · lido dos workers em execução');
+  assert.equal(chipTitle('claude', undefined, NOW, 'work'), 'claude · conta work · sem leitura · lido dos workers em execução');
+});
+
 test('refreshTitle: atualizar {agent} · lido {ago}, or sem leitura without a reading (#223)', () => {
   setLanguage('pt');
   assert.equal(refreshTitle('claude', CLAUDE, NOW), 'atualizar claude · lido há 2 min');

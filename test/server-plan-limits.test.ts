@@ -6,6 +6,8 @@ import type { AgentId, PlanLimitsReport, RateLimits, SettingsBody } from '../src
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure, fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { saveClaudeCredential } from '../src/credentials.js';
+import { tempDir } from './temp-dir.js';
 
 // POST /plan-limits/refresh: the usage group's ↻ (#223), a reading on demand that replaces the held one instead of merging into it
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -169,4 +171,41 @@ test('a disabled agent\'s plan limits are never read: not after the save, not on
   const one = await postJson(`${base}/plan-limits/refresh`, { agent: 'codex' });
   assert.deepEqual([one.status, await one.json()], [200, { ok: true }], 'a disabled agent\'s ↻ asks no endpoint, so nothing failed');
   assert.deepEqual(asked.filter((list) => list.includes('codex')), [], 'codex is off: no read names it');
+});
+
+test('a named Claude account: the save clears Claude\'s windows, neither the timer nor ↻ asks claude nor logs its reason, and only a save that changes accounts dispatches setAccounts (#957)', async (t) => {
+  const { log, lines } = fakeLog();
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'accounts-cred-') };
+  await saveClaudeCredential('work', { token: 'fake-claude-token-1' }, env); // #952: a selected Claude account must have a credential
+  const codex: RateLimits = { at: HIGH.at, windows: { thirty_day: { usedPercent: 40, resetsAt: RESET } } };
+  const asked: AgentId[][] = [];
+  const readPlanLimits = async (agents?: readonly AgentId[]): Promise<PlanLimitsReport> => {
+    const list = [...(agents ?? [])];
+    asked.push(list);
+    return { readings: list.map((agent) => ({ agent, rateLimits: agent === 'claude' ? HIGH : codex })), failures: [] };
+  };
+  const { home, repo } = await tempHive(t);
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }), readPlanLimits, log, credentialsEnv: env });
+  const base = `http://127.0.0.1:${await server.listen(0)}`;
+  t.after(() => server.close());
+  const save = (extra: Partial<SettingsBody> = {}): Promise<Response> => postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY, ...extra });
+  const dispatched = (): string[] => lines.filter((l) => l.startsWith('DEBUG setAccounts'));
+  assert.equal((await save()).status, 200);
+  await waitFor(() => server.getState()?.rateLimits?.codex !== undefined); // the background read after the first save
+  assert.deepEqual(asked.at(-1), ['claude', 'codex'], 'no account selected: claude is read as today');
+  assert.deepEqual(dispatched(), ['DEBUG setAccounts none'], 'configure: a state from before #957 has no accounts');
+  assert.equal((await save()).status, 200);
+  assert.equal(dispatched().length, 1, 'a save that keeps accounts dispatches none');
+  assert.equal((await save({ accounts: { claude: 'work' } })).status, 200);
+  assert.equal(dispatched().at(-1), 'DEBUG setAccounts claude=work');
+  assert.deepEqual(server.getState()?.accounts, { claude: 'work' });
+  assert.deepEqual(server.getState()?.rateLimits, { codex }, 'the switch clears Claude\'s windows only');
+  const before = asked.length;
+  await server.refreshPlanLimits();
+  const all = await postJson(`${base}/plan-limits/refresh`);
+  const one = await postJson(`${base}/plan-limits/refresh`, { agent: 'claude' });
+  assert.deepEqual([all.status, one.status, await one.json()], [200, 200, { ok: true }], 'a Claude-only ↻ asks nothing, so nothing failed');
+  assert.deepEqual(asked.slice(before), [['codex'], ['codex']], 'the timer and ↻ todos ask the other agents only; the Claude ↻ asks no endpoint');
+  assert.equal(server.getState()?.rateLimits?.claude, undefined);
+  assert.deepEqual(lines.filter((l) => l.includes('plan limits claude')), [], 'no Claude reason logged');
 });

@@ -204,6 +204,8 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'rateLimits', agent: 'claude', ptyId: PTY, rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits agent=claude pty=1a2b3c4d');
   assert.equal(describeEvent({ type: 'rateLimits', agent: 'claude', ptyId: PTY, account: 'work', rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits agent=claude pty=1a2b3c4d account=work'); // #953: a name, never a token
   assert.equal(describeEvent({ type: 'rateLimits', agent: 'codex', rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits agent=codex source=hive');
+  assert.equal(describeEvent({ type: 'setAccounts', accounts: { claude: 'work', github: 'me' } }), 'setAccounts claude=work github=me'); // #957: names, never a token
+  assert.equal(describeEvent({ type: 'setAccounts', accounts: {} }), 'setAccounts none');
   assert.equal(
     describeEvent({ type: 'sourceQuota', source: 'board', quota: { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' } }),
     'sourceQuota source=board remaining=4320/5000 resetsAt=2026-09-16T13:00:00.000Z',

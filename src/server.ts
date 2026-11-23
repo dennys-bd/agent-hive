@@ -893,8 +893,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     const read = deps.readPlanLimits;
     if (!read || !live) return undefined;
     // #949: an agent Settings turns off is never read, nor its failure logged; with none left no endpoint was asked, so nothing failed
-    const enabled = live.runtime.config.agentEnabled;
-    const asked = planLimitAgents(agents).filter((agent) => enabled[agent]);
+    // #957: nor Claude while a named account is selected: the usage endpoint refuses its setup token, and its workers' status lines are the reading
+    const { agentEnabled: enabled, accounts } = live.runtime.config;
+    const asked = planLimitAgents(agents).filter((agent) => enabled[agent] && !(agent === 'claude' && accounts.claude !== undefined));
     if (asked.length === 0) return undefined;
     const { readings, failures } = await read(asked);
     for (const agent of asked) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
@@ -992,6 +993,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!isDeepStrictEqual(flow.flows, config.comb.flows)) await dispatch({ type: 'setStages', flows: config.comb.flows });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
+    if (!isDeepStrictEqual(saved.accounts, config.accounts)) await dispatch({ type: 'setAccounts', accounts: config.accounts }); // #957: a selection changed while the Hive was down clears the old account's windows
     pollInBackground(refreshPlanLimits);
   }
 
@@ -1004,6 +1006,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     // First (#278): every fill below, setSources and the poll see the tasks under the names the new runtime has
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
     if (Object.keys(stageRenames).length > 0) await dispatch({ type: 'renameStages', renames: stageRenames }); // #861: before setStages, so no renamed stage reads as deleted
+    // #957: awaited before the fills below, so none reads the old account's windows. It fills only when it dropped them, and then can spawn
+    if (!isDeepStrictEqual(live.state.accounts, config.accounts)) await dispatch({ type: 'setAccounts', accounts: config.accounts });
     // setBudget, setUsageRules, setStages and setWorkspaces run fill, whose effects (deleteActivity, sourceAction, spawn) can take a
     // while: POST /settings answers once the config is written and reduced, not after those effects settle (#476). renameSources,
     // setDeleteActivity, setShutdownIdle, setApprovalMinutes, setRateLimitWait, setDefaultAgent and setSources emit no effects, so they stay awaited. queueSave only

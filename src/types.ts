@@ -875,6 +875,7 @@ export interface State {
   slept?: SleptRun[]; // #672: the runs that ended with their session kept, newest last, at most SLEPT_MAX; never saved (state-store.ts)
   semaphores: Record<string, SemaphoreState>; // #798: mirrored from command-semaphores.ts by setSemaphores, an entry per configured semaphore once the module publishes; {} before; never saved (state-store.ts)
   rateLimits?: PlanReadings; // #929: one reading per agent, read by the plan rules and the header; an agent with none has no key
+  accounts?: AccountsConfig; // #957: the selected account per provider, as config.accounts last set it (setAccounts); names only, never a token. Absent in a State from before #957
   error?: string;
 }
 
@@ -1728,7 +1729,8 @@ export type HiveEvent =
   | { type: 'setStages'; flows: Flow[] } // #134: the transitions travel with the stages; #564: in their flows, the reducer derives the flattened pair
   | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string>; workspaceMachines: Record<string, MachineId> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78), and machine (#931)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
-  | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean; account?: string } // account: the run's account for its agent's provider (#953), absent for the machine's login, the Hive's own reading and a pty with no entry; the reducer's use is #957. agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
+  | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean; account?: string } // account: the run's account for its agent's provider (#953), absent for the machine's login, the Hive's own reading and a pty with no entry; a Claude reading counts only on the selected account (#957). agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
+  | { type: 'setAccounts'; accounts: AccountsConfig } // #957: from the config at boot and on a save that changed it
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }
   | { type: 'sourceBackoff'; source: string; until: string } // #812: a call the source rate limited reports its retry time (ISO); the later time wins
   | { type: 'pollFailed'; source: string; message: string } // that source's listItems rejected (#180): its tasks stay as they are

@@ -6,6 +6,7 @@ import { loadPlanReadings } from './rate-limits.js';
 import { isLocalActivityId, pruneRecords } from './activities.js';
 import { savedAgent } from './agents.js';
 import { replaceFile } from './replace-file.js';
+import { parseAccounts } from './accounts-config.js';
 import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord, SLUG } from './state-guards.js';
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
@@ -187,7 +188,7 @@ function savedFlows(parsed: State): Pick<State, 'flows' | 'stages' | 'transition
 // from before #378 goes: the rest is spread. A file from before #570 has slots and shells, never read (no migration): its runs are lost, its
 // tasks stay, and it gets its cap (MAX_CONCURRENT_DEFAULT when it has none) in free workers, since boot never re-runs setMax.
 function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): State {
-  const { maxConcurrent: savedMax, rateLimits, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, keepAwake: _keepAwake, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, semaphores: _semaphores, auto: _auto, ...rest } = parsed as State & { auto?: unknown; semaphores?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
+  const { maxConcurrent: savedMax, rateLimits, accounts: savedAccounts, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, keepAwake: _keepAwake, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, semaphores: _semaphores, auto: _auto, ...rest } = parsed as State & { auto?: unknown; semaphores?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
   const maxConcurrent = isCount(savedMax) ? Math.min(Math.floor(savedMax), MAX_CONCURRENT_MAX) : MAX_CONCURRENT_DEFAULT; // #727: the state is the cap's one source, so a bad value must not crash every boot
   const saved = Array.isArray(parsed.tasks) ? parsed.tasks.map(renamedStage).filter(isTask) : [];
   const tasks = saved.map(normalizeTask);
@@ -199,6 +200,7 @@ function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): Stat
     ? parsed.workers.map((w) => onLoadedWork(normalizeWorker((pre629 ? migrateWorker(w, work) : w) as Worker), loadedIds))
     : initialState(maxConcurrent).workers;
   const readings = loadPlanReadings(rateLimits);
+  const accounts = parseAccounts(savedAccounts); // #957: the config's own guard; a string is its reason, so the key is absent
   // #672: a sleeping run's transcript lived in the pty host, which died with the Hive: its record is dropped with it
   return {
     ...rest,
@@ -229,6 +231,7 @@ function normalize(parsed: State, hiveDir: string, scope?: WorkspaceNames): Stat
     terminals: Array.isArray(terminals) ? terminals.filter((x) => isTerminal(x) && loadedIds.has(x.activityId)).map(loadTerminal) : [], // #283, #292, #378; on a loaded activity (#629)
     benchmark: loadBenchmark(parsed.benchmark, hiveDir), // #458: through its own guard and boot rule; a file from before it has no experiment
     ...(cleanStop === true ? { cleanStop } : {}), ...(isCrash(crash) ? { crash: { at: crash.at, tasks: crash.tasks } } : {}), // #283
+    ...(typeof accounts === 'string' ? {} : { accounts }), // #957: boot compares it with config.accounts; a wrong shape or a pre-#957 file is no key
     ...(readings === undefined ? {} : { rateLimits: readings }), // #929: per agent; a wrong shape or a pre-#929 file is no key
   };
 }
