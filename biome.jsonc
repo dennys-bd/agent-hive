@@ -86,7 +86,7 @@
         "src/headless-run.ts", "src/worker-lsp.ts", "src/server-memory.ts", "src/settings-save.ts", "src/replace-file.ts",
         "src/keep-awake.ts", "src/locale-env.ts", "src/main-window-bounds.ts", "src/item-sources.ts", "src/items-catalogue.ts",
         "src/machine.ts", "src/machine-local*.ts", "src/machine-run.ts", "src/host-fs.ts",
-        "src/wsl/**" // #927: the host side of a distro, wsl.exe and its pipe
+        "src/wsl/**" // #927: the host side of a distro, wsl.exe and its pipe; #941: the helper that runs in the distro, on its own disk
       ],
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     },
