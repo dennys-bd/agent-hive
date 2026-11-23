@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Machine } from '../src/machine.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { parseSetup, type SetupStep } from '../src/setup-script.js';
 import type { Exec, Workspace } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
@@ -66,4 +67,4 @@ export async function stepHarness(t: AfterHost): Promise<StepHarness> {
 
 export const setupPhase = (h: StepHarness): Phase => ({ name: 'setup', from: h.main, fromName: 'hive', to: h.worktree, toName: WORKTREE_NAME });
 export const teardownPhase = (h: StepHarness): Phase => ({ name: 'teardown', from: h.worktree, fromName: WORKTREE_NAME, to: h.main, toName: 'hive' });
-export const steps = (text: string): SetupStep[] => parseSetup(text, { allowLoad: true });
+export const steps = (text: string): SetupStep[] => parseSetup(text, { allowLoad: true, paths: HOST_PATHS });

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { commandLine, okLine } from '../src/console.js';
 import type { Machine, RunProcess } from '../src/machine.js';
 import type { Exec, Workspace } from '../src/types.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps, withReused } from '../src/worktree-setup.js';
 import { fakeMachine, runResult } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
@@ -211,7 +212,7 @@ test('needsSetup is false with no steps (no git) or once the marker is in the gi
   assert.equal(await needsSetup(h.machine, h.workspace, h.worktree), true);
   await writeFile(join(h.gitDir, SETUP_MARKER), '');
   assert.equal(await needsSetup(h.machine, h.workspace, h.worktree), false);
-  assert.deepEqual([hasSetup(h.workspace), hasSetup(empty.workspace), hasSetup({ ...h.workspace, setup: 'FROM node' })], [true, false, true]);
+  assert.deepEqual([hasSetup(h.workspace, HOST_PATHS), hasSetup(empty.workspace, HOST_PATHS), hasSetup({ ...h.workspace, setup: 'FROM node' }, HOST_PATHS)], [true, false, true]);
 });
 
 test('isSetUp is true only for a worktree folder already there whose marker is in its git dir: a missing folder asks no git, and git that names no git dir counts as not set up (#351)', async (t) => {

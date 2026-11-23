@@ -13,7 +13,7 @@ export async function insideRoot(machine: Machine, root: string, name: string, p
     const reason = MISSING[err.code ?? ''];
     throw reason === undefined ? err : new Error(`${reason} ${name}`);
   });
-  if (checkRelativePath(relative(await machine.fs.realpath(root), real)) !== undefined) throw new Error(`outside ${name}`);
+  if (checkRelativePath(relative(await machine.fs.realpath(root), real), machine.paths) !== undefined) throw new Error(`outside ${name}`);
   return real;
 }
 
@@ -84,5 +84,5 @@ export async function copyStep(machine: Machine, phase: Phase, step: SetupStep):
 export async function readLoad(machine: Machine, workspace: Pick<Workspace, 'path' | 'name'>, load: SetupStep): Promise<SetupStep[]> {
   const path = await insideRoot(machine, workspace.path, workspace.name, load.arg);
   const text = await machine.fs.readFile(path, { maxBytes: EDITOR_FILE_MAX, encoding: 'utf8' });
-  return parseSetup(text, { allowLoad: false });
+  return parseSetup(text, { allowLoad: false, paths: machine.paths });
 }

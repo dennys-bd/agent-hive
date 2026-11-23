@@ -32,9 +32,9 @@ const unlinkIfLink = async (machine: Machine, path: string): Promise<void> => {
 const skipped = (outcome: Exclude<TeardownOutcome, 'ran'>): TeardownResult => ({ outcome, steps: 0 });
 
 // POST /settings parses it first, so a bad line here is a config edited by hand: named after the script, as the 400 is
-function teardownSteps(workspace: Workspace): SetupStep[] {
+function teardownSteps(workspace: Workspace, paths: Machine['paths']): SetupStep[] {
   try {
-    return parseSetup(workspace.teardown ?? '', { allowLoad: true });
+    return parseSetup(workspace.teardown ?? '', { allowLoad: true, paths });
   } catch (err) {
     throw new Error(`teardown ${(err as Error).message}`);
   }
@@ -47,7 +47,7 @@ function teardownSteps(workspace: Workspace): SetupStep[] {
  */
 export async function runTeardown(machine: Machine, workspace: Workspace, worktree: string, deps: TeardownDeps): Promise<TeardownResult> {
   if (!(await exists(machine, worktree))) return skipped('gone');
-  const steps = teardownSteps(workspace);
+  const steps = teardownSteps(workspace, machine.paths);
   if (steps.length === 0) return skipped('none');
   const marker = await markerOf(machine, workspace, worktree);
   if (await isMarked(machine, marker)) return skipped('done'); // a symlink there is a worker's planting, not our marker

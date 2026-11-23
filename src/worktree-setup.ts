@@ -40,9 +40,9 @@ export interface SetupDeps extends StepDeps {
 
 /** Whether the workspace's setup has anything to run (#351), from the text alone. A text that does not parse counts: runSetup then fails
  * with the parse error, which reaches the user like any failed step instead of being skipped in silence. */
-export function hasSetup(workspace: Workspace): boolean {
+export function hasSetup(workspace: Workspace, paths: Machine['paths']): boolean {
   try {
-    return parseSetup(workspace.setup ?? '', { allowLoad: true }).length > 0;
+    return parseSetup(workspace.setup ?? '', { allowLoad: true, paths }).length > 0;
   } catch {
     return true;
   }
@@ -50,7 +50,7 @@ export function hasSetup(workspace: Workspace): boolean {
 
 /** runSetup's two "nothing to do" checks (#351): no steps, or the marker already in the worktree's git dir. */
 export async function needsSetup(machine: Machine, workspace: Workspace, worktree: string): Promise<boolean> {
-  if (!hasSetup(workspace)) return false;
+  if (!hasSetup(workspace, machine.paths)) return false;
   const marker = join(await gitDirOf(machine, worktree), SETUP_MARKER);
   return !(await machine.fs.access(marker).then(() => true, () => false));
 }
@@ -78,7 +78,7 @@ export function withReused(err: unknown, reused: string | undefined): unknown {
  * progress record. Answers the number of steps it ran (0 when it skipped).
  */
 export async function runSetup(machine: Machine, workspace: Workspace, worktree: string, deps: SetupDeps): Promise<number> {
-  const steps = parseSetup(workspace.setup ?? '', { allowLoad: true });
+  const steps = parseSetup(workspace.setup ?? '', { allowLoad: true, paths: machine.paths });
   if (steps.length === 0) return 0;
   const gitDir = await gitDirOf(machine, worktree);
   const marker = join(gitDir, SETUP_MARKER);
