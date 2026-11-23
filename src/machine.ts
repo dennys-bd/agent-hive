@@ -31,6 +31,7 @@ export class MachineError extends Error {
   static readonly TOO_LARGE = 'too_large'; // fs.readFile over its maxBytes
   static readonly NOT_FILE = 'not_file'; // fs.readFile of a FIFO, a device or a folder: its size says nothing, so the cap could not hold
   static readonly BAD_NAME = 'bad_name'; // pty.spawn with a ptyId or prompt name that is not one plain file name
+  static readonly BAD_PATH = 'bad_path'; // #939: a WSL UNC path of another distro, not a WSL path at all, or a .. out of the distro's root
   static readonly UNAVAILABLE = 'machine_unavailable'; // #931: the registry has no machine for the id; reason says why
   readonly code: string | number | undefined;
   readonly stderr: string;

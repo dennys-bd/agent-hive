@@ -7,7 +7,7 @@ const LAST_CONTROL = 0x1f;
 const DEL = 0x7f;
 
 // A distro name as `wsl -d` takes it: non-empty, no path separator, no control character, no leading '-' (it reaches wsl.exe's argv, where it would read as a flag)
-const isDistro = (name: string): boolean =>
+export const isDistro = (name: string): boolean =>
   name !== '' && !name.startsWith('-') && !name.includes('/') && !name.includes('\\') && ![...name].some((c) => c.charCodeAt(0) <= LAST_CONTROL || c.charCodeAt(0) === DEL);
 
 export function parseWorkspaceMachine(raw: unknown, field: string): MachineId {

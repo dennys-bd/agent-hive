@@ -87,8 +87,12 @@ export function useSave({ activityId, path }: File, setStrip: SetStrip, view: Vi
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [formatFailure, setFormatFailure] = useState<FormatFailure>();
+  // the guard is a ref: the editor calls the save it last saw, kept in a passive effect, so a closure's isSaving can still say true after the
+  // previous save ended, and a ⌘S right after a refusal would be dropped
+  const inFlight = useRef(false);
   const save = (format: boolean): void => {
-    if (isSaving || !models.isDirty(activityId, path)) return;
+    if (inFlight.current || !models.isDirty(activityId, path)) return;
+    inFlight.current = true;
     setIsSaving(true);
     setError(undefined);
     setFormatFailure(undefined);
@@ -101,7 +105,10 @@ export function useSave({ activityId, path }: File, setStrip: SetStrip, view: Vi
         checks.notifyChecksSaved(activityId, path); // #782: the command-line checkers read the saved disk
         if (result.formatError !== undefined && result.formatLog !== undefined) setFormatFailure({ error: result.formatError, log: result.formatLog });
       }
-    }, (err: unknown) => { if (!(err instanceof WriteCancelled)) setError(messageOf(err)); }).finally(() => setIsSaving(false)); // #469: a cancel says nothing
+    }, (err: unknown) => { if (!(err instanceof WriteCancelled)) setError(messageOf(err)); }).finally(() => {
+      inFlight.current = false;
+      setIsSaving(false);
+    }); // #469: a cancel says nothing
   };
   return { save, isSaving, error, formatFailure };
 }
