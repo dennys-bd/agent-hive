@@ -1,6 +1,6 @@
 // What both ends of the machine channel agree on (#937): the method list and each method's params, the shapes a Stats, a Dirent and a
-// MachineError cross as, and the splitter readLines rebuilds its lines with. Pure, so the helper (#941) and the host share it. Free of
-// node: like the rest of src/remote/, so the fs types are read off MachineFs, and bytes become a Buffer through the global one.
+// MachineError cross as, and the splitter readLines rebuilds its lines with. Pure, so the helper (#941) and the host share it. No direct
+// node: import, as the rest of src/remote/ (../machine.js brings node:path, so it loads on Node only), so the fs types are read off MachineFs, and bytes become a Buffer through the global one.
 import { MachineError, type MachineErrorFields, type MachineFs, toMachineError } from '../machine.js';
 import { isRecord, isString, RemoteError } from './frames.js';
 
@@ -18,7 +18,8 @@ const isMode: Check = (value) => isNumber(value) || isString(value);
 const isStrings: Check = (value) => Array.isArray(value) && value.every(isString);
 // maxBytes required: a readFile with no cap would read the whole file (MachineFs.readFile's contract)
 const isCap: Check = (value) => isRecord(value) && isNumber(value.maxBytes) && isOptional(isString)(value.encoding);
-const isRun: Check = (value) => isRecord(value) && isString(value.command) && isStrings(value.args) && isString(value.cwd) && isRecord(value.env);
+const isRun: Check = (value) => isRecord(value) && isString(value.command) && isStrings(value.args) && isString(value.cwd) && isRecord(value.env)
+  && isOptional(isString)(value.input) && isOptional(isNumber)(value.timeoutMs) && isOptional(isNumber)(value.maxBytes);
 const isWatch: Check = (value) => isRecord(value) && typeof value.recursive === 'boolean';
 
 /** Every MachineFs member that crosses, as `fs.<member>`; readLines crosses as readFile (#937). */
@@ -86,6 +87,12 @@ export function encodeStats(stats: Stats | BigIntStats): Record<string, unknown>
   return { kind: kindOf(stats), ...Object.fromEntries(fields) };
 }
 
+// a number stat's field that is missing or not a number is a wrong answer, as BigInt's throw makes one on the bigint path
+const finite = (field: unknown): number => {
+  if (typeof field !== 'number' || !Number.isFinite(field)) throw badAnswer('stat');
+  return field;
+};
+
 /** encodeStats' answer rebuilt: the fields, the four Dates and the is* (#937). isBigint is the caller's own { bigint: true }. */
 export function statsOf(wire: unknown, isBigint: false): Stats;
 export function statsOf(wire: unknown, isBigint: true): BigIntStats;
@@ -93,7 +100,7 @@ export function statsOf(wire: unknown, isBigint: boolean): Stats | BigIntStats {
   if (!isRecord(wire)) throw badAnswer('stat');
   const raw: Record<string, unknown> = wire;
   // BigInt() of what is no decimal string throws, and the client rejects with that throw as a MachineError
-  const value = (field: StatField): number | bigint => (isBigint ? BigInt(String(raw[field])) : Number(raw[field]));
+  const value = (field: StatField): number | bigint => (isBigint ? BigInt(String(raw[field])) : finite(raw[field]));
   const date = (field: StatField): Date => new Date(Number(raw[field]));
   const fields = Object.fromEntries(STAT_FIELDS.map((field) => [field, value(field)]));
   return { ...fields, atime: date('atimeMs'), mtime: date('mtimeMs'), ctime: date('ctimeMs'), birthtime: date('birthtimeMs'), ...typed(raw.kind) } as unknown as Stats;

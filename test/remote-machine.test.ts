@@ -80,8 +80,10 @@ test('serveMachine answers unknown_method for a method it does not serve and bad
 test('serveMachine answers a Stats as its numbers and kind and a file as bytes, and a failure as its code with the MachineError fields as data; exec gets a signal (#937)', async (t) => {
   const dir = await tempDir(t, 'serve-');
   let execSignal: unknown;
+  let execKeys: string[] = [];
   const exec: Machine['exec'] = async (_file, _args, opts) => {
     execSignal = opts?.signal;
+    execKeys = Object.keys(opts ?? {}).sort();
     throw new MachineError('git failed', { code: 128, stderr: 'fatal: not a repo', killed: true });
   };
   const { host, machine: far } = pair();
@@ -92,10 +94,12 @@ test('serveMachine answers a Stats as its numbers and kind and a file as bytes, 
   const missing = await host.request(1, 'fs.stat', [join(dir, 'gone')]).catch((err: unknown) => err);
   assert.ok(remote('ENOENT')(missing));
   assert.equal(((missing as RemoteError).data as { code: unknown }).code, 'ENOENT');
-  const failed = await host.request(1, 'exec', ['git', ['status']]).catch((err: unknown) => err);
+  // execFile's shell and uid are not ExecOptions: the server passes only the named fields on
+  const failed = await host.request(1, 'exec', ['git', ['status'], { cwd: '/wt', shell: true, uid: 0 }]).catch((err: unknown) => err);
   assert.ok(remote('128')(failed));
   assert.deepEqual((failed as RemoteError).data, { code: 128, stderr: 'fatal: not a repo', stdout: '', killed: true });
   assert.ok(execSignal instanceof AbortSignal);
+  assert.deepEqual(execKeys, ['cwd', 'signal']);
 });
 
 test('serveMachine sends run\'s output and watch\'s filenames as events; a cancel aborts the run and closes the watcher, and a watch cancelled before it started opens none (#937)', async () => {
@@ -358,6 +362,8 @@ test('process throws not_supported at once; paths is path.posix for a linux mach
   const served = fakeMachine();
   const { client } = over(served);
   assert.throws(() => client.process('node', [], { cwd: '/wt', env: {} }), (err: unknown) => err instanceof MachineError && err.code === 'not_supported');
+  // a filter is a function, which JSON drops: refused, never a copy without the COPY step's guards (worktree-copy-step.ts)
+  await assert.rejects(client.fs.cp('/a', '/b', { recursive: true, filter: () => true }), (err: unknown) => err instanceof MachineError && err.code === 'not_supported');
   assert.deepEqual([client.paths === posix, client.id, client.info() === INFO, client.pty === served.pty], [true, 'wsl:X', true, true]);
   const { host, machine: far } = pair();
   far.onRequest(1, () => 42);

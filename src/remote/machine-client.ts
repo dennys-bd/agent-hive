@@ -1,6 +1,6 @@
 // The machine on the far side of a mux (#937): each member is one request on channel 1 and the rebuild of its answer, so a caller cannot
-// tell it from the local machine. info comes from the hello and the pty from the caller (#945); a long-lived process is refused. Free of
-// node: like the rest of src/remote/.
+// tell it from the local machine. info comes from the hello and the pty from the caller (#945); a long-lived process is refused. No direct
+// node: import, as the rest of src/remote/; ../machine.js brings node:path, so it loads on Node only.
 import { keepTail, type Machine, MachineError, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type RunResult, tailOf } from '../machine.js';
 import { CHANNEL, isRecord, isString } from './frames.js';
 import {
@@ -67,7 +67,9 @@ function muxFs(ask: Ask): MachineFs {
     mkdtemp: (prefix) => ask('fs.mkdtemp', [prefix], asString),
     rename: (from, to) => ask('fs.rename', [from, to], ignore),
     rm: (path, options) => ask('fs.rm', [path, options], ignore),
-    cp: (from, to, options) => ask('fs.cp', [from, to, options], ignore),
+    // a filter is a function and cannot cross: copying without it would drop the COPY step's guards (worktree-copy-step.ts)
+    cp: (from, to, options) => (options?.filter === undefined ? ask('fs.cp', [from, to, options], ignore)
+      : Promise.reject(new MachineError('cp with a filter does not cross the mux', { code: NOT_SUPPORTED }))),
     copyFile: (from, to, mode) => ask('fs.copyFile', [from, to, mode], ignore),
     link: (existing, created) => ask('fs.link', [existing, created], ignore),
     chmod: (path, mode) => ask('fs.chmod', [path, mode], ignore),
