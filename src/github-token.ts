@@ -11,7 +11,7 @@ const TOKEN_ARGS = ['auth', 'token', '--hostname', GITHUB_HOST];
 const TOKEN_TIMEOUT_MS = 10_000;
 const MISSING = -1; // hosts.yml absent: a stat key no real mtime takes
 // A header value holds visible ASCII only: fetch would otherwise reject it quoting the whole value, bearer included, into a log line
-const TOKEN_CHARS = /^[\x21-\x7e]+$/;
+export const TOKEN_CHARS = /^[\x21-\x7e]+$/;
 // Inherited credentials would make gh answer for another account than the login that stamps the rows (#180)
 const INHERITED_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN'];
 const execFileAsync: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
