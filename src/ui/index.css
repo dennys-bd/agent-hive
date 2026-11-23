@@ -140,6 +140,9 @@
 /* #327: the structural lint's annotations: a wavy underline in the severity's status colour */
 .monaco-editor .template-annotation-yellow { text-decoration: underline wavy var(--waiting); text-underline-offset: 3px; }
 .monaco-editor .template-annotation-red { text-decoration: underline wavy var(--destructive); text-underline-offset: 3px; }
+/* #980: with the margin closed, an annotated line keeps a 6px dot in the glyph margin, in its severity's status colour */
+.monaco-editor .template-glyph-red { background: radial-gradient(circle, var(--destructive) 2.5px, transparent 3px) no-repeat center; }
+.monaco-editor .template-glyph-yellow { background: radial-gradient(circle, var(--waiting) 2.5px, transparent 3px) no-repeat center; }
 /* #331, #492: an agent's proposal in the text: the old lines on the deleted-line ground, the new ones on the added one, each with a 3px bar in its status colour */
 .monaco-editor .template-proposal-old { background: var(--diff-del); box-shadow: inset 3px 0 0 var(--destructive); }
 .monaco-editor .template-proposal-new { background: var(--diff-add); box-shadow: inset 3px 0 0 var(--working); }

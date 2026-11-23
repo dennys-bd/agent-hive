@@ -1,6 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { TemplateText, type TemplateTextProps } from '@/components/plugins/TemplateText';
+import type { AgentAnnotation } from '../../src/reviewer';
+import { REVIEWER_DEFAULTS } from '../../src/types';
+import type { Annotations } from '@/hooks/use-annotations';
 import { setLanguage } from '@/i18n';
 import { FAKE_LINE_HEIGHT, FakeEditor, FakeModel, resetMonacoFakes } from './monaco-fake';
 
@@ -94,4 +97,33 @@ test('a note chip is plain text, not a button (#492)', async () => {
   expect(column.queryByRole('button', { name: 'agent proposal' })).toBeNull();
   expect(column.getByText('agent proposal')).toHaveClass('text-muted-foreground');
   expect(column.getByRole('button', { name: 'if a' })).toBeInTheDocument();
+});
+
+const agentAt = (line: number, severity: AgentAnnotation['severity']): AgentAnnotation => ({ line, severity, title: `t${line}${severity}`, body: 'b', source: 'agent' });
+const annotationsOf = (list: readonly AgentAnnotation[]): Annotations => ({
+  list, review: { config: { ...REVIEWER_DEFAULTS, when: 'demand', version: 'strict' }, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
+  canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(),
+});
+const glyphs = (view: FakeEditor) => view.decorations.filter((d) => d.options.glyphMarginClassName !== undefined).map((d) => [d.range.startLineNumber, d.options.glyphMarginClassName]);
+
+test('with the margin closed the column is gone and each annotated line gets a dot, red over yellow; a click on a dot gives its line\'s first annotation; open, no dots (#980)', async () => {
+  const onDot = vi.fn();
+  const list = [agentAt(2, 'yellow'), agentAt(3, 'yellow'), agentAt(3, 'red')];
+  const annotations = annotationsOf(list);
+  const chips = [{ line: 1, label: 'if a' }];
+  const { rerender } = render(<TemplateText {...props({ annotations, chips, isMarginOpen: false, onDot })} />);
+  const view = await firstEditor();
+  expect(screen.queryByRole('group', { name: 'anotações' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'condições' })).not.toBeInTheDocument();
+  await waitFor(() => expect(glyphs(view)).toEqual([[2, 'template-glyph-yellow'], [3, 'template-glyph-red']]));
+  view.clickGlyph(3);
+  expect(onDot).toHaveBeenCalledWith(list[1]); // the line's first in list order
+  view.clickGlyph(1); // no dot there
+  view.clickGutter(2); // another gutter column
+  expect(onDot).toHaveBeenCalledTimes(1);
+  rerender(<TemplateText {...props({ annotations, chips, isMarginOpen: true, onDot })} />);
+  expect(glyphs(view)).toEqual([]);
+  expect(screen.getByRole('group', { name: 'anotações' })).toBeInTheDocument();
+  view.clickGlyph(3);
+  expect(onDot).toHaveBeenCalledTimes(1);
 });
