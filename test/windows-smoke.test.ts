@@ -13,6 +13,7 @@ import { shellQuote } from '../src/shell-init.js';
 import type { Activity, State } from '../src/types.js';
 import { samePath } from '../src/same-path.js';
 import { killQuietly } from './daemon-boot.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { combConfig } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -143,7 +144,7 @@ test('the daemon boots, runs a stage command in a task worktree, refuses a secon
   assert.ok(output.includes(MARKER), output);
   // realpath.native expands an 8.3 short name (RUNNER~1) the JS realpath keeps; samePath ignores case on win32 (#640)
   const ran = realpathSync.native(await readFile(cwdFile, 'utf8'));
-  assert.ok(samePath(ran, realpathSync.native(activity.worktree as string), process.platform), `the command ran in the task's worktree, not ${ran}`);
+  assert.ok(samePath(ran, realpathSync.native(activity.worktree as string), HOST_PATHS), `the command ran in the task's worktree, not ${ran}`);
 
   await stopAndExpectCleanExit(first);
   await stopAndExpectCleanExit(await boot(t, home));

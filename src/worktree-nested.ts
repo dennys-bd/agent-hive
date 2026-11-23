@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Exec, Workspace, WorktreeRow } from './types.js';
 import type { PreparedWorktree } from './worktree.js';
+import { pathsOf } from './machine.js';
 import { branchAt, type Git, gitAnswers, gitOrWords, refuseDirty, remoteHead, upstreamOf } from './worktree-base.js';
 
 // A workspace's nested repos (#653): other git repositories inside its folder that its git ignores. Each task gets a worktree of each one at
@@ -84,7 +85,7 @@ async function ensureOne(workspace: NestedWorkspace, taskPath: string, path: str
   const dir = join(taskPath, path);
   await requireNestedRepo(repo, path, exec);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
-  const listed = branchAt(await git('worktree', 'list', '--porcelain'), dir, process.platform);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), dir, pathsOf(process.platform));
   if (listed !== undefined && (await exists(dir))) {
     if (listed !== branch) throw new Error(`${dir} is checked out on ${listed === null ? 'a detached HEAD' : listed}, not on ${branch}`);
     return reusedAs(path, branch);
@@ -167,7 +168,7 @@ const BRANCH_NOT_FOUND = /error: branch '.*' not found/;
 // must never lose main
 async function removeOne(repo: string, dir: string, branch: string | undefined, force: boolean, exec: Exec): Promise<void> {
   const git: Git = (...args) => gitOrWords(repo, args, exec);
-  const listed = branchAt(await git('worktree', 'list', '--porcelain'), dir, process.platform);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), dir, pathsOf(process.platform));
   // --force twice, as removeWorktree's: forced is forced, dirty or locked
   if (listed !== undefined && (await exists(dir))) await git('worktree', 'remove', ...(force ? ['--force', '--force'] : []), '--', dir);
   await git('worktree', 'prune');

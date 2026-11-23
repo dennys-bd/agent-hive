@@ -40,7 +40,7 @@ async function place(current: Live, id: string, path: unknown, machineFor: TaskR
   const platform = located.machine.info().platform;
   const next = located.file.charAt(folder.length);
   const isSeparator = next === '/' || (platform === 'win32' && next === '\\');
-  if (!isSeparator || !samePath(located.file.slice(0, folder.length), folder, platform)) return { status: HTTP_BAD_REQUEST, message: OUTSIDE_MESSAGE };
+  if (!isSeparator || !samePath(located.file.slice(0, folder.length), folder, located.machine.paths)) return { status: HTTP_BAD_REQUEST, message: OUTSIDE_MESSAGE };
   return { folder, file: located.file, path: located.file.slice(folder.length + 1), workspace: located.workspace, label: located.label, machine: located.machine };
 }
 

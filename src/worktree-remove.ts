@@ -24,7 +24,7 @@ export async function removeWorktree(
   const { exec } = machine;
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
   const path = worktreePath(repo, slugOfWork(activity));
-  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, process.platform);
+  const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, machine.paths);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
   await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
   // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
@@ -71,7 +71,7 @@ export async function cleanWorktree(
   const { exec } = machine;
   const path = worktreePath(repo, slugOfWork(activity));
   const nestedOf = { path: repo, nestedRepos: nested };
-  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, process.platform);
+  const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path, machine.paths);
   const present = listed !== undefined && (await exists(machine, path));
   // a hook can forge the branch: trusted only when it is the template's name or a Restart's `-r<n>` of it (#283)
   const named = listed ?? ownBranch(activity, branch);

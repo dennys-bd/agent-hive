@@ -11,23 +11,25 @@ import { cleanWorktree } from '../src/worktree-remove.js';
 import { LOCAL_DISK } from '../src/machine-local.js';
 import type { WorkspaceBase } from '../src/fork.js';
 import { workspaceBase } from '../src/fork.js';
+import { pathsOf } from '../src/machine.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { fakeMachine, tempHive } from './fakes.js';
 import { BRANCH, CLEAN_BRANCH, fakeExec, listing, porcelain, repoWith, SLUG } from './worktree-fakes.js';
 import { tempDir } from './temp-dir.js';
 
 test('branchAt reads the branch of the listed worktree; detached is null; not listed is undefined', () => {
   const text = listing('/r', worktreePath('/r', 'hive-7-fix'));
-  assert.equal(branchAt(text, worktreePath('/r', 'hive-7-fix'), process.platform), 'feat/x');
-  assert.equal(branchAt(text, '/r', process.platform), 'main');
-  assert.equal(branchAt(text, '/r/other', process.platform), null);
-  assert.equal(branchAt(text, worktreePath('/r', 'hive-7-fix-2'), process.platform), undefined, 'a prefix of a listed path is not that path');
-  assert.equal(branchAt('', '/r', process.platform), undefined);
+  assert.equal(branchAt(text, worktreePath('/r', 'hive-7-fix'), HOST_PATHS), 'feat/x');
+  assert.equal(branchAt(text, '/r', HOST_PATHS), 'main');
+  assert.equal(branchAt(text, '/r/other', HOST_PATHS), null);
+  assert.equal(branchAt(text, worktreePath('/r', 'hive-7-fix-2'), HOST_PATHS), undefined, 'a prefix of a listed path is not that path');
+  assert.equal(branchAt('', '/r', HOST_PATHS), undefined);
 });
 
 test('branchAt finds the block git prints as C:/… when asked for the native C:\\… on win32, and not on linux (#640)', () => {
   const text = 'worktree C:/repo/.hive/worktrees/wt\nHEAD 2222\nbranch refs/heads/feat/x\n';
-  assert.equal(branchAt(text, 'C:\\repo\\.hive\\worktrees\\wt', 'win32'), 'feat/x');
-  assert.equal(branchAt(text, 'C:\\repo\\.hive\\worktrees\\wt', 'linux'), undefined);
+  assert.equal(branchAt(text, 'C:\\repo\\.hive\\worktrees\\wt', pathsOf('win32')), 'feat/x');
+  assert.equal(branchAt(text, 'C:\\repo\\.hive\\worktrees\\wt', pathsOf('linux')), undefined);
 });
 
 test('workspacePathProblem accepts only the top level of a git work tree, compared by real path, and says why otherwise', async (t) => {

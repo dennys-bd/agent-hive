@@ -3,7 +3,7 @@ import { join, posix, win32 } from 'node:path';
 import { taskOfActivity } from './activities.js';
 import { workspaceByName } from './config.js';
 import type { Logger } from './log.js';
-import type { Machine } from './machine.js';
+import { type Machine, pathsOf } from './machine.js';
 import { detectNested } from './nested-check.js';
 import { samePath } from './same-path.js';
 import { slugFor, worktreeRows } from './tasks.js';
@@ -52,7 +52,7 @@ export async function strandedRepo(activity: Activity, task: Task, exec: Exec, p
     const worktree = activity.worktree;
     if (!(await exists(worktree))) return (await exists(join(repo, HIVE_DIR, WORKTREES_DIR))) ? { repo } : undefined; // gone: only a repo the Hive made worktrees in
     const real = await realpath(worktree); // git lists real paths: a symlinked /tmp or home would never match the path as written
-    const lists = listed.split('\n').some((line) => line.startsWith(WORKTREE_PREFIX) && [worktree, real].some((p) => samePath(line.slice(WORKTREE_PREFIX.length), p, platform)));
+    const lists = listed.split('\n').some((line) => line.startsWith(WORKTREE_PREFIX) && [worktree, real].some((p) => samePath(line.slice(WORKTREE_PREFIX.length), p, pathsOf(platform))));
     return lists ? { repo } : undefined;
   } catch {
     return undefined;

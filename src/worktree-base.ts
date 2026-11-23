@@ -1,6 +1,7 @@
 import type { Logger } from './log.js';
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
 import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
+import type { Machine } from './machine.js';
 import { samePath } from './same-path.js';
 
 // The start point of a new worktree or checkout branch (#119, #131), out of worktree.ts, which was at 398 lines when a fork's sync came around
@@ -68,8 +69,8 @@ export const WORKTREE_PREFIX = 'worktree '; // the first line of each block of `
  * refs/heads/<name>` or `detached`): `null` when the worktree is listed but detached, `undefined` when it is not listed at all. The
  * path is compared through samePath: git prints `C:/…` on Windows where the Hive builds `C:\…` (#640).
  */
-export function branchAt(porcelain: string, path: string, platform: NodeJS.Platform): string | null | undefined {
-  const names = (line: string): boolean => line.startsWith(WORKTREE_PREFIX) && samePath(line.slice(WORKTREE_PREFIX.length), path, platform);
+export function branchAt(porcelain: string, path: string, paths: Machine['paths']): string | null | undefined {
+  const names = (line: string): boolean => line.startsWith(WORKTREE_PREFIX) && samePath(line.slice(WORKTREE_PREFIX.length), path, paths);
   const block = porcelain.split(/\n\s*\n/).find((b) => b.split('\n').some(names));
   if (block === undefined) return undefined;
   const ref = block.split('\n').find((line) => line.startsWith(HEAD_PREFIX));

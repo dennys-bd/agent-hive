@@ -1,6 +1,6 @@
 import { isAbsolute, join, posix, win32 } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Machine } from './machine.js';
+import { type Machine, pathsOf } from './machine.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
@@ -86,7 +86,7 @@ export async function ensureWorktree(
   const { exec } = machine;
   const path = worktreePath(repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);
-  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, process.platform);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), path, machine.paths);
   if (listed !== undefined && (await exists(machine, path))) {
     // Adopt only our own branch: on anything else (another branch, a detached HEAD) the path was staged by someone else, and a
     // forced removal would delete the branch found there with the work on it.
@@ -102,7 +102,7 @@ export async function ensureWorktree(
   const reused = kept?.action === 'reuse';
   const start = decided.start === undefined ? [] : [decided.start];
   const add = reused ? ['worktree', 'add', '--', path, branch] : ['worktree', 'add', kept?.action === 'reset' ? '-B' : '-b', branch, '--', path, ...start];
-  await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(machine, repo, branch));
+  await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(machine, repo, branch), machine.paths);
   const sync = await settleSync(decided, reused ? undefined : (...args) => gitOrWords(path, args, exec)); // #854: the local merge in the new tree only
   const line = kept?.note === undefined ? withSync(decided.line, sync) : `${withSync(decided.line, sync)} · ${kept.note}`;
   const started = reused || decided.start === undefined ? {} : { start: decided.start }; // #653: a reused branch's start is its upstream, prepareNested reads it
@@ -111,13 +111,13 @@ export async function ensureWorktree(
 
 // A lost config lock means git made the branch, and maybe the worktree, but not its upstream: the add is never repeated as it was (the
 // branch now exists); a missing worktree is added on that branch, then only the upstream is retried. Any other refusal rejects.
-async function addWorktree(git: Git, add: string[], at: { path: string; branch: string; start?: string }, branchMade: () => Promise<boolean>): Promise<void> {
+async function addWorktree(git: Git, add: string[], at: { path: string; branch: string; start?: string }, branchMade: () => Promise<boolean>, paths: Machine['paths']): Promise<void> {
   try {
     await git(...add);
     return;
   } catch (err) {
     if (!CONFIG_LOCK.test(wordsOf(err))) throw err;
-    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path, process.platform) !== at.branch) {
+    if (branchAt(await git('worktree', 'list', '--porcelain'), at.path, paths) !== at.branch) {
       if (!(await branchMade())) throw err;
       await git('worktree', 'add', '--', at.path, at.branch);
     }
@@ -175,7 +175,7 @@ export async function listWorktrees(machine: Pick<Machine, 'exec'>, repo: string
     const listed = line.slice(WORKTREE_PREFIX.length);
     const slug = names.basename(listed);
     const path = worktreePath(repo, slug);
-    return samePath(path, listed, platform) ? [{ slug, path, branch: branchAt(porcelain, path, platform) ?? null }] : [];
+    return samePath(path, listed, pathsOf(platform)) ? [{ slug, path, branch: branchAt(porcelain, path, pathsOf(platform)) ?? null }] : [];
   });
 }
 
@@ -225,12 +225,12 @@ export async function baseOptions(
   ]);
   const defaultRef = `${base.remote}/${branch}`;
   const own = worktreePath(repo, slug);
-  const adoptable = branchAt(porcelain, own, process.platform) !== undefined && (await exists(machine, own));
+  const adoptable = branchAt(porcelain, own, machine.paths) !== undefined && (await exists(machine, own));
   const orphan = orphanBranch === undefined ? undefined : await orphanOf(machine, repo, orphanBranch, adoptable, defaultRef);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
-    const ref = branchAt(porcelain, worktreePath(repo, other), process.platform);
+    const ref = branchAt(porcelain, worktreePath(repo, other), machine.paths);
     return typeof ref === 'string' ? [{ ref, id, title }] : [];
   });
   const taken = new Set([branch, ...tasks.map((c) => c.ref)]);
