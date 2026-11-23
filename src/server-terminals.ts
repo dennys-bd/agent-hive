@@ -4,7 +4,8 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { heldSession, taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
 import { writeRunFiles } from './spawn.js';
-import { capturedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
+import { AccountError, type AccountEnvAnswer, type AccountSeam, type RunAccountsStore } from './account-env.js';
+import { capturedReply, refusedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { MCP_SECRET_ENV } from './agents/codex.js';
 import { runners } from './agents/registry.js';
@@ -57,6 +58,7 @@ export interface TerminalRouteDeps {
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, which a terminal's agent loads as any run does
   externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the spawner's, for a captured session
   dropRunTmp(runId: string): Promise<void>; // #876: a captured run's tmp dir (its runFiles), which no pty of the Hive's removes; never rejects
+  accountEnv: AccountSeam; runAccounts: Pick<RunAccountsStore, 'set'>; // #953
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -196,26 +198,31 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const worker = after?.state.workers.find((w) => w.runId === runId);
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
-    const unregister = async (message: string): Promise<void> => {
+    const unregister = async (answer: () => void): Promise<void> => {
       try {
         await deps.dispatch(await exitEvent(deps.live(), runId, deps.machineFor)); // #586: one builder for every exit; a captured run is never flagged
       } finally {
         await deps.dropRunTmp(runId); // #876: whatever the write below got to, even when the exit could not be dispatched
       }
-      refuse(res, { status: HTTP_SERVER_ERROR, message });
+      answer();
     };
+    const failed = (message: string) => (): void => refuse(res, { status: HTTP_SERVER_ERROR, message });
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
     const terminal = after.state.terminals.find((x) => x.terminalId === terminalId);
     const cwd = capturedCwd(form.cwd, terminal?.cwd) ?? terminal?.cwd ?? '';
     let run: AgentRun;
+    let account: AccountEnvAnswer;
     try {
+      account = await deps.accountEnv({ agent }); // #953: before anything of the run's is recorded or written
+      deps.runAccounts.set(runId, account.accounts);
       run = await captureRun(deps, after, worker, { runId, cwd, sessionId });
       await writeRunFiles(runners[agent].runFiles(run)); // #876: Copilot's instructions, under runTmpDir(runId), before the shim starts it
     } catch (err) {
-      return unregister(errorMessage(err));
+      return unregister(err instanceof AccountError ? () => void res.type('text/plain').send(refusedReply(err.message)) : failed(errorMessage(err)));
     }
-    const reply = capturedReply(runId, replyEnv(deps, agent, run), runners[agent].launch(run).flat());
-    if (reply === undefined) return unregister(SPLIT_REPLY_MESSAGE);
+    // #953: the account env first, so a runEnv line of the same name, exported after it, wins
+    const reply = capturedReply(runId, [...Object.entries(account.env), ...replyEnv(deps, agent, run)], runners[agent].launch(run).flat());
+    if (reply === undefined) return unregister(failed(SPLIT_REPLY_MESSAGE));
     res.type('text/plain').send(reply);
   });
 }

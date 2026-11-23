@@ -66,6 +66,10 @@ export const capturedReply = (runId: string, env: readonly (readonly [string, st
     ? [runId, String(env.length), ...env.map(([name, value]) => `${name}=${value}`), ...args].join('\n')
     : undefined);
 
+export const REFUSED_LINE = 'refused'; // #953: the reply's first line on a refused account; no run id (a uuid) can equal it
+/** The register's refusal the shim exits on (#953): the marker, then the message's first line, which names no token. A 200: curl -f drops a 4xx body. */
+export const refusedReply = (message: string): string => `${REFUSED_LINE}\n${message.split(/[\r\n]/)[0] ?? ''}`;
+
 /** What the args the shim posted run (#347): a new conversation, or a resume, with the session id they name when they name one. */
 export type ShimResume = { kind: 'new' } | { kind: 'resume'; sessionId?: string };
 

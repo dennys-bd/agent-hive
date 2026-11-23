@@ -1,7 +1,7 @@
 #!/bin/sh
 # The Hive's agent shim (#696, #932, #347, #876), rendered for each agent into <home>/bin/<command>, first on every terminal's PATH. A conversation
 # typed here, new or resumed, registers as a free session with the Hive's hooks, MCP and protocol; anything else runs the real CLI as typed. A
-# register the Hive refuses, or that gets no answer, never blocks the user's command.
+# register the Hive refuses, or that gets no answer, never blocks the user's command, except a refused account (#953), which runs nothing.
 cli=__HIVE_COMMAND__
 self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
@@ -48,6 +48,8 @@ register() {
 reply=$(register "$@") || exec "$real" "$@"
 run_id=$(printf '%s\n' "$reply" | sed -n 1p)
 env_count=$(printf '%s\n' "$reply" | sed -n 2p)
+# #953: the Hive refused the run's account. Nothing runs: the machine's login would be another account than the one selected
+case "$run_id" in refused) printf '%s: %s\n' "$cli" "$(printf '%s\n' "$reply" | sed -n 2p)" >&2; exit 1 ;; esac
 case "$run_id" in ''|*[!0-9a-f-]*) exec "$real" "$@" ;; esac
 # #876: line 2 counts the env lines after it, in decimal with no leading zero; anything else is a reply this shim cannot read
 case "$env_count" in ''|*[!0-9]*|0?*) exec "$real" "$@" ;; esac

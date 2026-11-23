@@ -1,13 +1,15 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { localActivityId } from '../src/activities.js';
 import { AccountError } from '../src/account-env.js';
 import type { AccountCtx } from '../src/agents/runner.js';
 import { runners } from '../src/agents/registry.js';
 import { writeCredentials } from '../src/credentials.js';
 import type { RecordInput } from '../src/facts.js';
+import type { OpenResult } from '../src/types.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt } from './fakes.js';
 import { settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -125,4 +127,30 @@ test('a run on the machine\'s login posts a status line with no account (#953)',
   await postStatus(base, workers[0]?.launch.ptyId ?? '');
   await waitFor(() => rateLines(lines).length === 1);
   assert.equal(rateLines(lines)[0]?.includes('account='), false);
+});
+
+const openShell = async (base: string): Promise<string> =>
+  ((await (await postJson(`${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/shell`)).json()) as OpenResult).ptyId ?? '';
+const register = (base: string, id: string): Promise<Response> =>
+  hiveFetch(`${base}/hooks/terminals/${id}/session`, { method: 'POST', body: new URLSearchParams({ agent: 'claude' }) });
+
+test('a captured session\'s reply carries the account env before the run\'s own lines, and its status line is attributed to the run\'s account (#953)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { X: '1' }, account: 'work' }));
+  const { base, lines } = await start(t);
+  const id = await openShell(base);
+  const [runId = '', count = '0', ...rest] = (await (await register(base, id)).text()).split('\n');
+  assert.equal(rest.slice(0, Number(count))[0], 'X=1');
+  await postStatus(base, runId);
+  await waitFor(() => rateLines(lines).length === 1);
+  assert.ok(rateLines(lines)[0]?.endsWith(' account=work'));
+});
+
+test('a refused account on the shim\'s register answers the refusal the shim exits on and leaves no capture, never the token (#953)', async (t) => {
+  refuseClaude(t);
+  const { base, server, lines } = await start(t);
+  const id = await openShell(base);
+  const answer = await register(base, id);
+  assert.deepEqual([answer.status, await answer.text()], [200, `refused\n${REFUSAL}`]);
+  assert.equal(server.getState()?.workers.some((w) => w.terminalId === id), false);
+  assert.ok(noToken(lines));
 });
