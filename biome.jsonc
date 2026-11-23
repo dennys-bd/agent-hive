@@ -50,12 +50,6 @@
       "includes": [
         "src/home.ts", "src/main.ts", "src/config-nested.ts", "src/benchmark-guards.ts", "src/server-benchmark-*.ts", "src/memory.ts",
         "src/mcp-settings.ts", "src/platform-commands.ts", "src/lsp-process.ts", "src/lsp-host.ts", // lsp: until a distro has language servers
-        // 1.2 (#928): worktree, runs and transcripts; with #882's four, whose fs group #882 deletes
-        "src/agents/claude-transcript.ts", "src/agents/codex-transcript.ts", "src/check-run.ts", "src/checker-parse.ts", "src/checkpoints.ts",
-        "src/diff.ts", "src/format-run.ts", "src/formatter-detect.ts", "src/hooks-settings.ts", "src/run-tmp.ts", "src/same-path.ts",
-        "src/setup-script.ts", "src/shell-procs.ts", "src/transcript.ts", "src/usage.ts", "src/worktree.ts", "src/worktree-copy-step.ts",
-        "src/worktree-remove.ts", "src/worktree-setup.ts", "src/worktree-steps.ts", "src/worktree-teardown.ts",
-        "src/worktree-nested.ts", "src/worktree-stranded.ts", "src/nested-check.ts", "src/design-parts.ts",
         // 2.2 (#932): workspace calls on the workspace's machine
         "src/mcp-conventions.ts"
       ],
