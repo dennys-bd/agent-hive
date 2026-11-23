@@ -58,7 +58,8 @@ export type Live = NonNullable<ReturnType<DecompositionRouteDeps['requireLive']>
 
 // The goal as both routes read it: its task and result, its parsed file and the file's real path (#936: what its checkout is found from),
 // where its issues go, and a GitHub goal's issue number
-export interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number; key?: string } // #832: key, a Jira goal's, read from its URL; such a goal has no number
+// #929: machine, the one the file is on; its checkout is read with its git and its paths
+export interface Goal { task: Task; result: Record<string, unknown>; parsed: ParsedDecomposition; file: string; repository?: string; number?: number; key?: string; machine: Machine } // #832: key, a Jira goal's, read from its URL; such a goal has no number
 
 const TRANSIENT_CODE = 'transient'; // #702: the dialog tells this refusal apart (parseJson attaches code, #797)
 
@@ -131,7 +132,7 @@ async function readGoal(deps: DecompositionRouteDeps, current: Live, activityId:
   const issue = key === undefined ? issueOfLink(target.task.item.url) : undefined;
   const repository = issue?.repository ?? (await originRepository({ exec: deps.exec }, taskWorkspace(current.runtime.config, target.task)?.path));
   return {
-    task: target.task, result, parsed: parseDecomposition(read.text), file: read.file, ...(key === undefined ? {} : { key }),
+    task: target.task, machine, result, parsed: parseDecomposition(read.text), file: read.file, ...(key === undefined ? {} : { key }),
     ...(repository === undefined ? {} : { repository }), ...(issue ? { number: issue.number } : {}),
   };
 }
@@ -216,7 +217,7 @@ async function sourceChoice(current: Live, goal: Goal, body: unknown): Promise<{
 // As the GitHub target reads it: a read error is thrown (a 502), a refused delivery writes nothing, a file git ignores stays local (#741)
 async function shippedOf(deps: DecompositionRouteDeps, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<{ delivery?: Delivery } | Refusal> {
   if (recorded[PR_KEY] !== undefined) return {};
-  const read = await readDelivery(deps.exec, deps.gql, goal.file);
+  const read = await readDelivery(goal.machine, deps.gql, goal.file);
   if ('error' in read) throw read.error;
   const refusal = deliveryRefusal(read.delivery.checkout, read.delivery.docs.defaultBranch, recorded);
   if (refusal !== undefined) return { status: HTTP_CONFLICT, message: refusal };
@@ -275,7 +276,7 @@ async function write(base: DecompositionRouteDeps, current: Live, activityId: st
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
   const recorded = recordedIssues(goal.result);
   // Once pr is recorded nothing is delivered, so the checkout is not read: a moved or removed one cannot block finishing `done`
-  const read = recorded[PR_KEY] === undefined ? await readDelivery(deps.exec, deps.gql, goal.file) : undefined;
+  const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deps.gql, goal.file) : undefined;
   if (read !== undefined && 'error' in read) throw read.error; // the GitHub target refuses with its words, a 502 as before
   const delivery = read?.delivery;
   const refusal = delivery === undefined ? undefined : deliveryRefusal(delivery.checkout, delivery.docs.defaultBranch, recorded); // before any issue: a refused delivery writes nothing
@@ -317,7 +318,7 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
       if ('status' in goal) return refuse(res, goal);
       const recorded = recordedIssues(goal.result);
       // #783: read once, for both targets; nothing once pr is recorded
-      const read = recorded[PR_KEY] === undefined ? await readDelivery(on.exec, deps.gql, goal.file) : undefined;
+      const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deps.gql, goal.file) : undefined;
       const name = goal.task.item.source ?? '';
       const sources = goal.key === undefined ? await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source) : await ownSourceOf(current, name);
       const shown = preview(goal, sources, deliveryPreview(read, recorded));

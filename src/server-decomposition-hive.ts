@@ -66,7 +66,7 @@ function checkHive(current: Live, goal: Goal, body: unknown): { stage?: string }
 // Any other read error is thrown, to the write's catch
 async function shippedOf(deps: DecompositionRouteDeps, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<Delivery | Refusal | undefined> {
   if (recorded[PR_KEY] !== undefined) return undefined;
-  const read = await readDelivery(deps.exec, deps.gql, goal.file);
+  const read = await readDelivery(goal.machine, deps.gql, goal.file);
   if ('error' in read) {
     if (read.error instanceof OffGithubError) return undefined;
     throw read.error;
