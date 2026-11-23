@@ -1,4 +1,5 @@
 // A distro's paths and their Windows UNC names (#939): the host reaches a distro's disk as \\wsl.localhost\<distro>\..., the distro as /....
+import { isDistro } from '../config-machines.js';
 import { MachineError, pathsOf } from '../machine.js';
 
 const posix = pathsOf('linux');
@@ -7,8 +8,10 @@ const badPath = (p: string): MachineError => new MachineError(`not a path of thi
 
 /** The UNC path of an absolute distro path. A relative one has no place on the host's side, so it is refused. */
 export function toWindowsPath(distro: string, p: string): string {
-  if (!posix.isAbsolute(p)) throw badPath(p);
+  if (!posix.isAbsolute(p) || !isDistro(distro)) throw badPath(p);
   const segments = posix.normalize(p).split('/').filter(Boolean);
+  // a Linux file name may hold a backslash, which Windows reads as a separator: a\..\..\b would climb out of the distro
+  if (segments.some((s) => s.includes('\\'))) throw badPath(p);
   return `\\\\wsl.localhost\\${distro}\\${segments.join('\\')}`;
 }
 

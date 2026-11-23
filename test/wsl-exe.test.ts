@@ -105,3 +105,27 @@ test('wslExec hands an env var to the child only through WSLENV, and a bad name 
 test('wslExec refuses input, which an execFile-shaped runner cannot carry (#939)', async () => {
   await assert.rejects(wslExec(withDistros('Debian'), 'Debian')('cat', [], { input: 'x' }), failsWith('not_supported'));
 });
+
+test('wslArgv refuses a distro that would read as a flag and an empty cwd (#939)', () => {
+  assert.throws(() => wslArgv(['wsl.exe'], '-u', ['ls']), failsWith(MachineError.BAD_NAME));
+  assert.throws(() => wslArgv(['wsl.exe'], 'a\\b', ['ls']), failsWith(MachineError.BAD_NAME));
+  assert.throws(() => wslArgv(['wsl.exe'], 'D', ['ls'], ''), failsWith(MachineError.BAD_PATH));
+});
+
+test('wslEnv refuses WSLENV and WSL_UTF8 as vars, and drops a host Wslenv whatever its case (#939)', () => {
+  assert.throws(() => wslEnv({ WSLENV: 'X' }, {}), failsWith(MachineError.BAD_NAME));
+  assert.throws(() => wslEnv({ WSL_UTF8: '1' }, {}), failsWith(MachineError.BAD_NAME));
+  assert.deepEqual(wslEnv({}, { Wslenv: 'X', wsl_utf8: '1' }), { WSLENV: '' });
+});
+
+test('wslExec passes only the limits it was given, so execFile keeps its own maxBuffer (#939)', async () => {
+  const seen: object[] = [];
+  const run1: WslDeps['run'] = async (_f, _a, opts) => {
+    seen.push(opts);
+    return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  };
+  await wslExec(deps({ run: run1 }), 'D')('ls', []);
+  await wslExec(deps({ run: run1 }), 'D')('ls', [], { timeout: 5 });
+  assert.ok(!('maxBuffer' in seen[0]!) && !('timeout' in seen[0]!));
+  assert.equal((seen[1] as { timeout?: number }).timeout, 5);
+});

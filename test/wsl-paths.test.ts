@@ -37,3 +37,8 @@ test('toDistroPath keeps a .. that stays inside the root, and the round trip hol
   assert.equal(toDistroPath('Debian', '\\\\wsl.localhost\\Debian\\a\\..\\b'), '/b');
   for (const p of ['/', '/home/u/r', '/a b/ç/ü']) assert.equal(toDistroPath('Debian', toWindowsPath('Debian', p)), p);
 });
+
+test('toWindowsPath refuses a file name with a backslash, which Windows would read as a separator, and a bad distro (#939)', () => {
+  assert.throws(() => toWindowsPath('Debian', '/a\\..\\..\\b'), (err: unknown) => err instanceof MachineError && err.code === MachineError.BAD_PATH);
+  assert.throws(() => toWindowsPath('-x', '/a'), (err: unknown) => err instanceof MachineError && err.code === MachineError.BAD_PATH);
+});
