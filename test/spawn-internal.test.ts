@@ -10,6 +10,7 @@ import { createPtyHost } from '../src/pty-host.js';
 import { ptyCommand, runTmpDir } from '../src/spawn.js';
 import { launchInternalPty } from '../src/spawn-internal.js';
 import { fakePtys, LAUNCH } from './fakes.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { assertMode } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
@@ -96,7 +97,7 @@ test('launchInternalPty rejects started with the pty message when the pty cannot
   const h = handlers();
   const failing = createPtyHost(() => { throw new Error('posix_spawnp failed'); });
   await assert.rejects(launchInternalPty(LAUNCH, h.handlers, { ptys: failing, secretFile: SECRET_FILE_PATH, commandShims: commandShimsIn(base) }).started, { message: 'pty: posix_spawnp failed' });
-  await eventually(() => !existsSync(runTmpDir('W1'))); // made for a run that never started, and removed (#428)
+  await eventually(() => !existsSync(runTmpDir('W1', HOST_PATHS))); // made for a run that never started, and removed (#428)
   const bare = launchInternalPty(LAUNCH, h.handlers);
   await assert.rejects(bare.started, { message: 'pty: no pty host' });
   await bare.kill(); // a run that never started has nothing to kill

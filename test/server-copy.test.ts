@@ -309,7 +309,7 @@ test('a Codex session copies with codex fork <id>: its rollout found by id, noth
 // (#586), so the session stays listed while Copilot's transcripts read nothing yet (node 6); the copy is dispatched, since the route needs one
 const COPILOT_ON: Omit<SettingsBody, 'workspaces'> = { ...BODY, agentEnabled: { claude: true, codex: true, copilot: true } };
 const NOTICE = 'Hive: this conversation was copied from task HIVE-1 (one).';
-const dropRunTmp = (t: TestContext, ptyId: string): void => { t.after(() => rm(runTmpDir(ptyId), { recursive: true, force: true })); }; // the fake pool never runs the pty that would remove it
+const dropRunTmp = (t: TestContext, ptyId: string): void => { t.after(() => rm(runTmpDir(ptyId, HOST_PATHS), { recursive: true, force: true })); }; // the fake pool never runs the pty that would remove it
 
 async function copilotLocalSource(t: TestContext, two: Two): Promise<string> {
   await two.server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE), agent: 'copilot' });
@@ -332,7 +332,7 @@ test('a Copilot copy resumes its source and runs /fork behind -i, writes no prom
   dropRunTmp(t, launch.ptyId);
   assert.deepEqual([launch.cwd, launch.agent?.command, launch.promptPath], [two.two, 'copilot', undefined]);
   assert.deepEqual([plainArgs(launch).slice(-2), launch.agent?.argv.at(-1)], [['--resume', source], ['-i', '/fork']]);
-  const dir = join(runTmpDir(launch.ptyId), 'copilot-instructions');
+  const dir = join(runTmpDir(launch.ptyId, HOST_PATHS), 'copilot-instructions');
   const instructions = await readFile(join(dir, 'hive.instructions.md'), 'utf8');
   assert.ok(instructions.startsWith('---\napplyTo: "**"\n---\n\n') && instructions.endsWith(`\n\n${NOTICE}`), instructions);
   assert.equal(launch.env?.COPILOT_CUSTOM_INSTRUCTIONS_DIRS, dir);

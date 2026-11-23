@@ -1,4 +1,3 @@
-import { isAbsolute } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { Tokens } from './facts.js';
 import type { Machine } from './machine.js';
@@ -39,8 +38,8 @@ export function pruneUsage(usage: UsageSample[], now: number): UsageSample[] {
 }
 
 /** Any local process can hit /hooks/event: only an absolute `.jsonl` path is ever opened. */
-export function isTranscriptPath(value: unknown): value is string {
-  return typeof value === 'string' && isAbsolute(value) && value.endsWith('.jsonl');
+export function isTranscriptPath(value: unknown, paths: Machine['paths']): value is string {
+  return typeof value === 'string' && paths.isAbsolute(value) && value.endsWith('.jsonl');
 }
 
 
@@ -55,5 +54,5 @@ export function isWorkerTranscript(machine: Machine, value: unknown, repo: strin
 
 /** An absolute `.jsonl` that `agent`'s runner owns for `cwd` (#924, #929): a local session's (#587) is its workspace's checkout. */
 export function isTranscriptIn(machine: Machine, value: unknown, cwd: string, agent: AgentId, sessionId?: string): value is string {
-  return isTranscriptPath(value) && runners[agent].ownsTranscript(machine, value, cwd, sessionId);
+  return isTranscriptPath(value, machine.paths) && runners[agent].ownsTranscript(machine, value, cwd, sessionId);
 }

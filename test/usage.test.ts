@@ -12,6 +12,7 @@ import { parseUsageLine, readTranscript, transcriptDir } from '../src/agents/cla
 import { ZERO_TOKENS } from '../src/facts.js';
 import type { UsageSample } from '../src/types.js';
 import { fakeMachine, machineWith } from './fake-machine.js';
+import { pathsOf } from '../src/machine.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 const LOCAL = fakeMachine({ env: {} });
@@ -140,14 +141,18 @@ test('pruneUsage drops samples older than 24 h and keeps the rest in order', () 
   assert.deepEqual(pruneUsage([], NOW), []);
 });
 
+const LINUX = pathsOf('linux');
+
 test('isTranscriptPath accepts only an absolute string ending in .jsonl', () => {
-  assert.equal(isTranscriptPath('/Users/x/.claude/projects/p/abc.jsonl'), true);
-  assert.equal(isTranscriptPath('relative/abc.jsonl'), false);
-  assert.equal(isTranscriptPath('/Users/x/abc.json'), false);
-  assert.equal(isTranscriptPath('/Users/x/abc.jsonl/'), false);
-  assert.equal(isTranscriptPath(''), false);
-  assert.equal(isTranscriptPath(undefined), false);
-  assert.equal(isTranscriptPath(42), false);
+  assert.equal(isTranscriptPath('C:\\actor\\.claude\\projects\\p\\abc.jsonl', pathsOf('win32')), true);
+  assert.equal(isTranscriptPath('C:\\actor\\.claude\\projects\\p\\abc.jsonl', LINUX), false);
+  assert.equal(isTranscriptPath('/Users/x/.claude/projects/p/abc.jsonl', LINUX), true);
+  assert.equal(isTranscriptPath('relative/abc.jsonl', LINUX), false);
+  assert.equal(isTranscriptPath('/Users/x/abc.json', LINUX), false);
+  assert.equal(isTranscriptPath('/Users/x/abc.jsonl/', LINUX), false);
+  assert.equal(isTranscriptPath('', LINUX), false);
+  assert.equal(isTranscriptPath(undefined, LINUX), false);
+  assert.equal(isTranscriptPath(42, LINUX), false);
 });
 
 test('transcriptDir is <config dir>/projects/<cwd with every non-alphanumeric as ->; CLAUDE_CONFIG_DIR wins over ~/.claude', () => {

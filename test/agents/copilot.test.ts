@@ -15,7 +15,7 @@ import { ptyCommand } from '../../src/spawn.js';
 import type { LaunchArg } from '../../src/types.js';
 import { SECRET } from '../secret-client.js';
 import { tempDir } from '../temp-dir.js';
-import { fakeMachine } from '../fake-machine.js';
+import { fakeMachine, HOST_PATHS } from '../fake-machine.js';
 
 // Copilot's argv, word for word (#873, spike §1, §3, §5): the Hive's flags first (both plugins, the MCP file, its tools allowed), the session
 // words, the agent's own args, the specialized agent and the model last; the prompt is ptyCommand's, behind -i.
@@ -91,7 +91,7 @@ test('the MCP file: the Hive\'s server with its literal headers, a URL server as
 
 test('the run\'s env: no update check, no resume cd, the instructions folder in its own tmp dir; the protocol file there with applyTo "**" (#873)', () => {
   const run = { ...RUN, protocolText: PROTOCOL };
-  const dir = join(runTmpDir(PTY), 'copilot-instructions');
+  const dir = join(runTmpDir(PTY, HOST_PATHS), 'copilot-instructions');
   assert.equal(instructionsDir(PTY), dir);
   assert.deepEqual(copilotRunner.runEnv(SERVER, run), { COPILOT_AUTO_UPDATE: 'false', COPILOT_DISABLE_RESUME_AUTO_CD: '1', COPILOT_CUSTOM_INSTRUCTIONS_DIRS: dir });
   assert.deepEqual(copilotRunner.runFiles(run), [{ path: join(dir, 'hive.instructions.md'), content: `---\napplyTo: "**"\n---\n\n${PROTOCOL}` }]);

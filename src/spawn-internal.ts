@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { claudeEnvLine, commandShimsEnvFile } from './command-shim.js';
 import { posixShell, posixShellEnv } from './posix-shell.js';
+import { pathsOf } from './machine.js';
 import { runTmpDir, ptyCommand, ptyEnv, shimsFirst } from './spawn.js';
 import type { SpawnOptions, PtyHandle, PtyHandlers, PtyLaunch } from './types.js';
 
@@ -71,7 +72,7 @@ function startIn(options: SpawnOptions | undefined, launch: PtyLaunch, tmp: stri
  * (#428) lives from the spawn to that exit.
  */
 export function launchInternalPty(launch: PtyLaunch, handlers: PtyHandlers, options?: SpawnOptions): PtyHandle {
-  const tmp = runTmpDir(launch.ptyId);
+  const tmp = runTmpDir(launch.ptyId, pathsOf(process.platform));
   const envFile = options === undefined ? undefined : commandShimsEnvFile(options.commandShims, launch.ptyId, path);
   const dropTmp = (): void => {
     removeTmp(tmp, handlers.onError);

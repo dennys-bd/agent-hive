@@ -12,6 +12,7 @@ import { activityOf, localActivityId } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import { HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
 import { tempDir } from './temp-dir.js';
@@ -221,12 +222,12 @@ test('a copilot stage starts copilot with its MCP file, the Hive\'s tools allowe
   const { workers } = await start(t, { ...BODY, agentEnabled: { claude: true, codex: true, copilot: true }, flows: bodyFlows([stage]) });
   await waitFor(() => workers.length === 1);
   const { launch } = workers[0];
-  t.after(() => rm(runTmpDir(launch.ptyId), { recursive: true, force: true })); // the fake pool never runs the pty that would remove it
+  t.after(() => rm(runTmpDir(launch.ptyId, HOST_PATHS), { recursive: true, force: true })); // the fake pool never runs the pty that would remove it
   assert.deepEqual([launch.agent?.command, launch.agent?.promptFlag], ['copilot', '-i']);
   assert.ok(launchFlag(launch, '--additional-mcp-config')?.endsWith(`${launch.ptyId}.mcp.json`));
   const plain = plainArgs(launch);
   assert.deepEqual([plain[0], plain[1], ...plain.slice(-2)], ['--allow-tool=hive', '--session-id', '--model', 'claude-sonnet-5.5']);
-  const dir = join(runTmpDir(launch.ptyId), 'copilot-instructions');
+  const dir = join(runTmpDir(launch.ptyId, HOST_PATHS), 'copilot-instructions');
   assert.deepEqual([launch.env?.COPILOT_CUSTOM_INSTRUCTIONS_DIRS, launch.env?.COPILOT_AUTO_UPDATE, launch.env?.COPILOT_DISABLE_RESUME_AUTO_CD], [dir, 'false', '1']);
   assert.ok((await readFile(join(dir, 'hive.instructions.md'), 'utf8')).startsWith('---\napplyTo: "**"\n---\n\n'));
   assert.equal(JSON.stringify(launch.agent?.argv).includes(SECRET), false);
