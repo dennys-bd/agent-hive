@@ -1,4 +1,3 @@
-import { basename, isAbsolute, resolve } from 'node:path';
 import { commandLine, okLine } from './console.js';
 import type { StepKind } from './facts.js';
 import type { Logger } from './log.js';
@@ -87,7 +86,7 @@ function reasonOf(err: unknown, timeout?: string): string {
  * must never land relative to the Hive's cwd. */
 export async function gitDirOf(machine: Machine, worktree: string): Promise<string> {
   const dir = (await gitOrWords(worktree, ['rev-parse', '--absolute-git-dir'], machine.exec)).trim();
-  if (!isAbsolute(dir)) throw new Error(`git named no git dir for ${worktree}`);
+  if (!machine.paths.isAbsolute(dir)) throw new Error(`git named no git dir for ${worktree}`);
   return dir;
 }
 
@@ -95,7 +94,7 @@ export async function gitDirOf(machine: Machine, worktree: string): Promise<stri
 // target is never followed. Missing counts as done.
 async function delStep(machine: Machine, worktree: string, step: SetupStep): Promise<string> {
   await refuseLinkedParent(machine, worktree, WORKTREE_NAME, step.arg);
-  const target = resolve(worktree, step.arg);
+  const target = machine.paths.resolve(worktree, step.arg);
   const found = await machine.fs.lstat(target).then(() => true, (err: NodeJS.ErrnoException) => {
     if (err.code === 'ENOENT') return false;
     throw err;
@@ -168,7 +167,7 @@ async function runStep(machine: Machine, phase: Phase, worktree: string, step: S
   const done = await doStep(machine, phase, worktree, step, deps).then((result) => ({ ok: true as const, result }), (err: unknown) => ({ ok: false as const, err }));
   const ms = Date.now() - began;
   const outcome = done.ok ? 'ok (0)' : `failed (${done.err instanceof RunFailure ? done.err.code : 'error'})`;
-  deps.log.info(`${phase.name} ${basename(worktree)} line ${step.line}: ${described} ${outcome} ${ms}ms`);
+  deps.log.info(`${phase.name} ${machine.paths.basename(worktree)} line ${step.line}: ${described} ${outcome} ${ms}ms`);
   const code = !done.ok && done.err instanceof RunFailure ? { code: done.err.code } : {}; // #390: the dialog's failed row
   report(deps, phase, step, { kind: STEP_KINDS[step.kind], index: place.index, durationMs: ms, ok: done.ok, ...code });
   if (!done.ok) throw new Error(failure(phase, step, reasonOf(done.err, phase.timeout), place));

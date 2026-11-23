@@ -1,4 +1,3 @@
-import { basename, join, resolve } from 'node:path';
 import type { Machine } from './machine.js';
 import { parseSetup, type SetupStep } from './setup-script.js';
 import type { Workspace } from './types.js';
@@ -14,7 +13,8 @@ export const TEARDOWN_MARKER = 'hive-teardown-done';
 async function markerOf(machine: Machine, workspace: Workspace, worktree: string): Promise<string> {
   const common = (await gitOrWords(workspace.path, ['rev-parse', '--git-common-dir'], machine.exec)).trim();
   if (common === '') throw new Error(`git named no git dir for ${workspace.path}`);
-  return join(resolve(workspace.path, common), 'worktrees', basename(worktree), TEARDOWN_MARKER);
+  const { paths } = machine;
+  return paths.join(paths.resolve(workspace.path, common), 'worktrees', paths.basename(worktree), TEARDOWN_MARKER);
 }
 
 /** What runTeardown did: ran it, or why not (no lines, already torn down, no folder to run in). */

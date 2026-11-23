@@ -1,5 +1,4 @@
 // The forced and the clean removal of a task's worktree live here, out of worktree.ts (#159); everything goes through the machine that hosts it.
-import { join } from 'node:path';
 import type { Logger } from './log.js';
 import type { Machine, MachineExec } from './machine.js';
 import { ownBranch } from './task-runs.js';
@@ -35,7 +34,7 @@ export async function removeWorktree(
       if (!BRANCH_NOT_FOUND.test(err.message)) throw err;
     });
   }
-  await machine.fs.unlink(join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
+  await machine.fs.unlink(machine.paths.join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== 'ENOENT') throw err;
   });
 }

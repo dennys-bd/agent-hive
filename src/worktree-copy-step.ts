@@ -1,4 +1,3 @@
-import { basename, dirname, isAbsolute, join, relative } from 'node:path';
 import type { Machine } from './machine.js';
 import { checkRelativePath, parseSetup, type SetupStep } from './setup-script.js';
 import { EDITOR_FILE_MAX, type Workspace } from './types.js';
@@ -9,11 +8,11 @@ import type { Phase } from './worktree-steps.js';
 const MISSING: Readonly<Record<string, string>> = { ENOENT: 'not found in', ENOTDIR: 'not a folder in' };
 
 export async function insideRoot(machine: Machine, root: string, name: string, path: string): Promise<string> {
-  const real = await machine.fs.realpath(join(root, path)).catch((err: NodeJS.ErrnoException) => {
+  const real = await machine.fs.realpath(machine.paths.join(root, path)).catch((err: NodeJS.ErrnoException) => {
     const reason = MISSING[err.code ?? ''];
     throw reason === undefined ? err : new Error(`${reason} ${name}`);
   });
-  if (checkRelativePath(relative(await machine.fs.realpath(root), real), machine.paths) !== undefined) throw new Error(`outside ${name}`);
+  if (checkRelativePath(machine.paths.relative(await machine.fs.realpath(root), real), machine.paths) !== undefined) throw new Error(`outside ${name}`);
   return real;
 }
 
@@ -21,9 +20,9 @@ export async function insideRoot(machine: Machine, root: string, name: string, p
 // pointed it (a worker can commit `config -> ~/somewhere`). The last segment is fine for a file destination: cp with force replaces a link,
 // never follows it. A folder destination (`whole`) is written into, so its last segment must not be a link either.
 export async function refuseLinkedParent(machine: Machine, root: string, name: string, path: string, whole = false): Promise<void> {
-  const parents = (whole ? path : dirname(path)).split(/[\\/]/).filter((s) => s !== '' && s !== '.');
+  const parents = (whole ? path : machine.paths.dirname(path)).split(/[\\/]/).filter((s) => s !== '' && s !== '.');
   for (let i = 1; i <= parents.length; i += 1) {
-    const stat = await machine.fs.lstat(join(root, ...parents.slice(0, i))).catch((err: NodeJS.ErrnoException) => {
+    const stat = await machine.fs.lstat(machine.paths.join(root, ...parents.slice(0, i))).catch((err: NodeJS.ErrnoException) => {
       if (err.code === 'ENOENT') return undefined;
       throw err;
     });
@@ -38,10 +37,10 @@ const HOME = '~';
 // as written (the user's own line, as a RUN cp would); a relative one under phase.to, where no folder on its way may be a symlink.
 async function destinationOf(machine: Machine, phase: Phase, step: SetupStep): Promise<string> {
   const dest = step.dest ?? step.arg;
-  if (dest === HOME || dest.startsWith(`${HOME}/`)) return join(machine.info().homedir, dest.slice(HOME.length));
-  if (isAbsolute(dest)) return dest;
+  if (dest === HOME || dest.startsWith(`${HOME}/`)) return machine.paths.join(machine.info().homedir, dest.slice(HOME.length));
+  if (machine.paths.isAbsolute(dest)) return dest;
   await refuseLinkedParent(machine, phase.to, phase.toName, dest, step.arg.endsWith('/') || dest.endsWith('/'));
-  return join(phase.to, dest);
+  return machine.paths.join(phase.to, dest);
 }
 
 // The files under `path`, for a result line: a folder's every non-folder entry, a symlink as one, never followed.
@@ -75,7 +74,7 @@ export async function copyStep(machine: Machine, phase: Phase, step: SetupStep):
   if (step.arg.endsWith('/') && !(await machine.fs.stat(source)).isDirectory()) throw new Error(`not a folder in ${phase.fromName}`);
   const dest = await destinationOf(machine, phase, step);
   // a file into `folder/` keeps its name, as cp does; a folder source into `folder/` is the rsync-like merge above
-  const target = !step.arg.endsWith('/') && (step.dest ?? '').endsWith('/') && !(await machine.fs.lstat(source)).isDirectory() ? join(dest, basename(step.arg)) : dest;
+  const target = !step.arg.endsWith('/') && (step.dest ?? '').endsWith('/') && !(await machine.fs.lstat(source)).isDirectory() ? machine.paths.join(dest, machine.paths.basename(step.arg)) : dest;
   await machine.fs.cp(source, target, { recursive: true, force: true, filter: copyFilter(machine, phase) });
   return `copied ${await countFiles(machine, source)} files to ${step.dest ?? step.arg}`;
 }
