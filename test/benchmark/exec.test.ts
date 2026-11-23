@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { realpath } from 'node:fs/promises';
-import { buildEnv, cleanEnv, execRun, type Run, serialGit } from '../../src/benchmark/exec.js';
+import { buildEnv, cleanEnv, execRun, ghRun, type Run, serialGit } from '../../src/benchmark/exec.js';
 import { tempDir } from '../temp-dir.js';
+import { fakeRun } from './fixtures.js';
 
 test('cleanEnv drops what would stop or misroute a nested claude or test runner and keeps the rest (#105)', () => {
   assert.deepEqual(cleanEnv({ PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', NODE_TEST_CONTEXT: 'child', HIVE_HOME: '/h' }, { HIVE_HOME: '/run/home' }), { PATH: '/bin', HIVE_HOME: '/run/home' });
@@ -45,4 +46,14 @@ test('buildEnv keeps the toolchain variables and drops everything else (#105)', 
   assert.deepEqual(buildEnv({ PATH: '/bin', HOME: '/h', PNPM_HOME: '/p', GITHUB_TOKEN: 'x', ANTHROPIC_API_KEY: 'y' }), { PATH: '/bin', HOME: '/h', PNPM_HOME: '/p' });
   const toolchain = { TERM: 'xterm', CI: '1', LOGNAME: 'u', HTTPS_PROXY: 'p', HTTP_PROXY: 'p', NO_PROXY: 'n', NODE_EXTRA_CA_CERTS: '/ca.pem', PLAYWRIGHT_BROWSERS_PATH: '/pw', COREPACK_HOME: '/c' };
   assert.deepEqual(buildEnv({ ...toolchain, CLAUDE_CODE_OAUTH_TOKEN: 'z', HIVE_HOME: '/other' }), toolchain);
+});
+
+test('ghRun lays the selected login\'s env over the clean one; the machine\'s login and a call with its own env pass as given (#961)', async () => {
+  const { run, calls } = fakeRun();
+  await ghRun(async () => ({ GH_TOKEN: 'gho_test' }), run)('gh', ['pr', 'create'], { cwd: 'w' });
+  assert.deepEqual(calls[0], { file: 'gh', args: ['pr', 'create'], cwd: 'w', env: cleanEnv(process.env, { GH_TOKEN: 'gho_test' }) });
+  await ghRun(async () => ({}), run)('gh', ['pr', 'create']);
+  assert.equal(calls[1]?.env, undefined, 'execRun\'s own clean env, as today');
+  await ghRun(async () => ({ GH_TOKEN: 'gho_test' }), run)('gh', ['pr', 'create'], { env: { A: '1' } });
+  assert.deepEqual(calls[2]?.env, { A: '1' });
 });

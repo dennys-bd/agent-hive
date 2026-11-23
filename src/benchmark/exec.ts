@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { GhEnv } from '../github-account.js';
 
 const execFileAsync = promisify(execFile);
 const MAX_BUFFER = 256 * 1024 * 1024; // a whole diff, or pnpm install's output
@@ -31,6 +32,14 @@ export const execRun: Run = async (file, args, opts = {}) => {
 
 /** The same runner, each call in `cwd` unless it names its own: the docs clone's git calls go through the one serialGit (#79). */
 export const inDir = (run: Run, cwd: string): Run => (file, args, opts = {}) => run(file, args, { ...opts, cwd: opts.cwd ?? cwd });
+
+/** The benchmark PR's gh (#961): the selected login's env over the clean one, since execRun given an env drops its own. The machine's
+ * login, or a call with an env of its own, passes as given. */
+export const ghRun = (ghEnv: GhEnv, run: Run = execRun): Run => async (file, args, opts = {}) => {
+  if (opts.env !== undefined) return run(file, args, opts);
+  const env = await ghEnv();
+  return run(file, args, Object.keys(env).length === 0 ? opts : { ...opts, env: cleanEnv(process.env, env) });
+};
 
 /** The harness's own git calls, one at a time (#105, the user): both runs of a pair share one repository, so branch, push and worktree
  *  calls must not race. Other commands pass straight through. ponytail: a per-call lock; the daemons' own git relies on git's lock files. */

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { ghRun } from '../../src/benchmark/exec.js';
 import { dropRunFiles, openPr, PrStepError, prBody, type PrInput } from '../../src/benchmark/pr.js';
 import { fakeLog } from '../fakes.js';
 import { aggregate } from '../../src/benchmark/report.js';
@@ -200,4 +201,11 @@ test('a gh failure after the push deletes the remote branch (a failure there onl
   await assert.rejects(openPr(warned.deps, INPUT), (err: unknown) => err instanceof PrStepError && err.step === 'pr');
   assert.equal(shown(warned.calls).at(-1), 'git branch -D feat/skills');
   assert.ok(warned.lines.some((l) => l.includes('WARN') && l.includes('(Error)')));
+});
+
+test('openPr\'s gh pr create runs as the selected login through ghRun, and no git call gets its token (#961)', async () => {
+  const { run, calls } = fakeRun(prAnswers());
+  const { log } = fakeLog();
+  assert.deepEqual(await openPr({ exec: run, gh: ghRun(async () => ({ GH_TOKEN: 'gho_test' }), run), log }, INPUT), { url: PR_URL });
+  assert.deepEqual(calls.filter((c) => c.env?.GH_TOKEN === 'gho_test').map(line).map((text) => text.replace(/--body-file \S+/, '--body-file BODY')), [GH]);
 });
