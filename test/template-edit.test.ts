@@ -178,6 +178,30 @@ test('setVariableValue writes a workspace\'s value and removes it with undefined
   });
 });
 
+test('removing a declaration\'s last workspace value drops its workspaces: key, so the text comes back as it was before the value (#621, decision 9)', () => {
+  const shipped = '---\nname: x\nvariables:\n  specsDir: { default: docs/hive/specs }\n---\n{{ specsDir }}\n';
+  const set = ok(setVariableValue(shipped, 'specsDir', 'app', 'design/specs'));
+  assert.ok(set.text.includes('  specsDir: { default: docs/hive/specs, workspaces: { app: design/specs } }\n'));
+  assert.equal(ok(setVariableValue(set.text, 'specsDir', 'app', undefined)).text, shipped);
+  const two = ok(setVariableValue(set.text, 'specsDir', 'site', 'other'));
+  assert.ok(ok(setVariableValue(two.text, 'specsDir', 'app', undefined)).text.includes('workspaces: { site: other }'), 'another entry keeps the key');
+});
+
+test('a flow declaration\'s value is edited in place: the other header lines keep their bytes, a value is quoted for flow, CRLF stays (#621, decision 9)', () => {
+  const header = ['---', 'name: x', 'variables:', '  flags: { values: [none, always], default: none }', '  dir: {default: a, workspaces: {app: b, site: c}}', '---', '{{ flags }}{{ dir }}', ''];
+  const text = header.join('\n');
+  const replaced = ok(setVariableValue(text, 'dir', 'app', 'x, y: z')).text;
+  assert.equal(replaced, text.replace('{app: b, site: c}', '{app: "x, y: z", site: c}'));
+  assert.deepEqual(ok(setVariableValue(text, 'dir', 'app', 'x, y: z')).parsed.variables[1].workspaces, { app: 'x, y: z', site: 'c' });
+  assert.equal(ok(setVariableValue(text, 'dir', 'app', undefined)).text, text.replace('{app: b, site: c}', '{site: c}'), 'the first of two goes with its comma');
+  assert.equal(ok(setVariableValue(text, 'dir', 'site', undefined)).text, text.replace('{app: b, site: c}', '{app: b}'));
+  assert.equal(ok(setVariableValue(text, 'flags', 'app', 'always')).text, text.replace('default: none }', 'default: none, workspaces: { app: always } }'));
+  const empty = text.replace(', workspaces: {app: b, site: c}', ', workspaces: {}');
+  assert.equal(ok(setVariableValue(empty, 'dir', 'app', 'b')).text, empty.replace('{}', '{ app: b }'));
+  const crlf = text.replaceAll('\n', '\r\n');
+  assert.equal(ok(setVariableValue(ok(setVariableValue(crlf, 'flags', 'app', 'always')).text, 'flags', 'app', undefined)).text, crlf);
+});
+
 test('the three modules import nothing from node, so the editor can bundle them as they are (#311)', () => {
   const imports = (file: string): string[] => {
     // Runs from dist/test: the TypeScript source is read as text.

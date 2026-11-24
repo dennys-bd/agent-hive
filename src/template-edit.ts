@@ -1,7 +1,7 @@
 // Text edits of a template (#311, node 1.2 of #309): insert, replace and remove a chain, move a block, add a variable, set a variable's
 // value. Each edits whole lines (or the header's yaml Document) and answers the new text with its parse and map, so the editor reloads
 // from one place. Node-free, like src/template.ts.
-import { type Document, isMap, parseDocument } from 'yaml';
+import { Document, isMap, isNode, isScalar, type Pair, parseDocument, type YAMLMap } from 'yaml';
 import { type ChainSpec, chainMarkers, conditionProblem } from './template-condition.js';
 import { buildMap, type MapBlock, type TemplateMap } from './template-map.js';
 import { type ParsedTemplate, parseTemplate, splitHeader, type TemplateError, type VariableValue } from './template.js';
@@ -246,16 +246,80 @@ export function addVariable(text: string, declaration: VariableDeclaration): Edi
   });
 }
 
-/** workspaces.<workspace> of a declared variable; undefined removes it, so the workspace falls back to the default. */
+type Span = [start: number, end: number];
+type FlowPair = Pair<unknown, unknown>;
+
+const keyStart = (pair: FlowPair): number | undefined => (isNode(pair.key) ? pair.key.range?.[0] : undefined);
+const valueEnd = (pair: FlowPair): number | undefined => (isNode(pair.value) ? pair.value.range?.[1] : undefined);
+const pairOf = (map: YAMLMap, key: string): FlowPair | undefined =>
+  map.items.find((pair) => isScalar(pair.key) && pair.key.value === key);
+
+// One `key: value` as yaml writes it inside a flow map, so a value with a comma or a colon is quoted for that context
+function flowPairText(key: string, value: unknown): string {
+  const doc = new Document({ [key]: value });
+  if (isMap(doc.contents)) doc.contents.flow = true;
+  return doc.toString({ lineWidth: 0 }).trim().slice('{ '.length, -' }'.length);
+}
+
+// The text a pair takes in its flow map, with the separator that goes with it: the one before it, or after it when it is the first
+function pairSpan(map: YAMLMap, pair: FlowPair): Span | undefined {
+  const at = map.items.indexOf(pair);
+  const start = at > 0 ? valueEnd(map.items[at - 1]) : keyStart(pair);
+  const end = at === 0 && map.items.length > 1 ? keyStart(map.items[1]) : valueEnd(pair);
+  return start === undefined || end === undefined ? undefined : [start, end];
+}
+
+function appendSpan(map: YAMLMap, text: string): { span: Span; text: string } | undefined {
+  const last = map.items.at(-1);
+  if (last === undefined) return map.range ? { span: [map.range[0], map.range[1]], text: `{ ${text} }` } : undefined;
+  const end = valueEnd(last);
+  return end === undefined ? undefined : { span: [end, end], text: `, ${text}` };
+}
+
+// What setVariableValue changes in a flow declaration, as a span of the header and its new text: the one entry, or the workspaces: pair
+// when it comes or goes. undefined when the declaration is not written that way, so the whole header is rewritten instead
+function valueSplice(declaration: YAMLMap, workspace: string, value: VariableValue | undefined): { span: Span; text: string } | undefined {
+  const entries = pairOf(declaration, 'workspaces');
+  if (entries === undefined) return value === undefined ? undefined : appendSpan(declaration, flowPairText('workspaces', { [workspace]: value }));
+  if (!isMap(entries.value) || !entries.value.flow) return undefined;
+  const map = entries.value;
+  const entry = pairOf(map, workspace);
+  if (value !== undefined && entry === undefined) return appendSpan(map, flowPairText(workspace, value));
+  if (entry === undefined) return undefined;
+  if (value === undefined) {
+    const span = map.items.length === 1 ? pairSpan(declaration, entries) : pairSpan(map, entry);
+    return span && { span, text: '' };
+  }
+  const [start, end] = [keyStart(entry), valueEnd(entry)];
+  return start === undefined || end === undefined ? undefined : { span: [start, end], text: flowPairText(workspace, value) };
+}
+
+// #621, decision 9: only the declaration's own bytes change, so every other header line stays as written (yaml would pad [a, b] to [ a, b ])
+function spliceValue(source: Source, name: string, workspace: string, value: VariableValue | undefined): string | undefined {
+  const declaration = parseDocument(splitHeader(source.text).header).getIn(['variables', name], true);
+  if (!isMap(declaration) || !declaration.flow) return undefined;
+  const splice = valueSplice(declaration, workspace, value);
+  if (splice === undefined) return undefined;
+  const offset = source.text.indexOf('\n') + 1; // the header's text starts after the opening fence's line
+  const [start, end] = splice.span.map((at) => at + offset);
+  return source.text.slice(0, start) + splice.text + source.text.slice(end);
+}
+
+/** workspaces.<workspace> of a declared variable; undefined removes it, so the workspace falls back to its value or the default. The last entry
+ * gone takes the workspaces: key with it (#621): the declaration reads as shipped again, so a version whose only change was a value comes back
+ * equal to its base. A flow declaration is edited in place; any other is rewritten with the header. */
 export function setVariableValue(text: string, name: string, workspace: string, value: VariableValue | undefined): EditResult {
   return edit(text, (source) => {
     if (!source.parsed.variables.some((variable) => variable.name === name)) return notDeclared(name);
-    const path = ['variables', name, 'workspaces', workspace];
+    const entries = ['variables', name, 'workspaces'];
+    const path = [...entries, workspace];
     // nothing to remove is a success that leaves the text byte for byte as it was (deleteIn would throw on the missing parent)
     if (value === undefined && !parseDocument(splitHeader(source.text).header).hasIn(path)) return source.text;
-    return writeHeader(source, (doc) => {
-      if (value === undefined) doc.deleteIn(path);
-      else doc.setIn(path, value);
+    return spliceValue(source, name, workspace, value) ?? writeHeader(source, (doc) => {
+      if (value !== undefined) return void doc.setIn(path, value);
+      doc.deleteIn(path);
+      const left = doc.getIn(entries);
+      if (isMap(left) && left.items.length === 0) doc.deleteIn(entries);
     });
   });
 }

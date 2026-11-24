@@ -186,6 +186,16 @@ test('every shipped template renders a workspace\'s value for each variable it d
   assert.ok(renderedFor(await skillText('new-spec'), 'a', { specsDir: 'design/specs' }).includes('design/specs'), 'a text value reaches the text');
 });
 
+test('a shipped template comes back byte for byte once a workspace value is set and removed in its header: what lets the migration find a version equal to its base (#621, decision 9)', async () => {
+  for (const path of TEMPLATES) {
+    const text = await readFile(join(PLUGIN, path), 'utf8');
+    for (const variable of parseTemplate(text).variables.filter((v) => v.from === undefined)) {
+      const set = edited(setVariableValue(text, variable.name, 'a', otherValue(variable)));
+      assert.equal(edited(setVariableValue(set, variable.name, 'a', undefined)), text, `${path}: ${variable.name}`);
+    }
+  }
+});
+
 const DECOMPOSITION_VALUES: Record<string, string> = { specsDir: 'design/specs', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', decompositionLabel: 'tree' };
 
 test('/hive:decomposition declares its own four variables, interpolated where used, and reads no reference, no Hive tool but hive_task (#7) and no runner tool (#430)', async () => {
