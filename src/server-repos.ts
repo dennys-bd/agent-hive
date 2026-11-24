@@ -13,8 +13,8 @@ import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github-pages.js';
 import type { GhRateLimit } from './sources/github-queries.js';
-import type { Config, Exec, RepoIssues, SourceQuota, State } from './types.js';
-import { pathsOf } from './machine.js';
+import type { Config, RepoIssues, SourceQuota, State } from './types.js';
+import type { MachineFor } from './machine.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -41,7 +41,7 @@ const QUOTA_MESSAGE = 'GitHub quota is low';
 /** What the repository routes need (#757). */
 export interface RepoRouteDeps {
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
-  exec: Exec; // git remote get-url, one per workspace on each request
+  machineFor: MachineFor; // #932: each workspace's git remote get-url, on its machine, on each request
   gql: GqlJson; // the writes' GraphQL (gh api graphql --input -): the Hive's own login, as the PR page's writes (#592, #758); a repository is no source's
   poll(names: string[]): Promise<void>; // /sources/refresh's path, for these sources only: after a write on a task's issue
   log: Pick<Logger, 'error'>;
@@ -83,7 +83,7 @@ function contextOf(deps: RepoRouteDeps): RepoContext {
 async function listed(ctx: RepoContext, res: Response): Promise<{ state: State; refs: RepoRef[] } | undefined> {
   const live = ctx.deps.requireLive(res);
   if (!live) return undefined;
-  return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, { exec: ctx.deps.exec, paths: pathsOf(process.platform) }) }; // the host's git, so the host's paths
+  return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, ctx.deps.machineFor) };
 }
 
 // The repository a route's :owner/:name names, one listRepositories gives, with its ref (#186: an original's role and pair), or undefined

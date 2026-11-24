@@ -56,11 +56,12 @@ function recordWorkspace(config: Pick<Config, 'comb'>, state: Pick<State, 'tasks
   return task === undefined ? undefined : taskWorkspace(config, task)?.name;
 }
 
-/** The repositories the Hive knows (#757): each workspace's origin in the Comb's order, then the repository of every open PR in the
- * activity records with its activity's workspace; each owner/name once, with the first workspace that named it. A workspace whose origin is
- * not on GitHub adds none. A fork workspace adds its original and then its fork (#854). ponytail: owner/name compares as written, so an origin and a PR link that differ only in case list twice. */
-export async function listRepositories(config: Pick<Config, 'comb'>, state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, machine: RepoMachine): Promise<RepoRef[]> {
-  const origins = (await Promise.all(config.comb.workspaces.map((w) => workspaceRefs(machine, w)))).flat();
+/** The repositories the Hive knows (#757): each workspace's origin in the Comb's order, read on its own machine (#932), then the repository of
+ * every open PR in the activity records with its activity's workspace; each owner/name once, with the first workspace that named it. A workspace
+ * whose origin is not on GitHub, or whose machine is unavailable, adds none. A fork workspace adds its original and then its fork (#854).
+ * ponytail: owner/name compares as written, so an origin and a PR link that differ only in case list twice. */
+export async function listRepositories(config: Pick<Config, 'comb'>, state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, machineFor: (workspace: Pick<Workspace, 'machine'>) => RepoMachine): Promise<RepoRef[]> {
+  const origins = (await Promise.all(config.comb.workspaces.map((w) => workspaceRefs(machineFor(w), w)))).flat();
   const prs = state.activityRecords.flatMap((record): MaybeRef[] => {
     const workspace = recordWorkspace(config, state, record);
     if (workspace === undefined) return [];

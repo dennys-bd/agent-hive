@@ -7,6 +7,7 @@ import { registerRepoRoutes, type RepoRouteDeps } from '../src/server-repos.js';
 import { ADD_COMMENT, ADD_LABELS, REPO_LABELS, UPDATE_ISSUE } from '../src/repos/github-repo-queries.js';
 import type { CombConfig, Exec, State, Task } from '../src/types.js';
 import { fakeGqlJson } from './fakes.js';
+import { fakeMachine } from './fake-machine.js';
 
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/code/hive', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources: [], flows: [], commands: [], hiveSource: true, createIn: 'hive' };
 const exec: Exec = async () => ({ stdout: 'git@github.com:acme/hive.git\n' }); // the one workspace's origin: acme/hive
@@ -19,7 +20,7 @@ function routes(t: TestContext, answer: Answer, extra: Partial<State> = {}, poll
   app.use(express.json());
   const state: State = { ...initialState(0), ...extra };
   const deps: RepoRouteDeps = {
-    requireLive: () => ({ state, runtime: { config: { comb: COMB } } }), exec, gql: fakeGqlJson(answer).gql,
+    requireLive: () => ({ state, runtime: { config: { comb: COMB } } }), machineFor: () => fakeMachine({ exec }), gql: fakeGqlJson(answer).gql,
     poll: poll ?? (async (names) => { polls.push(names); }), log: { error: (message: string) => { errors.push(message); } },
   };
   registerRepoRoutes(app, deps);

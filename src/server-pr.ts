@@ -79,7 +79,7 @@ export async function listedRepository(deps: Pick<PrRouteDeps, 'requireLive' | '
   if (!live) return undefined;
   const repository = `${req.params.owner as string}/${req.params.name as string}`;
   // a workspace has no machine until 10.1: the local one
-  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor({}))).find((r) => r.repository === repository);
+  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor)).find((r) => r.repository === repository); // #932: each workspace on its machine
   if (ref) return { state: live.state, repository, ref, config: live.runtime.config };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;

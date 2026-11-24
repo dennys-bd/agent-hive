@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { initialState } from '../../src/orchestrator.js';
 import { listRepositories, originRepository } from '../../src/repos/repositories.js';
 import type { CombConfig, Exec, State, Task, Workspace } from '../../src/types.js';
+import { NOT_SUPPORTED, unavailableMachine } from '../../src/machines.js';
 import { fakeMachine } from '../fake-machine.js';
 
 const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' });
@@ -34,7 +35,7 @@ test('listRepositories: the origins in the Comb\'s order, then the open PRs\' re
       { id: 'A2', taskIds: ['board:2'], sessions: [], prs: [pr('web', 5, 'open')] },
     ],
   };
-  assert.deepEqual(await listRepositories({ comb: COMB }, state, fakeMachine({ exec })), [
+  assert.deepEqual(await listRepositories({ comb: COMB }, state, () => fakeMachine({ exec })), [
     { repository: 'acme/hive', workspace: 'hive' }, // hive2's origin is the same repository: the first workspace keeps it
     { repository: 'acme/site', workspace: 'site' }, // also an open PR's: listed once
     { repository: 'acme/api', workspace: 'docs' },
@@ -44,7 +45,7 @@ test('listRepositories: the origins in the Comb\'s order, then the open PRs\' re
 
 test('a workspace off GitHub or without a checkout adds none, and originRepository with no path reads nothing (#588, #757)', async () => {
   const comb: CombConfig = { ...COMB, workspaces: [workspace('docs'), workspace('none')] };
-  assert.deepEqual(await listRepositories({ comb }, initialState(0), fakeMachine({ exec })), []);
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), () => fakeMachine({ exec })), []);
   assert.equal(await originRepository(fakeMachine({ exec }), undefined), undefined);
   assert.equal(await originRepository(fakeMachine({ exec }), '/code/site'), 'acme/site');
 });
@@ -63,7 +64,7 @@ test('a fork workspace lists its original then its fork where its origin stood, 
     ...COMB,
     workspaces: [{ ...workspace('ex'), fork: { remote: 'upstream', pr: 'original' } }, workspace('site'), { ...workspace('half'), fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }],
   };
-  assert.deepEqual(await listRepositories({ comb }, initialState(0), fakeMachine({ exec: remotes })), [
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), () => fakeMachine({ exec: remotes })), [
     { repository: 'ex/excalidraw', workspace: 'ex', role: 'original', pr: 'original', pair: 'me/excalidraw' },
     { repository: 'me/excalidraw', workspace: 'ex', role: 'fork', pr: 'original', pair: 'ex/excalidraw' },
     { repository: 'acme/site', workspace: 'site' },
@@ -85,7 +86,7 @@ test('a nested repo on GitHub follows its workspace\'s repositories, role nested
     ...COMB,
     workspaces: [{ ...workspace('hive'), nestedRepos: ['docs', 'ee', 'gone'] }, { ...workspace('ex'), fork: { remote: 'upstream', pr: 'original' }, nestedRepos: ['docs'] }],
   };
-  assert.deepEqual(await listRepositories({ comb }, initialState(0), fakeMachine({ exec: remotes })), [
+  assert.deepEqual(await listRepositories({ comb }, initialState(0), () => fakeMachine({ exec: remotes })), [
     { repository: 'acme/hive', workspace: 'hive' },
     { repository: 'acme/docs', workspace: 'hive', role: 'nested', pair: 'acme/hive' },
     { repository: 'ex/excalidraw', workspace: 'ex', role: 'original', pr: 'original', pair: 'me/excalidraw' },
@@ -101,6 +102,18 @@ test('a nested repo\'s checkout is joined with the machine\'s paths: a win32 mac
     return { stdout: 'git@github.com:acme/hive.git\n' };
   };
   const comb: CombConfig = { ...COMB, workspaces: [{ ...workspace('hive'), path: 'C:\\code\\hive', nestedRepos: ['docs'] }] };
-  await listRepositories({ comb }, initialState(0), fakeMachine({ exec: winExec, info: { platform: 'win32' } }));
+  await listRepositories({ comb }, initialState(0), () => fakeMachine({ exec: winExec, info: { platform: 'win32' } }));
   assert.deepEqual(asked, ['C:\\code\\hive', 'C:\\code\\hive\\docs']);
+});
+
+test('each workspace lists its repositories from its own machine; one on an unavailable machine lists none and the others still answer (#932)', async () => {
+  const hive = workspace('hive');
+  const comb: CombConfig = { ...COMB, workspaces: [hive, { ...hive, name: 'site', path: '/home/u/site', machine: 'wsl:Y' }] };
+  const asked: string[] = [];
+  const machineFor = (w: Pick<Workspace, 'machine'>) => {
+    asked.push(w.machine);
+    return w.machine === 'wsl:Y' ? unavailableMachine('wsl:Y', NOT_SUPPORTED) : fakeMachine({ exec: async () => ({ stdout: 'git@github.com:acme/hive.git\n' }) });
+  };
+  assert.deepEqual((await listRepositories({ comb }, initialState(0), machineFor)).map((r) => r.repository), ['acme/hive']);
+  assert.deepEqual(asked, ['local', 'wsl:Y']);
 });
