@@ -1,9 +1,10 @@
 // The boot migration of #621 (decisions 7 to 10): a config with a workspace from before `variables` gets that workspace's values from the
 // templates of the versions it uses in the custom store. The config is written first; then the moved values leave those templates, and a
-// version left byte for byte equal to the shipped files it was made from goes back to the Hive's original for that workspace. Not in
+// version left equal to the shipped files it was made from (a template by its header's data and its body) goes back to the Hive's original for that workspace. Not in
 // config-migrate.ts, which is pure over raw JSON: this one reads and writes the disk. A checkout's .claude/ item is never read or written.
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { CONFIG_FILE } from './config.js';
 import { BASE_DIR, ORIGINAL, parseVersionJson, VERSION_FILE, writeVersionJson } from './custom-versions.js';
 import { type FileSet, HIVE_ORIGIN, type ItemSources, originFiles, sameFiles, versionDir, versionFiles } from './item-sources.js';
@@ -156,13 +157,22 @@ async function stripAll(read: readonly Template[], moved: Readonly<Record<string
   return failed;
 }
 
-// Decision 9: a version made from the original whose files are now its base's, byte for byte, leaves the workspaces it was read for. It stays
+// The old panel saved a header through yaml, which rewrites its layout (`[a, b]` to `[ a, b ]`, a trailing space lost): a template file
+// is its base's when its header's data and its body's text are; a header that does not parse, and any other file, compare by bytes
+function sameTemplate(path: string, shipped: Buffer, kept: Buffer): boolean {
+  if (!TEMPLATE_FILE.test(path)) return shipped.equals(kept);
+  const [a, b] = [parseTemplate(shipped.toString('utf8')), parseTemplate(kept.toString('utf8'))];
+  if (a.errors.length > 0 || b.errors.length > 0) return shipped.equals(kept);
+  return a.body === b.body && isDeepStrictEqual(a.header, b.header);
+}
+
+// Decision 9: a version made from the original whose files are now its base's (by sameTemplate), leaves the workspaces it was read for. It stays
 // in the store, so assigning it again undoes the reset
 async function resetOne(home: string, item: CatalogueItem, version: string, workspaces: readonly string[], log: VariablesMigrationDeps['log']): Promise<void> {
   if (item.versions.find((v) => v.name === version)?.from !== ORIGINAL) return;
   try {
     const dir = versionDir(home, item, version);
-    if (!(await sameFiles(await versionFiles(home, item, version), join(dir, BASE_DIR)))) return;
+    if (!(await sameFiles(await versionFiles(home, item, version), join(dir, BASE_DIR), sameTemplate))) return;
     const json = parseVersionJson(await readFile(join(dir, VERSION_FILE), 'utf8'), version);
     await writeVersionJson(dir, { ...json, workspaces: json.workspaces.filter((w) => !workspaces.includes(w)) });
     for (const workspace of workspaces) log.info(`${item.name} back on the Hive's original for ${workspace}`);

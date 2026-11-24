@@ -78,6 +78,22 @@ test('a version whose text still differs from its base, or made from another ver
   assert.deepEqual(await Promise.all([workspacesOf(r, 'a', 'mine'), workspacesOf(r, 'b', 'tuned'), workspacesOf(r, 'c', 'mine')]), [['app'], ['app'], ['app']]);
 });
 
+test('a version whose header the old panel rewrote through yaml still goes back to the original once its value left: the header compares by its data, the body by its text (#621, decision 9)', async (t) => {
+  const r = await rig(t);
+  const header = (description: string, list: string, specsDir: string): string => `---\nname: a\ndescription: ${description}\nlevels: ${list}\nvariables:\n  specsDir: ${specsDir}\n---\n{{ specsDir }}\n`;
+  const base = header('a ', '[none, always]', '{ default: docs/hive/specs }');
+  await put(storeDir(r, 'a', 'mine'), {
+    'version.json': JSON.stringify({ name: 'mine', from: 'original', workspaces: ['app'] }),
+    'files/SKILL.md.liquid': header('a', '[ none, always ]', '{ default: docs/hive/specs, workspaces: { app: design/specs } }'),
+    'base/SKILL.md.liquid': base,
+  });
+  await version(r, 'b', 'mine', ['app'], valued('b', { app: 'design/specs' }).replace('{{ specsDir }}\n', '{{ specsDir }} \n'));
+  await r.migrate();
+  assert.deepEqual(await savedVariables(r), [{ specsDir: 'design/specs' }]);
+  assert.deepEqual(await workspacesOf(r, 'a', 'mine'), [], 'a header equal in data is the base\'s');
+  assert.deepEqual(await workspacesOf(r, 'b', 'mine'), ['app'], 'a body that differs, by one space, is not');
+});
+
 test('a config whose workspaces all have variables comes back as given, and nothing is read or written (#621, decision 7)', async (t) => {
   const r = await rig(t);
   await version(r, 'a', 'mine', ['app'], valued('a', { app: 'design/specs' }));
