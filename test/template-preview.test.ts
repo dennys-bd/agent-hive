@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parseTemplate, renderTemplate, type RenderWorkspace } from '../src/template.js';
+import { NO_BUILT_INS, parseTemplate, renderTemplate, type RenderWorkspace } from '../src/template.js';
 import { buildMap } from '../src/template-map.js';
 import type { Condition, ConditionTerm } from '../src/template-condition.js';
 import { chainReach, markerReach, type Preview, previewTemplate } from '../src/template-preview.js';
@@ -45,7 +45,7 @@ const CHAINS = [
 ].join('\n');
 const parsed = parseTemplate(CHAINS);
 const map = buildMap(parsed);
-const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables, builtIns: NO_BUILT_INS });
 
 function kept(preview: Preview): string {
   assert.ok(preview.ok);

@@ -63,7 +63,7 @@ test('a 400 names the field: an unknown workspace, a name a template cannot decl
   const r = await serve(t);
   assert.deepEqual(await call(r.base, 'PUT', '/workspaces/nobody/variables/specsDir', { value: 'x' }), [400, { error: WORKSPACE_MESSAGE }]);
   assert.deepEqual(await call(r.base, 'DELETE', '/workspaces/nobody/variables/specsDir'), [400, { error: WORKSPACE_MESSAGE }]);
-  for (const name of ['workspace', '2fast', 'a-b']) assert.deepEqual(await call(r.base, 'PUT', `/workspaces/hive/variables/${name}`, { value: 'x' }), [400, { error: NAME_MESSAGE }], name);
+  for (const name of ['workspace', 'nestedRepos', '2fast', 'a-b']) assert.deepEqual(await call(r.base, 'PUT', `/workspaces/hive/variables/${name}`, { value: 'x' }), [400, { error: NAME_MESSAGE }], name);
   for (const body of [{ value: 3 }, { value: ['x'] }, { value: { a: 1 } }, {}]) {
     const [status, answer] = await call(r.base, 'PUT', '/workspaces/hive/variables/specsDir', body);
     assert.equal(status, 400, JSON.stringify(body));

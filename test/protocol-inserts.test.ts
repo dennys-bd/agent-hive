@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AFTER_MESSAGE, headerKeyMessage, passageAnchor, passageErrors, renderPassages } from '../src/protocol-inserts.js';
-import type { RenderWorkspace } from '../src/template.js';
+import { NO_BUILT_INS, type RenderWorkspace } from '../src/template.js';
 
 // The user's protocol passages (#336): what a save refuses, and the render one workspace's protocol files receive
 const PLAIN = '---\nafter: ask\n---\nCheck the docs first.\n';
@@ -11,7 +11,7 @@ const SITE_ONLY = [
 ].join('\n');
 const REQUIRED = '---\nafter: done\nvariables:\n  team: { required: true, workspaces: { a: core } }\n---\nAsk {{ team }}.\n';
 
-const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables, builtIns: NO_BUILT_INS });
 
 test('renderPassages answers the body alone, its blank edges trimmed, for a passage with only after and for one with variables; one whose if does not hold renders empty (#336)', () => {
   assert.deepEqual(renderPassages([{ id: 'p1', text: PLAIN }], at('hive')), [{ id: 'p1', after: 'ask', orphan: false, text: 'Check the docs first.', errors: [] }]);

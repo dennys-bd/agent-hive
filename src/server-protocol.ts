@@ -10,6 +10,7 @@ import type { PassageSave, PassageStore } from './passage-store.js';
 import { BLOCKS, type ProtocolFor } from './protocol.js';
 import { type Passage, passageAnchor, renderPassages } from './protocol-inserts.js';
 import { UNKNOWN_WORKSPACE_MESSAGE, writeMemoryProtocols } from './server-memory.js';
+import { renderWorkspaceOf } from './fork.js';
 import type { TemplateError } from './template.js';
 import type { Config, OptionalTool } from './types.js';
 
@@ -23,7 +24,7 @@ export const TEXT_MESSAGE = 'text must be a string';
 const DISK_MESSAGE = 'the passages cannot be read or written';
 
 export interface ProtocolRouteDeps {
-  requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'mcp'> } } | undefined;
+  requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'mcp' | 'baseBranch'> } } | undefined;
   /** Runs `job` on the POST /settings chain: a save in flight has set live before the rewrite reads its mcp.off. */
   queueSave(job: () => Promise<void>): Promise<void>;
   passages: PassageStore;
@@ -51,9 +52,9 @@ async function guarded(deps: ProtocolRouteDeps, res: Response, job: () => Promis
 }
 
 // The blocks as the screen strikes them through (#337), and each passage with the workspaces where its render fails
-function protocolView(passages: readonly Passage[], config: Pick<Config, 'comb' | 'mcp'>): ProtocolView {
+function protocolView(passages: readonly Passage[], config: Pick<Config, 'comb' | 'mcp' | 'baseBranch'>): ProtocolView {
   const { off } = config.mcp;
-  const renders = config.comb.workspaces.map((workspace) => [workspace.name, renderPassages(passages, workspace)] as const);
+  const renders = config.comb.workspaces.map((workspace) => [workspace.name, renderPassages(passages, renderWorkspaceOf(config, workspace))] as const);
   return {
     blocks: BLOCKS.map(({ id, stage, session, tool }) => ({ id, stage, session, off: tool !== undefined && off.includes(tool), ...(tool === undefined ? {} : { tool }) })),
     passages: passages.map(({ id, text }, index) => ({

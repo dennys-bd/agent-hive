@@ -103,7 +103,7 @@ async function renderedHome(t: TestContext): Promise<{ render: PluginRender; wor
     'designer/v1/version.json': JSON.stringify({ name: 'v1', from: 'original', workspaces: ['a'] }),
     'designer/v1/files/designer.md': EDITED,
   });
-  const workspaces = [{ name: 'a', path: repo, variables: {} }, { name: 'b', path: repo, variables: {} }];
+  const workspaces = [{ name: 'a', path: repo, variables: {}, fork: null, nestedRepos: [] }, { name: 'b', path: repo, variables: {}, fork: null, nestedRepos: [] }];
   const render = createPluginRender({ home, pluginSource: pluginSource(), log: { error: () => undefined }, env: { CODEX_HOME: codex } });
   await render.write({ comb: { workspaces } });
   return { render, workspaces };

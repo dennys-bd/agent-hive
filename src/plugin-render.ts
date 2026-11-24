@@ -7,6 +7,7 @@ import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/pro
 import { join } from 'node:path';
 import { prepareCodexWorkspace, removeCodexWorkspace } from './agents/codex-home.js';
 import { mainFiles } from './custom-versions.js';
+import { renderWorkspaceOf } from './fork.js';
 import { HIVE_ORIGIN, listFiles, versionFiles } from './item-sources.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
@@ -22,9 +23,11 @@ const LIQUID_SUFFIX = '.liquid';
 const MD_SUFFIX = '.md';
 const GONE = { recursive: true, force: true } as const;
 
-/** What a write reads of the config: each workspace's name, its values (#621) and its checkout for the catalogue. Config satisfies it. */
+/** What a write reads of the config: each workspace's name, its values (#621), its checkout for the catalogue, and what its built-ins are read
+ * from (#742): its fork, base branch and nested repos, and the config's base branch. Config satisfies it. */
 export interface RenderConfig {
-  comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables'>[] };
+  baseBranch?: string;
+  comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>[] };
 }
 
 export interface PluginRenderDeps {
@@ -217,7 +220,7 @@ async function sweep(ctx: Ctx, config: RenderConfig): Promise<void> {
 async function writeAll(ctx: Ctx, config: RenderConfig, only?: readonly string[]): Promise<void> {
   await mkdir(ctx.root, { recursive: true, mode: DIR_MODE });
   const items = await readCatalogue({ home: ctx.home, pluginSource: ctx.pluginSource, workspaces: config.comb.workspaces });
-  for (const workspace of config.comb.workspaces) if (only === undefined || only.includes(workspace.name)) await writeOne(ctx, items, workspace);
+  for (const workspace of config.comb.workspaces) if (only === undefined || only.includes(workspace.name)) await writeOne(ctx, items, renderWorkspaceOf(config, workspace));
   if (only === undefined) await sweep(ctx, config);
 }
 

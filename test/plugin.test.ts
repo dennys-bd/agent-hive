@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
-import { parseTemplate, renderTemplate } from '../src/template.js';
+import { NO_BUILT_INS, parseTemplate, renderTemplate } from '../src/template.js';
 import type { TemplateVariable, VariableValue } from '../src/template.js';
 import { type EditResult, setVariableValue } from '../src/template-edit.js';
 import { LAYOUT_PRESETS } from '../src/ui/lib/drawio-file.js';
@@ -29,7 +29,7 @@ const VARIABLES: Record<string, string[]> = {
 };
 // A template rendered for `workspace`, with its values (#621); a failure names its first error
 function renderedFor(text: string, workspace = 'a', variables: Record<string, VariableValue> = {}): string {
-  const result = renderTemplate(parseTemplate(text), { name: workspace, variables });
+  const result = renderTemplate(parseTemplate(text), { name: workspace, variables, builtIns: NO_BUILT_INS });
   if (!result.ok) return assert.fail(`${result.errors[0]?.line}: ${result.errors[0]?.message}`);
   return result.text;
 }

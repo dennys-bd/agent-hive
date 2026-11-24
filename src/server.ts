@@ -79,6 +79,7 @@ import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
 import { blockingTypesOf, canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
+import { renderWorkspaceOf } from './fork.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerCopilotTrustRoute } from './server-copilot-trust.js';
 import { registerNestedRoute } from './server-nested.js';
@@ -120,6 +121,7 @@ import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
 import { registerAssistRoutes } from './server-assist.js';
 import { registerTemplateReviewRoutes } from './server-template-review.js';
+import { NO_BUILT_INS, type RenderWorkspace } from './template.js';
 import { registerBenchmarkRoutes } from './server-benchmark.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerVariableRoutes } from './server-variables.js';
@@ -153,7 +155,7 @@ import {
   CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, LOCAL_MACHINE, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
-  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange, type VariableValue,
+  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange,
 } from './types.js';
 import { flatten } from './flows.js';
 
@@ -314,14 +316,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   const ghToken = account.selected;
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
   const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
-  // #621: a protocol render reads a workspace's values from the config activate is writing, which live holds only once activate returns,
-  // else from the live one
+  // #621, #742: a protocol render reads a workspace's values and built-ins from the config activate is writing, which live holds only once
+  // activate returns, else from the live one
   let activating: Config | undefined;
-  const valuesOf = (name: string): Record<string, VariableValue> => {
+  const renderOf = (name: string): RenderWorkspace => {
     const config = activating ?? live?.runtime.config;
-    return (config && workspaceByName(config, name)?.variables) ?? {};
+    const workspace = config && workspaceByName(config, name);
+    return config && workspace ? renderWorkspaceOf(config, workspace) : { name, variables: {}, builtIns: NO_BUILT_INS };
   };
-  const protocolFor = protocolRenderer(passages, log, valuesOf);
+  const protocolFor = protocolRenderer(passages, log, renderOf);
   const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log, protocolFor);
   const workerLsp = createWorkerLsp({ home, log }); // #803: one language-server plugin per workspace, for every claude run in it
   // #459: a run home's daemon renders from its experiment's pinned plugin, the main Hive from its own shipped one

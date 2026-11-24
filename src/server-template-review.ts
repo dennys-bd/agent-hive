@@ -11,7 +11,7 @@ import { readCatalogue, readItem } from './items-catalogue.js';
 import { parseAnnotations, REVIEW_SCHEMA, REVIEWER_ID, REVIEWER_NAME, reviewPrompt } from './reviewer.js';
 import { type AssistRouteDeps, cancelOnClose, openFile, variablesOf } from './server-assist.js';
 import { bodyOf, ITEMS_ERROR_MESSAGE } from './server-plugins.js';
-import { deliveredHeader, parseTemplate, renderTemplate } from './template.js';
+import { deliveredHeader, NO_BUILT_INS, parseTemplate, renderTemplate } from './template.js';
 import type { AgentId, Config } from './types.js';
 
 const HTTP_CONFLICT = 409;
@@ -52,7 +52,7 @@ async function reviewerInstructions(sources: ItemSources, version: string | null
   const main = read.files.find((file) => mainFiles('specialist', REVIEWER_NAME).includes(file.path));
   if (main === undefined) return { reason: `${REVIEWER_ID} has no ${REVIEWER_NAME}.md` };
   const parsed = parseTemplate(main.text);
-  const rendered = renderTemplate(parsed, { name: '', variables: {} }); // a global run is no workspace's, so it has none of a workspace's values (#621)
+  const rendered = renderTemplate(parsed, { name: '', variables: {}, builtIns: NO_BUILT_INS }); // a global run is no workspace's: none of its values, none of its Settings (#621, #742 decision 7)
   if (!rendered.ok) {
     const first = rendered.errors[0];
     return { reason: first === undefined ? 'does not render' : `line ${first.line}: ${first.message}` };

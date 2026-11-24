@@ -9,8 +9,7 @@ import { errorName } from './memory.js';
 import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { type Passage, passageErrors, renderPassages } from './protocol-inserts.js';
 import { replaceFile } from './replace-file.js';
-import type { TemplateError } from './template.js';
-import type { VariableValue } from './types.js';
+import { NO_BUILT_INS, type RenderWorkspace, type TemplateError } from './template.js';
 
 const PASSAGES_DIR = 'passages';
 const SUFFIX = '.md.liquid';
@@ -91,16 +90,19 @@ export function createPassageStore(home: string): PassageStore {
   return { list: () => readAll(dir), create, change, remove };
 }
 
-/** The memory store's protocolFor (#336): the passages rendered for the workspace, with its values (#621), into both protocols. One that fails
- * there is left out and logged, again on every rewrite, since each is a fresh render; a folder it cannot read costs the passages, never the
- * protocol files. */
-export function protocolRenderer(store: Pick<PassageStore, 'list'>, log: Pick<Logger, 'error'>, valuesOf: (workspace: string) => Record<string, VariableValue> = () => ({})): ProtocolFor {
+// A workspace with no Settings to read: its name only
+const bare = (workspace: string): RenderWorkspace => ({ name: workspace, variables: {}, builtIns: NO_BUILT_INS });
+
+/** The memory store's protocolFor (#336): the passages rendered for the workspace, with its values (#621) and built-ins (#742), into both
+ * protocols. One that fails there is left out and logged, again on every rewrite, since each is a fresh render; a folder it cannot read costs
+ * the passages, never the protocol files. */
+export function protocolRenderer(store: Pick<PassageStore, 'list'>, log: Pick<Logger, 'error'>, renderOf: (workspace: string) => RenderWorkspace = bare): ProtocolFor {
   return async (workspace, off) => {
     const passages = await store.list().catch((err: unknown) => {
       log.error(`protocol: passages unreadable (${errorName(err)})`);
       return [];
     });
-    const rendered = renderPassages(passages, { name: workspace, variables: valuesOf(workspace) });
+    const rendered = renderPassages(passages, renderOf(workspace));
     for (const { id, errors } of rendered) for (const { line, message } of errors) log.error(`protocol ${workspace}: ${id}:${line} ${message}`);
     return protocolTexts(off, rendered);
   };

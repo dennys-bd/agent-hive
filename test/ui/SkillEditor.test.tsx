@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { parseTemplate, renderTemplate } from '../../src/template';
+import { NO_BUILT_INS, parseTemplate, renderTemplate } from '../../src/template';
 import { moveBlock } from '../../src/template-edit';
 import { setLanguage, t } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
@@ -102,7 +102,7 @@ test('view as a workspace: read-only, the edit controls gone, the false branch d
   expect(within(nav()).getByText('senão').closest('.opacity-35')).not.toBeNull();
   const dimmed = new Set(view().decorations.filter((d) => d.options.inlineClassName === 'template-dim').map((d) => d.range.startLineNumber));
   const kept = view().model.getValue().split('\n').filter((_, i) => !dimmed.has(i + 1)).join('\n');
-  const rendered = renderTemplate(parseTemplate(BUILD_TEXT), { name: 'hive-site', variables: {} });
+  const rendered = renderTemplate(parseTemplate(BUILD_TEXT), { name: 'hive-site', variables: {}, builtIns: NO_BUILT_INS });
   expect(rendered.ok && kept).toBe(rendered.ok && rendered.text);
 });
 
