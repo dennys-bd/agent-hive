@@ -14,22 +14,25 @@ import { listed, listingExec } from './process-table.js';
 
 const POWERSHELL = /^[A-Za-z]:\\.*\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$/;
 const PTY = 'a3f1c2d4-0000-4000-8000-000000000001';
+// A PowerShell cmdlet name (Verb-Noun): every one outside Core makes a cold 5.1 autoload its module first (#970)
+const CMDLET = /\b[A-Z][A-Za-z]+-[A-Z][A-Za-z]+\b/;
+const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64');
 
-test('parseProcesses reads ConvertTo-Json\'s array and its single object, a null CommandLine as \'\', and drops a row without an integer pid (#638)', () => {
+test('parseProcesses reads one `<pid> <ppid> <base64>` row per line: spaces, a tab, a line break and a non-ASCII path survive, and a null CommandLine is \'\' (#970)', () => {
+  const tricky = 'sh.exe -c "a\tb\nc"';
+  const accented = 'C:\\Usuários\\joão\\claude.exe --mcp-config x';
   assert.deepEqual(
-    parseProcesses('[{"ProcessId":4,"ParentProcessId":0,"CommandLine":null},{"ProcessId":200,"ParentProcessId":100,"CommandLine":"sh.exe -c x"}]'),
-    [{ pid: 4, ppid: 0, line: '' }, { pid: 200, ppid: 100, line: 'sh.exe -c x' }],
+    parseProcesses(`4 0 \r\n200 100 ${b64(tricky)}\r\n201 100 ${b64(accented)}\r\n`),
+    [{ pid: 4, ppid: 0, line: '' }, { pid: 200, ppid: 100, line: tricky }, { pid: 201, ppid: 100, line: accented }],
   );
-  assert.deepEqual(parseProcesses('{"ProcessId":200,"ParentProcessId":100,"CommandLine":"sh.exe"}'), [{ pid: 200, ppid: 100, line: 'sh.exe' }], 'one row: an object, not an array');
-  assert.deepEqual(
-    parseProcesses('[{"ProcessId":1.5,"ParentProcessId":0,"CommandLine":"a"},{"ProcessId":"7","ParentProcessId":0,"CommandLine":"b"},{"ParentProcessId":0,"CommandLine":"c"},null,3]'),
-    [],
-  );
-  assert.deepEqual(parseProcesses('[{"ProcessId":9,"CommandLine":"x"}]'), [{ pid: 9, ppid: -1, line: 'x' }], 'no parent: still matchable by its line');
 });
 
-test('parseProcesses answers [] for malformed JSON, an empty stdout and a JSON that holds no row (#638)', () => {
-  for (const stdout of ['[{"ProcessId":', '', 'null', '"text"']) assert.deepEqual(parseProcesses(stdout), [], stdout);
+test('parseProcesses skips a malformed line and answers [] for an empty stdout (#970)', () => {
+  const good = `7 1 ${b64('x')}`;
+  for (const bad of ['7 1', 'x 1 eA==', '7 -1 eA==', '1.5 0 eA==', '7  1 eA==', '7 1 not base64!', '[{"ProcessId":7,"ParentProcessId":1,"CommandLine":"x"}]']) {
+    assert.deepEqual(parseProcesses(`${bad}\r\n${good}\r\n`), [{ pid: 7, ppid: 1, line: 'x' }], bad);
+  }
+  for (const stdout of ['', '\r\n', 'garbage']) assert.deepEqual(parseProcesses(stdout), [], JSON.stringify(stdout));
 });
 
 test('childrenOf gives the direct children in ascending pid order, never the pid itself (#638)', () => {
@@ -67,11 +70,11 @@ test('subtree walks every level under the pid, prunes a row with all it holds, a
   assert.deepEqual(subtree(rows, 999, () => false), []);
 });
 
-test('listProcesses runs Windows PowerShell 5.1 by full path with the CIM listing encoded, through the caller\'s exec, with room for a full table (#638)', async () => {
+test('listProcesses runs Windows PowerShell 5.1 by full path with the WMI listing encoded, through the caller\'s exec, with room for a full table (#638)', async () => {
   const calls: { file: string; args: string[]; maxBuffer?: number }[] = [];
   const exec: Exec = async (file, args, opts) => {
     calls.push({ file, args, maxBuffer: opts?.maxBuffer });
-    return { stdout: '{"ProcessId":7,"ParentProcessId":1,"CommandLine":"x"}' };
+    return { stdout: `7 1 ${b64('x')}\r\n` };
   };
   assert.deepEqual(await listProcesses(exec), [{ pid: 7, ppid: 1, line: 'x' }]);
   assert.equal(calls.length, 1);
@@ -80,12 +83,13 @@ test('listProcesses runs Windows PowerShell 5.1 by full path with the CIM listin
   assert.deepEqual(args.slice(0, 5), ['-NoProfile', '-NonInteractive', '-InputFormat', 'None', '-EncodedCommand']);
   assert.equal(args.length, 6);
   const script = Buffer.from(args[5], 'base64').toString('utf16le');
-  assert.ok(script.includes('Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress'), script);
+  assert.ok(script.includes("[wmisearcher]'SELECT ProcessId, ParentProcessId, CommandLine FROM Win32_Process'"), script);
+  assert.doesNotMatch(script, CMDLET, 'no cmdlet: a cold 5.1 would autoload its module first and spend the 15 s bound there (#970)');
   assert.ok((maxBuffer ?? 0) > 1024 * 1024, 'more than execFile\'s default 1 MiB');
 });
 
 test('parseProcesses reads a listing that starts with a UTF-8 byte order mark (#638)', () => {
-  assert.deepEqual(parseProcesses('\uFEFF{"ProcessId":7,"ParentProcessId":1,"CommandLine":"x"}\r\n'), [{ pid: 7, ppid: 1, line: 'x' }]);
+  assert.deepEqual(parseProcesses(`\uFEFF7 1 ${b64('x')}\r\n`), [{ pid: 7, ppid: 1, line: 'x' }]);
 });
 
 test('listProcesses caps the PowerShell run and drops PSModulePath, so a stuck CIM never holds the boot and 5.1 loads its own modules (#638)', async () => {
