@@ -75,7 +75,8 @@ test('keepAwakeCommand is caffeinate -di on macOS and systemd-inhibit idle:sleep
 test('keepAwakeCommand on Windows holds the display and the machine awake until the given pid ends; a pid that is no integer throws (#646)', () => {
   const text = script(keepAwakeCommand('win32', 4242));
   assert.match(text, /SetThreadExecutionState\(2147483651\)/); // ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
-  assert.match(text, /Wait-Process -Id 4242 -ErrorAction SilentlyContinue\nexit 0$/);
+  assert.match(text, /try \{ \[Diagnostics\.Process\]::GetProcessById\(4242\)\.WaitForExit\(\) \} catch \[ArgumentException\] \{\}\nexit 0$/);
+  assert.doesNotMatch(text, /Wait-Process/, 'Wait-Process makes a cold 5.1 autoload Microsoft.PowerShell.Management (#970)');
   assert.throws(() => keepAwakeCommand('win32', 1.5), { message: 'Not a pid: 1.5' });
 });
 

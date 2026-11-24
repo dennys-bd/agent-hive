@@ -83,7 +83,8 @@ interface Recorded {
   body: string;
 }
 
-// An HTTP listener that records every request and answers `status` with `body` as JSON. Closed after the test.
+// An HTTP listener that records every request and answers `status` with `body` as JSON. Closed after the test, or once it answered a
+// POST /stop: stopDaemon waits for the port to refuse (#970).
 // With `home`, GET /settings answers as that home's Hive and is not recorded: the clients check who answers before they POST (#466), until
 // a POST /stop arrives, which is what stopDaemon waits for.
 async function recorder(t: TestContext, status: number, body: unknown, home?: string): Promise<{ port: number; requests: Recorded[] }> {
@@ -101,6 +102,7 @@ async function recorder(t: TestContext, status: number, body: unknown, home?: st
       requests.push({ method: req.method, url: req.url, ui: req.headers['x-hive-ui'], secret: req.headers[SECRET_HEADER], type: req.headers['content-type'], body: text });
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
+      if (req.method === 'POST' && req.url === '/stop') server.close();
     });
   });
   await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise()));

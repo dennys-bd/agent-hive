@@ -40,15 +40,16 @@ async function plainRepo(t: AfterHost): Promise<string> {
   return repo;
 }
 
-// plainRepo plus a second commit, both pushed to a bare origin: origin/main is the start, and `root` (the first commit) an ancestor of it
+// plainRepo plus a second commit, and a bare clone of it as origin: origin/main is the start, and `root` (the first commit) an ancestor of it.
+// No push (#970): on the Windows lane this setup's push exited 1 with no output now and then; update-ref sets origin/main with no transport.
 async function repoWithOrigin(t: AfterHost): Promise<{ repo: string; root: string; tip: string }> {
   const repo = await plainRepo(t);
   const root = await git(repo, 'rev-parse', 'HEAD');
-  const remote = await tempDir(t, 'remote-');
-  await git(remote, 'init', '--quiet', '--bare', '-b', 'main');
-  await git(repo, 'remote', 'add', 'origin', remote);
   const tip = await commit(repo, 'b.txt');
-  await git(repo, 'push', '--quiet', 'origin', 'main');
+  const remote = await tempDir(t, 'remote-');
+  await git(repo, 'clone', '--quiet', '--bare', repo, remote);
+  await git(repo, 'remote', 'add', 'origin', remote);
+  await git(repo, 'update-ref', 'refs/remotes/origin/main', tip);
   return { repo, root, tip };
 }
 
@@ -166,9 +167,9 @@ test('with the real git, the branch of a merged PR whose remote branch was delet
   const path = worktreePath(HOST_PATHS, repo, SLUG);
   await git(repo, 'worktree', 'add', '--quiet', '-b', BRANCH, '--', path, 'main');
   await commit(path, 'c.txt');
-  await git(path, 'push', '--quiet', '-u', 'origin', BRANCH);
+  await git(path, 'push', '-u', 'origin', BRANCH);
   await git(repo, 'merge', '--quiet', '--ff-only', BRANCH); // the PR merged into main
-  await git(repo, 'push', '--quiet', 'origin', '--delete', BRANCH); // GitHub deletes the head branch after the merge
+  await git(repo, 'push', 'origin', '--delete', BRANCH); // GitHub deletes the head branch after the merge
   assert.equal(await git(repo, 'for-each-ref', '--format=%(upstream:track)', `refs/heads/${BRANCH}`), '[gone]');
   await cleanWorktree(fakeMachine({ exec }), repo, { slug: SLUG, branch: BRANCH }, BRANCH);
   assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), (await git(repo, 'worktree', 'list', '--porcelain')).includes(path)], ['', false]);

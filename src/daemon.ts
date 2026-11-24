@@ -277,7 +277,7 @@ function isLivePty(value: unknown): value is LivePty {
   return typeof p.id === 'string' && (p.taskId === undefined || typeof p.taskId === 'string') && typeof p.label === 'string' && LIVE_STATUSES.includes(p.status);
 }
 
-/** POST /stop on our daemon, then wait until its port no longer answers as this home (#466): a program may take the freed port at once.
+/** POST /stop on our daemon, then wait until its port refuses (#466, #970): while it still answers, whatever it answers, it is not stopped.
  *  False when nothing of ours was running. */
 export async function stopDaemon(home: string): Promise<boolean> {
   const daemon = await ourDaemon(home);
@@ -286,8 +286,10 @@ export async function stopDaemon(home: string): Promise<boolean> {
     method: 'POST', headers: secretHeaders(daemon.secret, { [UI_HEADER]: '1' }), signal: AbortSignal.timeout(STOP_TIMEOUT_MS), redirect: 'error',
   });
   if (!res.ok) throw new Error(`Agent Hive recusou o stop: HTTP ${res.status}`); // a daemon without onStop (an older build)
-  // polled with the address it stopped: run.ts removes hive.secret only once the port is closed
-  const gone = await pollFor(async () => ((await isOurHive(daemon, home)) ? undefined : true));
+  // Not ours is not enough (#970): a probe slower than PROBE_TIMEOUT_MS reads foreign while the port is still bound, and the next
+  // ensureDaemon then found it taken. Only a refused connection is a closed port. Polled with the address it stopped: run.ts removes
+  // hive.secret only once the port is closed.
+  const gone = await pollFor(async () => ((await probe(daemon.port, daemon.secret)).status === 'free' ? true : undefined));
   if (!gone) throw new Error('Agent Hive não parou em 30 s (pid no log)');
   return true;
 }

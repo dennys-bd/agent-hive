@@ -84,8 +84,9 @@ export function checkHomeAcl(platform: NodeJS.Platform, home: string, lookups: A
   if (refused.length) throw new Error(`Agent Hive refuses home ${home}: readable by ${refused.join(', ')}.${fix(home, refused)}`);
 }
 
-// The path reaches PowerShell through the env only, never interpolated into the script
-const SCRIPT = "$ErrorActionPreference = 'Stop'; (Get-Acl -LiteralPath $env:HIVE_ACL_HOME).Sddl; [Security.Principal.WindowsIdentity]::GetCurrent().User.Value";
+// The path reaches PowerShell through the env only, never interpolated into the script. .NET, not Get-Acl (#970): a cold 5.1 autoloads
+// Microsoft.PowerShell.Security for it and could spend the whole PS_TIMEOUT_MS there. Owner, Group and Access are Get-Acl's default sections.
+const SCRIPT = "$ErrorActionPreference = 'Stop'; [IO.Directory]::GetAccessControl($env:HIVE_ACL_HOME).GetSecurityDescriptorSddlForm('Owner, Group, Access'); [Security.Principal.WindowsIdentity]::GetCurrent().User.Value";
 
 // By absolute path: a bare name is looked up in the cwd before PATH on Windows
 const powershellExe = (): string => {
@@ -95,7 +96,7 @@ const powershellExe = (): string => {
 };
 
 /** The env of the Windows PowerShell 5.1 run: `env` without PSModulePath, plus the home. Started from PowerShell 7 (pwsh), PSModulePath
- *  names 7's modules first, and 5.1 then fails to load 7's Microsoft.PowerShell.Security, so Get-Acl is missing; without it, 5.1 uses its own. */
+ *  names 7's modules first, and 5.1 then fails to load them; the script loads none since #970, and without it a module 5.1 does load is its own. */
 export function powershellEnv(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
   return { ...Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PSMODULEPATH')), HIVE_ACL_HOME: home };
 }

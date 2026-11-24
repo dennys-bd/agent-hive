@@ -5,38 +5,39 @@ import type { Exec } from './types.js';
 
 export interface ProcessRow { readonly pid: number; readonly ppid: number; readonly line: string }
 
-// The whole table's JSON can pass execFile's default 1 MiB once browsers and Electron apps run, whose command lines are long
+// The whole table can pass execFile's default 1 MiB once browsers and Electron apps run, whose command lines are long
 const LIST_MAX_BUFFER = 64 * 1024 * 1024;
-const NO_PARENT = -1;
-const LIST_TIMEOUT_MS = 15_000; // a CIM call stuck on WMI or an antivirus scan must not hold the boot's killStrays forever
+// A WMI query stuck on an antivirus scan must not hold the boot's killStrays forever. The script calls no cmdlet (#970): a cold 5.1 spent
+// this whole bound autoloading CimCmdlets and Microsoft.PowerShell.Utility for Get-CimInstance, Select-Object and ConvertTo-Json.
+const LIST_TIMEOUT_MS = 15_000;
+// One `<pid> <ppid> <base64 of the UTF-8 command line>` line per process, the last field empty for a null CommandLine: base64 keeps a
+// command line's spaces, tabs and line breaks out of the separators
 const LISTING = [
-  "$ErrorActionPreference = 'Stop'", // a CIM failure exits non-zero, so the exec rejects instead of printing nothing
-  '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8', // 5.1 prints in the OEM code page otherwise, garbling a non-ASCII path
-  'Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress',
+  "$ErrorActionPreference = 'Stop'", // a WMI failure exits non-zero, so the exec rejects instead of printing nothing
+  '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8', // keeps 5.1's stdout UTF-8, though every field it prints is ASCII now
+  '$utf8 = [System.Text.Encoding]::UTF8',
+  "foreach ($p in ([wmisearcher]'SELECT ProcessId, ParentProcessId, CommandLine FROM Win32_Process').Get()) {",
+  "  $line = ''",
+  "  if ($null -ne $p['CommandLine']) { $line = [Convert]::ToBase64String($utf8.GetBytes([string]$p['CommandLine'])) }",
+  "  [Console]::Out.WriteLine(('{0} {1} {2}' -f $p['ProcessId'], $p['ParentProcessId'], $line))",
+  '}',
 ];
 
-const isInteger = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value);
+const ROW = /^(\d+) (\d+) ([A-Za-z0-9+/]*={0,2})$/;
 
-// A null CommandLine is a process the user cannot read: kept, with no line to match
-function rowOf(value: unknown): ProcessRow[] {
-  if (typeof value !== 'object' || value === null) return [];
-  const { ProcessId: pid, ParentProcessId: ppid, CommandLine: line } = value as Record<string, unknown>;
-  if (!isInteger(pid)) return [];
-  return [{ pid, ppid: isInteger(ppid) ? ppid : NO_PARENT, line: typeof line === 'string' ? line : '' }];
-}
-
-/** The listing's rows. ConvertTo-Json prints one row as an object, not an array; malformed JSON is no rows. */
+/** The listing's rows, one per line. A null CommandLine is a process the user cannot read: kept, with no line to match. A line that is not
+ *  `<pid> <ppid> <base64>` is skipped, so malformed output is no rows. */
 export function parseProcesses(stdout: string): ProcessRow[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout.replace(/^\uFEFF/, '')); // 5.1 may write UTF-8's byte order mark before the JSON
-  } catch {
-    return [];
-  }
-  return (Array.isArray(parsed) ? parsed : [parsed]).flatMap(rowOf);
+  // 5.1 may write UTF-8's byte order mark before the first line
+  return stdout.replace(/^\uFEFF/, '').split(/\r?\n/).flatMap((text) => {
+    const match = ROW.exec(text);
+    if (match === null) return [];
+    const [, pid, ppid, line] = match;
+    return [{ pid: Number(pid), ppid: Number(ppid), line: Buffer.from(line, 'base64').toString('utf8') }];
+  });
 }
 
-// Started from pwsh 7, PSModulePath names 7's modules first and 5.1 fails to load them (as home-acl.ts found for Get-Acl): 5.1 uses its own
+// Started from pwsh 7, PSModulePath names 7's modules first and 5.1 fails to load them (as home-acl.ts found when it still used Get-Acl): 5.1 uses its own
 const withoutPsModulePath = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PSMODULEPATH'));
 
