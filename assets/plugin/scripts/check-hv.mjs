@@ -67,7 +67,7 @@ function shapeOf(raw) {
 // One key of a when (#1034): a tweak declared above, with a non-empty list of unique values it takes; a single value is a list of one
 function conditionOf(other, raw, above) {
   const def = above.find((tweak) => tweak.name === other);
-  if (def === undefined) return `when names "${other}", not a tweak declared above it`;
+  if (def === undefined) return `when names "${other.slice(0, TWEAK_NAME_MAX)}", not a tweak declared above it`;
   const values = Array.isArray(raw) ? raw : [raw];
   if (values.length === 0 || values.length > TWEAK_OPTIONS_MAX || new Set(values).size !== values.length) {
     return `when: ${other}'s values must be a non-empty list of unique values, at most ${TWEAK_OPTIONS_MAX}`;
@@ -103,8 +103,7 @@ function defsOf(entries) {
   return entries.reduce((above, [name, raw]) => {
     if (typeof above === 'string') return above;
     const def = defOf(name, raw, above);
-    // biome-ignore lint/performance/noAccumulatingSpread: at most TWEAKS_MAX entries, and the schema above stays unmutated
-    return typeof def === 'string' ? def : [...above, def];
+    return typeof def === 'string' ? def : above.concat(def);
   }, []);
 }
 

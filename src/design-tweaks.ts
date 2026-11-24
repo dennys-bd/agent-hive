@@ -78,7 +78,7 @@ function shapeOf(raw: Record<string, unknown>): TweakShape | string {
 // One key of a when (#1034): a tweak declared above, with a non-empty list of unique values it takes; a single value is a list of one
 function conditionOf(other: string, raw: unknown, above: TweakSchema): [string, DesignTweakValue[]] | string {
   const def = above.find((tweak) => tweak.name === other);
-  if (def === undefined) return `when names "${other}", not a tweak declared above it`;
+  if (def === undefined) return `when names "${other.slice(0, TWEAK_NAME_MAX)}", not a tweak declared above it`;
   const values: unknown[] = Array.isArray(raw) ? raw : [raw];
   if (values.length === 0 || values.length > TWEAK_OPTIONS_MAX || new Set(values).size !== values.length) {
     return `when: ${other}'s values must be a non-empty list of unique values, at most ${TWEAK_OPTIONS_MAX}`;
@@ -115,8 +115,7 @@ function defsOf(entries: [string, unknown][]): TweakSchema | string {
   return entries.reduce<TweakSchema | string>((above, [name, raw]) => {
     if (typeof above === 'string') return above;
     const def = defOf(name, raw, above);
-    // biome-ignore lint/performance/noAccumulatingSpread: at most TWEAKS_MAX entries, and the schema above stays unmutated
-    return typeof def === 'string' ? def : [...above, def];
+    return typeof def === 'string' ? def : above.concat(def);
   }, []);
 }
 
@@ -162,6 +161,5 @@ export function shownTweaks(schema: TweakSchema, values: Readonly<Record<string,
   const settled = settle(schema, values);
   const holds = (when: TweakWhen, shown: ReadonlySet<string>): boolean =>
     Object.entries(when).every(([other, allowed]) => shown.has(other) && allowed.includes(settled[other]));
-  // biome-ignore lint/performance/noAccumulatingSpread: at most TWEAKS_MAX tweaks, and each step's set stays unmutated
-  return schema.reduce<ReadonlySet<string>>((shown, { name, when }) => (when === undefined || holds(when, shown) ? new Set([...shown, name]) : shown), new Set());
+  return schema.reduce<ReadonlySet<string>>((shown, { name, when }) => (when === undefined || holds(when, shown) ? new Set(shown).add(name) : shown), new Set());
 }
