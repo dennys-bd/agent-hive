@@ -28,8 +28,9 @@ function windowsKeepAwake(pid: number): PlatformCommand {
     "$ErrorActionPreference = 'Stop'",
     `Add-Type -Namespace AgentHive -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);'`,
     `[void][AgentHive.Power]::SetThreadExecutionState(${KEEP_AWAKE_FLAGS})`,
-    // a pid already gone is the same end as one that ends now: no error, exit 0
-    `Wait-Process -Id ${pid} -ErrorAction SilentlyContinue`,
+    // a pid already gone is the same end as one that ends now: GetProcessById throws ArgumentException, and the script exits 0.
+    // .NET, not Wait-Process (#970): a cold 5.1 autoloads Microsoft.PowerShell.Management for it
+    `try { [Diagnostics.Process]::GetProcessById(${pid}).WaitForExit() } catch [ArgumentException] {}`,
     'exit 0',
   ]);
 }
