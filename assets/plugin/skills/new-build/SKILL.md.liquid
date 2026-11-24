@@ -1,7 +1,7 @@
 ---
 # original: written for the Hive, no external source
 name: new-build
-description: 'Build stage for one task: TDD from the plan task by task, build-fix (at most 3 tries per failure), then one code review and one security review of the whole diff, the check against the spec''s Done, the UI check, the walkthrough and the PR. Autonomous, no questions; never moves the task in its source.'
+description: 'Build stage for one task: TDD from the plan task by task, build-fix (at most 3 tries per failure), then a code review and a security review of the whole diff, the check against the spec''s Done, the UI check, the walkthrough and the PR. Autonomous, no questions; never moves the task in its source.'
 variables:
   specsDir: { default: docs/hive/specs }
   plansDir: { default: docs/hive/plans }
@@ -107,8 +107,8 @@ below, the repository's default branch
 |---|---|
 | Implementation | `hive:tdd`, one dispatch per task of the plan |
 | Build-fix | `hive:build-fixer`, at most 3 dispatches per failure |
-| Code review | `hive:code-reviewer`, once, on the whole diff |
-| Security review | `hive:security-reviewer`, once, on the whole diff |
+| Code review | `hive:code-reviewer`, on the whole diff |
+| Security review | `hive:security-reviewer`, on the whole diff |
 | Done check, UI check, walkthrough, PR | this session, no subagent; `/hive:new-pr` runs inline |
 
 A subagent named for a stage in the repository's agent instructions file,
@@ -152,11 +152,14 @@ pass in its own context.
 
 ## Stage 3 — Security review
 
-Once, on the same diff, after the code review's fixes. Skip it when every
+On the same diff, after the code review's fixes. Skip it when every
 changed file is prose (markdown, plain text, and the files under
 `{{ specsDir }}`, `{{ plansDir }}`, `{{ walkthroughsDir }}` and
 `{{ designsDir }}`), and say it was skipped and why. Otherwise dispatch
-`hive:security-reviewer`; fix CRITICAL and HIGH and re-run to confirm.
+`hive:security-reviewer` with the range, `git diff <base>...HEAD`, in its
+prompt. CRITICAL or HIGH: fix, commit, and dispatch it once more on the
+same range to confirm; one still open after that is a stop. MEDIUM: as in
+stage 2.
 
 ## Stage 4 — Check against the spec's Done
 
@@ -226,7 +229,9 @@ PR), left out when the PR was skipped.
 3. a decision no assumption settles safely;
 4. a failure still there after 3 `hive:build-fixer` dispatches, or one a
    dispatch answers needs the plan changed;
-5. CRITICAL findings that cannot be fixed without changing the spec.
+5. CRITICAL findings that cannot be fixed without changing the spec;
+6. a CRITICAL or HIGH finding of stage 3 still open after its confirming
+   dispatch.
 
 On a stop, leave the branch and its commits in place and say which stage
 stopped, why, and what would unblock it.

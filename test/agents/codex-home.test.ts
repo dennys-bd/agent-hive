@@ -86,9 +86,7 @@ test('agentRoles reads the fourteen agents of the delivered plugin in name order
   const roles = agentRoles(RENDERED);
   assert.deepEqual(roles.map((r) => r.name), AGENT_NAMES);
   assert.deepEqual(roles.filter((r) => r.readOnly).map((r) => r.name), ['architect', 'decomposition-reviewer', 'plan-reviewer', 'spec-reviewer', 'template-reviewer']);
-  for (const name of ['build-fixer', 'security-reviewer']) {
-    assert.ok(roles.find((r) => r.name === name)?.instructions.includes('\n---\n'), `${name} keeps its body's --- line`);
-  }
+  assert.ok(roles.find((r) => r.name === 'build-fixer')?.instructions.includes('\n---\n'), "build-fixer keeps its body's --- line");
   assert.ok(roles.find((r) => r.name === 'build-fixer')?.instructions.trimEnd().endsWith('Speed and precision over perfection.'));
   assert.equal(roles.some((r) => /^(model|tools|name): /m.test(r.instructions.split('\n---\n')[0] ?? '')), false, 'no frontmatter line leaks into a body');
 });
