@@ -42,3 +42,10 @@ test('toWindowsPath refuses a file name with a backslash, which Windows would re
   assert.throws(() => toWindowsPath('Debian', '/a\\..\\..\\b'), (err: unknown) => err instanceof MachineError && err.code === MachineError.BAD_PATH);
   assert.throws(() => toWindowsPath('-x', '/a'), (err: unknown) => err instanceof MachineError && err.code === MachineError.BAD_PATH);
 });
+
+test('toWindowsPath refuses a name Windows forbids, so a " cannot end explorer.exe\'s quoted /select argument (#932)', () => {
+  for (const name of ['a" /root,x "', 'a<b', 'a|b', 'a?b', 'a*b', 'a:b', 'a\u0001b']) {
+    assert.throws(() => toWindowsPath('Debian', `/home/u/${name}`), (err: unknown) => err instanceof MachineError && err.code === MachineError.BAD_PATH, name);
+  }
+  assert.equal(toWindowsPath('Debian', '/home/u/a b.ts'), '\\\\wsl.localhost\\Debian\\home\\u\\a b.ts');
+});

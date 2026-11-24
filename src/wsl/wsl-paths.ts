@@ -3,6 +3,8 @@ import { isDistro } from '../config-machines.js';
 import { MachineError, pathsOf } from '../machine.js';
 
 const posix = pathsOf('linux');
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses
+const WINDOWS_FORBIDDEN = /["<>|?*:\x00-\x1f]/;
 const UNC_HOSTS = ['wsl.localhost', 'wsl$'];
 const badPath = (p: string): MachineError => new MachineError(`not a path of this distro: ${p}`, { code: MachineError.BAD_PATH });
 
@@ -11,7 +13,8 @@ export function toWindowsPath(distro: string, p: string): string {
   if (!posix.isAbsolute(p) || !isDistro(distro)) throw badPath(p);
   const segments = posix.normalize(p).split('/').filter(Boolean);
   // a Linux file name may hold a backslash, which Windows reads as a separator: a\..\..\b would climb out of the distro
-  if (segments.some((s) => s.includes('\\'))) throw badPath(p);
+  // and a " < > | ? * : or control character, which no Windows name holds, would end a quoted argument (explorer.exe's /select,"...")
+  if (segments.some((s) => s.includes('\\') || WINDOWS_FORBIDDEN.test(s))) throw badPath(p);
   return `\\\\wsl.localhost\\${distro}\\${segments.join('\\')}`;
 }
 
