@@ -13,9 +13,14 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const CLAUDE = { names: ['personal', 'work'] };
 const GITHUB = { logins: ['alice', 'gh-user'], machine: 'gh-user' };
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-// The two list routes; a number answers that status with a raw error the screen must never show
-function answer(claude: unknown = CLAUDE, github: unknown = GITHUB) {
-  const fetch = vi.fn(async (url: string) => {
+type Reply = () => Response;
+// The two list routes, both adds at rest (#965), and any call a test answers itself by `METHOD url`; a number answers that status with a raw
+// error the screen must never show
+function answer(claude: unknown = CLAUDE, github: unknown = GITHUB, replies: Record<string, Reply> = {}) {
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const reply = replies[`${init?.method ?? 'GET'} ${url}`];
+    if (reply !== undefined) return reply();
+    if (url.endsWith('/add')) return json({ state: 'idle' });
     const body = url === '/settings/accounts/claude' ? claude : url === '/settings/github/accounts' ? github : 404;
     return typeof body === 'number' ? json({ error: 'raw route error' }, body) : json(body);
   });
@@ -59,12 +64,14 @@ test('each group shows the draft\'s choice selected, gh\'s own login on the mach
   expect(onChange).toHaveBeenLastCalledWith({ accounts: { claude: '', copilot: 'gh-user', github: '' } });
 });
 
-test('a group is one tab stop: tab lands on its selected row, an arrow moves to the next row and picks it, and tab leaves for the next group (#964)', async () => {
+test('a group is one tab stop: tab lands on its add, then its selected row, an arrow moves to the next row and picks it, and tab leaves for the next group (#964, #965)', async () => {
   answer();
   const user = userEvent.setup();
   const onChange = vi.fn();
   renderCard({}, {}, onChange);
   await read();
+  await user.tab();
+  expect(screen.getByRole('button', { name: t('settings.accounts.add.claude') })).toHaveFocus();
   await user.tab();
   expect(within(group('claude')).getByRole('radio', { name: t('settings.accounts.machine') })).toHaveFocus();
   // Held, then released: Radix focuses the next row in a timeout and checks it only while an arrow is down, which a real press outlasts
@@ -120,7 +127,7 @@ test('a failed GitHub list keeps copilot\'s and github\'s machine row and saved 
   expect(screen.queryByText(/raw route error/)).toBeNull();
   expect(console.error).toHaveBeenCalled();
   fireEvent.click(screen.getAllByRole('button', { name: t('settings.accounts.retry') })[0]);
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => url === '/settings/github/accounts')).toHaveLength(2)); // the adds read on mount too (#965)
 });
 
 test('the search lists one entry per group under execução › contas, landing on its group; the agents\' by their name (#964)', () => {
