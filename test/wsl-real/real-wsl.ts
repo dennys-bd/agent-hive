@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import type { TestContext } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import type { ExecOptions, Machine } from '../../src/machine.js';
+import { type ExecOptions, type Machine, MachineError, type RunSpec } from '../../src/machine.js';
 import { createPtyHost } from '../../src/pty-host.js';
 import { nodePtySpawn } from '../../src/pty-spawn.js';
 import { helperBundle } from '../../src/wsl/helper-install.js';
@@ -85,4 +85,36 @@ export async function within(ms: number, check: () => Promise<boolean>, what: st
     if (Date.now() > deadline) assert.fail(`${what}: not within ${ms} ms\n${explain()}`);
     await sleep(POLL_MS);
   }
+}
+
+const PGREP_NONE = 1; // pgrep's exit when nothing matched
+
+/** Whether a process inside the distro has `marker` in its command line. pgrep runs as the helper's own child, never through a shell, so
+ *  it matches neither itself nor a wrapper. */
+export async function isRunning(machine: Machine, marker: string): Promise<boolean> {
+  try {
+    await machine.exec('pgrep', ['-f', '--', marker]);
+    return true;
+  } catch (err) {
+    if (err instanceof MachineError && err.code === PGREP_NONE) return false;
+    throw err;
+  }
+}
+
+/** A terminal of the lane running `command` through the distro's shell, `env` laid over the run's. */
+export const shellSpec = (ptyId: string, cwd: string, command: string, env: Record<string, string> = {}): RunSpec =>
+  ({ ptyId, slug: 'hive-948', workspace: 'lane', cwd, terminal: true, run: { command, env } });
+
+export interface PtyRun { output(): string; code(): number | undefined; kill(): Promise<void> }
+
+/** The run started and subscribed: what it printed so far, its exit code once it ended, and its kill, which also runs after the test. */
+export async function openPty(t: TestContext, machine: Machine, spec: RunSpec): Promise<PtyRun> {
+  const handle = machine.pty.spawn(spec, { onExit: () => undefined, onError: (message) => t.diagnostic(`pty ${spec.ptyId}: ${message}`) });
+  t.after(() => handle.kill());
+  await handle.started;
+  let output = '';
+  let exitCode: number | undefined;
+  const off = machine.pty.subscribe(spec.ptyId, (data) => { output += data; }, (code) => { exitCode = code; });
+  assert.ok(off !== undefined, `pty ${spec.ptyId} ended before it was heard`);
+  return { output: () => output, code: () => exitCode, kill: () => handle.kill() };
 }
