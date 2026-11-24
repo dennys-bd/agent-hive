@@ -3558,7 +3558,7 @@ const en = {
   'tasks.display.loops.all': 'all',
   'tasks.display.loops.inner': 'inner',
   'tasks.display.loops.none': 'none',
-  'tasks.display.loops.hint.all': 'inner loops join neighbouring stages; outer ones pass over other stages.',
+  'tasks.display.loops.hint.all': 'inner arrows join neighbouring stages; outer ones pass over other stages.',
   'tasks.display.loops.hint.inner': 'only the arrows between neighbouring stages. no outer ones and no feedback.',
   'tasks.display.loops.hint.none': 'no arrows: only the stages.',
   'tasks.display.labels': 'arrow labels',
