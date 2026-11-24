@@ -53,6 +53,18 @@ test('listDistros answers [] when the command is missing or no distro is install
   assert.deepEqual(await listDistros(deps()), []);
 });
 
+test('listDistros with running asks wsl.exe -l --running -q, and the fake lists only the running names (#946)', async () => {
+  const argv: string[][] = [];
+  const recorded: WslDeps['run'] = async (file, args) => {
+    argv.push([file, ...args]);
+    return { stdout: utf16('Debian\r\n'), stderr: Buffer.alloc(0) };
+  };
+  assert.deepEqual(await listDistros({ command: ['wsl.exe'], run: recorded, env: {} }, { running: true }), ['Debian']);
+  assert.deepEqual(argv, [['wsl.exe', '-l', '--running', '-q']]);
+  const both = deps({ env: { ...process.env, FAKE_WSL_DISTROS: 'Debian,Ubuntu', FAKE_WSL_RUNNING: 'Ubuntu' } });
+  assert.deepEqual([await listDistros(both), await listDistros(both, { running: true })], [['Debian', 'Ubuntu'], ['Ubuntu']]);
+});
+
 test('wslExec runs the argv in the distro and answers its stdout (#939)', async () => {
   const exec = wslExec(withDistros('Debian'), 'Debian');
   assert.equal((await exec('sh', ['-c', 'printf "%s" "a b"'])).stdout, 'a b');

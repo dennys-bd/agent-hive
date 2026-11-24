@@ -1,20 +1,22 @@
-// A stand-in for wsl.exe (#939), run as `node dist/test/fake-wsl.js`. It speaks the two calls the Hive makes: `-l -q` and
-// `-d <distro> --exec <argv>`. The "distro" is the host itself: the argv runs as given, with no shell, so the tests prove the Hive's
-// argv on every OS, Windows CI included.
+// A stand-in for wsl.exe (#939), run as `node dist/test/fake-wsl.js`. It speaks the three calls the Hive makes: `-l -q`, `-l --running -q`
+// (#946) and `-d <distro> --exec <argv>`. The "distro" is the host itself: the argv runs as given, with no shell, so the tests prove the
+// Hive's argv on every OS, Windows CI included.
 import { spawnSync } from 'node:child_process';
 import { posixShell, posixShellEnv } from '../src/posix-shell.js';
 
 const utf16 = (text: string): Buffer => Buffer.from(text, 'utf16le');
 const args = process.argv.slice(2);
-const distros = process.env.FAKE_WSL_DISTROS?.split(',').filter(Boolean);
+const names = (value: string | undefined): string[] | undefined => value?.split(',').filter(Boolean);
+const distros = names(process.env.FAKE_WSL_DISTROS);
+const running = names(process.env.FAKE_WSL_RUNNING) ?? distros; // #946: unset, every installed distro runs
 
-function listDistros(): number {
-  if (distros === undefined) {
+function listDistros(listed: string[] | undefined): number {
+  if (listed === undefined) {
     process.stdout.write(utf16('Windows Subsystem for Linux has no installed distributions.\r\n'));
     return 1;
   }
   // wsl.exe ends the list with CR LF per name; a stray NUL is what its UTF-16 output sometimes carries
-  process.stdout.write(utf16(`${distros.map((d) => `${d}\r\n`).join('')}\0`));
+  process.stdout.write(utf16(`${listed.map((d) => `${d}\r\n`).join('')}\0`));
   return 0;
 }
 
@@ -46,6 +48,7 @@ function exec(distro: string, argv: string[]): number {
   return result.status ?? 1;
 }
 
-if (args[0] === '-l' && args[1] === '-q') process.exitCode = listDistros();
+if (args[0] === '-l' && args[1] === '-q') process.exitCode = listDistros(distros);
+else if (args[0] === '-l' && args[1] === '--running' && args[2] === '-q') process.exitCode = listDistros(running);
 else if (args[0] === '-d' && args[2] === '--exec') process.exitCode = exec(args[1] ?? '', args.slice(3));
 else process.exitCode = 2;

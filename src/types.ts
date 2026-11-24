@@ -1007,6 +1007,22 @@ export interface AgentAvailability {
   available: boolean;
 }
 
+/** An agent on one machine as GET /machines reports it (#946): loggedIn is checked on a distro only, and is absent on local and when a
+ *  Claude account is selected (its token rides in the run's env). */
+export interface MachineAgent extends AgentAvailability {
+  loggedIn?: boolean;
+}
+
+/** One machine as GET /machines reports it (#946). */
+export interface MachineStatus {
+  id: MachineId; // 'local' or 'wsl:<distro>'
+  /** 'ready'; 'stopped' for a distro that is not running; else the MachineError reason (node_missing, node_old, helper_failed, distro_missing, ...) */
+  status: string;
+  wslVersion?: 1 | 2 | null; // a running distro's only
+  agents?: MachineAgent[]; // absent when the machine is not ready
+  gh?: boolean; // a ready distro's only
+}
+
 /** What a free session was opened with (#257): absent fields are the agent's defaults. Each value reaches the run's argv as its own word. */
 export interface LaunchPick {
   model?: string; // behind --model (Claude) or -m (Codex)

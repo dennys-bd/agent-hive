@@ -43,10 +43,12 @@ export interface WslMachineDeps {
   helloTimeoutMs?: number; // HELLO_TIMEOUT_MS; a test's is short
 }
 
-/** A distro's machine (decision 14): close() is the quit's, after which every call rejects with closed. */
-export type WslMachine = Machine & { close(): void };
+/** A distro's machine (decision 14): close() is the quit's, after which every call rejects with closed. wslVersion() (#946): the last
+ *  hello's, null before the first; GET /machines reads it after a call that waited for the helper. */
+export type WslMachine = Machine & { close(): void; wslVersion(): WslVersion };
 
-interface Live { link: HelperLink; machine: Machine; pty: MachinePty; info: MachineInfo }
+type WslVersion = 1 | 2 | null;
+interface Live { link: HelperLink; machine: Machine; pty: MachinePty; info: MachineInfo; wslVersion: WslVersion }
 interface Bundle { hash: string; bytes: Buffer }
 interface StartContext { id: string; deps: WslMachineDeps & { distro: string }; stable: Machine; closing: AbortSignal; bundle(): Promise<Bundle> }
 
@@ -61,7 +63,9 @@ async function joined({ id, deps, stable }: StartContext, link: HelperLink, hell
     command: deps.command, distro: deps.distro, machine: stable, ptys: deps.ptys, home, relayPort: hello.relayPort, secret: deps.secret,
     pluginDir: (workspace) => distroPluginDir(stable, deps.host, deps.plugins, workspace), hostEnv: deps.env, hostCwd: deps.hostCwd,
   });
-  return { link, machine, pty, info: hello.info };
+  // the hello crosses a pipe: anything but 1 or 2 is no version the page can show
+  const wslVersion = hello.wslVersion === 1 || hello.wslVersion === 2 ? hello.wslVersion : null;
+  return { link, machine, pty, info: hello.info, wslVersion };
 }
 
 // Probe, install and hello under one timeout, which close() also ends; each step is one wsl.exe call, so a failure names its step
@@ -166,6 +170,7 @@ export function createWslMachine(distro: string, deps: WslMachineDeps): WslMachi
   const closing = new AbortController();
   let current: Live | undefined;
   let lastInfo: MachineInfo | undefined;
+  let lastVersion: WslVersion = null;
   let starting: Promise<Live> | undefined;
   let bundle: Promise<Bundle> | undefined;
   // the hash is read once per machine (decision 8); a read that failed is read again by the next start
@@ -181,6 +186,7 @@ export function createWslMachine(distro: string, deps: WslMachineDeps): WslMachi
     }
     current = live;
     lastInfo = live.info;
+    lastVersion = live.wslVersion;
     return live;
   };
   const drop = (err: unknown): never => {
@@ -202,6 +208,7 @@ export function createWslMachine(distro: string, deps: WslMachineDeps): WslMachi
       void ready().catch(() => undefined); // the failure is the next call's to report
       throw unavailable(id, STARTING);
     },
+    wslVersion: () => lastVersion, // never starts the helper: a caller that needs it fresh makes a call first (#946 decision 6)
     close: () => {
       if (closing.signal.aborted) return;
       closing.abort(); // a start in flight ends too: its probe, install or hello wait

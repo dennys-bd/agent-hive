@@ -66,7 +66,7 @@ test('exec hands cwd and signal to the exec under it, and its failure rejects as
 });
 
 test('info() reads the machine once: platform, PATH, the POSIX shell, CLAUDE_CONFIG_DIR and the agents boot found (#158)', () => {
-  const machine = createLocalMachine(deps({ env: { PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/claude-config', CODEX_HOME: '/codex-home' } }));
+  const machine = createLocalMachine(deps({ agents: [], env: { PATH: '/usr/bin', CLAUDE_CONFIG_DIR: '/claude-config', CODEX_HOME: '/codex-home' } }));
   const first = machine.info();
   assert.deepEqual([first.platform, first.path, first.shell, first.claudeConfigDir, first.codexHome, first.agents], [process.platform, '/usr/bin', posixShell().shell, '/claude-config', '/codex-home', []]);
   assert.equal(machine.info(), first);

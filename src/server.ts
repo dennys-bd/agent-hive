@@ -82,6 +82,7 @@ import { blockingTypesOf, canRelateItem, registerBlockerRoutes, relateItem } fro
 import { registerForkRoutes } from './server-fork.js';
 import { registerCopilotTrustRoute } from './server-copilot-trust.js';
 import { registerNestedRoute } from './server-nested.js';
+import { registerMachineRoutes } from './server-machines.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
@@ -133,6 +134,7 @@ import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRe
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
 import { helperBundle } from './wsl/helper-install.js';
+import type { WslDeps } from './wsl/wsl-exe.js';
 import { wslFactory } from './wsl/wsl-machine.js';
 import { type MachineFor, type Machines, pathsOf } from './machine.js';
 import { killStray, runTmpDir, withoutHiveEnv, writePrompt } from './spawn.js';
@@ -366,11 +368,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     exec: baseExec, launch, ...spawnOptions, home, secret: deps.secret, agents, pluginDir: pluginRender.dir, lspDir: workerLsp.dir, // #947: what a RunSpec's workspace resolves to
     port: hivePort,
   });
+  // wsl.exe and its runner, the server's: the distros' machines on win32 (#945) and GET /machines' listing (#946) share them
+  const wslDeps: WslDeps = { command: ['wsl.exe'], run: (file, args, opts) => execFileBuffer(file, args, opts), env: process.env };
   // #945: a distro's machine on win32 only; every process dependency is the server's, the token is the selected login's (#961), and the
   // shims and the language are read at each start from the live config
   const wsl = wslFactory(process.platform, {
-    command: ['wsl.exe'], run: (file, args, opts) => execFileBuffer(file, args, opts), spawn: (file, args, opts) => spawn(file, args, opts),
-    env: process.env, helperFile: helperBundle(), node: 'node', hivePort, secret: deps.secret, language: () => effectiveLanguage(),
+    ...wslDeps, spawn: (file, args, opts) => spawn(file, args, opts),
+    helperFile: helperBundle(), node: 'node', hivePort, secret: deps.secret, language: () => effectiveLanguage(),
     shimWords: () => (live === undefined ? [] : shimWords(live.runtime.config, 'linux')), plugins: pluginRender, host: localMachine, ptys,
     hostCwd: home, lend: () => account.selected.token(), log: (line) => log.info(line),
   });
@@ -390,7 +394,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's
   const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv), machineGithub: account.machine });
   const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
-  const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, language: () => effectiveLanguage(), home, facts: wiring.facts, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands, machineFor });
   // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
@@ -1418,7 +1422,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
@@ -1493,6 +1497,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // GET /settings/copilot-trust (#880): the saved workspaces only, none in setup mode; the local machine's COPILOT_HOME, as its workers inherit
   // it. #932: only local workspaces' folders, since a distro's Copilot config is its own
   registerCopilotTrustRoute(app, { workspacePaths: () => live?.runtime.config.comb.workspaces.filter((w) => w.machine === LOCAL_MACHINE).map((w) => w.path) ?? [], info: () => machines.local.info() });
+  // GET /machines (#946): also in setup mode, for the Settings field of #933; a selected Claude account skips the distros' login check
+  registerMachineRoutes(app, { machines, platform: process.platform, wsl: wslDeps, accounts: () => live?.runtime.config.accounts });
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held
   // reading, e.g. after a plan upgrade lowered the percent. The page only offers ↻ on agents with plan limits: anything else is a 400

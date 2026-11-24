@@ -12,7 +12,7 @@ import { activityOf, localActivityId } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive, withToplevel } from './fakes.js';
-import { HOST_PATHS } from './fake-machine.js';
+import { fakeMachine, fakeMachines, HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
 import { tempDir } from './temp-dir.js';
@@ -40,8 +40,9 @@ async function waitFor(check: () => boolean): Promise<void> {
   assert.ok(check(), 'condition not met in time');
 }
 
-// `cap` is the state's worker cap: one by default, so the fake source's task starts
-async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BODY, extra: Partial<ServerDeps> = {}, cap = 1): Promise<Started> {
+// `cap` is the state's worker cap: one by default, so the fake source's task starts. `machineAgents` (#946): the local machine is a fake
+// whose info() lists them, over the same exec and launch, so boot's list (extra.agents) and the machine's can differ
+async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BODY, extra: Partial<ServerDeps> = {}, cap = 1, machineAgents?: AgentAvailability[]): Promise<Started> {
   const { home, repo } = await tempHive(t, cap);
   const { spawn, workers } = fakeSpawn();
   const calls: string[][] = [];
@@ -49,7 +50,9 @@ async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BO
     calls.push([file, ...args]);
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, ...extra, exec: withToplevel(extra.exec ?? exec) });
+  const run = withToplevel(extra.exec ?? exec);
+  const machines = machineAgents === undefined ? {} : { machines: fakeMachines(fakeMachine({ exec: run, launch: spawn, home, agents: machineAgents })) };
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, ...extra, ...machines, exec: run });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -66,6 +69,30 @@ test('an agent boot did not find is refused before any worktree: the task keeps 
   assert.equal(workers.length, 0, 'nothing was launched');
   assert.equal(worker0(server).status, 'empty', 'the worker is free again');
   assert.equal(calls.some((c) => c.includes('worktree')), false, 'no worktree step ran');
+});
+
+const CLAUDE_ONLY: AgentAvailability[] = [{ agent: 'claude', available: true }];
+const NO_CLAUDE: AgentAvailability[] = [{ agent: 'claude', available: false }];
+const SESSIONS = `/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`;
+
+test('a stage run and a session read their machine\'s agents, not boot\'s list: claude runs on a machine that has it though boot did not find it (#946)', async (t) => {
+  const staged = await start(t, BODY, { agents: NO_CLAUDE }, 1, CLAUDE_ONLY);
+  await waitFor(() => staged.workers.length === 1);
+  const free = await start(t, BODY, { agents: NO_CLAUDE }, 0, CLAUDE_ONLY);
+  assert.equal((await postJson(`${free.base}${SESSIONS}`, { kind: 'claude' })).status, 200);
+  assert.equal(free.workers.length, 1);
+});
+
+test('a machine without the agent refuses the stage run and the session with the local words, before any worktree, though boot found it (#946)', async (t) => {
+  const staged = await start(t, BODY, { agents: CLAUDE_ONLY }, 1, NO_CLAUDE);
+  await waitFor(() => work0(staged.server)?.error !== undefined);
+  assert.deepEqual([work0(staged.server)?.error, staged.workers.length], [SPAWN_FAILED + REFUSAL, 0]);
+  assert.equal(staged.calls.some((c) => c.includes('worktree')), false, 'no worktree step ran');
+  const { log, lines } = fakeLog();
+  const free = await start(t, BODY, { agents: CLAUDE_ONLY, log }, 0, NO_CLAUDE);
+  await postJson(`${free.base}${SESSIONS}`, { kind: 'claude' });
+  await waitFor(() => lines.some((line) => line.includes('spawnFailed') && line.includes(REFUSAL)));
+  assert.equal(free.workers.length, 0, 'refused before a pty');
 });
 
 test("a stage's agent and modelo reach the launch as typed; claude's command line is unchanged (#516)", async (t) => {

@@ -1,6 +1,7 @@
 // The machine a test hands a function that takes one (#160, #161): the local machine over a fake exec and a pty host that launches nothing,
 // with any of its deps (env, platform...) given, and the fs, run, info or id a test overrides on top. An exec a test does not inject answers ''.
 import type { Stats } from 'node:fs';
+import { ALL_AGENTS } from '../src/agents.js';
 import { type Machine, MachineError, type MachineFs, type MachineInfo, type Machines, pathsOf } from '../src/machine.js';
 import { createLocalMachine, type LocalMachineDeps } from '../src/machine-local.js';
 import { createMachines, NOT_SUPPORTED, NOT_WINDOWS, unavailableMachine } from '../src/machines.js';
@@ -21,9 +22,11 @@ export const withToplevel = (exec: Exec): Exec => async (file, args, opts) => {
   return { ...answer, stdout: `${args[at + 1]}\n` };
 };
 
+// agents: every one available, as the server's own default (ALL_AGENTS): a start and a spawn read the machine's list (#946), so a test that
+// names none runs what it ran before
 export const localDeps = (over: Partial<LocalMachineDeps> = {}): LocalMachineDeps => ({
   exec: withToplevel(async () => ({ stdout: '' })), launch: NO_LAUNCH, ptys: createPtyHost(NO_PTY), home: '/hive-home', secret: 'fake-secret-158',
-  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 4242, agents: [],
+  secretFile: '/hive-home/hive.secret', commandShims: '/hive-home/command-shims', port: () => 4242, agents: ALL_AGENTS,
   pluginDir: (workspace) => `/hive-home/plugins/${workspace}`, lspDir: () => undefined, ...over, // #947: the pty launches nothing, so no folder need exist
 });
 

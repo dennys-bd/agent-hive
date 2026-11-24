@@ -294,6 +294,24 @@ test('a start on a workspace whose machine went unavailable after its save answe
   assert.deepEqual([two.workers.length, activityOf(two.server.getState()!, 'board:I1')], [0, undefined], 'nothing dispatched: no worker, no activity');
 });
 
+// #946: a distro whose claude auth status says logged out (exit 1 with its JSON, as the spike measured); every other call answers nothing
+const loggedOut: Exec = async (file) => {
+  if (file === 'claude') throw Object.assign(new Error('Command failed: claude auth status'), { code: 1, stdout: '{"loggedIn": false}' });
+  return { stdout: '' };
+};
+
+test('a start on a distro whose claude is logged out answers 409 agent_logged_out naming the agent and the machine; a codex pick there, on its PATH, is 409 agent_unavailable; neither dispatches (#946)', async (t) => {
+  const two = await startTwo(t, {}, 0, STAGES, (local) => wslMachines(local, { X: fakeWsl('X', { exec: loggedOut }) }));
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, { ...two.site, machine: 'wsl:X', path: '/home/u/site' }] })).status, 200);
+  two.listed.push(item('1', 'site'));
+  await two.server.poll();
+  const out = await postJson(`${two.base}/tasks/board:I1/start`, { base: null });
+  assert.deepEqual([out.status, await out.json()], [409, { error: 'agent claude is not logged in on wsl:X: run claude inside the distro and log in', code: 'agent_logged_out', agent: 'claude', machine: 'wsl:X' }]);
+  const codex = await postJson(`${two.base}/tasks/board:I1/start`, { base: null, agent: 'codex' });
+  assert.deepEqual([codex.status, await codex.json()], [409, { error: 'agent codex is not available on wsl:X', code: 'agent_unavailable', agent: 'codex', machine: 'wsl:X' }]);
+  assert.deepEqual([two.workers.length, activityOf(two.server.getState()!, 'board:I1')], [0, undefined], 'nothing dispatched: no worker, no activity');
+});
+
 test('a save keeps a workspace whose machine went unavailable when it is unchanged: trusted domains still save; a new workspace on an unavailable machine is 409 (#932)', async (t) => {
   let isDown = false;
   const two = await startTwo(t, {}, 0, STAGES, (local) => wslMachines(local, { X: fakeWsl('X', { isDown: () => isDown }) }));
