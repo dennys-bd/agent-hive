@@ -2,9 +2,11 @@ import { after, type TestContext, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MachineError, type RunSpec } from '../src/machine.js';
 import { createPtyHost } from '../src/pty-host.js';
+import { wslVersionOf } from '../src/wsl/helper-main.js';
 import { helperHash, INSTALL_LINE, PROBE_LINE } from '../src/wsl/helper-install.js';
 import { SPAWN_LINE } from '../src/wsl/helper-link.js';
 import { createWslMachine, type WslMachine, type WslMachineDeps, wslFactory } from '../src/wsl/wsl-machine.js';
@@ -188,6 +190,15 @@ test('info() before the first hello throws starting and starts the helper; after
   await r.machine.fs.stat(r.home);
   assert.equal(r.machine.info().platform, process.platform);
   assert.equal(spawnedWith(r, SPAWN_LINE).length, 1, 'info\'s start and the stat shared one');
+});
+
+test('wslVersion() is null before the first hello and the hello\'s after it, and starts nothing on its own (#946)', async (t) => {
+  const r = await rig(t);
+  assert.equal(r.machine.wslVersion(), null);
+  assert.equal(spawnedWith(r, SPAWN_LINE).length, 0, 'no helper started for it');
+  await r.machine.fs.stat(r.home);
+  // the fake distro is the host: its own osrelease decides what the helper said
+  assert.equal(r.machine.wslVersion(), wslVersionOf(() => readFileSync('/proc/sys/kernel/osrelease', 'utf8')));
 });
 
 test('a helper that never says hello fails the start with helper_failed once the timeout passes, and its child is killed (#945)', async (t) => {
