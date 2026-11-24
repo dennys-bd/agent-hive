@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BLOCK_MESSAGE, BLOCK_WITH_REASON_MESSAGE, CANNOT_BLOCK_MESSAGE, mountMcp, NOT_BLOCKED_MESSAGE } from '../src/mcp.js';
+import { fakeMachine } from './fake-machine.js';
 import { initialState } from '../src/orchestrator.js';
 import { BadBlockerRefError } from '../src/blocker-errors.js';
 import { relateItem, type RelateOutcome } from '../src/server-blockers.js';
@@ -42,7 +43,7 @@ async function harness(t: TestContext, { refused = [], closed = [], canRelate = 
   };
   const app = express().use(express.json());
   mountMcp(app, {
-    exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
+    exec: async () => ({ stdout: '' }), machineFor: () => fakeMachine(), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); return []; }, canClose: () => true, relate: custom ?? relate, canRelate: () => canRelate,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
   });

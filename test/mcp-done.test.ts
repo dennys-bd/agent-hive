@@ -8,6 +8,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { activityOf, resultOf } from '../src/activities.js';
 import { mountMcp } from '../src/mcp.js';
+import { fakeMachine } from './fake-machine.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import type { RecordInput } from '../src/facts.js';
 import { MCP_DEFAULTS } from '../src/types.js';
@@ -36,7 +37,7 @@ async function harness(t: TestContext, freeSession = true, stages: Stage[] = STA
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   const app = express().use(express.json());
   mountMcp(app, {
-    exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
+    exec: async () => ({ stdout: '' }), machineFor: () => fakeMachine(), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); state = reduce(state, event).state; return []; }, canClose: () => true, relate: unused, canRelate: () => false,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
   });

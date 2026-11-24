@@ -3,6 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { correlationOf } from './fact-derive.js';
 import type { Drafter } from './benchmark/drafts.js';
 import type { FactLog, RecordInput, RefusalCode } from './facts.js';
+import type { MachineFor } from './machine.js';
 import type { MemoryStore } from './memory.js';
 import type { ReplyReviews } from './mcp-review.js';
 import type { RelateOutcome } from './server-blockers.js';
@@ -24,7 +25,8 @@ export interface McpDeps extends ReplyReviews {
   memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember, hive_recall (#681), hive_revise and hive_forget (#683) write the worker's workspace's memory
   preloadPr?(url: string): Promise<void>; // #497: hive_pr's PR read and stored ahead of its page; never awaited
   benchmark: Drafter; // #478: benchmark_draft's write, the routes' cores through their queue
-  exec: Exec; // #854: the remotes behind a fork's hive_conventions
+  exec: Exec; // hive_task's reads (mcp-task.ts)
+  machineFor: MachineFor; // #932: the asking worker's machine, whose git hive_conventions reads
 }
 
 // A refusal's code rides on a symbol key (#742): JSON drops symbol keys, so the agent reads only the text, exactly as before
