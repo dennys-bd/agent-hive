@@ -64,7 +64,7 @@ export async function strandedRepo(machine: StrandedMachine, activity: Activity,
 /** A workspace standing in for the removed one (#746): just its name and the repo, so deleteActivityOnDisk runs unchanged. It has no
  * setup or teardown (they went with the workspace); the nested repos are what git finds ignored in the repo now. */
 async function standIn(machine: StrandedMachine, name: string, repo: string): Promise<Workspace> {
-  return { name, path: repo, env: {}, memoryCap: MEMORY_CAP_MIN, color: WORKSPACE_PRESET_COLORS[0], fork: null, nestedRepos: await detectNested(repo, [], machine.paths, machine.exec), notNestedRepos: [], benchmarkPrIn: 'worktree', machine: LOCAL_MACHINE };
+  return { name, path: repo, env: {}, memoryCap: MEMORY_CAP_MIN, color: WORKSPACE_PRESET_COLORS[0], fork: null, nestedRepos: await detectNested(machine, repo, []), notNestedRepos: [], benchmarkPrIn: 'worktree', machine: LOCAL_MACHINE };
 }
 
 /** The stand-in workspace of a stranded activity whose repo git confirms, or undefined when there is nothing on disk to remove (a local
