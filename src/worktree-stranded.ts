@@ -93,7 +93,7 @@ async function activityRows(machine: StrandedMachine, state: RowState, activity:
   const slug = activity.slug ?? slugFor(task.item);
   const listed = (await listWorktrees(machine, standIn.path)).filter((w) => w.slug === slug);
   return Promise.all(worktreeRows(listed, state, activity.workspace).map(async (row): Promise<WorktreeRow> =>
-    ({ ...row, nested: await nestedStatus(standIn, row.path, machine.paths, machine.exec), workspaceGone: true })));
+    ({ ...row, nested: await nestedStatus(machine, standIn, row.path), workspaceGone: true })));
 }
 
 /** GET /worktrees' rows of the task activities whose workspace left the Comb (#747), in the State's order. Only a repo git confirms is read

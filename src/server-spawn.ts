@@ -208,7 +208,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
       if (prepared.sync) await dispatch({ type: 'forkSynced', activityId: activity.id, sync: prepared.sync }); // #854
-      for (const line of await prepareNested(workspace, prepared, branch, activity.local === true, base.remote, on.paths, on.exec, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
+      for (const line of await prepareNested(on, workspace, prepared, branch, activity.local === true, base.remote, run?.nested)) log.info(line); // #653, #450: before the setup, in its console run, each repo its row
       return prepared.path;
     };
     if (activity.local) return ensure(machine);

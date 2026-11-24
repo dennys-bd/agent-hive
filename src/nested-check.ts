@@ -72,7 +72,7 @@ async function readOne(machine: NestedMachine, workspacePath: string, path: stri
   if (problem) return { path, problem };
   const dir = machine.paths.join(workspacePath, path);
   const read = withRepository({ path }, await originRepository(machine, dir));
-  return { ...read, base: await nestedBase(dir, baseName, machine.exec, false) };
+  return { ...read, base: await nestedBase(machine, dir, baseName, false) };
 }
 
 /** GET /settings/nested-repos' answer (#653): each listed path read, then the suggestions with their repository. */

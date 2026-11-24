@@ -43,9 +43,9 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 
 /** One workspace's GET /worktrees rows (#181, #653): git's listing, the task that owns each slug, and the nested worktrees in it. The
  * holdings read (#750) answers the same rows, so the removal dialog removes them through the same routes. */
-export async function workspaceRows(machine: Pick<Machine, 'exec' | 'paths'>, workspace: Workspace, state: State): Promise<WorktreeRow[]> {
+export async function workspaceRows(machine: Pick<Machine, 'exec' | 'fs' | 'paths'>, workspace: Workspace, state: State): Promise<WorktreeRow[]> {
   const rows = worktreeRows(await listWorktrees(machine, workspace.path), state, workspace.name);
-  return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(workspace, row.path, machine.paths, machine.exec) })));
+  return Promise.all(rows.map(async (row): Promise<WorktreeRow> => ({ ...row, nested: await nestedStatus(machine, workspace, row.path) })));
 }
 
 // The Settings tab's worktrees (#181). Read from git on demand and never kept in the state: the tab asks when it opens and after each
