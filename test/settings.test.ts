@@ -311,6 +311,28 @@ test('a poll still in flight when a later save replaced the source is dropped, n
   assert.deepEqual(server.getState()?.tasks.map((c) => c.item.title), ['from Ready'], 'only the new board\'s tasks are in the state');
 });
 
+test('a variable saved while a poll is in flight never drops that poll\'s tasks: the same source still lands them (#621)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const { factory } = fakeSourceFactory();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const sourceFactory = (spec: SourceSpec): Source => {
+    const board = factory(spec);
+    return { ...board, listItems: async () => { await gate; return board.listItems(); } };
+  };
+  const server = createServer({ secret: SECRET, home, sourceFactory });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  workspaces.set(base, repo);
+  assert.equal((await postSettings(base, BODY)).status, 200); // its poll hangs on the gate
+  const put = await hiveFetch(`${base}/workspaces/hive/variables/specsDir`, { method: 'PUT', headers: UI_HEADERS, body: JSON.stringify({ value: 'design/specs' }) });
+  assert.equal(put.status, 200);
+  release();
+  for (let i = 0; i < 200 && server.getState()?.tasks.length !== 1; i += 1) await sleep(5);
+  assert.deepEqual(server.getState()?.tasks.map((c) => c.item.title), ['from Ready']);
+});
+
 test('a poll still in flight when the Hive closes is dropped: no worker is spawned after killAll', async (t) => {
   const { home, repo } = await tempHive(t, 1); // one worker: the task would be spawned
   const { factory } = fakeSourceFactory();

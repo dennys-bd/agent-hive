@@ -1426,7 +1426,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     requireLive, queueSave, log, plugin: pluginRender,
     saveConfig: async (config) => {
       await writeConfigFile(config);
-      if (live) live = { ...live, runtime: { ...live.runtime, config } };
+      if (!live) return;
+      live = { ...live, runtime: { ...live.runtime, config } };
+      pollInBackground(); // the swap makes a poll in flight stale, which drops its work: this one does it again, as POST /settings does
     },
   });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
