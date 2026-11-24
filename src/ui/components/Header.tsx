@@ -22,9 +22,10 @@ interface HeaderProps extends BrandProps { shell: HeaderShell }
 // The header drags the window: each of its own controls opts out to keep its clicks; the empty space and the bar's text keep dragging
 const NO_DRAG = '[-webkit-app-region:no-drag]';
 const ICON_BUTTON = `size-7 ${NO_DRAG}`; // the handoff's ghost 28×28 around a 16px icon
-// Always all four, in order: a pane the view cannot show is disabled, never removed, so the row does not jump. variáveis is #313's, last so
-// the other views' row keeps its place
-const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['search', SearchIcon], ['details', ListIcon], ['variables', BracesIcon]];
+// In order (#1036): arquivos, detalhes and busca always, a view that cannot show one disables it, never removes it, so the row does not
+// jump; variáveis (#313) belongs to plugins alone, so it renders only there, last, where it leaves the other three in place
+const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['details', ListIcon], ['search', SearchIcon], ['variables', BracesIcon]];
+const panesOf = (center: CenterMode): typeof PANES => (center === 'plugins' ? PANES : PANES.filter(([pane]) => pane !== 'variables'));
 
 interface SideButtonProps { Icon: LucideIcon; label: string; keys: string | null; disabled?: boolean; className?: string; onClick(): void }
 
@@ -71,7 +72,7 @@ function LeftColumn({ width, isOpen, isFullScreen, state, effective, brand }: Br
 }
 
 // The right column: one icon per pane, the shown one on --accent, then the shown pane's name at the column's end. A pane the view never has
-// says so in its title and sits at .35 (#313, #461)
+// says so in its title and sits at .35 (#313, #461); variáveis is absent outside plugins (#1036)
 function RightSide({ shell, width }: { shell: HeaderShell; width?: string }) {
   if (shell.rightShown) return <RightColumn width={width} center={shell.center} panes={shell.panes} />;
   return (
@@ -84,7 +85,7 @@ function RightSide({ shell, width }: { shell: HeaderShell; width?: string }) {
 function RightColumn({ width, center, panes }: { width?: string; center: CenterMode; panes: HeaderShell['panes'] }) {
   return (
     <div data-header-column="right" style={{ width }} className="flex shrink-0 items-center gap-1 overflow-hidden border-l px-2">
-      {PANES.map(([pane, Icon]) => {
+      {panesOf(center).map(([pane, Icon]) => {
         const isActive = panes.active === pane;
         const label = t(`files.tab.${pane}`);
         const hint = paneHint(center, pane);

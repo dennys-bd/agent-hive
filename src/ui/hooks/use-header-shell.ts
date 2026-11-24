@@ -24,10 +24,10 @@ interface ShellArgs {
   setSideTab(tab: SidePane): void; activateTab(id: PanelId): void; close(side: Side): void;
 }
 
-/** The tooltip of a pane the shown view never has (#313, #461): every pane in benchmark, the others in plugins, variáveis outside plugins;
- * undefined while the pane is the view's. */
+/** The tooltip of a pane the shown view never has (#313, #461): every pane in benchmark, the others in plugins; undefined while the pane is
+ * the view's. variáveis needs none: the header renders it in plugins alone (#1036). */
 export function paneHint(center: CenterMode, pane: RightPane): MessageKey | undefined {
-  if (pane === 'variables') return center === 'plugins' ? undefined : 'header.pane.onlyPlugins';
+  if (pane === 'variables') return undefined;
   return center === 'plugins' || center === 'benchmark' ? 'header.pane.unavailable' : undefined;
 }
 

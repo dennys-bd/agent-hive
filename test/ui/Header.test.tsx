@@ -194,12 +194,12 @@ test('the center column holds the activity\'s bar; without one, only the empty s
   expect(column('center')?.querySelector('[data-header-slot]')).toBeEmptyDOMElement();
 });
 
-test('the right column always shows arquivos, busca then detalhes, a pane the side cannot show disabled, the active one pressed and named at the end; a click picks the pane, active or not (#221)', async () => {
+test('the right column always shows arquivos, detalhes then busca, and variáveis only in plugins (#1036); a pane the side cannot show disabled, the active one pressed and named at the end; a click picks the pane, active or not (#221)', async () => {
   const user = userEvent.setup();
   const pick = vi.fn();
   const { rerender } = render(header(shellOf({ panes: { active: 'files', enabled: { files: true, search: true, details: false, variables: false }, pick } })));
   const right = column('right') as HTMLElement;
-  expect(within(right).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['arquivos', 'busca', 'detalhes', 'variáveis']);
+  expect(within(right).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['arquivos', 'detalhes', 'busca']);
   expect(within(right).getByRole('button', { name: 'detalhes' })).toBeDisabled();
   expect(within(right).getByRole('button', { name: 'arquivos' })).toHaveAttribute('aria-pressed', 'true');
   expect(within(right).getByRole('button', { name: 'arquivos' })).toHaveClass('bg-accent', 'text-foreground');
@@ -234,30 +234,29 @@ test('no view switch and no usage; the header drags the window and each of its o
   expect(container.querySelector('[data-icon]')).toBeNull();
   expect(banner()).toHaveClass('[-webkit-app-region:drag]');
   const buttons = within(banner()).getAllByRole('button');
-  expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['hive · workers 1/5', 'recolher lateral', 'arquivos', 'busca', 'detalhes', 'variáveis']);
+  expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['hive · workers 1/5', 'recolher lateral', 'arquivos', 'detalhes', 'busca']);
   for (const button of buttons) expect(button).toHaveClass('[-webkit-app-region:no-drag]');
   cleanup();
   render(header(shellOf({ layout: LEFT_CLOSED })));
   const closed = within(banner()).getAllByRole('button');
-  expect(closed.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['abrir lateral', 'hive', 'arquivos', 'busca', 'detalhes', 'variáveis']);
+  expect(closed.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['abrir lateral', 'hive', 'arquivos', 'detalhes', 'busca']);
   for (const button of closed) expect(button).toHaveClass('[-webkit-app-region:no-drag]');
 });
 
-test('the right column ends on variáveis: in plugins arquivos and detalhes are disabled with the plugins tooltip; elsewhere variáveis is, with its own (#313)', () => {
+test('the right column ends on variáveis in plugins, arquivos, detalhes and busca disabled with the plugins tooltip; elsewhere variáveis is not rendered (#313, #1036)', () => {
   const { rerender } = render(header(shellOf({ center: 'plugins', panes: { active: 'variables', enabled: { files: false, search: false, details: false, variables: true }, pick: vi.fn() } })));
   const right = (): HTMLElement => column('right') as HTMLElement;
-  expect(within(right()).getAllByRole('button').map((b) => b.getAttribute('title'))).toEqual(['arquivos · indisponível em plugins', 'busca · indisponível em plugins', 'detalhes · indisponível em plugins', 'variáveis']);
+  expect(within(right()).getAllByRole('button').map((b) => b.getAttribute('title'))).toEqual(['arquivos · indisponível em plugins', 'detalhes · indisponível em plugins', 'busca · indisponível em plugins', 'variáveis']);
   expect(within(right()).getByRole('button', { name: 'variáveis' })).toHaveAttribute('aria-pressed', 'true');
   rerender(header(shellOf()));
-  expect(within(right()).getByRole('button', { name: 'variáveis' })).toBeDisabled();
-  expect(within(right()).getByRole('button', { name: 'variáveis' })).toHaveAttribute('title', 'variáveis · só em plugins');
+  expect(within(right()).queryByRole('button', { name: 'variáveis' })).not.toBeInTheDocument();
   expect(within(right()).getByRole('button', { name: 'arquivos' })).toHaveAttribute('title', 'arquivos');
 });
 
-test('in benchmark every pane is disabled at .35: arquivos and detalhes unavailable in benchmark, variáveis only in plugins; plugins still names itself (#461)', () => {
+test('in benchmark every pane is disabled at .35, unavailable in benchmark, and variáveis is not rendered; plugins still names itself (#461, #1036)', () => {
   const { rerender } = render(header(shellOf({ center: 'benchmark', panes: { active: undefined, enabled: { files: false, search: false, details: false, variables: false }, pick: vi.fn() } })));
   const buttons = (): HTMLElement[] => within(column('right') as HTMLElement).getAllByRole('button');
-  expect(buttons().map((b) => b.getAttribute('title'))).toEqual(['arquivos · indisponível em benchmark', 'busca · indisponível em benchmark', 'detalhes · indisponível em benchmark', 'variáveis · só em plugins']);
+  expect(buttons().map((b) => b.getAttribute('title'))).toEqual(['arquivos · indisponível em benchmark', 'detalhes · indisponível em benchmark', 'busca · indisponível em benchmark']);
   for (const button of buttons()) {
     expect(button).toBeDisabled();
     expect(button).toHaveClass('disabled:opacity-35');
