@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DecompositionHost } from '@/components/DecompositionDialog';
-import { openDecomposition } from '@/hooks/use-decomposition-write';
+import { openDecomposition, writeDecomposition } from '@/hooks/use-decomposition-write';
 import { setLanguage } from '@/i18n';
 import type { DecompositionPreview } from '../../src/types';
 
@@ -16,7 +16,8 @@ const PREVIEW: DecompositionPreview = { title: 'Site for XPTO', issues: 5, block
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let preview: DecompositionPreview = PREVIEW;
 let answer: () => Response | Promise<Response> = () => json({ ok: true });
-const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => (init?.method === 'POST' ? answer() : json(preview)));
+let read: () => Response | Promise<Response> = () => json(preview);
+const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => (init?.method === 'POST' ? answer() : read()));
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
 const create = (): HTMLElement => screen.getByRole('button', { name: 'criar issues' });
 const show = (): void => { openDecomposition('a-I1', '#1'); render(<DecompositionHost />); };
@@ -33,6 +34,7 @@ beforeEach(() => {
   setLanguage('pt');
   preview = PREVIEW;
   answer = () => json({ ok: true });
+  read = () => json(preview);
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
   vi.mocked(toast.error).mockClear();
@@ -220,4 +222,70 @@ test('the confirm shortcut posts nothing while the preview has a problem (#781)'
   await screen.findByText('linha 3: x');
   await user.keyboard('{Control>}{Enter}{/Control}');
   expect(posts()).toEqual([]);
+});
+
+// #916: before the preview, the dialog reads as loading, not as an empty box
+const never = (): Promise<Response> => new Promise(() => undefined);
+
+test('while the preview loads it shows the neutral title, the status line, the skeleton and a disabled criar without its hint; aria-busy (#916)', () => {
+  read = never;
+  show();
+  expect(screen.getByRole('heading', { name: 'Decomposição' })).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('lendo a decomposição…');
+  expect(screen.getByTestId('decomposition-skeleton')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'criar' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'criar' })).toHaveTextContent(/^criar$/);
+  expect(screen.getByRole('button', { name: 'cancelar' })).toBeEnabled();
+  expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
+});
+
+test('once the preview arrives the skeleton goes, the status empties and the target\'s title shows (#916)', async () => {
+  show();
+  expect(await screen.findByText('5 issues, 3 bloqueios')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Criar issues' })).toBeInTheDocument();
+  expect(screen.queryByTestId('decomposition-skeleton')).toBeNull();
+  expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'false');
+});
+
+test('while loading after a recorded write, the title and the primary are that choice\'s (#916)', async () => {
+  answer = () => json({ error: 'was submitted too quickly' }, 502);
+  await writeDecomposition('a-I1', { source: 'board', column: 'Backlog' });
+  read = never;
+  show();
+  expect(screen.getByRole('heading', { name: 'Criar issues' })).toBeInTheDocument();
+  expect(create()).toBeDisabled();
+});
+
+test('a failed read keeps the title and shows the error with only fechar; no skeleton, no primary (#916)', async () => {
+  read = () => json({ error: 'decomposition.md is missing' }, 500);
+  show();
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/^Não foi possível ler a decomposição: .*decomposition\.md is missing.*\. Feche e abra de novo para tentar outra vez\.$/);
+  expect(screen.getByRole('heading', { name: 'Decomposição' })).toBeInTheDocument();
+  expect(screen.queryByTestId('decomposition-skeleton')).toBeNull();
+  expect(screen.getByRole('button', { name: 'fechar' })).toHaveTextContent('fecharesc');
+  expect(screen.queryByRole('button', { name: 'cancelar' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^criar/ })).toBeNull();
+  expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'false');
+});
+
+test('while loading after a recorded hive write, the title and the primary are the hive\'s (#916)', async () => {
+  answer = () => json({ error: 'boom', code: 'hive' }, 502);
+  await writeDecomposition('a-I1', { source: 'hive', entry: null });
+  read = never;
+  show();
+  expect(screen.getByRole('heading', { name: 'Criar tarefas' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'criar tarefas' })).toBeDisabled();
+});
+
+test('a failed read after a failed write shows the read\'s failure, not the older write\'s (#916)', async () => {
+  answer = () => json({ error: 'was submitted too quickly' }, 502);
+  await writeDecomposition('a-I1', { source: 'board', column: 'Backlog' });
+  read = () => json({ error: 'decomposition.md is missing' }, 500);
+  show();
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('Não foi possível ler a decomposição');
+  expect(alert).not.toHaveTextContent('was submitted too quickly');
+  expect(screen.getByRole('heading', { name: 'Criar issues' })).toBeInTheDocument();
 });
