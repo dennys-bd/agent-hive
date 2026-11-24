@@ -65,7 +65,7 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
       const configured = perWorkspace.flat();
       const owned = new Set(configured.filter((row) => row.task !== undefined).map((row) => row.path));
       const host = machineFor({ machine: LOCAL_MACHINE }); // #932: strandedRows reads the host's disk, and its stand-in workspaces are local
-      const stranded = (await strandedRows(current.state, current.runtime.config, host.exec, host.paths)).filter((row) => !owned.has(row.path));
+      const stranded = (await strandedRows(host, current.state, current.runtime.config)).filter((row) => !owned.has(row.path));
       const strandedPaths = new Set(stranded.map((row) => row.path));
       res.json([...configured.filter((row) => !strandedPaths.has(row.path)), ...stranded]);
     } catch (err) {

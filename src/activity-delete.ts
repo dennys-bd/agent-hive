@@ -46,7 +46,7 @@ export async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveVi
   try {
     const sessions = sessionsOf(current.state, task.item.itemId);
     const machine = deps.machineFor(activity);
-    const workspace = stranded ? await strandedWorkspace(activity, task, machine.exec, machine.paths) : own;
+    const workspace = stranded ? await strandedWorkspace(machine, activity, task) : own;
     if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
     else await strandedTranscripts(machine, activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
   } catch (err) {
@@ -122,7 +122,7 @@ export function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): 
     try {
       const sessions = sessionsOf(current.state, task.item.itemId);
       const machine = deps.machineFor(live);
-      const workspace = stranded && !nothing ? await strandedWorkspace(live, task, machine.exec, machine.paths) : own;
+      const workspace = stranded && !nothing ? await strandedWorkspace(machine, live, task) : own;
       if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
       else if (stranded && !nothing) await strandedTranscripts(machine, live, task, sessions, scope, log);
     } catch (err) {
