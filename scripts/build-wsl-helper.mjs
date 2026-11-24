@@ -6,7 +6,8 @@ import { build } from 'vite';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 export const HELPER_FILE = 'wsl-helper.mjs';
 
-export async function buildWslHelper() {
+// outDir: dist by default; a test hands a temp folder of its own, so two test files never build into one file at once
+export async function buildWslHelper(outDir = 'dist') {
   await build({
     root: ROOT,
     configFile: false,
@@ -14,7 +15,7 @@ export async function buildWslHelper() {
     logLevel: 'warn',
     build: {
       ssr: 'src/wsl/helper-main.ts',
-      outDir: 'dist',
+      outDir,
       emptyOutDir: false, // dist already holds tsc's output and the dashboard
       target: 'node24',
       minify: false,
@@ -28,4 +29,4 @@ export async function buildWslHelper() {
   });
 }
 
-if (import.meta.main) await buildWslHelper();
+if (import.meta.main) await buildWslHelper(process.argv[2]);
