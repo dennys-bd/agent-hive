@@ -259,7 +259,8 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
   const onKeyDown = (e: KeyboardEvent): void => {
     if (canWrite && pressed(e.nativeEvent, 'confirm')) { e.preventDefault(); write(); }
   };
-  const error = writeFailure ?? (readFailure === undefined ? undefined : t('decomposition.readFailed', { error: readFailure }));
+  // #916: a failed read first, since it is why nothing can be created; an older write's failure would hide that
+  const error = (readFailure === undefined ? undefined : t('decomposition.readFailed', { error: readFailure })) ?? writeFailure;
   return (
     <Dialog open onOpenChange={(o) => { if (!o) close(); }}>
       <DialogContent aria-busy={isRunning || isLoading} onKeyDown={onKeyDown}>
