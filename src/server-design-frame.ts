@@ -14,7 +14,7 @@ import { IMAGE_MAX, type Located, locate } from './server-editor.js';
 import { baseCommit } from './server-file-base.js';
 import { MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
-import type { Exec } from './types.js';
+import type { Exec, MachineId } from './types.js';
 import { toWire } from './wire-path.js';
 
 const HEAD_TAG = /<head\b[^>]*>/i; // \b: <header> is not <head>
@@ -35,13 +35,16 @@ const GIT_PATHS = pathsOf('linux');
 interface FrameDeps { tokens: DesignFrameTokens; log: Pick<Logger, 'debug'>; machineFor: MachineFor }
 interface MintDeps { requireLive: TaskRouteDeps['requireLive']; tokens: DesignFrameTokens; exec: Exec; machineFor: MachineFor }
 
-/** A before frame's folder (#675): `folder` of `commit` in the repository at `top`, in git's path space (posix, relative to top). */
-export interface BaseFolder { top: string; commit: string; folder: string }
+/** A design folder a frame token serves (#108, #932): the folder on the machine of the activity it was minted from. */
+export interface FrameFolder { machine: MachineId; folder: string }
+
+/** A before frame's folder (#675): `folder` of `commit` in the repository at `top`, in git's path space (posix, relative to top), on `machine` (#932). */
+export interface BaseFolder { machine: MachineId; top: string; commit: string; folder: string }
 
 /** This boot's design frame tokens (#108, #675). Minting a value again answers its token, so a map stays bounded by what the user opened.
- *  Memory only: a restart voids every URL. */
+ *  Memory only: a restart voids every URL. #932: a value names its machine, so a frame reads the disk it was minted on. */
 export interface DesignFrameTokens {
-  mint(folder: string): string; folderOf(token: string): string | undefined;
+  mint(folder: FrameFolder): string; folderOf(token: string): FrameFolder | undefined;
   mintBase(base: BaseFolder): string; baseOf(token: string): BaseFolder | undefined;
 }
 
@@ -63,8 +66,8 @@ function tokenMap<T>(keyOf: (value: T) => string): { mint(value: T): string; of(
 }
 
 export function createDesignFrameTokens(): DesignFrameTokens {
-  const folders = tokenMap<string>((folder) => folder);
-  const bases = tokenMap<BaseFolder>(({ top, commit, folder }) => JSON.stringify([top, commit, folder]));
+  const folders = tokenMap<FrameFolder>(({ machine, folder }) => JSON.stringify([machine, folder]));
+  const bases = tokenMap<BaseFolder>(({ machine, top, commit, folder }) => JSON.stringify([machine, top, commit, folder]));
   return { mint: folders.mint, folderOf: folders.of, mintBase: bases.mint, baseOf: bases.of };
 }
 
@@ -118,14 +121,14 @@ async function pageOf(screen: string, text: string, read: ReadPart): Promise<str
   return withBridge(html, parts);
 }
 
-interface Served { name: string; bytes: Buffer; page(): Promise<string> }
+interface Served { type: string; bytes: Buffer; page(): Promise<string> } // type: the file's extension, on the paths it was read with
 
 async function diskServed(machine: Machine, folder: string, segments: string[]): Promise<Served | undefined> {
   const file = await servedFile(machine, folder, segments);
   if (file === undefined) return undefined;
   const bytes = await machine.fs.readFile(file, { maxBytes: IMAGE_MAX }).catch(() => undefined); // over the cap, or gone since the check: the bare 404
   if (bytes === undefined) return undefined;
-  return { name: file, bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(folder, machine.paths)) };
+  return { type: machine.paths.extname(file), bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(folder, machine.paths)) };
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
@@ -140,14 +143,14 @@ async function servedBlob({ top, commit, folder }: BaseFolder, segments: string[
   if (entry === undefined || !isRegularBlob(entry) || entry.size > cap) return undefined;
   const bytes = await gitBlob(top, entry.oid, cap).catch(() => undefined); // a blob gone or grown past the cap since ls-tree: the bare 404
   if (bytes === undefined) return undefined;
-  return { name: path, bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(top, commit, folder)) };
+  return { type: GIT_PATHS.extname(path), bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(top, commit, folder)) };
 }
 
-async function servedOf(tokens: DesignFrameTokens, machine: Machine, token: string, segments: string[]): Promise<Served | undefined> {
-  const folder = tokens.folderOf(token);
-  if (folder !== undefined) return diskServed(machine, folder, segments);
+async function servedOf(tokens: DesignFrameTokens, machineFor: MachineFor, token: string, segments: string[]): Promise<Served | undefined> {
+  const held = tokens.folderOf(token);
+  if (held !== undefined) return diskServed(machineFor({ machine: held.machine }), held.folder, segments); // #932: the machine it was minted on
   const base = tokens.baseOf(token);
-  return base === undefined ? undefined : servedBlob(base, segments);
+  return base === undefined ? undefined : servedBlob(base, segments); // still git on the host (design-parts.ts) until #882 reads it on base.machine
 }
 
 // ponytail: the whole file is read into memory, which is fine for a design's pages, styles and images; stream it if designs ever carry large media
@@ -156,10 +159,9 @@ async function serveFrame(req: Request, res: Response, { tokens, log, machineFor
   res.set({ 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
   const token = String(req.params.token);
   const segments: unknown = req.params.path; // Express 5's *path: the decoded segments
-  const machine = machineFor({}); // ponytail: a token names a folder, not an activity, so the frame reads the local machine; node 8 puts the machine's id in the token's value
-  const served = await servedOf(tokens, machine, token, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
+  const served = await servedOf(tokens, machineFor, token, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
   if (served === undefined) return refuseFrame(req, res, log);
-  res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(machine.paths.extname(served.name)); // the Host check already ran
+  res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(served.type); // the Host check already ran
   const isHtml = res.get('content-type')?.startsWith('text/html') === true;
   res.send(isHtml ? await served.page() : served.bytes);
 }
@@ -194,7 +196,7 @@ async function frameUrl(current: Live, id: string, path: unknown, tokens: Design
   if ('status' in located) return located;
   const design = await designFolder(located);
   if ('status' in design) return design;
-  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint(design.folder)}/${encodeURIComponent(located.machine.paths.basename(located.file))}` };
+  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint({ machine: located.machine.id, folder: design.folder })}/${encodeURIComponent(located.machine.paths.basename(located.file))}` };
 }
 
 // The before frame's URL (#675): the base as file-base resolves it, at a sha; missing when that commit has no such screen. A screen at the
@@ -211,7 +213,7 @@ async function baseFrameUrl(current: Live, req: Request, { tokens, machineFor }:
   if (folder === '.') return NOT_FOUND;
   const entry = commit === undefined ? undefined : await gitEntry(top, commit, path);
   if (commit === undefined || entry === undefined || !isRegularBlob(entry)) return { missing: true };
-  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mintBase({ top, commit, folder })}/${encodeURIComponent(GIT_PATHS.basename(path))}` };
+  return { url: `${DESIGN_FRAME_PREFIX}${tokens.mintBase({ machine: base.located.machine.id, top, commit, folder })}/${encodeURIComponent(GIT_PATHS.basename(path))}` };
 }
 
 function registerMint(app: Express, route: string, requireLive: MintDeps['requireLive'], answerOf: (current: Live, req: Request) => Promise<MintAnswer>): void {
