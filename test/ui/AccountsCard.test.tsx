@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AccountsCard, accountsEntries } from '@/components/settings/AccountsCard';
 import { setLanguage, t } from '@/i18n';
 import { draftFrom, type SettingsDraft } from '@/lib/settings-form';
+import { removeRoute } from '@/hooks/use-accounts';
 import { settingAnchor } from '@/lib/settings-search';
 import type { AccountsConfig } from '../../src/types';
 
@@ -219,4 +220,9 @@ test('remove is locked, with its hint, on the saved choice and the drafted one, 
   expect(within(group('copilot')).queryAllByRole('button')).toEqual([]);
   expect(screen.queryByRole('button', { name: t('settings.accounts.remove.label', { name: 'gh-user' }) })).toBeNull();
   expect(screen.queryByRole('button', { name: t('settings.accounts.remove.label', { name: t('settings.accounts.machine') }) })).toBeNull();
+});
+
+test('a remove route encodes every dot, so a name of . or .. reaches its own route (#965)', () => {
+  expect(removeRoute('claude', '..')).toBe('/settings/accounts/claude/%2E%2E');
+  expect(removeRoute('github', 'a.b/c')).toBe('/settings/github/accounts/a%2Eb%2Fc');
 });

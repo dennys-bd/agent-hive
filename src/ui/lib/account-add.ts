@@ -36,7 +36,10 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 const isOneOf = <T extends string>(list: readonly T[], value: unknown): value is T => typeof value === 'string' && (list as readonly string[]).includes(value);
 const isText = (value: unknown): value is string => typeof value === 'string' && value !== '';
 // A link lands in an href: only https, so no answer can put another scheme in the page
-const httpsUrl = (value: unknown): string | undefined => (typeof value === 'string' && value.startsWith('https://') ? value : undefined);
+function httpsUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try { return new URL(value).protocol === 'https:' ? value : undefined; } catch { return undefined; }
+}
 
 /** #955 and #960 keep each add outside the accounts routes: `add` is a valid name there. */
 export const addRoute = (list: AccountList): string => (list === 'claude' ? '/settings/accounts/claude/add' : '/settings/github/add');

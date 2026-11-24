@@ -54,3 +54,8 @@ test('a refused start: a 400 name code is worded at the field, a 409 add-pending
     ['settings.accounts.add.failed.exited', 'settings.accounts.add.failed.ghExited', 'settings.accounts.add.failed.token'],
   );
 });
+
+test('a link that does not parse as an https URL is dropped (#965)', () => {
+  assert.deepEqual(claudeAddStatus({ state: 'pending', name: 'work', url: 'https://' }), { state: 'pending', name: 'work' });
+  assert.deepEqual(claudeAddStatus({ state: 'pending', name: 'work', url: 'javascript:alert(1)' }), { state: 'pending', name: 'work' });
+});

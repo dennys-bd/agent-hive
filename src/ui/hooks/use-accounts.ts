@@ -21,9 +21,9 @@ type AccountsRead = Omit<Accounts, 'refetch' | 'remove'>;
 const NO_ERRORS: AccountsRead['errors'] = { claude: false, github: false };
 const NOTHING_READ: AccountsRead = { errors: NO_ERRORS };
 
-/** One stored name's remove route, the name encoded: Express decodes :name and :login. */
+/** One stored name's remove route, the name encoded: Express decodes :name and :login. Dots too: fetch would drop a `.` or `..` segment. */
 export const removeRoute = (list: AccountList, name: string): string =>
-  `${list === 'claude' ? CLAUDE_ACCOUNTS_ROUTE : GITHUB_ACCOUNTS_ROUTE}/${encodeURIComponent(name)}`;
+  `${list === 'claude' ? CLAUDE_ACCOUNTS_ROUTE : GITHUB_ACCOUNTS_ROUTE}/${encodeURIComponent(name).replaceAll('.', '%2E')}`;
 
 // The answer crosses the network: anything but a list of names is a failed read, never an empty group
 function namesOf(answer: unknown, key: 'names' | 'logins'): string[] {
