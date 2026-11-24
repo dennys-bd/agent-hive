@@ -1421,9 +1421,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The plugins view's items (#315): the catalogue and the custom store under <home>/custom/. onChange is #316's per-workspace render, a no-op until it lands
   const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
-  // #621: a workspace's variable values, saved one at a time from the plugins view on the POST /settings chain; only that workspace re-renders
+  // #621: a workspace's variable values, saved one at a time from the plugins view on the POST /settings chain; only that workspace's plugin and protocol files re-render
   registerVariableRoutes(app, {
-    requireLive, queueSave, log, plugin: pluginRender,
+    requireLive, queueSave, log, plugin: pluginRender, memory,
     saveConfig: async (config) => {
       await writeConfigFile(config);
       if (!live) return;

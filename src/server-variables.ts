@@ -1,10 +1,12 @@
 // The plugins view's workspace values (#621, decision 11): PUT sets one of a workspace's variables, DELETE removes it. Each runs on the POST
-// /settings chain, writes hive.config.json through the server's own writer and re-renders that workspace's plugin folder only. The value is
+// /settings chain, writes hive.config.json through the server's own writer and re-renders that workspace's plugin folder and protocol files only. The value is
 // not checked against the templates that read it: the lint shows where one cannot take it (decision 6).
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import type { Logger } from './log.js';
+import type { MemoryStore } from './memory.js';
 import type { PluginRender } from './plugin-render.js';
+import { writeMemoryProtocols } from './server-memory.js';
 import { bodyOf } from './server-plugins.js';
 import { isVariableName } from './template.js';
 import type { Config, VariableValue, Workspace } from './types.js';
@@ -22,6 +24,7 @@ export interface VariableRouteDeps {
   queueSave(save: () => Promise<void>): Promise<void>;
   saveConfig(config: Config): Promise<void>; // writes hive.config.json as POST /settings does, and makes it the live config
   plugin: Pick<PluginRender, 'write'>;
+  memory: Pick<MemoryStore, 'writeProtocol'>; // the protocol passages render with the workspace's values (protocolRenderer's valuesOf)
   log: Pick<Logger, 'error'>;
 }
 
@@ -47,7 +50,8 @@ async function write(deps: VariableRouteDeps, req: Request, res: Response, value
     const target = config.comb.workspaces.find((w) => w.name === workspace);
     if (target === undefined) return void res.status(HTTP_BAD_REQUEST).json({ error: WORKSPACE_MESSAGE });
     const variables = withValue(target.variables, name, value);
-    const next: Config = { ...config, comb: { ...config.comb, workspaces: config.comb.workspaces.map((w) => (w === target ? { ...w, variables } : w)) } };
+    const saved: Workspace = { ...target, variables };
+    const next: Config = { ...config, comb: { ...config.comb, workspaces: config.comb.workspaces.map((w) => (w === target ? saved : w)) } };
     try {
       await deps.saveConfig(next);
     } catch (err) {
@@ -55,6 +59,7 @@ async function write(deps: VariableRouteDeps, req: Request, res: Response, value
       return void res.status(HTTP_SERVER_ERROR).json({ error: SAVE_MESSAGE });
     }
     await deps.plugin.write(next, [workspace]); // never rejects: a failed render is the render's to log
+    await writeMemoryProtocols(deps.memory, { ...next, comb: { ...next.comb, workspaces: [saved] } }, deps.log); // nor this one: it logs
     res.json({ variables });
   });
 }

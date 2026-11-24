@@ -9,7 +9,7 @@ import type { Config } from '../src/types.js';
 import { combConfig, fakeLog, GITHUB_ENTRY } from './fakes.js';
 
 // PUT / DELETE /workspaces/:workspace/variables/:name (#621, decision 11): one value at a time, on the settings chain, one workspace re-rendered
-interface Rig { base: string; saved: Config[]; renders: [RenderConfig, readonly string[] | undefined][]; lines: string[]; current(): Config }
+interface Rig { base: string; saved: Config[]; renders: [RenderConfig, readonly string[] | undefined][]; protocols: [string, readonly string[]][]; lines: string[]; current(): Config }
 
 async function serve(t: TestContext, failSave = false): Promise<Rig> {
   const parsed = parseConfig(combConfig({ sources: [GITHUB_ENTRY] }));
@@ -17,6 +17,7 @@ async function serve(t: TestContext, failSave = false): Promise<Rig> {
   let config: Config = { ...parsed, comb: { ...parsed.comb, workspaces: [{ ...hive, variables: { keep: 'x' } }, { ...hive, name: 'site', path: '/site', variables: {} }] } };
   const saved: Config[] = [];
   const renders: [RenderConfig, readonly string[] | undefined][] = [];
+  const protocols: [string, readonly string[]][] = [];
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
@@ -29,12 +30,13 @@ async function serve(t: TestContext, failSave = false): Promise<Rig> {
       config = next;
     },
     plugin: { write: async (next, only) => void renders.push([next, only]) },
+    memory: { writeProtocol: async (name, off) => void protocols.push([name, off]) },
     log,
   });
   const server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, saved, renders, lines, current: () => config };
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, saved, renders, protocols, lines, current: () => config };
 }
 
 async function call(base: string, method: string, path: string, body?: unknown): Promise<[number, unknown]> {
@@ -52,6 +54,8 @@ test('PUT sets one of a workspace\'s variables and DELETE removes it: each saves
   assert.equal(r.saved.length, 5);
   assert.deepEqual(r.renders.map(([, only]) => only), [['hive'], ['hive'], ['hive'], ['hive'], ['hive']]);
   assert.equal(r.renders[4]?.[0], r.saved[4], 'the render reads the config just saved');
+  assert.deepEqual(r.protocols.map(([name]) => name), ['hive', 'hive', 'hive', 'hive', 'hive'], 'its protocol files render its passages with the new values');
+  assert.equal(r.protocols[4]?.[1], r.saved[4]?.mcp.off, 'with the tools the config turns off');
   assert.deepEqual(r.current().comb.workspaces.map((w) => w.variables), [{ specsDir: 'design/specs', quick: false, chatLanguage: null }, {}]);
 });
 
@@ -65,13 +69,13 @@ test('a 400 names the field: an unknown workspace, a name a template cannot decl
     assert.equal(status, 400, JSON.stringify(body));
     assert.match((answer as { error: string }).error, /^value: /);
   }
-  assert.deepEqual([r.saved, r.renders], [[], []]);
+  assert.deepEqual([r.saved, r.renders, r.protocols], [[], [], []]);
 });
 
 test('a config the disk refuses is a 500 with no render, its cause logged by class only (#621)', async (t) => {
   const r = await serve(t, true);
   assert.deepEqual(await call(r.base, 'PUT', '/workspaces/hive/variables/specsDir', { value: 'x' }), [500, { error: SAVE_MESSAGE }]);
-  assert.deepEqual(r.renders, []);
+  assert.deepEqual([r.renders, r.protocols], [[], []]);
   assert.deepEqual(r.lines, ['ERROR variables hive: hive.config.json not written (Error)']);
 });
 
