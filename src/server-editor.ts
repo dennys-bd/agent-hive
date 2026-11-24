@@ -12,6 +12,7 @@ import { type FormatOutcome, formatForSave } from './format-run.js';
 import { resolveActivityPath } from './ide.js';
 import { inScope } from './languages.js';
 import { type Machine, MachineError } from './machine.js';
+import { whenAvailable } from './machines.js';
 import { fileFs, machineCode } from './machine-fs.js';
 import { activityFolders, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -191,8 +192,8 @@ type Handler = (req: Request, res: Response, current: Live) => Promise<void>;
 // Settings > editor's detection (#780): every supported formatter, detected on each workspace's checkout as a save in its local activity
 // would detect it; a worktree may hold its own node_modules, which this does not look at
 async function formatterStates(_req: Request, res: Response, current: Live, machineFor: MachineFor): Promise<void> {
-  const machine = machineFor({}); // the workspaces' checkouts are the host's
-  const found = await Promise.all(current.runtime.config.comb.workspaces.map(async (w) => ({ name: w.name, binaries: await detectFormatters(machine, w.path, FORMATTER_IDS) })));
+  // #932: each checkout on its workspace's machine; one whose machine is unavailable detects nothing
+  const found = await Promise.all(current.runtime.config.comb.workspaces.map(async (w) => ({ name: w.name, binaries: await whenAvailable(() => detectFormatters(machineFor(w), w.path, FORMATTER_IDS), {}) })));
   const states: FormatterState[] = FORMATTER_IDS.map((id) => ({ id, found: found.filter((f) => f.binaries[id] !== undefined).map((f) => f.name) }));
   res.json(states);
 }

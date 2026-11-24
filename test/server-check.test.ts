@@ -7,10 +7,13 @@ import express from 'express';
 import { localActivityId } from '../src/activities.js';
 import { createConsoleStore } from '../src/console.js';
 import { parseConfig } from '../src/config.js';
+import type { Machine } from '../src/machine.js';
+import { NOT_SUPPORTED, unavailableMachine } from '../src/machines.js';
 import { initialState } from '../src/orchestrator.js';
 import { registerCheckRoutes } from '../src/server-check.js';
+import { registerEditorRoutes } from '../src/server-editor.js';
 import { type CheckAnswer, type CheckerState, EDITOR_DEFAULTS, type EditorConfig } from '../src/types.js';
-import { combConfig, fakeMachine, LOCAL_STAGES } from './fakes.js';
+import { combConfig, fakeMachine, LOCAL_STAGES, workspacesAt } from './fakes.js';
 import { savedActivityId, withLocal } from './fixtures/work.js';
 import { writeCmdTwin } from './npm-server.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
@@ -81,4 +84,29 @@ test('GET /settings/checkers answers every checker with the workspaces that have
   assert.equal(states.length, 25);
   const found = (id: string): string[] | undefined => states.find((s) => s.id === id)?.found;
   assert.deepEqual([found('mypy'), found('eslint'), found('ruff'), found('biome')], [['hive'], ['hive'], [], []]);
+});
+
+test('Settings › editor detects each workspace on its own machine; one on an unavailable machine finds nothing and the answers stay 200 (#932)', async (t) => {
+  const repo = await realpath(await tempDir(t, 'detect-repo-'));
+  await script(join(repo, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'mypy'), 'exit 0');
+  const [hive] = workspacesAt(repo);
+  const config = parseConfig(combConfig({ stages: LOCAL_STAGES, workspaces: [hive, { ...hive, name: 'site', path: '/home/u/site', machine: 'wsl:Y' }] }));
+  const asked: string[] = [];
+  const machineFor = (a: { machine?: string }): Machine => {
+    asked.push(a.machine ?? 'local');
+    return a.machine === 'wsl:Y' ? unavailableMachine('wsl:Y', NOT_SUPPORTED) : fakeMachine();
+  };
+  const app = express();
+  const deps = { requireLive: () => ({ state: initialState(0), runtime: { config, sources: new Map(), promptsDir: '' } }), consoleStore: createConsoleStore(() => 5000), machineFor };
+  registerCheckRoutes(app, deps);
+  registerEditorRoutes(app, deps);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const checkers = await fetch(`${base}/settings/checkers`);
+  assert.equal(checkers.status, 200);
+  assert.deepEqual(((await checkers.json()) as CheckerState[]).find((s) => s.id === 'mypy')?.found, ['hive']);
+  assert.equal((await fetch(`${base}/settings/formatters`)).status, 200);
+  assert.ok(asked.includes('wsl:Y'), 'site was asked on its own machine');
 });
