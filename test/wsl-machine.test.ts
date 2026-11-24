@@ -146,6 +146,42 @@ test('close() ends the helper, and a call after it rejects with closed and spawn
   assert.deepEqual([r.children.length, probes(r)], [spawned, 1]);
 });
 
+test('info() after close() throws closed, both before the first hello and after one (#945)', async (t) => {
+  const fresh = await rig(t);
+  fresh.machine.close();
+  assert.throws(() => fresh.machine.info(), refusedWith('closed'));
+  assert.equal(fresh.children.length, 0, 'nothing started');
+  const r = await rig(t);
+  await r.machine.fs.stat(r.home);
+  r.machine.close();
+  assert.throws(() => r.machine.info(), refusedWith('closed'));
+});
+
+test('close() between the first call and its hello rejects the call with closed, and the helper\'s child is gone (#945)', async (t) => {
+  const mute = join(await tempDir(t, 'wsl-mute-'), 'mute.mjs');
+  await writeFile(mute, MUTE_HELPER);
+  const r = await rig(t, { helperFile: mute, helloTimeoutMs: MUTE_TIMEOUT_MS * 10 });
+  const call = r.machine.fs.stat(r.home);
+  while (spawnedWith(r, SPAWN_LINE).length === 0) await new Promise((resolve) => setTimeout(resolve, 10)); // the start is in the hello's wait
+  r.machine.close();
+  await assert.rejects(call, refusedWith('closed'));
+  const [helper] = spawnedWith(r, SPAWN_LINE);
+  await exitOf(helper);
+  assert.ok(helper && (helper.exitCode !== null || helper.signalCode !== null), 'the helper\'s wsl.exe ended');
+});
+
+test('close() after the hello but before the start is adopted rejects the call with closed, and the helper\'s child is gone (#945)', async (t) => {
+  let machine: WslMachine | undefined;
+  // shimWords is read while the Hive's folder is prepared, after the hello and before adopt
+  const r = await rigDeps(t, { shimWords: () => { machine?.close(); return []; } });
+  machine = createWslMachine(DISTRO, r.deps);
+  t.after(() => machine?.close());
+  await assert.rejects(machine.fs.stat(r.home), refusedWith('closed'));
+  const [helper] = spawnedWith(r, SPAWN_LINE);
+  await exitOf(helper);
+  assert.ok(helper && (helper.exitCode !== null || helper.signalCode !== null), 'the helper\'s wsl.exe ended');
+});
+
 test('info() before the first hello throws starting and starts the helper; after it, the helper\'s facts (#945)', async (t) => {
   const r = await rig(t);
   assert.throws(() => r.machine.info(), refusedWith('starting'));

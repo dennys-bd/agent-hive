@@ -197,6 +197,7 @@ export function createWslMachine(distro: string, deps: WslMachineDeps): WslMachi
     ...members(id, ready, () => lent(deps, distro), deps.ptys),
     // decision 12: the last hello's facts; before the first there is nothing true to answer, so it starts the helper and refuses
     info: () => {
+      if (closing.signal.aborted) throw unavailable(id, CLOSED); // a closed machine's last facts are no longer true
       if (lastInfo !== undefined) return lastInfo;
       void ready().catch(() => undefined); // the failure is the next call's to report
       throw unavailable(id, STARTING);
