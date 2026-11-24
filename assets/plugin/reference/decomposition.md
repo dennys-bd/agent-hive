@@ -135,14 +135,14 @@ The rules the Hive reads it by:
 - The first `# ` heading is the goal's title, and the text up to the first
   `##` is the goal's text.
 - `Label:` is a line of the goal's text, at most once: the label every
-  created issue gets, 1 to 50 characters; the Hive reads `none` as no
+  created item gets, 1 to 50 characters; the Hive reads `none` as no
   label.
 - `## Design` (the root's design) and `## Suggestions` are the only `##`
   headings that are not nodes. Every other `##` heading is
   `## <id> <title>`, with a title of 1 to 200 characters, and comes after
   its parent's.
 - Inside a node, the text before the first `###` is its free text (it
-  heads the issue). The only subsections are `### Scope` (required on
+  heads the item). The only subsections are `### Scope` (required on
   every node), `### Design` (inner nodes only), `### Open points` (leaves
   only) and `### Acceptance criteria` (required on a leaf, never on an
   inner node).
