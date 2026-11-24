@@ -38,3 +38,15 @@ export function accountRows(provider: AccountProvider, lists: AccountLists, save
   if (saved === undefined || saved === '' || saved === machine || (list ?? []).includes(saved)) return [machineRow, ...stored];
   return [machineRow, ...stored, { value: saved, isGone: list !== undefined }];
 }
+
+// The providers whose choice a stored name can be: a GitHub login is also Copilot's (#962)
+const SELECTING: Readonly<Record<AccountList, readonly AccountProvider[]>> = { claude: ['claude'], github: ['github', 'copilot'] };
+
+/** Whether a row carries a remove (#965): a stored account of Claude's or GitHub's group, never the machine's row, a name the store lost
+ * or Copilot's rows, which are GitHub's logins seen from another group. */
+export const hasRemove = (provider: AccountProvider, row: AccountRow): boolean => provider !== 'copilot' && row.value !== '' && row.isGone !== true;
+
+/** Whether a stored name may be removed now: not while the saved selection names it, which the route refuses (409), nor while the draft does,
+ * so the draft never points at a removed account. */
+export const isRemovable = (list: AccountList, value: string, saved: AccountsConfig, draft: AccountsDraft): boolean =>
+  !SELECTING[list].some((provider) => saved[provider] === value || draft[provider] === value);

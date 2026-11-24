@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AccountsCard, accountsEntries } from '@/components/settings/AccountsCard';
 import { setLanguage, t } from '@/i18n';
 import { draftFrom, type SettingsDraft } from '@/lib/settings-form';
+import { removeRoute } from '@/hooks/use-accounts';
 import { settingAnchor } from '@/lib/settings-search';
 import type { AccountsConfig } from '../../src/types';
 
@@ -13,9 +14,14 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const CLAUDE = { names: ['personal', 'work'] };
 const GITHUB = { logins: ['alice', 'gh-user'], machine: 'gh-user' };
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-// The two list routes; a number answers that status with a raw error the screen must never show
-function answer(claude: unknown = CLAUDE, github: unknown = GITHUB) {
-  const fetch = vi.fn(async (url: string) => {
+type Reply = () => Response;
+// The two list routes, both adds at rest (#965), and any call a test answers itself by `METHOD url`; a number answers that status with a raw
+// error the screen must never show
+function answer(claude: unknown = CLAUDE, github: unknown = GITHUB, replies: Record<string, Reply> = {}) {
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const reply = replies[`${init?.method ?? 'GET'} ${url}`];
+    if (reply !== undefined) return reply();
+    if (url.endsWith('/add')) return json({ state: 'idle' });
     const body = url === '/settings/accounts/claude' ? claude : url === '/settings/github/accounts' ? github : 404;
     return typeof body === 'number' ? json({ error: 'raw route error' }, body) : json(body);
   });
@@ -30,6 +36,9 @@ const group = (name: string): HTMLElement => screen.getByRole('radiogroup', { na
 const names = (name: string): string[] =>
   within(group(name)).getAllByRole('radio').map((radio) => document.getElementById(radio.getAttribute('aria-labelledby') ?? '')?.textContent ?? '');
 const read = () => screen.findByRole('radio', { name: 'personal' });
+const removeOf = (name: string): HTMLElement => screen.getByRole('button', { name: t('settings.accounts.remove.label', { name }) });
+const confirmButton = (): HTMLElement | null => screen.queryByRole('button', { name: t('settings.accounts.remove.confirm') });
+const deletes = (fetch: ReturnType<typeof answer>, url: string): number => fetch.mock.calls.filter(([called, init]) => called === url && init?.method === 'DELETE').length;
 
 test('three groups in order, claude, copilot and github, and no codex; each lists the machine\'s row first, then its stored accounts; Copilot lists GitHub\'s logins, gh\'s own once, on the machine\'s row (#964)', async () => {
   answer();
@@ -42,7 +51,8 @@ test('three groups in order, claude, copilot and github, and no codex; each list
   expect(names('github')).toEqual(['gh-user', 'alice']);
   expect(within(group('github')).getByText(t('settings.accounts.machine'))).toBeInTheDocument();
   expect(document.getElementById(settingAnchor('settings.accounts', 'copilot'))?.querySelector('svg[data-icon="copilot"]')).not.toBeNull();
-  expect(document.getElementById(settingAnchor('settings.accounts', 'github'))?.querySelector('svg')).toBeNull(); // GitHub is no agent: no mark
+  // GitHub is no agent: no mark in its header (its rows' removes draw an ×, #965)
+  expect(document.getElementById(settingAnchor('settings.accounts', 'github'))?.firstElementChild?.querySelector('svg')).toBeNull();
 });
 
 test('each group shows the draft\'s choice selected, gh\'s own login on the machine\'s row; picking a row sends accounts with that provider\'s name, the machine\'s as \'\' (#964)', async () => {
@@ -59,12 +69,14 @@ test('each group shows the draft\'s choice selected, gh\'s own login on the mach
   expect(onChange).toHaveBeenLastCalledWith({ accounts: { claude: '', copilot: 'gh-user', github: '' } });
 });
 
-test('a group is one tab stop: tab lands on its selected row, an arrow moves to the next row and picks it, and tab leaves for the next group (#964)', async () => {
+test('a group is one tab stop: tab lands on its add, then its selected row, an arrow moves to the next row and picks it; the rows\' removes follow, then the next group (#964, #965)', async () => {
   answer();
   const user = userEvent.setup();
   const onChange = vi.fn();
   renderCard({}, {}, onChange);
   await read();
+  await user.tab();
+  expect(screen.getByRole('button', { name: t('settings.accounts.add.claude') })).toHaveFocus();
   await user.tab();
   expect(within(group('claude')).getByRole('radio', { name: t('settings.accounts.machine') })).toHaveFocus();
   // Held, then released: Radix focuses the next row in a timeout and checks it only while an arrow is down, which a real press outlasts
@@ -72,6 +84,10 @@ test('a group is one tab stop: tab lands on its selected row, an arrow moves to 
   await waitFor(() => expect(within(group('claude')).getByRole('radio', { name: 'personal' })).toHaveFocus());
   await user.keyboard('{/ArrowDown}');
   expect(onChange).toHaveBeenLastCalledWith({ accounts: { claude: 'personal', copilot: '', github: '' } });
+  await user.tab();
+  expect(removeOf('personal')).toHaveFocus();
+  await user.tab();
+  expect(removeOf('work')).toHaveFocus();
   await user.tab();
   expect(within(group('copilot')).getByRole('radio', { name: 'gh-user' })).toHaveFocus();
 });
@@ -120,7 +136,7 @@ test('a failed GitHub list keeps copilot\'s and github\'s machine row and saved 
   expect(screen.queryByText(/raw route error/)).toBeNull();
   expect(console.error).toHaveBeenCalled();
   fireEvent.click(screen.getAllByRole('button', { name: t('settings.accounts.retry') })[0]);
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => url === '/settings/github/accounts')).toHaveLength(2)); // the adds read on mount too (#965)
 });
 
 test('the search lists one entry per group under execução › contas, landing on its group; the agents\' by their name (#964)', () => {
@@ -131,4 +147,82 @@ test('the search lists one entry per group under execução › contas, landing 
     ['settings.accounts.github', settingAnchor('settings.accounts', 'github')],
   ]);
   for (const entry of entries) expect([entry.path, entry.view]).toEqual([['settings.section.execution', 'settings.accounts'], { section: 'execution' }]);
+});
+
+test('remove takes two clicks: the first puts its confirm in the ×\'s place with focus on it; Escape closes it and puts focus back, a blur closes it; the second click removes the row (#965)', async () => {
+  let names = ['personal', 'work'];
+  const fetch = answer(CLAUDE, GITHUB, {
+    'GET /settings/accounts/claude': () => json({ names }),
+    'DELETE /settings/accounts/claude/personal': () => { names = ['work']; return new Response(null, { status: 204 }); },
+  });
+  renderCard();
+  await read();
+  fireEvent.click(removeOf('personal'));
+  expect(confirmButton()).toHaveFocus();
+  expect(screen.getByText(t('settings.accounts.remove.confirmHint'))).toBeInTheDocument();
+  fireEvent.keyDown(confirmButton() as HTMLElement, { key: 'Escape' });
+  expect(confirmButton()).toBeNull();
+  expect(removeOf('personal')).toHaveFocus();
+  fireEvent.click(removeOf('personal'));
+  fireEvent.blur(confirmButton() as HTMLElement);
+  expect(confirmButton()).toBeNull();
+  expect(deletes(fetch, '/settings/accounts/claude/personal')).toBe(0);
+  fireEvent.click(removeOf('personal'));
+  fireEvent.click(confirmButton() as HTMLElement);
+  await waitFor(() => expect(within(group('claude')).queryByRole('radio', { name: 'personal' })).toBeNull());
+  expect(deletes(fetch, '/settings/accounts/claude/personal')).toBe(1);
+  expect(within(group('claude')).getByRole('radio', { name: 'work' })).toBeInTheDocument();
+});
+
+test('a remove the route refuses as in use shows our copy, never its words; a 404 reads the list again with no line; another failure offers try again (#965)', async () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  let logins = ['alice', 'bob', 'carol', 'gh-user'];
+  const fetch = answer(CLAUDE, GITHUB, {
+    'GET /settings/github/accounts': () => json({ logins, machine: 'gh-user' }),
+    'DELETE /settings/github/accounts/alice': () => json({ error: '"accounts.github" selects this login' }, 409),
+    'DELETE /settings/github/accounts/bob': () => { logins = logins.filter((login) => login !== 'bob'); return json({ error: 'no stored GitHub login by that name' }, 404); },
+    'DELETE /settings/github/accounts/carol': () => json({ error: 'github login not removed' }, 500),
+  });
+  renderCard();
+  await within(group('github')).findByRole('radio', { name: 'alice' });
+  const confirmRemove = (name: string): void => {
+    fireEvent.click(removeOf(name));
+    fireEvent.click(confirmButton() as HTMLElement);
+  };
+  confirmRemove('alice');
+  const inUse = await screen.findByText(t('settings.accounts.remove.inUse', { name: 'alice' }));
+  expect(inUse.closest('p')).toHaveClass('text-waiting');
+  expect(screen.queryByText(/selects this login/)).toBeNull();
+  confirmRemove('bob');
+  await waitFor(() => expect(within(group('github')).queryByRole('radio', { name: 'bob' })).toBeNull());
+  expect(screen.queryByText(t('settings.accounts.remove.inUse', { name: 'alice' }))).toBeNull();
+  expect(screen.queryByText(t('settings.accounts.remove.failed', { name: 'bob' }))).toBeNull();
+  confirmRemove('carol');
+  expect(await screen.findByText(t('settings.accounts.remove.failed', { name: 'carol' }))).toBeInTheDocument();
+  expect(screen.queryByText(/not removed/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: t('settings.accounts.retry') }));
+  await waitFor(() => expect(deletes(fetch, '/settings/github/accounts/carol')).toBe(2));
+});
+
+test('remove is locked, with its hint, on the saved choice and the drafted one, a login copilot uses included; never on the machine\'s row nor in copilot\'s group (#965)', async () => {
+  answer(CLAUDE, { logins: ['alice', 'bob', 'carol', 'dave'], machine: 'gh-user' });
+  renderCard({ claude: 'work', github: 'bob', copilot: 'carol' }, { claude: 'personal', copilot: 'alice' });
+  await read();
+  await within(group('github')).findByRole('radio', { name: 'dave' });
+  for (const name of ['personal', 'work', 'alice', 'bob', 'carol']) {
+    const locked = removeOf(name);
+    expect(locked).toHaveAttribute('aria-disabled', 'true');
+    expect(locked).toHaveAccessibleDescription(t('settings.accounts.remove.locked'));
+    fireEvent.click(locked);
+    expect(confirmButton()).toBeNull();
+  }
+  expect(removeOf('dave')).not.toHaveAttribute('aria-disabled');
+  expect(within(group('copilot')).queryAllByRole('button')).toEqual([]);
+  expect(screen.queryByRole('button', { name: t('settings.accounts.remove.label', { name: 'gh-user' }) })).toBeNull();
+  expect(screen.queryByRole('button', { name: t('settings.accounts.remove.label', { name: t('settings.accounts.machine') }) })).toBeNull();
+});
+
+test('a remove route encodes every dot, so a name of . or .. reaches its own route (#965)', () => {
+  expect(removeRoute('claude', '..')).toBe('/settings/accounts/claude/%2E%2E');
+  expect(removeRoute('github', 'a.b/c')).toBe('/settings/github/accounts/a%2Eb%2Fc');
 });

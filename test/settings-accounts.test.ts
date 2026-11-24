@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountRows, accountsDraft, accountsFrom, listOf, machineLogin, shownValue } from '../src/ui/lib/settings-accounts.js';
+import { accountRows, accountsDraft, accountsFrom, hasRemove, isRemovable, listOf, machineLogin, shownValue } from '../src/ui/lib/settings-accounts.js';
 
 const READ = { claude: ['personal', 'work'], github: ['alice', 'gh-user'], machine: 'gh-user' };
 
@@ -34,4 +34,20 @@ test('a group shows gh\'s own login selected on the machine\'s row; Claude has n
   assert.equal(shownValue('claude', READ, ''), '');
   assert.equal(machineLogin('claude', READ), undefined);
   assert.equal(machineLogin('copilot', READ), 'gh-user');
+});
+
+test('a stored row of claude\'s or github\'s group has a remove; the machine\'s row, a name no longer stored and copilot\'s rows have none (#965)', () => {
+  assert.equal(hasRemove('claude', { value: 'work' }), true);
+  assert.equal(hasRemove('github', { value: 'alice' }), true);
+  assert.equal(hasRemove('github', { value: '', login: 'gh-user' }), false);
+  assert.equal(hasRemove('claude', { value: 'old', isGone: true }), false);
+  assert.equal(hasRemove('copilot', { value: 'alice' }), false);
+});
+
+test('remove is locked on the saved choice and on the drafted one; a github login also when copilot uses it, saved or drafted (#965)', () => {
+  const saved = { claude: 'work', copilot: 'alice' };
+  const draft = { claude: 'personal', copilot: 'carol', github: 'bob' };
+  assert.deepEqual(['work', 'personal', 'home'].map((name) => isRemovable('claude', name, saved, draft)), [false, false, true]);
+  assert.deepEqual(['alice', 'bob', 'carol', 'dave'].map((name) => isRemovable('github', name, saved, draft)), [false, false, false, true]);
+  assert.equal(isRemovable('github', 'work', saved, draft), true, 'a claude name locks no github login');
 });

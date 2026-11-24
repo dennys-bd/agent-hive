@@ -3,7 +3,7 @@
 import type { ClaudeCredential } from './credentials.js';
 import type { Logger } from './log.js';
 import type { Pty, SpawnPty } from './pty-host.js';
-import type { ClaudeAccountError, ClaudeAddStatus } from './types.js';
+import { CLAUDE_ACCOUNT_NAME_MAX, type ClaudeAccountError, type ClaudeAddStatus } from './types.js';
 
 export const SETUP_TOKEN_COLS = 512; // the 108-character token never wraps: at 80 columns the stripped line breaks glued the next line onto it
 export const SETUP_TOKEN_ROWS = 50;
@@ -11,7 +11,6 @@ export const ADD_TIMEOUT_MS = 10 * 60 * 1000; // a forgotten add never holds a p
 export const CURSOR_ANSWER = '\x1b[1;1R';
 const CURSOR_QUERY = '\x1b[6n'; // the CLI's renderer waits for its answer before drawing (spike appendix A)
 const SCREEN_CHARS = 64 * 1024;
-const MAX_NAME_LENGTH = 40;
 const RESERVED_NAME = 'add'; // DELETE /settings/accounts/claude/add is the cancel: an account by that name could never be removed
 
 // CSI, OSC (ended by BEL or ST), any other ESC sequence, and the line breaks
@@ -37,7 +36,7 @@ export const trimmedName = (raw: unknown): string => (typeof raw === 'string' ? 
 export function nameRefusal(raw: unknown, names: readonly string[]): ClaudeAccountError | undefined {
   const name = trimmedName(raw);
   if (name === '') return 'name-empty';
-  if ([...name].length > MAX_NAME_LENGTH) return 'name-too-long';
+  if ([...name].length > CLAUDE_ACCOUNT_NAME_MAX) return 'name-too-long';
   const folded = name.toLowerCase();
   return folded === RESERVED_NAME || names.some((stored) => stored.toLowerCase() === folded) ? 'name-taken' : undefined;
 }
