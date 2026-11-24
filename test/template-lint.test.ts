@@ -2,12 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { deliveredName, type ParsedTemplate, parseTemplate } from '../src/template.js';
+import { deliveredName, type ParsedTemplate, parseTemplate, type RenderWorkspace } from '../src/template.js';
 import { type LintAnnotation, type LintInput, type LintItem, lintTemplate, variableUses } from '../src/template-lint.js';
 
 // The structural lint (#312): each check alone, the grouping of workspaces, the render's dedup, the shipped plugin linting clean.
 // Escaped, so the linter does not read a plain string's ${...} as a template mistake.
 const PLUGIN_ROOT = `\${HIVE_PLUGIN_ROOT}`;
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
 
 const STACKED: LintItem = {
   origin: 'hive',
@@ -22,7 +23,7 @@ const INPUT: LintInput = {
     { origin: 'hive', kind: 'specialist', name: 'architect', variables: [] },
     { origin: 'hive-site', kind: 'skill', name: 'deploy', variables: [] },
   ],
-  workspaces: ['hive', 'hive-site'],
+  workspaces: [at('hive'), at('hive-site')],
   scripts: ['scripts/check-hv.mjs'],
 };
 
@@ -192,7 +193,7 @@ test('every shipped skill and agent lints clean against a catalogue of the plugi
   const scripts = readdirSync(new URL('scripts/', PLUGIN)).map((file) => `scripts/${file}`);
   assert.ok(skills.length > 0 && agents.length > 0 && scripts.length > 0, 'the plugin was read');
   for (const { kind, name, path, parsed } of shipped) {
-    const input: LintInput = { self: { origin: 'hive', kind, name }, catalogue, workspaces: ['hive', 'hive-site'], scripts };
+    const input: LintInput = { self: { origin: 'hive', kind, name }, catalogue, workspaces: [at('hive'), at('hive-site')], scripts };
     assert.deepEqual(lintTemplate(parsed, input), [], path);
   }
 });
@@ -207,7 +208,7 @@ test('two Hive skills called on one line that miss the same variable name each g
 });
 
 test('a runaway render stops the other workspaces once the budget is spent, so one lint costs about one render limit (#312)', () => {
-  const workspaces = ['a', 'b', 'c', 'd'];
+  const workspaces = ['a', 'b', 'c', 'd'].map((name) => at(name));
   const started = Date.now();
   const annotations = lintTemplate(template([], ['{% for i in (1..99999999) %}{{ i }}{% endfor %}']), { ...INPUT, workspaces });
   assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
@@ -265,4 +266,29 @@ test('a condition on a variable from the task is yellow on its marker, once per 
   ]);
   const [first] = lintTemplate(template(header, body), INPUT);
   assert.equal(first?.variable, 'planPath');
+});
+
+test('a workspace value satisfies a required variable: only the workspace with none is named (#621, decision 3)', () => {
+  const header = ['variables:', '  e2eCommand: { required: true }'];
+  const input = { ...INPUT, workspaces: [at('hive', { e2eCommand: 'pnpm e2e' }), at('hive-site')] };
+  assert.deepEqual(brief(lintTemplate(template(header, ['{{ e2eCommand }}']), input)), ['4 red required missing e2eCommand · hive-site']);
+  const nulled = { ...INPUT, workspaces: [at('hive', { e2eCommand: null }), at('hive-site', { e2eCommand: 'x' })] };
+  assert.deepEqual(brief(lintTemplate(template(header, ['{{ e2eCommand }}']), nulled)), ['4 red required missing e2eCommand · hive'], 'an explicit null is no value');
+});
+
+test('a workspace value a declaration cannot take is red on the declaration, naming the workspaces, with no render finding beside it; an override of the template hides it (#621, decision 6)', () => {
+  const header = ['variables:', '  flags: { values: [none, always], default: none }'];
+  const input = { ...INPUT, workspaces: [at('hive', { flags: 'sometimes' }), at('hive-site', { flags: 'always' })] };
+  assert.deepEqual(lintTemplate(template(header, ['{{ flags }}']), input), [{
+    line: 4, severity: 'red', check: 'value', title: 'invalid flags · hive', body: '"flags": the workspace value of hive must be one of none, always.', workspaces: ['hive'], variable: 'flags',
+  }]);
+  const overridden = ['variables:', '  flags: { values: [none, always], default: none, workspaces: { hive: always } }'];
+  assert.deepEqual(lint(overridden, ['{{ flags }}']), []);
+  assert.deepEqual(brief(lintTemplate(template(overridden, ['{{ flags }}']), input)), []);
+});
+
+test('two templates that give a name different values are no finding while the workspace value is in both (#621, decision 6)', () => {
+  const called: LintItem = { origin: 'hive', kind: 'skill', name: 'stacked-branch', variables: parseTemplate('---\nvariables:\n  flags: { values: [b, c], default: c }\n---\n{{ flags }}\n').variables };
+  const input = { ...INPUT, catalogue: [called], workspaces: [at('hive', { flags: 'b' })] };
+  assert.deepEqual(brief(lintTemplate(template(['variables:', '  flags: { values: [a, b], default: a }'], ['{{ flags }}, then /hive:stacked-branch.']), input)), []);
 });

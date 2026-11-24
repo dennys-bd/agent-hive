@@ -14,6 +14,7 @@ import { useProtocol } from '@/hooks/use-protocol';
 import { t } from '@/i18n';
 import type { PanelId } from '@/lib/dock-layout';
 import { HIVE_ORIGIN, type PluginScreen } from '@/lib/plugins';
+import { WorkspaceValuesContext } from '@/lib/workspace-values';
 
 export interface PluginsDock { panel: DockPanel; right: DockPanel; center: ReactNode; isRightHidden: boolean }
 
@@ -35,12 +36,14 @@ export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: Pl
   const [picked, setPicked] = useState<AssistPick>();
   const pick = picked ?? { agent: defaultAgent, model: '' };
   const isHiveItem = editor.item?.origin === HIVE_ORIGIN; // a workspace item has no variables, so no "view as" (decision 22)
+  // #621: the centre and the right pane render with each workspace's values, as the lint reads them
+  const withValues = (node: ReactNode): ReactNode => <WorkspaceValuesContext.Provider value={annotations.values}>{node}</WorkspaceValuesContext.Provider>;
   return {
     panel: { id: 'plugins', title: t('dock.plugins'), ownHeader: true, body: <PluginsSidebar plugins={plugins} workspaces={workspaces} isShown={isShown} activate={activate} /> },
     // "View as" heads the variables pane (#319); the open file's variables sit under it (#321), or the selected passage's (#337)
     right: {
       id: 'detail', title: t('files.tab.variables'), ownHeader: true,
-      body: (
+      body: withValues(
         <section aria-label={t('files.tab.variables')} className="flex min-h-0 flex-1 flex-col">
           {plugins.screen.kind === 'protocol' && <ProtocolPane protocol={protocol} workspaces={workspaces} />}
           {isHiveItem && <ViewAsSelect value={editor.viewAs} workspaces={workspaces} onChange={editor.setViewAs} />}
@@ -50,7 +53,7 @@ export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: Pl
     },
     isRightHidden: NO_RIGHT.has(plugins.screen.kind),
     center: isShown
-      ? <PluginsView plugins={plugins} editor={editor} annotations={annotations} protocol={protocol} workspaces={workspaces} fontFamily={fontFamily} pick={pick} onPick={setPicked} />
+      ? withValues(<PluginsView plugins={plugins} editor={editor} annotations={annotations} protocol={protocol} workspaces={workspaces} fontFamily={fontFamily} pick={pick} onPick={setPicked} />)
       : null,
   };
 }

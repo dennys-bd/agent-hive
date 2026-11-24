@@ -145,7 +145,7 @@ function writeOf(server: ItemsServer, id: string, sub: string | undefined, versi
 export function stubItems(server: ItemsServer) {
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(path, 'http://hive');
-    if (url.pathname === '/api/lint-input') return json(server.lintInput ?? { catalogue: [], scripts: [] });
+    if (url.pathname === '/api/lint-input') return json(server.lintInput ?? { catalogue: [], scripts: [], variables: {} });
     if (url.pathname === '/settings') return answerSettings(server, init);
     if (url.pathname === '/launch-options') return json(server.launchOptions ?? {});
     const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign' | 'dismissed', version

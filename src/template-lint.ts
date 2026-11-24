@@ -1,13 +1,13 @@
 // The structural lint of a skill or agent template (#312, node 1.3 of #309): the annotations the editor shows on every change (4.1).
 // Pure and node-free like src/template.ts: it reads the parse and what the caller gives, never the disk, so the UI runs the same code.
 import { Liquid, type StaticAnalysis } from 'liquidjs';
-import { liquidError, type ParsedTemplate, renderTemplate, type TemplateVariable } from './template.js';
+import { liquidError, type ParsedTemplate, type RenderWorkspace, renderTemplate, type TemplateVariable, valueFor, workspaceValueProblem } from './template.js';
 import { buildMap, type MapBlock, type MapBranch } from './template-map.js';
 import { type TemplateRef, templateRefs } from './template-refs.js';
 import type { ItemKind } from './types.js';
 
 export type Severity = 'yellow' | 'red';
-export type LintCheck = 'parse' | 'render' | 'undeclared' | 'unused' | 'required' | 'reference' | 'callRequired' | 'heading' | 'taskCondition';
+export type LintCheck = 'parse' | 'render' | 'undeclared' | 'unused' | 'required' | 'reference' | 'callRequired' | 'heading' | 'taskCondition' | 'value';
 export interface LintAnnotation {
   line: number;
   severity: Severity;
@@ -29,7 +29,7 @@ export interface LintItem {
 export interface LintInput {
   self: { origin: string; kind: ItemKind; name: string };
   catalogue: LintItem[];
-  workspaces: string[];
+  workspaces: readonly RenderWorkspace[]; // #621: each with its values
   scripts: string[];
 }
 
@@ -55,11 +55,10 @@ const finding = (line: number, severity: Severity, check: LintCheck, title: stri
 const uniqueBy = <T>(list: T[], key: (item: T) => string): T[] =>
   list.filter((item, index) => list.findIndex((other) => key(other) === key(item)) === index);
 
-// A required variable has no default (template.ts refuses one): only its workspaces: entry counts, and an explicit null is no value
-const missingIn = (variable: TemplateVariable, workspaces: string[]): string[] =>
-  variable.required
-    ? workspaces.filter((workspace) => (Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : null) === null)
-    : [];
+// Decision 3's order (#621): a required variable has no default (template.ts refuses one), so only the template's own entry or the
+// workspace's value counts, and an explicit null is no value
+const missingIn = (variable: TemplateVariable, workspaces: readonly RenderWorkspace[]): string[] =>
+  (variable.required ? workspaces.filter((workspace) => valueFor(variable, workspace) === null).map((workspace) => workspace.name) : []);
 
 function analyse(parsed: ParsedTemplate): StaticAnalysis | LintAnnotation {
   try {
@@ -124,12 +123,25 @@ function taskConditionFindings(parsed: ParsedTemplate): LintAnnotation[] {
 }
 
 // One annotation per variable, naming every workspace that misses it: the editor keys annotations by line
-function requiredFindings(parsed: ParsedTemplate, workspaces: string[]): LintAnnotation[] {
+function requiredFindings(parsed: ParsedTemplate, workspaces: readonly RenderWorkspace[]): LintAnnotation[] {
   return parsed.variables.flatMap((variable) => {
     const missing = missingIn(variable, workspaces);
     if (missing.length === 0) return [];
     const names = missing.join(', ');
     return [finding(variable.line, 'red', 'required', `missing ${variable.name} · ${names}`, `"${variable.name}" is required and has no value for ${names}.`, { workspaces: missing, variable: variable.name })];
+  });
+}
+
+// #621, decision 6: a workspace value this declaration cannot take. The render refuses that workspace, so it is red as a missing value is;
+// two declarations of one name that disagree are no finding while the value holds for this one
+function valueFindings(parsed: ParsedTemplate, workspaces: readonly RenderWorkspace[]): LintAnnotation[] {
+  return parsed.variables.flatMap((variable) => {
+    const wrong = workspaces.filter((workspace) => workspaceValueProblem(variable, workspace) !== undefined);
+    const [first] = wrong;
+    if (first === undefined) return [];
+    const names = wrong.map((workspace) => workspace.name).join(', ');
+    const body = `"${variable.name}": the workspace value of ${names} ${workspaceValueProblem(variable, first) ?? ''}.`; // a declaration's problem is the same for every value
+    return [finding(variable.line, 'red', 'value', `invalid ${variable.name} · ${names}`, body, { workspaces: wrong.map((workspace) => workspace.name), variable: variable.name })];
   });
 }
 
@@ -145,7 +157,7 @@ function target(ref: TemplateRef, input: LintInput): LintItem | 'other' | undefi
 }
 
 // The called item's own value is read: a name declared in two skills is two variables
-function callFindings(ref: TemplateRef, item: LintItem, workspaces: string[]): { key: string; annotation: LintAnnotation }[] {
+function callFindings(ref: TemplateRef, item: LintItem, workspaces: readonly RenderWorkspace[]): { key: string; annotation: LintAnnotation }[] {
   return item.variables.flatMap((variable) => {
     const missing = missingIn(variable, workspaces);
     if (missing.length === 0) return [];
@@ -176,22 +188,25 @@ interface RenderError {
 // Each render may take the engine's whole limit, and the lint runs on every change: past the budget the remaining workspaces are not
 // rendered, so a runaway loop costs one limit per lint, not one per workspace.
 // ponytail: a skipped workspace's own render error shows only once the others render faster; a worker if that ever matters
-function renderWithin(parsed: ParsedTemplate, workspaces: string[]): RenderError[] {
+function renderWithin(parsed: ParsedTemplate, workspaces: readonly RenderWorkspace[]): RenderError[] {
   const deadline = Date.now() + RENDER_BUDGET_MS;
   const errors: RenderError[] = [];
   for (const workspace of workspaces) {
     if (Date.now() > deadline) break;
-    const result = renderTemplate(parsed, { name: workspace, variables: {} }); // temporary (#621 Task 2): Task 3 gives the lint each workspace's values
-    if (!result.ok) errors.push(...result.errors.map((error) => ({ line: error.line, message: error.message, workspace })));
+    const result = renderTemplate(parsed, workspace);
+    if (!result.ok) errors.push(...result.errors.map((error) => ({ line: error.line, message: error.message, workspace: workspace.name })));
   }
   return errors;
 }
 
 // Catches what only a render shows (a partial, the render limit) without repeating a static finding or a workspace's same error
-function renderFindings(parsed: ParsedTemplate, workspaces: string[], statics: LintAnnotation[]): LintAnnotation[] {
+function renderFindings(parsed: ParsedTemplate, workspaces: readonly RenderWorkspace[], statics: LintAnnotation[]): LintAnnotation[] {
   const redLines = new Set(statics.filter((annotation) => annotation.severity === 'red').map((annotation) => annotation.line));
-  // A workspace missing a required variable is already reported; its render would only say it again
-  const renderable = workspaces.filter((workspace) => parsed.variables.every((variable) => missingIn(variable, [workspace]).length === 0));
+  // A workspace missing a required variable, or holding a value a declaration cannot take (#621), is already reported; its render would
+  // only say it again
+  const isReported = (variable: TemplateVariable, workspace: RenderWorkspace): boolean =>
+    missingIn(variable, [workspace]).length > 0 || workspaceValueProblem(variable, workspace) !== undefined;
+  const renderable = workspaces.filter((workspace) => parsed.variables.every((variable) => !isReported(variable, workspace)));
   const errors = renderWithin(parsed, renderable).filter((error) => !redLines.has(error.line));
   const keyOf = (error: { line: number; message: string }): string => `${error.line}\n${error.message}`;
   return uniqueBy(errors, keyOf).map((first) => {
@@ -244,6 +259,6 @@ const byPosition = (a: LintAnnotation, b: LintAnnotation): number =>
 export function lintTemplate(parsed: ParsedTemplate, input: LintInput): LintAnnotation[] {
   // Every other check reads the header's variables, so a header that does not parse is answered alone
   if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byPosition);
-  const statics = [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)];
+  const statics = [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...valueFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)];
   return [...statics, ...renderFindings(parsed, input.workspaces, statics), ...headingFindings(parsed), ...taskConditionFindings(parsed)].sort(byPosition);
 }

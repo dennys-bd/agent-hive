@@ -7,20 +7,21 @@ import express from 'express';
 import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
-import type { CatalogueItem, CatalogueRead, ItemRead, LintInputRead, Stage, UpdatePreview } from '../src/types.js';
+import type { CatalogueItem, CatalogueRead, ItemRead, LintInputRead, Stage, UpdatePreview, WorkspaceVariables } from '../src/types.js';
 import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 
-async function serve(t: TestContext, f: Fixture, stages: Stage[] = []): Promise<{ base: string; lines: string[] }> {
+async function serve(t: TestContext, f: Fixture, stages: Stage[] = [], variables: WorkspaceVariables = {}): Promise<{ base: string; lines: string[] }> {
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
   const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined, log });
+  const workspaces = f.workspaces.map((w) => ({ ...w, variables: variables[w.name] ?? {} }));
   registerPluginRoutes(app, {
-    requireLive: () => ({ runtime: { config: { comb: { workspaces: f.workspaces, flows: [{ stages }] } } } }),
+    requireLive: () => ({ runtime: { config: { comb: { workspaces, flows: [{ stages }] } } } }),
     store,
     home: f.home,
     pluginSource: f.pluginSource,
@@ -164,7 +165,7 @@ test("GET /api/lint-input answers each Hive item's variables (a user-created one
     'skills/new-build/SKILL.md': '---\nname: new-build\ndescription: Build it\nvariables:\n  base: { default: main }\n---\n{{ base }}\n',
     'scripts/check.mjs': 'process.exit(0);\n',
   });
-  const { base } = await serve(t, f);
+  const { base } = await serve(t, f, [], { 'agent-hive': { base: 'trunk' } });
   assert.equal((await call(base, 'POST', '/api/items', { kind: 'skill', name: 'own' }))[0], 201);
   const own = '---\nname: own\ndescription: mine\nvariables:\n  mode: { default: a }\n---\n{{ mode }}\n';
   assert.equal((await call(base, 'PUT', `${at('hive:own')}/files`, { version: 'mine', path: 'SKILL.md', text: own }))[0], 200);
@@ -178,6 +179,7 @@ test("GET /api/lint-input answers each Hive item's variables (a user-created one
     ['hive-site', 'skill', 'deploy', []],
   ]);
   assert.deepEqual(read.scripts, ['scripts/check.mjs']);
+  assert.deepEqual(read.variables, { 'agent-hive': { base: 'trunk' }, 'hive-site': {} }, '#621: each workspace\'s variables, by name');
 });
 
 test('the dismissed routes round-trip the keys per version, null the original; a malformed body is 400, an unknown id 404 with no folder made, an unknown version 404 (#327)', async (t) => {

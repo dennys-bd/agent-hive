@@ -2,13 +2,14 @@ import { type RefObject, useCallback, useContext, useEffect, useMemo, useRef, us
 import type { AgentAnnotation } from '../../reviewer';
 import { parseTemplate } from '../../template';
 import { type LintAnnotation, lintTemplate } from '../../template-lint';
-import type { CatalogueItem, LintInputRead } from '../../types';
+import type { CatalogueItem, LintInputRead, WorkspaceVariables } from '../../types';
 import type { ItemEditor, WriteResult } from '@/hooks/use-item-editor';
 import { fileKeyOf, itemKeyOf, type Review, ReviewerContext, type Scope, useReviewer } from '@/hooks/use-reviewer';
 import type { MessageKey } from '@/i18n';
 import { agentFixOf, fixOf } from '@/lib/annotation-fix';
 import { getJson, sendJson } from '@/lib/api';
 import { HIVE_ORIGIN } from '@/lib/plugins';
+import { renderFor } from '@/lib/workspace-values';
 import { isMarkdown } from '@/lib/template-view';
 
 /** An annotation the editor shows (#329): the lint's, or the template reviewer's, which carries source: 'agent' (#328). */
@@ -21,6 +22,7 @@ export const checkOf = (a: EditorAnnotation): string => (isAgent(a) ? 'agent' : 
  * menu (4.3) and the assist footer (4.5) read it too. */
 export interface Annotations {
   list: readonly EditorAnnotation[]; // the open file's, not dismissed: the lint's, then the agent's
+  values: WorkspaceVariables; // #621: each workspace's variables from the lint input, which the preview, a chain's reach and the pane read
   review: Review; // the reviewer's setting, run and failure (#329)
   open?: EditorAnnotation; // the card shown
   revealed?: { line: number; n: number }; // the source line openAt last revealed; n changes on every reveal, so one line twice reveals twice
@@ -40,7 +42,7 @@ interface Failure { item: string; dismissal: string } // the dismissal a write d
 interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): void; setFailed(update: (last: Failure | undefined) => Failure | undefined): void }
 
 const NONE: readonly LintAnnotation[] = [];
-const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [] };
+const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [], variables: {} };
 const FIX_STALE: MessageKey = 'plugins.annotations.fixStale';
 const MAX_KEYS = 1000; // server-plugins.ts's MAX_DISMISSED: that module is the server's
 // What apply writes: the lint's edit, an agent fix's new text, 'stale' once that fix's span left its line (#981), nothing for an advice
@@ -52,8 +54,9 @@ function writeOf(annotation: EditorAnnotation, text: string): WriteResult | 'sta
 }
 const idOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.title}`;
 const isKeys = (value: unknown): value is string[] => Array.isArray(value) && value.every((key) => typeof key === 'string');
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isLintInput = (value: unknown): value is LintInputRead =>
-  typeof value === 'object' && value !== null && Array.isArray((value as Partial<LintInputRead>).catalogue) && Array.isArray((value as Partial<LintInputRead>).scripts);
+  isRecord(value) && Array.isArray(value.catalogue) && Array.isArray(value.scripts) && isRecord(value.variables);
 function dismissedUrl(id: string, version?: string | null): string {
   const base = `/api/items/${encodeURIComponent(id)}/dismissed`;
   return version === undefined || version === null ? base : `${base}?${new URLSearchParams({ version })}`;
@@ -93,7 +96,7 @@ function useLint(item: CatalogueItem | undefined, text: string, input: LintInput
   const name = item?.name;
   return useMemo(() => {
     if (origin === undefined || kind === undefined || name === undefined) return NONE;
-    return lintTemplate(parseTemplate(text), { self: { origin, kind, name }, catalogue: input.catalogue, workspaces: [...workspaces], scripts: input.scripts });
+    return lintTemplate(parseTemplate(text), { self: { origin, kind, name }, catalogue: input.catalogue, workspaces: workspaces.map((w) => renderFor(input.variables, w)), scripts: input.scripts });
   }, [origin, kind, name, text, input, workspaces]);
 }
 
@@ -168,7 +171,8 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
   const scope = scopeOf(editor);
   const path = scope?.path;
   const text = path === undefined ? '' : editor.textOf(path);
-  const linted = useLint(scope === undefined ? undefined : editor.item, text, useLintInput(items), workspaces);
+  const input = useLintInput(items);
+  const linted = useLint(scope === undefined ? undefined : editor.item, text, input, workspaces);
   const saved = path === undefined ? undefined : editor.read?.files.find((file) => file.path === path)?.text;
   const { config, save } = useContext(ReviewerContext);
   const reviewer = useReviewer(scope, text, saved, config, save); // #329: off, its list is empty
@@ -185,7 +189,7 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
   const [refused, setRefused] = useState<FileNote<MessageKey>>();
   const fixError = refused !== undefined && refused.file === file ? refused.value : undefined;
   return {
-    list, review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
+    list, values: input.variables, review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
     error: hasFailed ? 'plugins.annotations.dismissFailed' : fixError,
     openAt: card.openAt, close: card.close,
     next: () => {

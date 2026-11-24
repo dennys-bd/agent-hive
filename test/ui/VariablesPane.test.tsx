@@ -58,6 +58,13 @@ test('a required variable with no value for a workspace names it in red; an unus
   expect(within(row('delivery')).queryByText(/falta|nunca usada/)).not.toBeInTheDocument();
 });
 
+test('a workspace value from the lint input satisfies a required variable: its missing line goes (#621, decision 3)', async () => {
+  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { e2eCommand: 'pnpm e2e' } } } }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  await waitFor(() => expect(within(row('e2eCommand')).queryByText(/falta/)).not.toBeInTheDocument());
+});
+
 // Kept ahead of the tests that open a Radix select or dialog: in jsdom a second "ver como" select does not open after one of them
 test('view as a workspace switches the editor to its preview and "template" switches back, with the list under the select (#321, decision 4)', async () => {
   const user = userEvent.setup();
