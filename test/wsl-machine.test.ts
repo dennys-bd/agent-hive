@@ -7,7 +7,7 @@ import { MachineError, type RunSpec } from '../src/machine.js';
 import { createPtyHost } from '../src/pty-host.js';
 import { helperHash, INSTALL_LINE, PROBE_LINE } from '../src/wsl/helper-install.js';
 import { SPAWN_LINE } from '../src/wsl/helper-link.js';
-import { createWslMachine, type WslMachine, type WslMachineDeps } from '../src/wsl/wsl-machine.js';
+import { createWslMachine, type WslMachine, type WslMachineDeps, wslFactory } from '../src/wsl/wsl-machine.js';
 import { buildHelperBundle, DISTRO, fakeWslDeps, MUTE_HELPER } from './fake-distro.js';
 import { fakeMachine } from './fake-machine.js';
 import { fakePtys } from './fakes.js';
@@ -188,4 +188,14 @@ test('a pty on a machine whose start fails rejects started with the reason, and 
   await assert.rejects(handle.started, refusedWith('node_missing'));
   await handle.kill();
   assert.equal(r.fakePty.ptys.length, 0);
+});
+
+test('wslFactory hands no factory off win32, and on win32 a machine per distro that starts nothing until a call (#945)', async (t) => {
+  const r = await rigDeps(t);
+  assert.equal(wslFactory('darwin', r.deps), undefined);
+  assert.equal(wslFactory('linux', r.deps), undefined);
+  const machine = wslFactory('win32', r.deps)?.('Ubuntu-24.04');
+  t.after(() => machine?.close());
+  assert.equal(machine?.id, 'wsl:Ubuntu-24.04');
+  assert.deepEqual([r.argv.length, r.children.length], [0, 0]);
 });

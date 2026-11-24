@@ -210,3 +210,7 @@ export function createWslMachine(distro: string, deps: WslMachineDeps): WslMachi
   };
   return stable;
 }
+
+/** The registry's wsl factory (decision 15): win32 only. Elsewhere the registry answers not_windows before it would ask. */
+export const wslFactory = (platform: NodeJS.Platform, deps: WslMachineDeps): ((distro: string) => WslMachine) | undefined =>
+  platform === 'win32' ? (distro) => createWslMachine(distro, deps) : undefined;
