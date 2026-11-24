@@ -29,3 +29,5 @@ export const MSYS_TTY: string | false = process.platform === 'win32' && 'MSYS\'s
 export const POSIX_TEMP_REPO: string | false = process.platform === 'win32' && 'a wsl: workspace needs a POSIX path, and the temp repo on win32 is a C:\\ path the parse refuses';
 // #961: the fake gh is a #!/bin/sh file found on PATH; win32 runs no shebang script by its bare name
 export const NO_SH_SCRIPT: string | false = process.platform === 'win32' && 'win32 runs no shebang script as gh: the fake gh is a sh file found on PATH';
+// #945: the fake getent is a #!/bin/sh file found on PATH by the login shell line; whether Git's sh.exe runs an extensionless script there is not proven
+export const NO_FAKE_GETENT: string | false = process.platform === 'win32' && 'the fake getent is a sh file found on PATH: Git\'s sh.exe running it by its bare name is not proven';

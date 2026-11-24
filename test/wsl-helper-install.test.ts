@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path, { join } from 'node:path';
 import { MachineError } from '../src/machine.js';
 import {
   DISTRO_MISSING, HELPER_FAILED, helperHash, INSTALL_LINE, installHelper, LOGIN_SHELL, NODE_MISSING, NODE_OLD, parseProbe, PROBE_JS, PROBE_LINE,
   probeHelper, startReason,
 } from '../src/wsl/helper-install.js';
-import { wslExec } from '../src/wsl/wsl-exe.js';
+import { wslArgv, wslEnv, wslExec } from '../src/wsl/wsl-exe.js';
 import { DISTRO, fakeWslDeps, spawnChild } from './fake-distro.js';
-import { assertMode } from './posix-only.js';
+import { assertMode, NO_FAKE_GETENT } from './posix-only.js';
 import { tempDir } from './temp-dir.js';
 
 const FOLDER = '/home/u/.config/agent-hive/wsl';
@@ -72,4 +72,45 @@ test('probeHelper answers node_missing for a node not found and distro_missing f
   assert.deepEqual(await probeHelper(wslExec(fakeWslDeps(home), DISTRO), 'no-such-node-945', HASH, open()), { reason: NODE_MISSING });
   const other = wslExec(fakeWslDeps(home, { FAKE_WSL_DISTROS: 'Other' }), DISTRO);
   assert.deepEqual(await probeHelper(other, process.execPath, HASH, open()), { reason: DISTRO_MISSING });
+});
+
+test('an install whose stdin ends before the bundle\'s byte count leaves no helper and no .tmp, and exits non-zero (#945)', async (t) => {
+  const home = await tempDir(t, 'wsl-distro-');
+  const folder = join(home, '.config', 'agent-hive', 'wsl');
+  const deps = fakeWslDeps(home);
+  const helper = join(folder, `helper-${HASH}.mjs`);
+  const { file, args } = wslArgv(deps.command, DISTRO, ['sh', '-c', INSTALL_LINE, 'sh', folder, helper, String(BYTES.length + 1)]);
+  const child = spawnChild(file, args, { env: wslEnv({}, deps.env), windowsHide: true });
+  child.stdout.resume();
+  child.stderr.resume();
+  const code = await new Promise<number | null>((resolve) => {
+    child.once('close', resolve);
+    child.stdin.end(BYTES); // one byte short of what the line was told: wsl.exe killed mid-pipe
+  });
+  assert.notEqual(code, 0);
+  assert.deepEqual(await readdir(folder), [], 'neither the helper nor its .tmp');
+});
+
+test('installHelper tightens a folder that was already there to 0700 (#945)', async (t) => {
+  const home = await tempDir(t, 'wsl-distro-');
+  const folder = join(home, '.config', 'agent-hive', 'wsl');
+  await mkdir(folder, { recursive: true });
+  await chmod(folder, 0o755);
+  await installHelper({ ...fakeWslDeps(home), distro: DISTRO, spawn: spawnChild }, folder, HASH, BYTES, open());
+  await assertMode(t, folder, 0o700, 'the folder that was 0755');
+});
+
+test('LOGIN_SHELL runs the line through a POSIX login shell, and through /bin/sh when the passwd entry names fish (#945)', { skip: NO_FAKE_GETENT }, async (t) => {
+  const home = await tempDir(t, 'wsl-distro-');
+  const bin = join(home, 'bin');
+  await mkdir(bin);
+  const shellOf = async (entry: string): Promise<string> => {
+    await writeFile(join(bin, 'getent'), `#!/bin/sh\necho 'u:x:1000:1000::/home/u:${entry}'\n`);
+    await chmod(join(bin, 'getent'), 0o755);
+    const exec = wslExec(fakeWslDeps(home, { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` }), DISTRO);
+    return (await exec('sh', ['-c', LOGIN_SHELL, 'sh', 'printf %s "$0" >&3'], { signal: open() })).stdout;
+  };
+  assert.equal(await shellOf('/bin/bash'), '/bin/bash');
+  assert.equal(await shellOf('/usr/bin/fish'), '/bin/sh');
+  assert.equal(await shellOf('/bin/tcsh'), '/bin/sh');
 });
