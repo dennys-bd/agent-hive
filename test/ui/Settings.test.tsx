@@ -24,7 +24,7 @@ const info: SettingsInfo = {
   configured: true, home: '/home', language: 'pt', agents: [{ agent: 'claude', available: true }],
   config: {
     auth: { github: 'cli' },
-    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' }], flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }], transitions: [] }], commands: [] },
+    comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' }], flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'] } }], transitions: [] }], commands: [] },
     logLevel: 'info', agentArgs: { claude: [], codex: [], copilot: [] }, agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false }, budget: {}, usageRules: [], commandSemaphores: [], accounts: {},
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
   },
@@ -424,7 +424,7 @@ test('the workspaces list opens the general tab with the saved rows, or one name
 
 test('each workspace row has its worktree setup and timeout per step: the saved ones load, an edit is sent as typed, an empty field sends no key (#299, #511)', async () => {
   const user = userEvent.setup();
-  const withSetup = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)', setup: 'COPY .env', setupTimeout: '10m' }] } } };
+  const withSetup = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)', setup: 'COPY .env', setupTimeout: '10m' }] } } };
   render(<Settings info={withSetup} onSaved={vi.fn()} />);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
   await open(user, 'workspaces');
@@ -506,7 +506,7 @@ test('Choose… shows only inside the viewer, one per row, and fills that row\'s
 test('Settings › a source\'s default workspace is one of the workspaces or none, and is sent in taskProps.defaults (#179, #688)', async () => {
   const user = userEvent.setup();
   const onSaved = vi.fn();
-  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }] } } };
+  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }] } } };
   render(<Settings info={two} onSaved={onSaved} />);
   await openSource(user, 'board');
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
@@ -525,7 +525,7 @@ test('Settings › a source\'s default workspace is one of the workspaces or non
 test('Settings › + regra adds a rule that sets workspace, sends the rules in order, and a rule without a value stops the save naming its source and its row (#293, #688)', async () => {
   const user = userEvent.setup();
   const onSaved = vi.fn();
-  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }] } } };
+  const two = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree' as const, machine: 'local', color: 'oklch(0.72 0.12 25)' }] } } };
   render(<Settings info={two} onSaved={onSaved} />);
   await openSource(user, 'board');
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));

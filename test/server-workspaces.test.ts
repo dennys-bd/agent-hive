@@ -59,9 +59,9 @@ function twoGit(calls: string[][]): Exec {
 }
 
 async function startTwo(t: TestContext, source: Record<string, unknown> = {}, maxConcurrent = 2, stages: Stage[] = STAGES, machinesOf?: (local: Machine) => Machines): Promise<Two> {
-  const hive: Workspace = { name: 'hive', path: (await tempHive(t)).repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
+  const hive: Workspace = { name: 'hive', path: (await tempHive(t)).repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
   const { home, repo } = await tempHive(t, maxConcurrent);
-  const site: Workspace = { name: 'site', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
+  const site: Workspace = { name: 'site', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
   const listed: SourceItem[] = [];
   const calls: string[][] = [];
   const sourceFactory = (): Source => ({ item: goneItem, resolveFields: async () => {}, listItems: async () => [...listed], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => OPTIONS });
@@ -126,7 +126,7 @@ test('a save refuses to remove or re-path a workspace a running task resolves to
   two.listed.push(item('1', 'site'));
   await two.server.poll();
   assert.equal(two.workers.length, 1);
-  const moved: Workspace = { name: 'site', path: (await tempHive(t)).repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
+  const moved: Workspace = { name: 'site', path: (await tempHive(t)).repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
   for (const workspaces of [[two.hive], [two.hive, moved]]) {
     const res = await postJson(`${two.base}/settings`, { ...two.body, workspaces });
     assert.equal(res.status, 409, JSON.stringify(workspaces));

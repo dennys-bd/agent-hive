@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { deliveredName, needsLiquid, parseTemplate, type RenderResult, renderTemplate, splitHeader, type TemplateError } from '../src/template.js';
+import { deliveredName, needsLiquid, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace, splitHeader, type TemplateError, valueFor, valueSource } from '../src/template.js';
 
 // The Liquid render pipeline (#310): a skill or agent template's header, its variables, the render for one workspace, the .liquid name.
 const TEMPLATE = [
@@ -111,43 +111,45 @@ function failure(result: RenderResult): TemplateError[] {
   return result.ok ? [] : result.errors;
 }
 
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
+
 test('rendering takes the workspace\'s value, else the default; a null default takes the else; workspace is built in (#310)', () => {
   const parsed = parseTemplate(TEMPLATE);
-  assert.deepEqual(renderTemplate(parsed, 'hive'), {
+  assert.deepEqual(renderTemplate(parsed, at('hive')), {
     ok: true,
     text: `${DELIVERED_HEADER}# Build for hive\nRun pnpm test.\nDelivery: single. Dry run: false. E2E: pnpm e2e.\n`,
   });
-  assert.deepEqual(renderTemplate(parsed, 'hive-site'), {
+  assert.deepEqual(renderTemplate(parsed, at('hive-site')), {
     ok: true,
     text: `${DELIVERED_HEADER}# Build for hive-site\nNo test command.\nDelivery: stacked. Dry run: false. E2E: playwright test.\n`,
   });
 });
 
 test('a required variable with no value, an undeclared variable, a bad tag and a partial each answer an error at the file line (#310)', () => {
-  assert.deepEqual(failure(renderTemplate(parseTemplate(TEMPLATE), 'other')), [
+  assert.deepEqual(failure(renderTemplate(parseTemplate(TEMPLATE), at('other'))), [
     { line: 10, variable: 'e2eCommand', message: 'variable "e2eCommand" is required and has no value for workspace "other"' },
   ]);
-  const undeclared = failure(renderTemplate(parseTemplate(`${TEMPLATE}Then {{ reviewer }}.\n`), 'hive'));
+  const undeclared = failure(renderTemplate(parseTemplate(`${TEMPLATE}Then {{ reviewer }}.\n`), at('hive')));
   assert.deepEqual(undeclared.map((error) => error.line), [16]);
   assert.match(undeclared[0].message, /reviewer/);
   assert.doesNotMatch(undeclared[0].message, /line:\d/, 'the body-relative position is not repeated');
-  const unclosed = failure(renderTemplate(parseTemplate(`${TEMPLATE}{% if dryRun %}open\n`), 'hive'));
+  const unclosed = failure(renderTemplate(parseTemplate(`${TEMPLATE}{% if dryRun %}open\n`), at('hive')));
   assert.deepEqual(unclosed.map((error) => error.line), [16]);
-  const partial = failure(renderTemplate(parseTemplate(`${TEMPLATE}{% include 'secrets' %}\n`), 'hive'));
+  const partial = failure(renderTemplate(parseTemplate(`${TEMPLATE}{% include 'secrets' %}\n`), at('hive')));
   assert.deepEqual(partial.map((error) => error.line), [16], 'include has nothing to read: no file system');
   const malformed = parseTemplate(['---', 'variables:', '  a: { scope: x }', '---', '{{ a }}', ''].join('\n'));
-  assert.deepEqual(renderTemplate(malformed, 'hive'), { ok: false, errors: malformed.errors });
+  assert.deepEqual(renderTemplate(malformed, at('hive')), { ok: false, errors: malformed.errors });
 });
 
 test('the delivered header drops variables and basedOn; a plain file renders to itself byte for byte (#310)', () => {
   const plain = '---\nname: plain\ndescription:   odd   spacing   # a comment\n---\n# Plain\n\nNo variables, no blocks.\n';
-  assert.deepEqual(renderTemplate(parseTemplate(plain), 'hive'), { ok: true, text: plain });
-  assert.deepEqual(renderTemplate(parseTemplate('no header at all\n'), 'hive'), { ok: true, text: 'no header at all\n' });
+  assert.deepEqual(renderTemplate(parseTemplate(plain), at('hive')), { ok: true, text: plain });
+  assert.deepEqual(renderTemplate(parseTemplate('no header at all\n'), at('hive')), { ok: true, text: 'no header at all\n' });
   const kept = '---\nname: x  # kept\n---\nfor {{ workspace }}\n';
-  assert.deepEqual(renderTemplate(parseTemplate(kept), 'hive'), { ok: true, text: '---\nname: x  # kept\n---\nfor hive\n' }, 'nothing removed: the header bytes stay');
+  assert.deepEqual(renderTemplate(parseTemplate(kept), at('hive')), { ok: true, text: '---\nname: x  # kept\n---\nfor hive\n' }, 'nothing removed: the header bytes stay');
   const onlyVariables = '---\nvariables:\n  a: { default: x }\n---\n{{ a }}\n';
-  assert.deepEqual(renderTemplate(parseTemplate(onlyVariables), 'hive'), { ok: true, text: 'x\n' }, 'nothing left: no --- block');
-  const delivered = renderTemplate(parseTemplate(TEMPLATE), 'hive');
+  assert.deepEqual(renderTemplate(parseTemplate(onlyVariables), at('hive')), { ok: true, text: 'x\n' }, 'nothing left: no --- block');
+  const delivered = renderTemplate(parseTemplate(TEMPLATE), at('hive'));
   assert.ok(delivered.ok);
   const header = parseTemplate(delivered.text).header;
   assert.deepEqual(Object.keys(header), ['name', 'description', 'model', 'tools']);
@@ -157,7 +159,7 @@ test('the delivered header drops a basedOn list too, and keeps every other key i
   const listed = [
     '---', 'name: planner', 'basedOn:', '  - { name: a, repo: b, ref: c, license: d, url: e }', '  - { name: f, repo: g, ref: h, license: i, url: j }', 'model: opus', '---', 'Plan.', '',
   ].join('\n');
-  assert.deepEqual(renderTemplate(parseTemplate(listed), 'hive'), { ok: true, text: '---\nname: planner\nmodel: opus\n---\nPlan.\n' });
+  assert.deepEqual(renderTemplate(parseTemplate(listed), at('hive')), { ok: true, text: '---\nname: planner\nmodel: opus\n---\nPlan.\n' });
 });
 
 test('needsLiquid looks at the body only; deliveredName strips one .liquid (#310)', () => {
@@ -173,10 +175,11 @@ test('needsLiquid looks at the body only; deliveredName strips one .liquid (#310
   assert.equal(deliveredName('x.liquid.liquid'), 'x.liquid');
 });
 
-test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310)', () => {
+test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310); its one local import is types.ts\'s, type-only (#621)', () => {
   // Runs from dist/test: the TypeScript source is read as text.
   const source = readFileSync(fileURLToPath(new URL('../../src/template.ts', import.meta.url)), 'utf8');
-  assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml']);
+  assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml', './types.js']);
+  assert.match(source, /^import type \{[^}]*\} from '\.\/types\.js';$/m, 'erased: the bundle gets no types.ts');
   assert.doesNotMatch(source, /\bprocess\.|\brequire\(|import\(/);
 });
 
@@ -185,19 +188,19 @@ test('a CRLF header reads its last value without \\r and the delivered header ke
   const parsed = parseTemplate(crlf);
   assert.deepEqual(parsed.errors, []);
   assert.deepEqual(parsed.variables.map((variable) => variable.default), ['a', false]);
-  assert.deepEqual(renderTemplate(parsed, 'hive'), { ok: true, text: '---\r\nname: x\r\n---\r\na\r\n' });
+  assert.deepEqual(renderTemplate(parsed, at('hive')), { ok: true, text: '---\r\nname: x\r\n---\r\na\r\n' });
 });
 
 test('the delivered header keeps a long value on one line (#310)', () => {
   const long = 'word '.repeat(40).trim();
-  const result = renderTemplate(parseTemplate(`---\ndescription: ${long}\nvariables:\n  a: { default: x }\n---\n{{ a }}\n`), 'hive');
+  const result = renderTemplate(parseTemplate(`---\ndescription: ${long}\nvariables:\n  a: { default: x }\n---\n{{ a }}\n`), at('hive'));
   assert.deepEqual(result, { ok: true, text: `---\ndescription: ${long}\n---\nx\n` });
 });
 
 test('a runaway loop fails as a render error instead of blocking (#310)', () => {
   const started = Date.now();
   const loop = '{% for i in (1..3000) %}{% for j in (1..3000) %}x{% endfor %}{% endfor %}';
-  const errors = failure(renderTemplate(parseTemplate(`---\nname: x\n---\n${loop}\n`), 'hive'));
+  const errors = failure(renderTemplate(parseTemplate(`---\nname: x\n---\n${loop}\n`), at('hive')));
   assert.deepEqual(errors.map((error) => error.line), [4]);
   assert.ok(Date.now() - started < 5000, 'the render limit stops it');
 });
@@ -214,11 +217,43 @@ test('a variable from the task parses with no value, renders {result.<name>} for
   assert.deepEqual(parsed.errors, []);
   assert.deepEqual(parsed.variables, [{ name: 'planPath', kind: 'text', default: null, required: false, workspaces: {}, line: 4, from: 'task' }]);
   for (const workspace of ['hive', 'hive-site']) {
-    assert.deepEqual(renderTemplate(parsed, workspace), { ok: true, text: '---\nname: x\n---\nRead {result.planPath}.\n' });
+    assert.deepEqual(renderTemplate(parsed, at(workspace)), { ok: true, text: '---\nname: x\n---\nRead {result.planPath}.\n' });
   }
   for (const [extra, key] of [['type: boolean', 'type'], ['values: [a, b]', 'values'], ['default: a', 'default'], ['required: true', 'required'], ['workspaces: { hive: a }', 'workspaces']] as const) {
     const [error] = parseTemplate(TASK.replace('{ from: task }', `{ from: task, ${extra} }`)).errors;
     assert.deepEqual([error?.line, error?.message], [4, `variable "planPath": a variable from the task has no ${key}`]);
   }
   assert.equal(parseTemplate(TASK.replace('from: task', 'from: run')).errors[0]?.message, 'variable "planPath": from may only be task');
+});
+
+test('a workspace value renders where the template has no entry of its own; the entry overrides it, the default stands last, and an explicit null counts at each step (#621, decision 3)', () => {
+  const header = (declaration: string): ParsedTemplate => parseTemplate(`---\nvariables:\n  dir: ${declaration}\n---\n[{{ dir }}]\n`);
+  const body = (declaration: string, workspace: RenderWorkspace): string => {
+    const result = renderTemplate(header(declaration), workspace);
+    return result.ok ? result.text : assert.fail(result.errors[0]?.message);
+  };
+  assert.equal(body('{ default: d }', at('a', { dir: 'w' })), '[w]\n', 'the workspace value over the default');
+  assert.equal(body('{ default: d, workspaces: { a: o } }', at('a', { dir: 'w' })), '[o]\n', 'the override over the workspace value');
+  assert.equal(body('{ default: d, workspaces: { b: o } }', at('a', { dir: 'w' })), '[w]\n', 'another workspace\'s override is not this one\'s');
+  assert.equal(body('{ default: d }', at('a')), '[d]\n', 'no value anywhere: the default');
+  assert.equal(body('{ default: d, workspaces: { a: null } }', at('a', { dir: 'w' })), '[]\n', 'a null override');
+  assert.equal(body('{ default: d }', at('a', { dir: null })), '[]\n', 'a null workspace value');
+  const required = parseTemplate('---\nvariables:\n  team: { required: true }\n---\n{{ team }}\n');
+  assert.deepEqual(renderTemplate(required, at('a', { team: 'core' })), { ok: true, text: 'core\n' }, 'a workspace value satisfies required');
+});
+
+test('valueSource names where the value comes from, and a variable from the task keeps {result.<name>} whatever the workspace holds (#621, #492)', () => {
+  const [dir, plan] = parseTemplate('---\nvariables:\n  dir: { default: d, workspaces: { a: o } }\n  plan: { from: task }\n---\n{{ dir }} {{ plan }}\n').variables;
+  assert.deepEqual([valueSource(dir, at('a', { dir: 'w' })), valueSource(dir, at('b', { dir: 'w' })), valueSource(dir, at('b'))], ['override', 'workspace', 'default']);
+  assert.deepEqual([valueSource(plan, at('a', { plan: 'x' })), valueFor(plan, at('a', { plan: 'x' }))], ['task', '{result.plan}']);
+});
+
+test('a workspace value a declaration cannot take fails that workspace\'s render at the declaration\'s line, and no other workspace\'s (#621, decision 6)', () => {
+  const parsed = parseTemplate('---\nvariables:\n  flags: { values: [none, always], default: none }\n  quick: { type: boolean, default: false }\n  dir: { default: d }\n---\n{{ flags }} {{ quick }} {{ dir }}\n');
+  assert.deepEqual(failure(renderTemplate(parsed, at('a', { flags: 'sometimes' }))), [{ line: 3, variable: 'flags', message: 'variable "flags": the value of workspace "a" must be one of none, always' }]);
+  assert.deepEqual(failure(renderTemplate(parsed, at('a', { quick: 'yes' }))), [{ line: 4, variable: 'quick', message: 'variable "quick": the value of workspace "a" must be true or false' }]);
+  assert.deepEqual(failure(renderTemplate(parsed, at('a', { dir: true }))), [{ line: 5, variable: 'dir', message: 'variable "dir": the value of workspace "a" must be text' }]);
+  assert.deepEqual(renderTemplate(parsed, at('b', { flags: 'always', quick: true })), { ok: true, text: 'always true d\n' });
+  const overridden = parseTemplate('---\nvariables:\n  flags: { values: [none, always], default: none, workspaces: { a: always } }\n---\n{{ flags }}\n');
+  assert.deepEqual(renderTemplate(overridden, at('a', { flags: 'sometimes' })), { ok: true, text: 'always\n' }, 'the override renders: the workspace value is not read');
 });

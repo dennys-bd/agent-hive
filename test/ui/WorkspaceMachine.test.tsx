@@ -8,7 +8,7 @@ import type { MachineStatus, SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
 // Settings › workspaces › machine (#933): the field GET /machines gates, its saved lock and the chosen distro's problem lines.
-const ws = (name: string, machine: string) => ({ name, path: `/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree' as const, machine, color: '#a1b2c3' });
+const ws = (name: string, machine: string) => ({ name, path: `/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree' as const, machine, color: '#a1b2c3' });
 const infoWith = (workspaces: ReturnType<typeof ws>[]): SettingsInfo => ({
   configured: true, home: '/home', language: 'en', agents: [{ agent: 'claude', available: true }],
   config: {

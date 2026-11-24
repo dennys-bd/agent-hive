@@ -52,7 +52,7 @@ async function reviewerInstructions(sources: ItemSources, version: string | null
   const main = read.files.find((file) => mainFiles('specialist', REVIEWER_NAME).includes(file.path));
   if (main === undefined) return { reason: `${REVIEWER_ID} has no ${REVIEWER_NAME}.md` };
   const parsed = parseTemplate(main.text);
-  const rendered = renderTemplate(parsed, '');
+  const rendered = renderTemplate(parsed, { name: '', variables: {} }); // a global run is no workspace's, so it has none of a workspace's values (#621)
   if (!rendered.ok) {
     const first = rendered.errors[0];
     return { reason: first === undefined ? 'does not render' : `line ${first.line}: ${first.message}` };

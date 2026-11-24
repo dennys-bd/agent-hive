@@ -7,7 +7,7 @@ import { agentFixOf, fixOf, hasFix, kindOf } from '@/lib/annotation-fix';
 
 // Lines: depth declared on 4, the fence 5, an undeclared reviewer on 6, ## A on 7, an h4 on 8, an unknown reference on 9
 const TEXT = ['---', 'name: x', 'variables:', '  depth: { default: full }', '---', 'Ask {{ reviewer }}.', '## A', '#### B', 'Run `/nowhere`.', ''].join('\n');
-const annotations = lintTemplate(parseTemplate(TEXT), { self: { origin: 'hive', kind: 'skill', name: 'x' }, catalogue: [], workspaces: ['hive'], scripts: [] });
+const annotations = lintTemplate(parseTemplate(TEXT), { self: { origin: 'hive', kind: 'skill', name: 'x' }, catalogue: [], workspaces: [{ name: 'hive', variables: {} }], scripts: [] });
 function of(check: LintAnnotation['check']): LintAnnotation {
   const found = annotations.find((a) => a.check === check);
   if (found === undefined) throw new Error(`no ${check} annotation`);

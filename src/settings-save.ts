@@ -28,6 +28,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const migratedFlows = (flows: unknown): unknown =>
   (Array.isArray(flows) ? flows.map((f: unknown) => (isRecord(f) ? { ...f, ...(migrateTransitions({ comb: { stages: f.stages, transitions: f.transitions } }) as { comb: object }).comb } : f)) : flows);
 
+// #621, decision 11a: only the plugins view's route writes a workspace's variables, so a save takes each one's from the saved file by name,
+// whatever the body holds, and a workspace the file does not have starts with none. A body that is not a list is the parser's to name
+function savedVariables(workspaces: unknown, current: Config | undefined): unknown {
+  if (!Array.isArray(workspaces)) return workspaces;
+  return workspaces.map((w: unknown) => {
+    if (!isRecord(w)) return w;
+    const saved = current?.comb.workspaces.find((s) => s.name === w.name);
+    return { ...w, variables: saved?.variables ?? {} };
+  });
+}
+
 /** The body over the saved file: a key the body omits keeps the saved value (the form always sends the ones it owns). A file that does
  * not parse (one from before the Comb, or from before workspace names) is no current config: the body is all there is. */
 export async function configFrom(home: string, body: Partial<SettingsBody>): Promise<Config> {
@@ -38,7 +49,7 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
   return parseConfig({
     comb: {
       prefix: body.prefix,
-      workspaces: body.workspaces ?? current?.comb.workspaces, // the form's workspaces list (#179)
+      workspaces: body.workspaces === undefined ? current?.comb.workspaces : savedVariables(body.workspaces, current), // the form's workspaces list (#179), each with its saved variables (#621)
       sources: body.sources ?? renamedSwitchAt(current?.comb.sources, stageRenames), // the form's sources list (#180); [] = no source
       flows: body.flows === undefined ? current?.comb.flows : migratedFlows(body.flows), // #565: the form always sends it; an API caller that omits it keeps the saved flows
       commands: body.commands ?? current?.comb.commands, // the form always sends it (#511), [] included

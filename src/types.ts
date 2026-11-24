@@ -1481,6 +1481,10 @@ export type BenchmarkPrIn = (typeof BENCHMARK_PR_IN)[number];
 export const BENCHMARK_PR_IN_NEW: BenchmarkPrIn = 'worktree';
 
 /** Where the code lives (#179): a named git repo on this machine. A Comb has one or more; the name is the key tasks and the source use. */
+/** A template variable's value (#310): a text's or a list's string, a boolean's true or false, or null. Here since #621: a workspace's config
+ * holds its values. */
+export type VariableValue = string | boolean | null;
+
 export interface Workspace {
   name: string; // WORKSPACE_NAME: safe in a URL segment and a select value; unique in the Comb
   path: string; // absolute, a git work tree's top level (POST /settings checks it); unique in the Comb
@@ -1492,6 +1496,7 @@ export interface Workspace {
   notNestedRepos: string[]; // #653: required; paths the user said are not nested repos: never suggested again
   benchmarkPrIn: BenchmarkPrIn; // #477: required; where a benchmark run's PR is rebased and pushed from
   machine: MachineId; // #931: required; 'local' or 'wsl:<distro>'; the machine path is on, written into each task activity at its birth
+  variables: Record<string, VariableValue>; // #621: required; the workspace's template variables, set once; a template's own workspaces: entry overrides one (decision 3); {} = none
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit
@@ -1945,8 +1950,9 @@ export interface SettingsInfo {
 export interface SettingsBody {
   /** The Comb's task id prefix; the form always sends it. */
   prefix: string;
-  /** comb.workspaces (#179): every workspace the Comb runs tasks in. The form always sends it; an API caller that omits it keeps the saved ones. */
-  workspaces: Workspace[];
+  /** comb.workspaces (#179): every workspace the Comb runs tasks in. The form always sends it; an API caller that omits it keeps the saved ones.
+   * Never a workspace's variables (#621, decision 11a): the save keeps each one's saved values by name. */
+  workspaces: Omit<Workspace, 'variables'>[];
   /** comb.commands (#511). The form always sends it, [] included; an API caller that omits it keeps the saved ones. A first setup without it
    * is a parse error naming comb.commands. */
   commands?: Command[];
@@ -2341,7 +2347,9 @@ export interface CatalogueItem {
 export interface ItemFile { path: string; text: string; savedAt?: string } // savedAt: the file's mtime (ISO), #319; absent for the original's files
 export interface ItemRead { item: CatalogueItem; version: string | null; files: ItemFile[] } // version null: the original
 /** GET /api/lint-input (#327): what the editor's lint reads beside the open file, the catalogue's variables and the plugin's scripts. */
-export interface LintInputRead { catalogue: LintItem[]; scripts: string[] }
+/** Each workspace's variables by its name (#621): what GET /api/lint-input answers beside the catalogue, and what the editor renders with. */
+export type WorkspaceVariables = Record<string, Record<string, VariableValue>>;
+export interface LintInputRead { catalogue: LintItem[]; scripts: string[]; variables: WorkspaceVariables } // #621: each workspace's values, by name
 
 /** A conflict's two answers in a version's update (#324): keep the version's text, or take the shipped one. */
 export const UPDATE_CHOICES = ['mine', 'hive'] as const;

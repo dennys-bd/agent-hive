@@ -131,13 +131,16 @@ export async function versionFiles(home: string, key: ItemKey, version: string):
   return { dir, paths: await listFiles(dir) };
 }
 
-/** Whether `base` holds exactly the origin's paths with the same bytes. false is "update available", also when the origin is gone. */
-export async function sameFiles(origin: FileSet | undefined, base: string): Promise<boolean> {
+const sameBytes = (_path: string, shipped: Buffer, kept: Buffer): boolean => shipped.equals(kept);
+
+/** Whether `base` holds exactly the origin's paths with the same bytes, or the same by `same`. false is "update available", also when the
+ * origin is gone. */
+export async function sameFiles(origin: FileSet | undefined, base: string, same = sameBytes): Promise<boolean> {
   const paths = await listFiles(base);
   if (origin === undefined || paths.join('\n') !== origin.paths.join('\n')) return false;
   for (const path of paths) {
     const [shipped, kept] = await Promise.all([readFile(join(origin.dir, path)), readFile(join(base, path))]);
-    if (!shipped.equals(kept)) return false;
+    if (!same(path, shipped, kept)) return false;
   }
   return true;
 }

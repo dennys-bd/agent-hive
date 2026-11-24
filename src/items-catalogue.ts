@@ -224,7 +224,7 @@ export async function readItem(sources: ItemSources, id: string, version: string
 /** The editor lint's input beside the open file (#327): every Hive item with the variables its main file declares (the original's, or a
  * user-created item's first version's: the files `CatalogueItem.files` lists), every workspace skill with none, so a reference to it resolves,
  * and the plugin's scripts as a reference names them (`scripts/<file>`). */
-export async function readLintInput(sources: ItemSources): Promise<LintInputRead> {
+export async function readLintInput(sources: ItemSources): Promise<Omit<LintInputRead, 'variables'>> {
   const entries = (await Promise.all(originsOf(sources).map((origin) => originItems(sources, origin)))).flat();
   const catalogue = entries
     .filter(({ item }) => item.origin === HIVE_ORIGIN || item.kind === 'skill')

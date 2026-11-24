@@ -53,7 +53,7 @@ async function guarded(deps: ProtocolRouteDeps, res: Response, job: () => Promis
 // The blocks as the screen strikes them through (#337), and each passage with the workspaces where its render fails
 function protocolView(passages: readonly Passage[], config: Pick<Config, 'comb' | 'mcp'>): ProtocolView {
   const { off } = config.mcp;
-  const renders = config.comb.workspaces.map(({ name }) => [name, renderPassages(passages, name)] as const);
+  const renders = config.comb.workspaces.map((workspace) => [workspace.name, renderPassages(passages, workspace)] as const);
   return {
     blocks: BLOCKS.map(({ id, stage, session, tool }) => ({ id, stage, session, off: tool !== undefined && off.includes(tool), ...(tool === undefined ? {} : { tool }) })),
     passages: passages.map(({ id, text }, index) => ({

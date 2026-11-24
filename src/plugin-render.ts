@@ -10,7 +10,7 @@ import { mainFiles } from './custom-versions.js';
 import { HIVE_ORIGIN, listFiles, versionFiles } from './item-sources.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { deliveredHeader, deliveredName, hasDeclarations, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate } from './template.js';
+import { deliveredHeader, deliveredName, hasDeclarations, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace } from './template.js';
 import { PLUGIN_ROOT } from './template-refs.js';
 import type { CatalogueItem, Workspace } from './types.js';
 
@@ -22,9 +22,9 @@ const LIQUID_SUFFIX = '.liquid';
 const MD_SUFFIX = '.md';
 const GONE = { recursive: true, force: true } as const;
 
-/** What a write reads of the config: each workspace's name, and its checkout for the catalogue. Config satisfies it. */
+/** What a write reads of the config: each workspace's name, its values (#621) and its checkout for the catalogue. Config satisfies it. */
 export interface RenderConfig {
-  comb: { workspaces: readonly Pick<Workspace, 'name' | 'path'>[] };
+  comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables'>[] };
 }
 
 export interface PluginRenderDeps {
@@ -116,31 +116,31 @@ const stripHeader = (parsed: ParsedTemplate): RenderResult =>
 const rooted = (text: string, dir: string): string => text.split(PLUGIN_ROOT).join(dir);
 
 // A .liquid file through Liquid, a .md with declarations without its header's, any other .md as it is
-function deliver(path: string, raw: string, parsed: ParsedTemplate, workspace: string): RenderResult {
+function deliver(path: string, raw: string, parsed: ParsedTemplate, workspace: RenderWorkspace): RenderResult {
   if (path.endsWith(LIQUID_SUFFIX)) return renderTemplate(parsed, workspace);
   return hasDeclarations(parsed.header) ? stripHeader(parsed) : { ok: true, text: raw };
 }
 
 // Every .liquid file, and every .md whose header has declarations (#338, decision 10: its basedOn must not reach Claude Code), rendered for
-// `workspace` under its delivered name; any other .md is copied untouched but for ${HIVE_PLUGIN_ROOT}, which every delivered .md gets as `dir`
-// (#446), so Claude and Codex's copy alike read a real path. Answers the items whose template failed, each error logged once. The template
-// module's messages hold no path, and the path logged is relative to the folder
-async function renderTemplates(tmp: string, dir: string, workspace: string, log: Pick<Logger, 'error'>): Promise<Set<string>> {
+// `target` with its values (#621) under its delivered name; any other .md is copied untouched but for ${HIVE_PLUGIN_ROOT}, which every delivered
+// .md gets as `dir` (#446), so Claude and Codex's copy alike read a real path. Answers the items whose template failed, each error logged once.
+// The template module's messages hold no path, and the path logged is relative to the folder
+async function renderTemplates(tmp: string, dir: string, target: RenderWorkspace, log: Pick<Logger, 'error'>): Promise<Set<string>> {
   const failed = new Set<string>();
   for (const path of (await listFiles(tmp)).filter((p) => p.endsWith(LIQUID_SUFFIX) || p.endsWith(MD_SUFFIX))) {
     const raw = await readFile(join(tmp, path), 'utf8');
     const parsed = parseTemplate(raw);
     if (!path.endsWith(LIQUID_SUFFIX) && !hasDeclarations(parsed.header) && !raw.includes(PLUGIN_ROOT)) continue; // left byte for byte
-    const result = deliver(path, raw, parsed, workspace);
+    const result = deliver(path, raw, parsed, target);
     if (!result.ok) {
-      for (const error of result.errors) log.error(`plugin render ${workspace}: ${path}:${error.line} ${error.message}`);
+      for (const error of result.errors) log.error(`plugin render ${target.name}: ${path}:${error.line} ${error.message}`);
       failed.add(itemPath(path));
       continue;
     }
-    const target = deliveredName(path);
-    await rm(join(tmp, target), GONE); // a symlink left there by hand is replaced, never written through
-    await writeFile(join(tmp, target), rooted(result.text, dir));
-    if (target !== path) await rm(join(tmp, path)); // a .md is delivered under its own name: removing the source would remove the delivery
+    const delivered = deliveredName(path);
+    await rm(join(tmp, delivered), GONE); // a symlink left there by hand is replaced, never written through
+    await writeFile(join(tmp, delivered), rooted(result.text, dir));
+    if (delivered !== path) await rm(join(tmp, path)); // a .md is delivered under its own name: removing the source would remove the delivery
   }
   return failed;
 }
@@ -172,7 +172,8 @@ interface Ctx {
 
 // One workspace, built in .tmp-<name> and swapped in. A failing template keeps the previous folder whole; with none, the folder goes without
 // that item. Any I/O error removes the temporary folder and logs its class
-async function writeOne(ctx: Ctx, items: readonly CatalogueItem[], workspace: string): Promise<void> {
+async function writeOne(ctx: Ctx, items: readonly CatalogueItem[], target: RenderWorkspace): Promise<void> {
+  const workspace = target.name;
   const { home, root, log, present } = ctx;
   let tmp: string | undefined;
   try {
@@ -183,7 +184,7 @@ async function writeOne(ctx: Ctx, items: readonly CatalogueItem[], workspace: st
     await Promise.all([rm(tmp, GONE), rm(old, GONE)]); // what a crash left
     await cp(ctx.pluginSource, tmp, { recursive: true });
     await overlay(home, tmp, items, workspace);
-    const failed = await renderTemplates(tmp, dir, workspace, log);
+    const failed = await renderTemplates(tmp, dir, target, log);
     if (failed.size > 0 && present.has(workspace)) {
       await rm(tmp, GONE);
       return;
@@ -216,7 +217,7 @@ async function sweep(ctx: Ctx, config: RenderConfig): Promise<void> {
 async function writeAll(ctx: Ctx, config: RenderConfig, only?: readonly string[]): Promise<void> {
   await mkdir(ctx.root, { recursive: true, mode: DIR_MODE });
   const items = await readCatalogue({ home: ctx.home, pluginSource: ctx.pluginSource, workspaces: config.comb.workspaces });
-  for (const { name } of config.comb.workspaces) if (only === undefined || only.includes(name)) await writeOne(ctx, items, name);
+  for (const workspace of config.comb.workspaces) if (only === undefined || only.includes(workspace.name)) await writeOne(ctx, items, workspace);
   if (only === undefined) await sweep(ctx, config);
 }
 

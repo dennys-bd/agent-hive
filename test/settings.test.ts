@@ -131,9 +131,22 @@ test('POST /settings takes the workspace folder from the body and refuses, writi
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.workspaces, workspacesAt(repo));
 });
 
+test('POST /settings gives a new workspace no variables and keeps a saved workspace\'s, whatever the body sends: only the plugins view writes them (#621, decision 11a)', async (t) => {
+  const { home, base, repo } = await start(t);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  const first = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
+  assert.deepEqual(first.comb.workspaces.map((w) => w.variables), [{}], 'a first save starts every workspace with none');
+  const withValue = { ...first, comb: { ...first.comb, workspaces: first.comb.workspaces.map((w) => ({ ...w, variables: { specsDir: 'design/specs' } })) } };
+  await writeFile(configFile(home), JSON.stringify(withValue)); // what PUT …/variables/specsDir leaves on disk
+  const [sent] = workspacesAt(repo);
+  assert.equal((await postSettings(base, { ...BODY, workspaces: [{ ...sent, variables: { specsDir: 'elsewhere' } }] })).status, 200);
+  const after = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
+  assert.deepEqual(after.comb.workspaces.map((w) => w.variables), [{ specsDir: 'design/specs' }]);
+});
+
 test('POST /settings refuses, writing nothing, two workspaces whose paths resolve to the same folder', async (t) => {
   const { base, home, repo } = await start(t);
-  const same: Workspace[] = [{ name: 'a', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: `${repo}/`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }];
+  const same: Workspace[] = [{ name: 'a', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'b', path: `${repo}/`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }];
   const res = await postSettings(base, { ...BODY, workspaces: same, sources: [{ ...GITHUB_ENTRY, taskProps: { defaults: { workspace: 'a', auto: true, entry: { flow: 'main' } }, rules: [] } }] });
   assert.equal(res.status, 400);
   assert.deepEqual(await json<{ error: string }>(res), { error: 'workspaces a and b point at the same folder' });
@@ -296,6 +309,28 @@ test('a poll still in flight when a later save replaced the source is dropped, n
   release();
   await sleep(20); // long enough for save A's poll to resolve and (wrongly) dispatch
   assert.deepEqual(server.getState()?.tasks.map((c) => c.item.title), ['from Ready'], 'only the new board\'s tasks are in the state');
+});
+
+test('a variable saved while a poll is in flight never drops that poll\'s tasks: the same source still lands them (#621)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const { factory } = fakeSourceFactory();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const sourceFactory = (spec: SourceSpec): Source => {
+    const board = factory(spec);
+    return { ...board, listItems: async () => { await gate; return board.listItems(); } };
+  };
+  const server = createServer({ secret: SECRET, home, sourceFactory });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  workspaces.set(base, repo);
+  assert.equal((await postSettings(base, BODY)).status, 200); // its poll hangs on the gate
+  const put = await hiveFetch(`${base}/workspaces/hive/variables/specsDir`, { method: 'PUT', headers: UI_HEADERS, body: JSON.stringify({ value: 'design/specs' }) });
+  assert.equal(put.status, 200);
+  release();
+  for (let i = 0; i < 200 && server.getState()?.tasks.length !== 1; i += 1) await sleep(5);
+  assert.deepEqual(server.getState()?.tasks.map((c) => c.item.title), ['from Ready']);
 });
 
 test('a poll still in flight when the Hive closes is dropped: no worker is spawned after killAll', async (t) => {
@@ -1262,7 +1297,7 @@ test('the rate-limit wait reaches the state from the config: the first save boot
 test('POST /settings keeps each workspace\'s setup and timeout, and answers 400 naming the workspace and the line of the first setup line it cannot parse, saving nothing (#299)', async (t) => {
   const { base, home, repo } = await start(t);
   const saved = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup: '# the worktree\nCOPY .env\nRUN pnpm install', setupTimeout: '10m' };
+  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup: '# the worktree\nCOPY .env\nRUN pnpm install', setupTimeout: '10m' };
   assert.equal((await postSettings(base, { ...BODY, workspaces: [workspace] })).status, 200);
   assert.deepEqual((await saved()).comb.workspaces, [workspace]);
   const bad = await postSettings(base, { ...BODY, workspaces: [{ ...workspace, setup: 'COPY .env\nRUN\nCOPY ../x' }] });
@@ -1274,7 +1309,7 @@ test('POST /settings keeps each workspace\'s setup and timeout, and answers 400 
 test('POST /settings keeps each workspace\'s teardown and its timeout, and answers 400 naming the workspace and the teardown line it cannot parse, saving nothing (#654)', async (t) => {
   const { base, home, repo } = await start(t);
   const saved = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', teardown: 'RUN docker compose down\nDEL tmp/', teardownTimeout: '2m' };
+  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', teardown: 'RUN docker compose down\nDEL tmp/', teardownTimeout: '2m' };
   assert.equal((await postSettings(base, { ...BODY, workspaces: [workspace] })).status, 200);
   assert.deepEqual((await saved()).comb.workspaces, [workspace]);
   const bad = await postSettings(base, { ...BODY, workspaces: [{ ...workspace, teardown: 'RUN true\nCOPY a b c' }] });
@@ -1286,7 +1321,7 @@ test('POST /settings keeps each workspace\'s teardown and its timeout, and answe
 test('POST /settings keeps a workspace\'s benchmarkPrIn and answers 400 naming the key for any other value, saving nothing (#477)', async (t) => {
   const { base, home, repo } = await start(t);
   const saved = async (): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', benchmarkPrIn: 'checkout', machine: 'local' };
+  const workspace = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, color: 'oklch(0.72 0.12 25)', benchmarkPrIn: 'checkout', machine: 'local' };
   assert.equal((await postSettings(base, { ...BODY, workspaces: [workspace] })).status, 200);
   assert.deepEqual((await saved()).comb.workspaces, [workspace]);
   const bad = await postSettings(base, { ...BODY, workspaces: [{ ...workspace, benchmarkPrIn: 'elsewhere' }] });

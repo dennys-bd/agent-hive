@@ -304,8 +304,8 @@ const renamesFrom = (rows: SourceDraft[]): Record<string, string> =>
   Object.fromEntries(rows.flatMap((r) => (r.savedName === '' || r.name.trim() === r.savedName ? [] : [[r.savedName, r.name.trim()]])));
 
 // A row as a comb.workspaces entry: the setup untrimmed, so the line numbers POST /settings names are the textarea's (#299); the timeout trimmed,
-// validateSettings checked its grammar (#511).
-const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
+// validateSettings checked its grammar (#511). Never its variables: the server keeps the saved ones (#621, decision 11a).
+const workspaceFrom = (p: WorkspaceDraft): Omit<Workspace, 'variables'> => ({
   name: p.name.trim(), path: p.path.trim(), env: envFrom(p.env), // env always sent (#348)
   fork: p.fork, // #854: always sent, null included: the parser requires it
   nestedRepos: nestedPaths(p), notNestedRepos: p.notNestedRepos, // #653: always sent, [] included: the parser requires both

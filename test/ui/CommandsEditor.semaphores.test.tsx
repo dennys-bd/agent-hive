@@ -14,7 +14,7 @@ const BASE: SettingsInfo = {
     auth: { github: 'cli' },
     comb: {
       prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], flows: [{ name: 'main', stages: [{ name: 'fila', from: {} }], transitions: [] }], commands: [],
-      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: '#a1b2c3' }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: PRESETS[1] }],
+      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: '#a1b2c3' }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: PRESETS[1] }],
     },
     logLevel: 'info', agentArgs: { claude: [], codex: [], copilot: [] }, agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false }, budget: {}, usageRules: [], commandSemaphores: [], accounts: {},
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
@@ -22,7 +22,7 @@ const BASE: SettingsInfo = {
 };
 
 // Settings › workspaces › commands' semaphore picker (#804), through the whole form: the pick, the draft, the hint and the save body
-const workspace = (name: string, color: string): Workspace => ({ name, path: `/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color });
+const workspace = (name: string, color: string): Workspace => ({ name, path: `/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color });
 const SEMAPHORES: CommandSemaphore[] = [{ name: 'memory', limit: 2, reservation: '2m' }, { name: 'banco', limit: 1, reservation: '5m' }];
 const TESTES: Command = { name: 'testes', impls: [{ workspace: 'core-api', command: 'pytest' }, { workspace: null, command: 'pnpm run tests' }], menu: true, env: {} };
 const withSemaphores = (names: (string | undefined)[]): Command => ({ ...TESTES, impls: TESTES.impls.map((line, i) => (names[i] === undefined ? line : { ...line, semaphore: names[i] })) });

@@ -9,7 +9,9 @@ import { moveEventsFiles } from './facts.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { parseConfig, predatesComb, readConfig, unnamedWorkspacePath, workspaceScope } from './config.js';
 import { acquireLock, readDaemonPort, releaseLock, removeDaemonSecret, writeDaemonPort, writeDaemonSecret } from './daemon-files.js';
-import { PROMPTS_DIR } from './hooks-settings.js';
+import { pluginSource, PROMPTS_DIR } from './hooks-settings.js';
+import { renderSource } from './benchmark/run-home.js';
+import { migrateWorkspaceVariables } from './plugin-variables-migrate.js';
 import { languageFrom, systemLanguage } from './language.js';
 import { checkHome } from './home-acl.js';
 import { createLogger, type Logger } from './log.js';
@@ -79,8 +81,11 @@ async function bootLocked(home: string, options: Omit<BootOptions, 'posixShell'>
     log.error(`config: ${err.message}`);
     throw err;
   });
+  // #621, decision 7: a workspace from before `variables` gets its values out of the custom store's templates, written to the file before the
+  // parse reads it; the plugin is the one this home's daemon renders from (#459)
+  const migrated = raw === undefined ? undefined : await migrateWorkspaceVariables(raw, { home, pluginSource: renderSource(home, pluginSource()), log });
   // a config that cannot parse is refused before a store opens: win32 cannot remove an open usage.sqlite from the home (#655)
-  const parsed = raw === undefined ? undefined : parseOrFallback(raw, log);
+  const parsed = migrated === undefined ? undefined : parseOrFallback(migrated, log);
   // Process state, read once: which agent CLIs this machine has (#516). Installing one later means restarting the Hive, which the hint says.
   const agents = given.agents ?? (await detectAgents({ exec: execFileAsync })); // #161: the local machine is built after boot; its info().agents stays this answer
   // #271: one store for both modes, since a setup saved in place runs workers too. It never rejects: one that cannot open keeps nothing and says

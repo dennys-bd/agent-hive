@@ -17,6 +17,7 @@ const COPY: Record<LintCheck, { title: MessageKey; body: MessageKey }> = {
   required: { title: 'plugins.annotations.required.title', body: 'plugins.annotations.required.body' },
   reference: { title: 'plugins.annotations.reference.title', body: 'plugins.annotations.reference.body' },
   callRequired: { title: 'plugins.annotations.callRequired.title', body: 'plugins.annotations.callRequired.body' },
+  value: { title: 'plugins.annotations.value.title', body: 'plugins.annotations.value.body' }, // #621
   heading: { title: 'plugins.annotations.heading.title', body: 'plugins.annotations.heading.body' },
   taskCondition: { title: 'plugins.annotations.taskCondition.title', body: 'plugins.annotations.taskCondition.body' },
 };

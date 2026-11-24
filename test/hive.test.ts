@@ -63,6 +63,16 @@ test('bootHive copies the budget from hive.config.json over the one saved in sta
   assert.deepEqual(server.getState()?.budget, { maxTokensPerHour: 50_000 });
 });
 
+test('bootHive gives a workspace from before #621 its variables and writes them to hive.config.json before the parse (#621, decision 7)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  await rewriteWorkspaces(home, (workspace) => Object.fromEntries(Object.entries(workspace).filter(([key]) => key !== 'variables')));
+  const { server } = await bootHive(home);
+  t.after(() => server.close());
+  const saved = JSON.parse(await readFile(join(home, 'hive.config.json'), 'utf8')) as { comb: { workspaces: { variables?: unknown }[] } };
+  assert.deepEqual(saved.comb.workspaces.map((w) => w.variables), [{}]);
+  assert.equal(server.getState() === undefined, false, 'hive mode: the parse took the migrated file');
+});
+
 test('bootHive opens under yellow even when state.json saved green, and under red when it saved red', async (t) => {
   const { home: homeGreen } = await hiveWithConfig(t, {});
   await saveState(homeGreen, { ...initialState(0), signal: 'green' });
@@ -291,7 +301,7 @@ test('a hive.config.json without rateLimitWaitMinutes opens setup mode with the 
 
 test('a hive.config.json whose workspace has no nestedRepos opens setup mode with the parse error, prefilled with none (#653)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
+  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());
@@ -304,7 +314,7 @@ test('a hive.config.json whose workspace has no nestedRepos opens setup mode wit
 
 test('a hive.config.json whose workspace has no benchmarkPrIn opens setup mode with the parse error, prefilled with a temporary worktree (#477)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', machine: 'local' }; // a workspace from before #477
+  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, color: 'oklch(0.72 0.12 25)', machine: 'local' }; // a workspace from before #477
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());
@@ -316,7 +326,7 @@ test('a hive.config.json whose workspace has no benchmarkPrIn opens setup mode w
 
 test('a hive.config.json whose workspace has no machine opens setup mode with the parse error, prefilled with the local machine (#931)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #931
+  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #931
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());
