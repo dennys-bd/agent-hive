@@ -2,6 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf, resultOf } from '../src/activities.js';
+import { withGhEnv, type GhEnv } from '../src/github-account.js';
 import { initialState } from '../src/orchestrator.js';
 import { createCiReader, GH_TIMEOUT_MS, LOG_LINES } from '../src/server-ci.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -209,4 +210,18 @@ test('POST /activities/:id/ci/stop ends the wait, stopped, with no verdict; an a
   const after = activityOf(server.getState()!, 'local:1');
   assert.deepEqual([after?.ci, after?.stopped, resultOf(server.getState()!, 'local:1')?.ci], [undefined, true, undefined]);
   assert.equal((await send(base, 'POST', path)).status, 404);
+});
+
+// ciRerun's gh call through the gh-aware exec (#961): the GH_TOKEN each call received
+async function rerunTokens(ghEnv: GhEnv): Promise<(string | undefined)[]> {
+  const tokens: (string | undefined)[] = [];
+  const exec: Exec = async (_file, _args, opts) => { tokens.push(opts?.env?.GH_TOKEN); return { stdout: '' }; };
+  const reader = createCiReader({ gql: async () => ({}), exec: withGhEnv(exec, ghEnv), dispatch: async () => [], log: { error: () => undefined }, state: () => stateOf([]), now: () => NOW });
+  await reader.rerun({ type: 'ciRerun', activityId: 'a1', runs: [{ repo: 'acme/app', runId: 11 }] });
+  return tokens;
+}
+
+test('the CI reader\'s gh call runs as the selected login through the gh-aware exec, and with no env on the machine\'s (#961)', async () => {
+  assert.deepEqual(await rerunTokens(async () => ({ GH_TOKEN: 'gho_test' })), ['gho_test']);
+  assert.deepEqual(await rerunTokens(async () => ({})), [undefined]);
 });

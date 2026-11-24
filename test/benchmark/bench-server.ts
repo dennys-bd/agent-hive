@@ -76,6 +76,7 @@ export async function serve(t: TestContext, opts: BenchOpts = {}): Promise<Bench
   const sessionEvents: HiveEvent[] = [];
   registerBenchmarkRoutes(app, {
     ...bench.deps, requireLive: live, getLive: live, log: bench.log,
+    ghEnv: async () => ({}), // the machine's login: the PR routes' tests see gh's calls as today
     runner: { run: async () => 'started', sleep: async () => undefined, wake: async () => undefined, isLive: () => false, blindness: async () => undefined },
     session: {
       dispatch: async (event: HiveEvent) => { sessionEvents.push(event); return []; },

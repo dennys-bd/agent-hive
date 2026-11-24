@@ -13,7 +13,8 @@ import { type AskSessionDeps, registerBenchmarkAgentRoutes } from './server-benc
 import { BENCHMARK_IO_MESSAGE, createEmptyExperiment, type DraftCtx, type DraftDeps, type DraftRefusal, draw, duplicateExperiment, editSections, errorCode, isRefusal, type Queue, serial } from './benchmark/drafts.js';
 import { newId } from './benchmark/new-experiment.js';
 import { pinHome, pluginTrees } from './benchmark/pin.js';
-import { execRun } from './benchmark/exec.js';
+import { execRun, ghRun } from './benchmark/exec.js';
+import type { GhEnv } from './github-account.js';
 import { ARM_PATCH, COPY, CREATE, NEW_ARM, PATCH, type PatchBody, UPLOAD } from './benchmark/schemas.js';
 import { experimentFolder, removeFolder, SeedFileMissing, seedEntries, UPLOAD_NAME, UPLOAD_NAME_MESSAGE, UPLOAD_PREFIX, writeUpload } from './benchmark/store.js';
 import { readCatalogue } from './items-catalogue.js';
@@ -35,6 +36,7 @@ export interface BenchmarkRouteDeps extends DraftDeps {
   requireLive(res: Response): { runtime: { config: Config }; state: State } | undefined;
   getLive(): { runtime: { config: Config }; state: State } | undefined; // the PR routes' own 404s answer when the Hive is not live (#477)
   log: Logger; // the PR routes also warn (#477)
+  ghEnv: GhEnv; // #961: the benchmark PR's gh runs as accounts.github's login
   evaluator: BenchEvaluator; // #474
   runner: Pick<BenchRunner, 'run' | 'sleep' | 'wake' | 'isLive' | 'blindness'>; // #472
   session: AskSessionDeps; // #478: ask the agent's local session
@@ -214,7 +216,7 @@ export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps):
   const queue = deps.queue ?? serial();
   registerExperimentRoutes(app, deps, queue);
   registerArmRoutes(app, deps, queue);
-  registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: execRun, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
+  registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: ghRun(deps.ghEnv), now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
   registerBenchmarkEvaluateRoutes(app, { requireLive: deps.requireLive, evaluator: deps.evaluator, log: deps.log }); // #474
   registerBenchmarkAgentRoutes(app, { requireLive: deps.requireLive, log: deps.log, session: deps.session }); // #478: POST /benchmark/agent
   registerBenchmarkControlRoutes(app, { requireLive: deps.requireLive, runner: deps.runner, dispatch: deps.dispatch, log: deps.log }); // #472

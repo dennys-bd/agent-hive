@@ -4,6 +4,8 @@ import { withSync } from '../src/worktree-base.js';
 import { baseRemote, failureOf, forkRepos, isNetworkError, remotesOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
 import type { Exec, Workspace } from '../src/types.js';
 import { fakeMachine } from './fakes.js';
+import { ghMachines, type GhEnv } from '../src/github-account.js';
+import { fakeMachines } from './fake-machine.js';
 import { NO_TOKEN_MESSAGE } from '../src/sources/github-gql.js';
 
 // A fork workspace (#854): the base remote, the base, the two repositories, the run env, and the GitHub sync, fast-forward only.
@@ -117,4 +119,20 @@ test('a merge-upstream that did not fast-forward is a failure, not a sync (#854)
 test('the base line carries the sync result and counts but never gh\'s words, which the log would repeat (#854)', () => {
   const sync = { mode: 'github' as const, base: 'me:main', result: 'error' as const, reason: 'gh: secret words', sha: '', at: '' };
   assert.equal(withSync('base: origin/main', sync), 'base: origin/main · sync github error');
+});
+
+// syncFork through a machine the gh-aware registry hands out (#961): the GH_TOKEN each gh call received
+async function syncTokens(ghEnv: GhEnv): Promise<(string | undefined)[]> {
+  const tokens: (string | undefined)[] = [];
+  const exec: Exec = async (_file, args, opts) => {
+    tokens.push(opts?.env?.GH_TOKEN);
+    return { stdout: args.includes(COMPARE) ? '{"ahead_by":3,"behind_by":0}' : '{"merge_type":"fast-forward"}' };
+  };
+  assert.equal((await syncFork(ghMachines(fakeMachines(fakeMachine({ exec })), ghEnv).for({}), REPOS, 'main')).result, 'synced');
+  return tokens;
+}
+
+test('syncFork through a machine of ghMachines runs its gh calls as the selected login, and with no env on the machine\'s (#961)', async () => {
+  assert.deepEqual(await syncTokens(async () => ({ GH_TOKEN: 'gho_test' })), ['gho_test', 'gho_test']);
+  assert.deepEqual(await syncTokens(async () => ({})), [undefined, undefined]);
 });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AccountError, accountEnv, createRunAccounts, ptyAccountEnv, reportedAccount } from '../src/account-env.js';
+import { AccountError, accountEnv, createRunAccounts, ptyAccountEnv, reportedAccount, type AccountSeam } from '../src/account-env.js';
 import type { AccountCtx } from '../src/agents/runner.js';
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS } from '../src/types.js';
@@ -66,4 +66,44 @@ test('the store answers a pty\'s accounts until dropped; reportedAccount answers
   assert.equal(reportedAccount(store, 'ghost', 'claude'), undefined);
   store.drop('P1');
   assert.equal(store.get('P1'), undefined);
+});
+
+const GH_TEST = 'gho_test'; // a placeholder, never a real token
+const SELECTED = { accounts: { github: 'octo' }, credentials: async () => ({ github: { octo: { token: GH_TEST }, other: { token: 'gho_other' } } }) };
+
+test('accounts.github naming a stored login: a run with no agent and a Claude run both get its GH_TOKEN and accounts.github, the Claude env beside it (#961)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { CLAUDE_CODE_OAUTH_TOKEN: 'claude_test' }, account: 'work' }));
+  assert.deepEqual(await accountEnv({}, SELECTED), { env: { GH_TOKEN: GH_TEST }, accounts: { github: 'octo' } });
+  assert.deepEqual(await accountEnv({ agent: 'claude' }, { ...SELECTED, accounts: { github: 'octo', claude: 'work' } }), {
+    env: { GH_TOKEN: GH_TEST, CLAUDE_CODE_OAUTH_TOKEN: 'claude_test' }, accounts: { github: 'octo', claude: 'work' },
+  });
+});
+
+test('the agent\'s env goes over the GitHub provider\'s on a shared name (#961)', async (t) => {
+  t.mock.method(runners.copilot, 'accountEnv', async () => ({ env: { GH_TOKEN: 'agent' } }));
+  assert.equal((await accountEnv({ agent: 'copilot' }, SELECTED)).env.GH_TOKEN, 'agent');
+});
+
+test('with accounts.github absent no run gets GH_TOKEN, even with logins stored (#961)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: {} }));
+  const absent = { ...SELECTED, accounts: {} };
+  for (const run of [{}, { agent: 'claude' as const }]) assert.deepEqual(await accountEnv(run, absent), { env: {}, accounts: {} });
+});
+
+test('a named login absent from the store refuses with github / missing before the agent is asked, naming the login and never a token (#961)', async (t) => {
+  const asked = t.mock.method(runners.claude, 'accountEnv');
+  for (const login of ['ghost', 'toString']) {
+    const err = await accountEnv({ agent: 'claude' }, { ...SELECTED, accounts: { github: login } }).then(() => undefined, (e: unknown) => e);
+    assert.ok(err instanceof AccountError, login);
+    assert.deepEqual([err.provider, err.code], ['github', 'missing']);
+    assert.ok(err.message.includes(login));
+    assert.ok(![GH_TEST, 'gho_other'].some((token) => err.message.includes(token)), err.message);
+  }
+  assert.equal(asked.mock.callCount(), 0);
+});
+
+test('ptyAccountEnv: a workspace env that sets GH_TOKEN wins over the selected login\'s (#961)', async () => {
+  const seam: AccountSeam = (run) => accountEnv(run, SELECTED);
+  const env = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P1', undefined, { GH_TOKEN: 'pinned' });
+  assert.equal(env.GH_TOKEN, 'pinned');
 });
