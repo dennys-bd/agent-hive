@@ -128,29 +128,29 @@ async function diskServed(machine: Machine, folder: string, segments: string[]):
   if (file === undefined) return undefined;
   const bytes = await machine.fs.readFile(file, { maxBytes: IMAGE_MAX }).catch(() => undefined); // over the cap, or gone since the check: the bare 404
   if (bytes === undefined) return undefined;
-  return { type: machine.paths.extname(file), bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(folder, machine.paths)) };
+  return { type: machine.paths.extname(file), bytes, page: () => pageOf(toWire(machine.paths.relative(folder, file), machine.info().platform), bytes.toString('utf8'), readPartFrom(machine, folder)) };
 }
 
 // The asked file of a before frame (#675): joined under the token's folder in git's path space and refused, as servedFile refuses, for an
 // escape or a dot segment before git is asked; then only a regular blob within its cap, so a link, a tree or a huge blob is never read. A
 // page is held to OUTPUT_MAX, as its assembly is; an asset (an image, a video) to IMAGE_MAX, since the disk route serves one of any size
-async function servedBlob({ top, commit, folder }: BaseFolder, segments: string[]): Promise<Served | undefined> {
+async function servedBlob(machine: Machine, { top, commit, folder }: BaseFolder, segments: string[]): Promise<Served | undefined> {
   const path = GIT_PATHS.join(folder, ...segments);
   const screen = GIT_PATHS.relative(folder, path);
   if (screen === '' || screen.split('/').some((part) => part.startsWith('.'))) return undefined; // '..' is a dot segment too
-  const entry = await gitEntry(top, commit, path);
+  const entry = await gitEntry(machine, top, commit, path);
   const cap = HTML_FILE.test(path) ? OUTPUT_MAX : IMAGE_MAX;
   if (entry === undefined || !isRegularBlob(entry) || entry.size > cap) return undefined;
-  const bytes = await gitBlob(top, entry.oid, cap).catch(() => undefined); // a blob gone or grown past the cap since ls-tree: the bare 404
+  const bytes = await gitBlob(machine, top, entry.oid, cap).catch(() => undefined); // a blob gone or grown past the cap since ls-tree: the bare 404
   if (bytes === undefined) return undefined;
-  return { type: GIT_PATHS.extname(path), bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(top, commit, folder)) };
+  return { type: GIT_PATHS.extname(path), bytes, page: () => pageOf(screen, bytes.toString('utf8'), readPartFromGit(machine, top, commit, folder)) };
 }
 
 async function servedOf(tokens: DesignFrameTokens, machineFor: MachineFor, token: string, segments: string[]): Promise<Served | undefined> {
   const held = tokens.folderOf(token);
   if (held !== undefined) return diskServed(machineFor({ machine: held.machine }), held.folder, segments); // #932: the machine it was minted on
   const base = tokens.baseOf(token);
-  return base === undefined ? undefined : servedBlob(base, segments); // still git on the host (design-parts.ts) until #882 reads it on base.machine
+  return base === undefined ? undefined : servedBlob(machineFor({ machine: base.machine }), base, segments); // #882: git on the machine it was minted on
 }
 
 // ponytail: the whole file is read into memory, which is fine for a design's pages, styles and images; stream it if designs ever carry large media
@@ -211,7 +211,7 @@ async function baseFrameUrl(current: Live, req: Request, { tokens, machineFor }:
   const path = toWire(base.repo.path, base.located.machine.info().platform); // git's path space
   const folder = GIT_PATHS.dirname(path);
   if (folder === '.') return NOT_FOUND;
-  const entry = commit === undefined ? undefined : await gitEntry(top, commit, path);
+  const entry = commit === undefined ? undefined : await gitEntry(base.located.machine, top, commit, path);
   if (commit === undefined || entry === undefined || !isRegularBlob(entry)) return { missing: true };
   return { url: `${DESIGN_FRAME_PREFIX}${tokens.mintBase({ machine: base.located.machine.id, top, commit, folder })}/${encodeURIComponent(GIT_PATHS.basename(path))}` };
 }

@@ -28,7 +28,7 @@ const SLUG = 'hive-1-base';
 const BASE_REF = 'hive-668-base';
 const TASK: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Base', body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive' };
 const UI_HEADERS = { 'content-type': 'application/json', 'x-hive-ui': '1' };
-const ROUTE_GIT = ['rev-parse', 'cat-file', 'merge-base'];
+const ROUTE_GIT = ['rev-parse', 'cat-file', 'merge-base', 'ls-tree']; // #882: the before frame's ls-tree runs through the machine's exec now
 const exec: Exec = (file, args, opts) => (file === 'git' && ROUTE_GIT.some((command) => args.includes(command)) ? run(file, args, opts) : Promise.resolve({ stdout: '' }));
 
 interface Bases { base: string; repo: string; worktree: string; server: HiveServer; git(...args: string[]): Promise<string> }

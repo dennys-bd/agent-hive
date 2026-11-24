@@ -9,7 +9,7 @@ import { assemble, partPath, readPartFrom } from '../src/design-parts.js';
 import { parseTweaks } from '../src/design-tweaks.js';
 import { pluginSource } from '../src/hooks-settings.js';
 import { tempDir } from './temp-dir.js';
-import { HOST_PATHS } from './fake-machine.js';
+import { fakeMachine } from './fake-machine.js';
 
 // The plugin's two scripts (#241), run as an agent runs them and imported for their pure parts. The browser step of import-dc.mjs is not
 // run: CI has no Chrome.
@@ -111,7 +111,7 @@ test('check-hv.mjs reports each broken include in the words of the route\'s noti
   await writeFile(join(folder, 'parts', 'b.html'), '<p>b</p><hv-include src="a.html"></hv-include>');
   await symlink(join(folder, 'parts', 'a.html'), join(folder, 'parts', 'out.html'));
   for (let i = 1; i <= 5; i += 1) await writeFile(join(folder, 'parts', `p${i}.html`), `<i>${i}</i>${i < 5 ? `<hv-include src="p${i + 1}.html"></hv-include>` : ''}`);
-  const { html } = await assemble('home.hv.html', await readFile(join(folder, 'home.hv.html'), 'utf8'), readPartFrom(folder, HOST_PATHS));
+  const { html } = await assemble('home.hv.html', await readFile(join(folder, 'home.hv.html'), 'utf8'), readPartFrom(fakeMachine(), folder));
   const notices = [...html.matchAll(/hv-include: ([^<]*)<\/div>/g)].map(([, said]) => said).sort();
   const marker = ': hv-include: ';
   const findings = (await script.checkFolder(folder)).flatMap((line) => (line.includes(marker) ? [line.slice(line.indexOf(marker) + marker.length)] : [])).sort();
