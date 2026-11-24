@@ -14,12 +14,14 @@ export const TWEAK_TEXT_MAX = 200;
 export const TWEAK_NAME_MAX = 64;
 export const TWEAK_OPTIONS_MAX = 64;
 
-type Grouped = { group?: string };
+/** A tweak's condition (#1034): tweak name → the values under which it is shown; it holds when every key's value is one of its values. */
+export type TweakWhen = Readonly<Record<string, readonly DesignTweakValue[]>>;
+type Common = { group?: string; when?: TweakWhen };
 export type TweakDef =
-  | ({ type: 'enum'; options: string[]; default: string } & Grouped)
-  | ({ type: 'boolean'; default: boolean } & Grouped)
-  | ({ type: 'text'; default: string } & Grouped)
-  | ({ type: 'number'; default: number; min?: number; max?: number; step?: number } & Grouped);
+  | ({ type: 'enum'; options: string[]; default: string } & Common)
+  | ({ type: 'boolean'; default: boolean } & Common)
+  | ({ type: 'text'; default: string } & Common)
+  | ({ type: 'number'; default: number; min?: number; max?: number; step?: number } & Common);
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** A definition without its default (#241): all fitValue reads, so a default is checked before it is kept. */
 export type TweakShape = DistributiveOmit<TweakDef, 'default'>;
@@ -73,14 +75,48 @@ function shapeOf(raw: Record<string, unknown>): TweakShape | string {
   return typeof bounds === 'string' ? bounds : { type, ...bounds, ...grouped };
 }
 
-function defOf(name: string, raw: unknown): ({ name: string } & TweakDef) | string {
+// One key of a when (#1034): a tweak declared above, with a non-empty list of unique values it takes; a single value is a list of one
+function conditionOf(other: string, raw: unknown, above: TweakSchema): [string, DesignTweakValue[]] | string {
+  const def = above.find((tweak) => tweak.name === other);
+  if (def === undefined) return `when names "${other.slice(0, TWEAK_NAME_MAX)}", not a tweak declared above it`;
+  const values: unknown[] = Array.isArray(raw) ? raw : [raw];
+  if (values.length === 0 || values.length > TWEAK_OPTIONS_MAX || new Set(values).size !== values.length) {
+    return `when: ${other}'s values must be a non-empty list of unique values, at most ${TWEAK_OPTIONS_MAX}`;
+  }
+  const fitted = values.map((value) => fitValue(def, value));
+  const misfit = fitted.indexOf(undefined);
+  if (misfit !== -1) return `when: ${JSON.stringify(values[misfit])} does not fit ${other}`;
+  return [other, fitted.filter((value): value is DesignTweakValue => value !== undefined)];
+}
+
+// A condition that can never hold is refused rather than silently hiding a control (#1034)
+function whenOf(raw: unknown, above: TweakSchema): TweakWhen | string {
+  if (!isRecord(raw) || Object.keys(raw).length === 0) return 'when must be a non-empty object of tweak name to value';
+  const conditions = Object.entries(raw).map(([other, values]) => conditionOf(other, values, above));
+  const reason = conditions.find((condition): condition is string => typeof condition === 'string');
+  return reason ?? Object.fromEntries(conditions.filter((condition) => typeof condition !== 'string'));
+}
+
+function defOf(name: string, raw: unknown, above: TweakSchema): ({ name: string } & TweakDef) | string {
   if (!TWEAK_NAME.test(name)) return `"${name}" is not a tweak name: [a-z][a-z0-9-]*`;
   if (name.length > TWEAK_NAME_MAX) return `"${name.slice(0, 16)}…" is longer than ${TWEAK_NAME_MAX} characters`;
   if (!isRecord(raw)) return `${name}: a definition is an object`;
   const shape = shapeOf(raw);
   if (typeof shape === 'string') return `${name}: ${shape}`;
   const value = fitValue(shape, raw.default);
-  return value === undefined ? `${name}: the default does not fit` : ({ name, ...shape, default: value } as { name: string } & TweakDef);
+  if (value === undefined) return `${name}: the default does not fit`;
+  const when = raw.when === undefined ? undefined : whenOf(raw.when, above);
+  if (typeof when === 'string') return `${name}: ${when}`;
+  return { name, ...shape, default: value, ...(when === undefined ? {} : { when }) } as { name: string } & TweakDef;
+}
+
+// Each definition checked against those declared above it (#1034): a when names only an earlier tweak, so no cycle can form
+function defsOf(entries: [string, unknown][]): TweakSchema | string {
+  return entries.reduce<TweakSchema | string>((above, [name, raw]) => {
+    if (typeof above === 'string') return above;
+    const def = defOf(name, raw, above);
+    return typeof def === 'string' ? def : above.concat(def);
+  }, []);
 }
 
 const isDeclared = (value: string): value is DeclaredViewport => Object.hasOwn(DESIGN_VIEWPORT_PX, value);
@@ -104,9 +140,8 @@ export function parseTweaks(raw: unknown): ParsedTweaks {
   if (typeof viewports === 'string') return { ok: false, reason: viewports };
   const entries = Object.entries(tweaks);
   if (entries.length > TWEAKS_MAX) return { ok: false, reason: `at most ${TWEAKS_MAX} tweaks` };
-  const defs = entries.map(([name, def]) => defOf(name, def));
-  const reason = defs.find((def): def is string => typeof def === 'string');
-  return reason === undefined ? { ok: true, schema: defs.filter((def) => typeof def !== 'string'), viewports } : { ok: false, reason };
+  const schema = defsOf(entries);
+  return typeof schema === 'string' ? { ok: false, reason: schema } : { ok: true, schema, viewports };
 }
 
 /** Every tweak of `schema` with its value from `values` when it fits, else its default (#241); names outside the schema are dropped. */
@@ -118,4 +153,13 @@ export function settle(schema: TweakSchema, values: Readonly<Record<string, Desi
 export function sameState(schema: TweakSchema, a: Readonly<Record<string, DesignTweakValue>>, b: Readonly<Record<string, DesignTweakValue>>): boolean {
   const [left, right] = [settle(schema, a), settle(schema, b)];
   return schema.every(({ name }) => left[name] === right[name]);
+}
+
+/** The tweaks shown on `values` (#1034), settled first: one pass in declared order, so a tweak whose when names a tweak not shown is not
+ *  shown either. A hidden tweak's value stays applied; only its control is hidden. */
+export function shownTweaks(schema: TweakSchema, values: Readonly<Record<string, DesignTweakValue>>): ReadonlySet<string> {
+  const settled = settle(schema, values);
+  const holds = (when: TweakWhen, shown: ReadonlySet<string>): boolean =>
+    Object.entries(when).every(([other, allowed]) => shown.has(other) && allowed.includes(settled[other]));
+  return schema.reduce<ReadonlySet<string>>((shown, { name, when }) => (when === undefined || holds(when, shown) ? new Set(shown).add(name) : shown), new Set());
 }

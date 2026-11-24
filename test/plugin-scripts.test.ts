@@ -48,6 +48,16 @@ const BLOCKS: unknown[] = [
   { viewports: ['desktop', 2] }, { viewports: ['natural'] }, { viewports: ['mobile', 'mobile'] },
   { viewports: ['desktop'], ...Object.fromEntries(Array.from({ length: 32 }, (_, i) => [`t${i}`, { type: 'boolean', default: false }])) },
 ];
+// #1034: a conditional tweak through both copies, valid and one per refusal of its when
+const ABOVE = { layout: { options: ['board', 'list'], default: 'board' }, gap: { type: 'number', default: 8, min: 0, max: 24 } };
+const withWhen = (when: unknown): unknown => ({ ...ABOVE, density: { options: ['comfortable', 'compact'], default: 'comfortable', when } });
+const WHEN_BLOCKS: unknown[] = [
+  withWhen({ layout: 'list' }), withWhen({ layout: ['board', 'list'], gap: 8 }), withWhen(null), withWhen({}), withWhen('list'), withWhen(['list']),
+  withWhen({ density: 'compact' }), withWhen({ nope: 'x' }), withWhen({ viewports: 'desktop' }), withWhen({ layout: [] }), withWhen({ layout: ['list', 'list'] }),
+  withWhen({ layout: Array.from({ length: 65 }, (_, i) => `o${i}`) }), withWhen({ layout: 'grid' }), withWhen({ gap: 30 }), withWhen({ gap: '8' }),
+  { first: { type: 'boolean', default: true, when: { later: true } }, later: { type: 'boolean', default: true } },
+  { ...ABOVE, density: { options: ['comfortable', 'compact'], default: 'comfortable', when: { layout: 'list' } }, icons: { type: 'boolean', default: true, when: { density: 'compact' } } },
+];
 
 test('check-hv.mjs prints nothing and exits 0 on a clean folder, the plugin\'s skeleton included (#241)', async (t) => {
   const folder = await tempDir(t, 'hv-');
@@ -73,13 +83,14 @@ test('the skeleton is a responsive page: its block declares desktop, tablet and 
   assert.deepEqual(parseTweaks(JSON.parse(block)), { ok: true, schema: [], viewports: ['desktop', 'tablet', 'mobile'] });
 });
 
-test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path, fetch, a missing tag, a symbolic link, a broken and an invalid block, an unknown viewport (#241, #341)', async (t) => {
+test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path, fetch, a missing tag, a symbolic link, a broken and an invalid block, an unknown viewport, a when naming no tweak above (#241, #341, #1034)', async (t) => {
   const folder = await tempDir(t, 'hv-');
   await writeFile(join(folder, 'a.hv.html'), screen('<img src="https://x.test/a.png">\n<a href="../b.html">b</a>\n<script>fetch("data.json")</script>'));
   await writeFile(join(folder, 'b.hv.html'), screen().replace('</head>\n', ''));
   await writeFile(join(folder, 'c.hv.html'), screen(undefined, '{"layout":'));
   await writeFile(join(folder, 'd.hv.html'), screen(undefined, '{"layout":{"options":[],"default":"x"}}'));
   await writeFile(join(folder, 'e.hv.html'), screen(undefined, '{"viewports":["watch"]}'));
+  await writeFile(join(folder, 'f.hv.html'), screen(undefined, JSON.stringify(withWhen({ nope: 'x' }))));
   await symlink(join(folder, 'a.hv.html'), join(folder, 'link.html'));
   const { code, stdout } = await check(folder);
   const lines = stdout.trim().split('\n');
@@ -88,13 +99,14 @@ test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path
     /link\.html: a symbolic link$/, /^a\.hv\.html:9: reaches outside/, /^a\.hv\.html:10: reaches outside/, /^a\.hv\.html:11: reaches outside/,
     /^b\.hv\.html: <\/head> is missing or out of order$/, /^c\.hv\.html: the hv-tweaks block is not JSON$/, /^d\.hv\.html: hv-tweaks: layout: options must be/,
     /^e\.hv\.html: hv-tweaks: viewports: unknown viewport "watch"$/,
+    /^f\.hv\.html: hv-tweaks: density: when names "nope", not a tweak declared above it$/,
   ]) assert.ok(lines.some((line) => expected.test(line)), `${expected} not in:\n${stdout}`);
-  assert.equal(lines.length, 8, stdout);
+  assert.equal(lines.length, 9, stdout);
 });
 
-test('check-hv.mjs\'s tweak rules answer as src/design-tweaks.ts does on the same blocks, reasons included (#241)', async () => {
+test('check-hv.mjs\'s tweak rules answer as src/design-tweaks.ts does on the same blocks, a when included, reasons included (#241, #1034)', async () => {
   const script = await load<CheckHv>('check-hv.mjs');
-  for (const raw of BLOCKS) assert.deepEqual(script.parseTweaks(raw), parseTweaks(raw), JSON.stringify(raw)?.slice(0, 80));
+  for (const raw of [...BLOCKS, ...WHEN_BLOCKS]) assert.deepEqual(script.parseTweaks(raw), parseTweaks(raw), JSON.stringify(raw)?.slice(0, 120));
 });
 
 // The same broken includes through the route's assembly and through check-hv: each reason for each src, from both (#421)
