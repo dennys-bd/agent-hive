@@ -33,7 +33,7 @@ const FAKE_CLAUDE = [
   'done',
   `hook=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks.UserPromptSubmit[0].hooks[0].command)' "$settings")`,
   `printf '%s' '{"hook_event_name":"UserPromptSubmit","prompt":"the WSL lane"}' | sh -c "$hook"`,
-  'exec sleep 600',
+  'exec sleep 300', // bounded, so a run the server failed to kill still ends before the next lane's distro is gone
   '',
 ].join('\n');
 

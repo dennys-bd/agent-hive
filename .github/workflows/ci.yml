@@ -251,8 +251,8 @@ jobs:
             set -eu
             cd /tmp
             tarball="node-v$1-linux-x64.tar.xz"
-            curl -fsSLO "https://nodejs.org/dist/v$1/$tarball"
-            curl -fsSLO "https://nodejs.org/dist/v$1/SHASUMS256.txt"
+            curl --proto '=https' -fsSLO "https://nodejs.org/dist/v$1/$tarball"
+            curl --proto '=https' -fsSLO "https://nodejs.org/dist/v$1/SHASUMS256.txt"
             grep -x "[0-9a-f]*  $tarball" SHASUMS256.txt | sha256sum -c -
             tar -xJf "$tarball" -C /usr/local --strip-components=1
             test "$(node --version)" = "v$1"

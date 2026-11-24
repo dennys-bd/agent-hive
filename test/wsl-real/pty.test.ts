@@ -2,7 +2,7 @@
 // a line on its stdin, so its output and its exit reach the subscriber, who is listening by then.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { isRunning, openPty, realWsl, shellSpec, within } from './real-wsl.js';
 
 const PTY_MS = 10_000;
@@ -14,8 +14,8 @@ test('the pty output holds ação 🐝 after an echo (#948)', async (t) => {
   // the word rides the run's env, not its command line: the line is printed before it runs, so only the echo can put the word in the output
   const run = await openPty(t, machine, shellSpec('wsl948echo', await freshDir(), 'read -r go; echo "$WORD"', { WORD }));
   machine.pty.write('wsl948echo', GO);
-  await within(PTY_MS, async () => run.code() !== undefined, 'the echo\'s exit');
-  assert.ok(run.output().includes(WORD), run.output());
+  // the output, not the exit: ConPTY may hand over a run's last bytes after its exit
+  await within(PTY_MS, async () => run.output().includes(WORD), 'the echoed word', () => run.output());
 });
 
 test('after resize(cols, rows) the shell\'s stty size prints the new size (#948)', async (t) => {
@@ -26,8 +26,7 @@ test('after resize(cols, rows) the shell\'s stty size prints the new size (#948)
   const run = await openPty(t, machine, shellSpec('wsl948size', await freshDir(), command));
   machine.pty.resize('wsl948size', 132, 40);
   machine.pty.write('wsl948size', GO);
-  await within(PTY_MS, async () => run.code() !== undefined, 'the stty run\'s exit');
-  assert.ok(run.output().includes('40x132'), run.output());
+  await within(PTY_MS, async () => run.output().includes('40x132'), 'the new size', () => run.output());
 });
 
 test('exit 7 reports exit code 7 (#948)', async (t) => {
@@ -38,11 +37,12 @@ test('exit 7 reports exit code 7 (#948)', async (t) => {
   assert.equal(run.code(), 7);
 });
 
-test('after kill of a pty whose shell ran a marked sleep 600, pgrep -f of the marker inside the distro finds nothing within 10 s (#948)', async (t) => {
+test('after kill of a pty whose shell ran a marked sleep, pgrep -f of the marker inside the distro finds nothing within 10 s (#948)', async (t) => {
   const { machine, freshDir } = realWsl(t);
-  const marker = `hive-948-${randomUUID()}`;
-  // the marker after the sleep keeps the shell from exec'ing it: the shell, which holds the marker in its argv, outlives nothing it ran
-  const run = await openPty(t, machine, shellSpec('wsl948kill', await freshDir(), `sleep 600; : ${marker}`));
+  // a duration no other process holds: the sleep's own argv and the shell's command line both carry it, so neither may outlive the kill.
+  // The `:` after it keeps the shell from exec'ing the sleep, so the shell stays a process of its own
+  const marker = `sleep ${randomInt(600_000, 700_000)}`;
+  const run = await openPty(t, machine, shellSpec('wsl948kill', await freshDir(), `${marker}; :`));
   await within(PTY_MS, () => isRunning(machine, marker), 'the marked run inside the distro');
   await run.kill();
   await within(PTY_MS, async () => !(await isRunning(machine, marker)), 'no marked process left inside the distro');
