@@ -75,3 +75,17 @@ test('the unavailable machine\'s watch reports machine_unavailable through onErr
   await settle();
   assert.deepEqual(suppressed, []);
 });
+
+test('close() closes every machine the registry made that holds something, and leaves local alone (#945)', () => {
+  let localCloses = 0;
+  const closed: string[] = [];
+  const local2 = { ...fakeMachine(), close: () => { localCloses += 1; } };
+  const wsl = (distro: string) => ({ ...fakeMachine({ id: `wsl:${distro}` }), close: () => { closed.push(distro); } });
+  const machines = createMachines({ local: local2, platform: 'win32', wsl });
+  machines.for({ machine: 'wsl:A' });
+  machines.for({ machine: 'wsl:B' });
+  machines.for({ machine: 'wsl:A' });
+  machines.for({ machine: 'AB:CD' }); // an unavailable machine has nothing to close
+  machines.close();
+  assert.deepEqual([closed, localCloses], [['A', 'B'], 0]);
+});

@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { access, mkdir, rm, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBenchEvaluator, benchRunDeps } from './benchmark/evaluate-service.js';
 import { drafter, serial } from './benchmark/drafts.js';
@@ -24,7 +24,7 @@ import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js
 import { activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
 import { createLeftItems } from './left-items.js';
 import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
-import { commandShimDir, installCommandShims } from './command-shim.js';
+import { commandShimDir, installCommandShims, shimWords } from './command-shim.js';
 import { createConsoleStore } from './console.js';
 import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
@@ -132,6 +132,8 @@ import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccou
 import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
+import { helperBundle } from './wsl/helper-install.js';
+import { wslFactory } from './wsl/wsl-machine.js';
 import { type MachineFor, type Machines, pathsOf } from './machine.js';
 import { killStray, runTmpDir, withoutHiveEnv, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
@@ -154,6 +156,7 @@ import { flatten } from './flows.js';
 
 // #633: every name the server runs resolves per platform; on darwin and linux resolveExec hands it back unchanged
 const execFileAsync: Exec = createExec({ platform: process.platform, env: process.env, dirsFor: (name) => agentDirs(name, process.platform, process.env) });
+const execFileBuffer = promisify(execFile); // #945: wsl.exe's runner, which reads its output as Buffers (its own messages are UTF-16LE)
 const SSE_HEARTBEAT_MS = 25_000;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
@@ -354,17 +357,26 @@ export function createServer(deps: ServerDeps): HiveServer {
   const ghEnv: GhEnv = () => ghEnvOf(account);
   const baseExec = deps.exec ?? execFileAsync;
   const exec: Exec = withGhEnv(baseExec, ghEnv);
-  // #158: every task's machine; #931: a wsl: id gets a machine that refuses every call until 5.3 hands a factory. listen() binds the port after this
-  const machines = ghMachines(deps.machines ?? createMachines({
-    local: createLocalMachine({
-      exec: baseExec, launch, ...spawnOptions, home, secret: deps.secret, agents, pluginDir: pluginRender.dir, lspDir: workerLsp.dir, // #947: what a RunSpec's workspace resolves to
-      port: () => {
-        if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
-        return boundPort;
-      },
-    }),
-    platform: process.platform,
-  }), ghEnv);
+  // #158: every task's machine; #931: a wsl: id off win32 gets a machine that refuses every call. listen() binds the port after this
+  const hivePort = (): number => {
+    if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
+    return boundPort;
+  };
+  const localMachine = createLocalMachine({
+    exec: baseExec, launch, ...spawnOptions, home, secret: deps.secret, agents, pluginDir: pluginRender.dir, lspDir: workerLsp.dir, // #947: what a RunSpec's workspace resolves to
+    port: hivePort,
+  });
+  // #945: a distro's machine on win32 only; every process dependency is the server's, the token is the selected login's (#961), and the
+  // shims and the language are read at each start from the live config
+  const wsl = wslFactory(process.platform, {
+    command: ['wsl.exe'], run: (file, args, opts) => execFileBuffer(file, args, opts), spawn: (file, args, opts) => spawn(file, args, opts),
+    env: process.env, helperFile: helperBundle(), node: 'node', hivePort, secret: deps.secret, language: () => effectiveLanguage(),
+    shimWords: () => (live === undefined ? [] : shimWords(live.runtime.config, 'linux')), plugins: pluginRender, host: localMachine, ptys,
+    hostCwd: home, lend: () => account.selected.token(), log: (line) => log.info(line),
+  });
+  // kept before ghMachines wraps it, so close() reaches every machine it made (decision 14)
+  const registry = createMachines({ local: localMachine, platform: process.platform, wsl });
+  const machines = ghMachines(deps.machines ?? registry, ghEnv);
   const machineFor: MachineFor = (activity) => machines.for(activity);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
@@ -1625,6 +1637,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     treeWatch.close(); // #502: no watcher, poll or lease timer outlives the server
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
+    registry.close(); // #945: no distro's helper outlives the Hive; after the kills, as the decision orders
     semaphores?.stop(); // #798: no sweep outlives the server; after the kills, whose exits free permits and could re-arm it
     await shimsInstall; // #800: no install writes into a home that is going away
     await lsp.stopAll(); // #780: no language server outlives the Hive

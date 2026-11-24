@@ -18,7 +18,7 @@ import { serveMachine } from '../remote/machine-serve.js';
 import { createMux, type Mux } from '../remote/protocol.js';
 import { createStdioDecoder, encodeStdioFrame } from '../remote/stdio-frames.js';
 import { replaceFile } from '../replace-file.js';
-import { LOCAL_MACHINE } from '../types.js';
+import { type Exec, LOCAL_MACHINE } from '../types.js';
 
 export const RELAY_PORT_FILE = 'relay-port';
 const PORT_MAX = 65_535;
@@ -88,11 +88,17 @@ function refusingPty(): MachinePty {
   return { spawn: fail, write: fail, resize: fail, subscribe: fail, kill: fail, pid: fail, has: fail, adopt: fail, forget: fail };
 }
 
+/** A call's env over the helper's own (#945). execFile takes an env whole, so a lent GH_TOKEN alone would leave gh with no PATH or HOME;
+ *  over the mux the env is a call's additions, as wslExec's WSLENV adds to a distro's. No env: the process's own, untouched. */
+export const overOwnEnv = (exec: Exec, own: NodeJS.ProcessEnv): Exec => (file, args, opts) =>
+  exec(file, args, opts?.env === undefined ? opts : { ...opts, env: { ...own, ...opts.env } });
+
 /** The distro's own machine (#941): the local disk and exec, runDetached and the local watch, composed here rather than through
- *  createLocalMachine, whose pty half is a native module. serveMachine serves only fs, exec, run and watch. */
-export function helperMachine(info: MachineInfo): Machine {
+ *  createLocalMachine, whose pty half is a native module. serveMachine serves only fs, exec, run and watch. env: what a call's env lays
+ *  over, for exec and run alike: a run's env is as whole as execFile's. */
+export function helperMachine(info: MachineInfo, env: NodeJS.ProcessEnv = process.env): Machine {
   return {
-    id: LOCAL_MACHINE, ...localDisk(promisify(execFile)), run: runDetached, watch: localWatch, paths: pathsOf(info.platform),
+    id: LOCAL_MACHINE, ...localDisk(overOwnEnv(promisify(execFile), env)), run: (p) => runDetached({ ...p, env: { ...env, ...p.env } }), watch: localWatch, paths: pathsOf(info.platform),
     info: () => info, process: refuse('process'), pty: refusingPty(),
   };
 }
