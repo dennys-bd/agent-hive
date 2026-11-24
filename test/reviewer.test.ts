@@ -100,4 +100,6 @@ test('the catalogue lists hive:template-reviewer as a specialist of the plugin, 
   for (const part of ['"annotations"', '`red`', '`yellow`', 'only the JSON', '"kind": "fix"', '"kind": "advice"', '"span"', '"replacement"', '`span` and `replacement` null']) {
     assert.ok(body.includes(part), part);
   }
+  // #416: everything the reviewer uses arrives in its prompt, nothing is looked up at run time, and no runner is named (#445)
+  assert.doesNotMatch(body, /hive_|CLAUDE\.md|AGENTS\.md|conventions\.md|docsRepo|gh issue|Claude Code|\bworkers?\b/);
 });
