@@ -12,7 +12,7 @@ import { createServer } from '../src/server.js';
 import { CAP_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
 import type { Config, MemoryEntry, MemoryFile, MemoryKind, MemoryView, SettingsBody, Workspace } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_BODY_MAX, MEMORY_DESCRIPTION_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -48,7 +48,7 @@ async function compact(home: string): Promise<string> {
 async function start(t: TestContext, memoryCap = 4000, more: Workspace[] = []): Promise<{ base: string; url: string; home: string; records: RecordInput[] }> {
   const { home, repo } = await tempHive(t);
   const { facts, records } = fakeFacts(); // no facts.jsonl of the server's own: the stats test writes it
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, facts, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, facts, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -166,7 +166,7 @@ test('PUT …/memory/cap refuses a cap that is not an integer from 300 to 20000 
 
 test('PUT …/memory/cap before a setup answers 409 as every memory route does, and writes no file (#115)', async (t) => {
   const { home } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, facts: fakeFacts().facts, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, facts: fakeFacts().facts, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await send('PUT', `http://127.0.0.1:${port}/workspaces/${WORKSPACE}/memory/cap`, { cap: 6000 })).status, 409);

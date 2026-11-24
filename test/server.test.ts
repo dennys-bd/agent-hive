@@ -34,7 +34,7 @@ import type { RunSpec } from '../src/machine.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceItemRead, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, fakeMachine, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
+import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, fakeMachine, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem, withToplevel } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
@@ -95,7 +95,7 @@ const idle = (body: Omit<SettingsBody, 'workspaces'> = BODY): Omit<SettingsBody,
 async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BODY, log?: Logger, spawnOptions: FakeSpawnOptions = {}, extra: Partial<ServerDeps> = {}): Promise<Started> {
   const { home, repo } = await tempHive(t, NO_WORKER.has(body) ? 0 : 1);
   const { spawn, workers } = fakeSpawn(spawnOptions);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec: noGit, ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec: withToplevel(noGit), ...extra });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -561,7 +561,7 @@ test('kill on a worker whose process the pool does not know (Hive restarted) fre
   const previous = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, flows: config.comb.flows, ...flatten(config.comb.flows) }, { type: 'poll', source: 'board', items: await source.listItems() }).state; // occupied by a worker of a previous run
   const state: State = { ...previous, signal: 'yellow' }; // yellow: the freed task is not run again, so the freed worker stays visible
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: noGit, runtime: { config, sources }, state });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: withToplevel(noGit), runtime: { config, sources }, state });
   await server.listen(0);
   t.after(() => server.close());
   await server.dispatch({ type: 'stop', ptyId: state.workers[0].runId! });
@@ -655,7 +655,7 @@ test('GET /ptys counts the workers a stop would kill (#193) and lists them for t
     ],
   }, 'I1', { workerId: 'A' }), 'local:2', { workerId: 'B' }); // #629: the activities the runs point at, each with its stage run
   const server = createServer({
-    secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, exec: noGit,
+    secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit),
     runtime: { config, sources: createSources(config, factory) }, state,
   });
   const port = await server.listen(0);
@@ -678,7 +678,7 @@ test('every poll reads the source quota afterwards and persists it; a source wit
   assert.deepEqual(await json(postJson(`${base}/sources/refresh`)), { ok: true });
   assert.equal(server.getState()?.syncs.board?.quota, undefined);
   const { home, repo } = await tempHive(t, 1);
-  const withQuota = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory(0, QUOTA).factory, launchPty: fakeSpawn().spawn, exec: noGit });
+  const withQuota = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory(0, QUOTA).factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit) });
   const port = await withQuota.listen(0);
   t.after(() => withQuota.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200); // configure validates and writes; the poll runs in the background (#59)
@@ -729,7 +729,7 @@ test('the timer skips the source while nothing could start, and reads it again o
   const inner = fakeSourceFactory().factory;
   const { home, repo } = await tempHive(t);
   const server = createServer({
-    secret: SECRET, home, launchPty: fakeSpawn().spawn, exec: noGit,
+    secret: SECRET, home, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit),
     sourceFactory: (config) => {
       const board = inner(config);
       return { ...board, listItems: () => { polls += 1; return board.listItems(); } };
@@ -804,7 +804,7 @@ test('POST /settings reads the plan limits through the injected reader with no w
   let reads = 0;
   const { home, repo } = await tempHive(t);
   const server = createServer({
-    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit,
+    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit),
     readPlanLimits: async () => { reads += 1; return claudePlan({ ...PLAN, at: `2026-09-17T12:0${reads}:00.000Z` }); },
   });
   const port = await server.listen(0);
@@ -829,7 +829,7 @@ test('a failing agent keeps its last value and the Hive going; the reason is log
   let failWith: string | undefined = NO_TOKEN;
   const { home, repo } = await tempHive(t);
   const server = createServer({
-    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit, log,
+    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit), log,
     readPlanLimits: async () => (failWith ? claudePlanFailure(failWith) : claudePlan(PLAN)),
   });
   const port = await server.listen(0);
@@ -868,7 +868,7 @@ test('without a readPlanLimits dep the server never reads the plan limits and lo
 test('POST /tasks/:id/start under yellow opens the task in the pool with its slug, marked manualStart; 404 for an unknown task, 409 before the settings', async (t) => {
   const { home, repo } = await tempHive(t, 2);
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: noGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -1105,7 +1105,7 @@ test('a save\'s sourceAction effects stay pinned to that save\'s own runtime eve
 });
 
 test('GET / serves the built index.html and its hashed asset through express.static; the old /ui/*.js routes are gone', async (t) => {
-  const server = createServer({ secret: SECRET, home: await tempDir(t, 'home-'), sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit }); // setup mode: the page must load before any config
+  const server = createServer({ secret: SECRET, home: await tempDir(t, 'home-'), sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit) }); // setup mode: the page must load before any config
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -1256,7 +1256,7 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   };
   const stages: LegacyStage[] = [STAGES[0], { name: 'done', from: { board: ['In review'] }, onFinish: { board: [move('Done')] }, action: 'deleteActivity' }];
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -1411,7 +1411,7 @@ test('the first spawn refreshes the base and creates the worktree through deps.e
     spawned.push(workers.length);
     return { stdout: '' }; // nothing resolves origin/main here: the start falls back to the local base
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
@@ -1447,7 +1447,7 @@ test('a worktree git already lists on the task\'s branch is adopted: no fetch, n
     return { stdout: args.includes('list') ? listing : '' };
   };
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
@@ -2944,7 +2944,7 @@ test('a boot whose config lost a stage the saved state uses places its task in t
   const { home, repo } = await tempHive(t);
   const parked: Task = { item: { itemId: 'board:I7', source: 'board', id: '7', title: 'Task 7', body: '', url: 'https://github.com/acme/r/issues/7' }, stage: 'gone', boardColumn: 'Nowhere', auto: false };
   await saveState(home, withWork({ ...initialState(0), ...chained([...STAGES, { name: 'gone', from: {} }]), tasks: [parked] }, 'board:I7', { id: randomUUID(), slug: 'hive-7-task-7' })); // started: the save's poll keeps it past the listing (#568)
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { workspaces: workspacesAt(repo), ...onOwnStages(BODY) })).status, 200);

@@ -15,7 +15,7 @@ import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { fakeMachine } from './fake-machine.js';
 import { FOLDER_BODY_MESSAGE } from '../src/server-sessions.js';
 import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, writeTranscript } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, writeTranscript, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { workPath } from './fixtures/work.js';
@@ -47,7 +47,7 @@ async function start(t: TestContext, stdout: (args: string[]) => string = () => 
     git.push([file, ...args]);
     return { stdout: stdout(args) };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

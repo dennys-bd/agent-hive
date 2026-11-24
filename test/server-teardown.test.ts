@@ -9,7 +9,7 @@ import type { Exec, SettingsBody, Stage, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
-import { bodyFlows, AUTH, fakeLog, fakeSourceFactory, fakeSpawn, GITHUB_ENTRY, STAGES, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, fakeLog, fakeSourceFactory, fakeSpawn, GITHUB_ENTRY, STAGES, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { readyOn, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { HOST_PATHS } from './fake-machine.js';
@@ -57,7 +57,7 @@ async function start(t: TestContext, teardown: string, extra: Partial<Omit<Setti
     if (args.includes('--git-common-dir')) return { stdout: `${join(repo, '.git')}\n` };
     return { stdout: args.includes('list') ? listing : '' };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec, log: fakeLog().log });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(exec), log: fakeLog().log });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

@@ -16,7 +16,7 @@ import { createServer, type Runtime } from '../src/server.js';
 import { shellQuote } from '../src/shell-init.js';
 import { saveState } from '../src/state-store.js';
 import type { Activity, AgentAvailability, AgentId, Effect, EvaluateRow, Exec, HiveEvent, Stage, StageEvaluate, Task } from '../src/types.js';
-import { combConfig, tempHive } from './fakes.js';
+import { combConfig, tempHive, withToplevel } from './fakes.js';
 import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -227,7 +227,7 @@ test('POST /activities/:id/evaluate/stop ends the evaluation, stopped, with no v
   const local: Task = { ...TASK, auto: false, created: true };
   await saveState(home, { ...initialState(1), localCount: 1, tasks: [local] });
   const exec: Exec = (file) => (file === 'git' ? new Promise(() => undefined) : Promise.resolve({ stdout: '' })); // the evaluation stays in its worktree step
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

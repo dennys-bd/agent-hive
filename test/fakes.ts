@@ -24,6 +24,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { type Machine, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type RunResult } from '../src/machine.js';
 import { fakeMachine as localMachine } from './fake-machine.js';
+export { withToplevel } from './fake-machine.js';
 import { createPtyHost } from '../src/pty-host.js';
 import { AGENTS } from '../src/agents.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';

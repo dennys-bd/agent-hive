@@ -23,7 +23,7 @@ import type { Activity, Config, Exec, Source, SourceConfig, SourceSpec, State, T
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import { AUTH, STAGES, bodyFlows, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, STAGES, bodyFlows, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import type { RecordInput } from '../src/facts.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
@@ -54,7 +54,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
   const { facts, records } = fakeFacts();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: async () => ({ stdout: '' }), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: withToplevel(async () => ({ stdout: '' })), ...extra });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

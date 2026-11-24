@@ -13,7 +13,7 @@ import { saveState } from '../src/state-store.js';
 import type { Task } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
-import { fakeLog, tempHive } from './fakes.js';
+import { fakeLog, tempHive, withToplevel } from './fakes.js';
 import { savedActivityId, withWork, workPath } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
 import { directive, hiveFetch, SECRET } from './secret-client.js';
@@ -88,7 +88,7 @@ async function startFrames(t: TestContext, machine: Machine = fakeMachine()): Pr
   await writeFile(join(worktree, 'root.hv.html'), DESIGN);
   await saveState(made.home, withWork({ ...initialState(0), localCount: 1, tasks: [TASK] }, 'local:1', { id: savedActivityId(1), slug: SLUG }));
   const { log, lines } = fakeLog();
-  const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }), log, machines: fakeMachines(machine) });
+  const server = createServer({ secret: SECRET, home: made.home, exec: withToplevel(async () => ({ stdout: '' })), log, machines: fakeMachines(machine) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

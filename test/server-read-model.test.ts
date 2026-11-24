@@ -5,7 +5,7 @@ import { createGithubAccount } from '../src/github-account.js';
 import type { GhToken } from '../src/github-token.js';
 import type { Exec, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { join } from 'node:path';
 import { openReadModel, READ_MODEL_FILE } from '../src/read-model/db.js';
@@ -32,7 +32,7 @@ test('GET /repositories answers from the read model as the login gh names, with 
   const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE)); // the server's close() closes it
   db.setRepo(REPO_ROW);
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec, readModel: db, githubAccount: githubAccount() });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(exec), readModel: db, githubAccount: githubAccount() });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
@@ -51,7 +51,7 @@ test('a Settings save builds the GitHub adapters with the item store: the daemon
     stores.push(items);
     return fake.factory(spec);
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec, readModel: db, githubAccount: githubAccount() });
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec: withToplevel(exec), readModel: db, githubAccount: githubAccount() });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
@@ -70,14 +70,14 @@ test('the item store and HiveServer.refetchIssue refetch through the read loop; 
   };
   // Every read GitHub would answer fails, so the loop's refetch answers failed: only the loop says that, never a store of its own
   const failing: ReadAccess = { source: 'github:github.com:bia', rest: NO_REST, gql: NO_GQL };
-  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec, readModel: db, githubAccount: githubAccount(), readAccess: async () => failing });
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, exec: withToplevel(exec), readModel: db, githubAccount: githubAccount(), readAccess: async () => failing });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
   assert.equal(await stores[0]?.refetch(REPO, 12), 'failed');
   assert.equal(await server.refetchIssue(REPO, 13), 'failed', 'another number: the cooldown answers skipped for 12');
 
-  const bare = createServer({ secret: SECRET, home: (await tempHive(t)).home, sourceFactory: fake.factory, launchPty: fakeSpawn().spawn, exec, githubAccount: githubAccount() });
+  const bare = createServer({ secret: SECRET, home: (await tempHive(t)).home, sourceFactory: fake.factory, launchPty: fakeSpawn().spawn, exec: withToplevel(exec), githubAccount: githubAccount() });
   t.after(() => bare.close());
   assert.equal(await bare.refetchIssue(REPO, 12), 'skipped');
 });

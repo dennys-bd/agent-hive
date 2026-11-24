@@ -14,7 +14,7 @@ import { GIT_MESSAGE, MISSING_FILE_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-
 import { worktreePath } from '../src/worktree.js';
 import type { Exec, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, CLOSE_TAB_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, EDITOR_FILE_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS } from '../src/types.js';
-import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { fakeMachine, fakeMachines, HOST_PATHS } from './fake-machine.js';
@@ -52,7 +52,7 @@ async function startOps(t: TestContext, machine?: Machine): Promise<Ops> {
     calls.push([file, args]);
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, exec, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec), ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

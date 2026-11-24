@@ -13,7 +13,7 @@ import { PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, withToplevel } from './fakes.js';
 import { HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
@@ -51,7 +51,7 @@ async function start(t: TestContext, strayLines: () => string[] = () => []): Pro
     calls.push([file, ...args]);
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

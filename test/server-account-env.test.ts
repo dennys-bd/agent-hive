@@ -11,7 +11,7 @@ import { createGithubAccount } from '../src/github-account.js';
 import type { OpenResult } from '../src/types.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import { LOGGED_OUT } from './fixtures/accounts.js';
-import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -43,7 +43,7 @@ async function start(t: TestContext, env: Record<string, string> = {}, extra: Pa
   await writeCredentials({ claude: { work: { token: FAKE_TOKEN } }, github: { octo: { token: GH_TEST } } }, credentialsEnv);
   const server = createServer({
     secret: SECRET, home, log, facts, credentialsEnv, githubLogin: { env: credentialsEnv }, sourceFactory: fakeSourceFactory().factory, launchPty: spawn,
-    exec: async () => ({ stdout: '' }), ...extra,
+    exec: withToplevel(async () => ({ stdout: '' })), ...extra,
   });
   const port = await server.listen(0);
   t.after(() => server.close());

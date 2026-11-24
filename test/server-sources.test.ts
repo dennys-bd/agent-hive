@@ -11,7 +11,7 @@ import { renamesRefusal } from '../src/settings-save.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Source, SourceItem, SourceSpec, Task, Config, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, goneItem, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, goneItem, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CreateRefusedError, IssuePlacementError } from '../src/source-create.js';
 import { noCreateMessage, notInFlowNotice } from '../src/create-task.js';
@@ -47,7 +47,7 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
     };
   };
   const { log, lines } = fakeLog();
-  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, log, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: fakeSpawn().spawn, log, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

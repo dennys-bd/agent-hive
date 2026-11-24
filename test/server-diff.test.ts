@@ -10,7 +10,7 @@ import type { Checkpoint, Task, Exec, SettingsBody } from '../src/types.js';
 import { fileHash } from '../src/diff.js';
 import { reviewPath } from '../src/review-store.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -59,7 +59,7 @@ async function startDiffs(t: TestContext, tasks: (repo: string) => WithWork[]): 
     if (failure !== undefined) throw failure;
     return { stdout: DIFF };
   };
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

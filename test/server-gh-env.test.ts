@@ -5,7 +5,7 @@ import { initialState } from '../src/orchestrator.js';
 import { createServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import type { Exec, Stage, Task } from '../src/types.js';
-import { WORKSPACE, tempHive } from './fakes.js';
+import { WORKSPACE, tempHive, withToplevel } from './fakes.js';
 import { savedActivityId, withWork } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
@@ -29,7 +29,7 @@ async function pollEnvs(t: TestContext, accounts: Record<string, string>): Promi
     if (file === 'gh') envs.push(opts?.env);
     return { stdout: JSON.stringify({ data: {} }) };
   };
-  const server = createServer({ secret: SECRET, home, exec, credentialsEnv, githubLogin: { env: credentialsEnv } });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec), credentialsEnv, githubLogin: { env: credentialsEnv } });
   const port = await server.listen(0);
   t.after(() => server.close());
   const saved = await send(`http://127.0.0.1:${port}`, 'POST', '/settings', { ...settingsBody(repo, STAGES), accounts });

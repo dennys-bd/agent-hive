@@ -14,7 +14,7 @@ import { toWire } from '../src/wire-path.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Exec, FileText, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, EDITOR_FILE_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { savedActivityId, withKeptRecord, withWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
@@ -67,7 +67,7 @@ async function startBases(t: TestContext, isDeleted = false, isUnresolved = fals
     ? withKeptRecord(base0, 'local:1', savedActivityId(1), { slug: SLUG })
     : withWork(base0, 'local:1', { id: savedActivityId(1), slug: SLUG, base: { ref: BASE_REF, tellWorker: false } });
   await saveState(made.home, state);
-  const server = createServer({ secret: SECRET, home: made.home, exec: isOnMachine ? async () => ({ stdout: '' }) : exec, ...(isOnMachine ? { machines: fakeMachines(fakeMachine({ exec })) } : {}) });
+  const server = createServer({ secret: SECRET, home: made.home, exec: withToplevel(isOnMachine ? async () => ({ stdout: '' }) : exec), ...(isOnMachine ? { machines: fakeMachines(fakeMachine({ exec })) } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

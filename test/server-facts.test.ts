@@ -13,7 +13,7 @@ import { createServerFacts } from '../src/server-facts.js';
 import type { MemoryFile } from '../src/types.js';
 import type { HookPayload, SettingsBody, State, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { withWork, withLocal } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
@@ -34,7 +34,7 @@ async function start(t: TestContext, seed?: (home: string) => Promise<void>, bod
   const { home, repo } = await tempHive(t, 1); // one worker: the fake source's task starts
   await seed?.(home);
   const { facts, records } = fakeFacts();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, facts, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, facts, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const saved = await hiveFetch(`http://127.0.0.1:${port}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...body, workspaces: workspacesAt(repo) }) });
@@ -176,7 +176,7 @@ test('a throw inside any recorder is one error line and never reaches dispatch, 
 test('a writer that throws leaves the Hive working: the task spawns, a hook is answered, a refused request is answered (#742)', async (t) => {
   const { home, repo } = await tempHive(t, 1); // one worker: the fake source's task starts
   const facts = { write: (): void => { throw new Error('disk'); }, setLevel: () => undefined };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, facts, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, facts, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -354,7 +354,7 @@ test('the server hands its usage store every record its event log writes, and cl
   const kept: FactRecord[] = [];
   let closed = 0;
   const usage = { write: (record: FactRecord): void => { kept.push(record); }, timeline: () => undefined, close: (): void => { closed += 1; } };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, usage, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, usage, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const saved = await hiveFetch(`http://127.0.0.1:${port}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo) }) });

@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { createServer } from '../src/server.js';
-import { tempHive } from './fakes.js';
+import { tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // GET /settings/nested-repos (#653): what the card shows, read with the real git on a folder not saved yet.
@@ -20,7 +20,7 @@ test('GET /settings/nested-repos reads each listed path (its repository and base
     await run('git', ['-C', join(repo, path), 'remote', 'add', 'origin', url]);
   }
   await mkdir(join(repo, 'docs', 'agent'));
-  const server = createServer({ secret: SECRET, home, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}/settings/nested-repos`;

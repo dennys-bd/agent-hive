@@ -10,7 +10,7 @@ import { branchFor } from '../src/tasks.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Activity, Checkpoint, Exec, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { bareTask, savedTasks, type WithWork, workPath } from './fixtures/work.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { HOST_PATHS } from './fake-machine.js';
@@ -55,7 +55,7 @@ async function startRestores(t: TestContext, extra: Partial<WithWork> = {}): Pro
     if (command[0] === 'ls-remote') return { stdout: git.published === undefined ? '' : `${git.published}\trefs/heads/${BRANCH}\n` };
     return { stdout: '' }; // status: a clean worktree
   };
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

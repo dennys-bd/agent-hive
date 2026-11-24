@@ -10,7 +10,7 @@ import { LOCAL_BASES, LOCAL_MESSAGE, localOf, openPlace, startLocal } from '../s
 import type { Activity, Task, DeleteActivityScope, Exec, SettingsBody, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { bodyFlows, AUTH, fakeSourceFactory, fakeMachine, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, fakeSourceFactory, fakeMachine, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive, withToplevel } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -71,7 +71,7 @@ async function start(t: TestContext, deleteActivity: DeleteActivityScope = DELET
   const { home, repo } = await tempHive(t);
   const git = checkoutGit();
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: git.exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(git.exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

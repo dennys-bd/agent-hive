@@ -7,7 +7,7 @@ import { createServer, type HiveServer, type ServerDeps } from '../../src/server
 import { saveState } from '../../src/state-store.js';
 import type { Task, Exec, SettingsBody } from '../../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types.js';
-import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from '../fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from '../fakes.js';
 import { hiveFetch, SECRET } from '../secret-client.js';
 import { ignoredEntry, ordinary, renamed, statusText, untracked } from './porcelain-v2.js';
 import { savedTasks, type WithWork } from './work.js';
@@ -47,7 +47,7 @@ export async function startTree(t: TestContext, tasks: (repo: string) => WithWor
     if (args.includes('ls-files')) return { stdout: LISTED };
     return { stdout: args.includes('status') ? STATUS : '' };
   };
-  const server = createServer({ secret: SECRET, home, exec, ...extra });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec), ...extra });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

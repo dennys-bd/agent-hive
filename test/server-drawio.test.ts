@@ -5,7 +5,7 @@ import { request } from 'node:http';
 import { join } from 'node:path';
 import { createServer } from '../src/server.js';
 import { drawioPolicy } from '../src/server-drawio.js';
-import { fakeLog, tempHive } from './fakes.js';
+import { fakeLog, tempHive, withToplevel } from './fakes.js';
 import { directive, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -26,7 +26,7 @@ async function fixture(t: TestContext): Promise<string> {
 
 async function start(t: TestContext, drawioRoot: string): Promise<{ base: string; port: number }> {
   const { home } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, exec: async () => ({ stdout: '' }), log: fakeLog().log, drawioRoot });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(async () => ({ stdout: '' })), log: fakeLog().log, drawioRoot });
   const port = await server.listen(0);
   t.after(() => server.close());
   return { base: `http://127.0.0.1:${port}`, port };

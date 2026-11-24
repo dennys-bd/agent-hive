@@ -16,7 +16,7 @@ import { createSources } from '../src/source.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../src/types.js';
-import { AUTH, bodyFlows, combConfig, fakeSourceFactory, fakeSpawn, type FakeWorker, GITHUB_ENTRY, STAGES, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
+import { AUTH, bodyFlows, combConfig, fakeSourceFactory, fakeSpawn, type FakeWorker, GITHUB_ENTRY, STAGES, tempHive, WORKSPACE, workspacesAt, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 const MEMORY = { name: 'memory', limit: 1, reservation: '2m' };
@@ -149,7 +149,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 async function startHive(t: TestContext): Promise<{ base: string; server: HiveServer; workers: FakeWorker[]; repo: string; home: string }> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -190,7 +190,7 @@ test('a Hive started with its config and State has its semaphores from the first
   const { factory } = fakeSourceFactory();
   const config = parseConfig(combConfig({ sources: [GITHUB_ENTRY], path: repo, commands: [TEST_COMMAND], commandSemaphores: [MEMORY] }));
   const { spawn } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: async () => ({ stdout: '' }), runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(0), workspaces: [WORKSPACE] } });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: withToplevel(async () => ({ stdout: '' })), runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(0), workspaces: [WORKSPACE] } });
   await server.listen(0);
   t.after(() => server.close());
   await waitFor(() => isDeepStrictEqual(server.getState()?.semaphores, { memory: { runs: [], line: [] } }));
@@ -214,7 +214,7 @@ test('a Hive started with its config and State has its command shims written bef
   const { factory } = fakeSourceFactory();
   const config = parseConfig(combConfig({ sources: [GITHUB_ENTRY], path: repo, commands: [TEST_COMMAND], commandSemaphores: [MEMORY] }));
   const { spawn } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: async () => ({ stdout: '' }), runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(0), workspaces: [WORKSPACE] } });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: withToplevel(async () => ({ stdout: '' })), runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(0), workspaces: [WORKSPACE] } });
   await server.listen(0);
   t.after(() => server.close());
   assert.equal(existsSync(join(home, 'command-shims', 'pnpm')), true);

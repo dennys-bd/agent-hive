@@ -16,7 +16,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { worktreePath } from '../src/worktree.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { DAY, SESSION, sessionMeta, writeRollout } from './codex-rollouts.js';
@@ -73,7 +73,7 @@ async function twoActivities(t: TestContext, body: Omit<SettingsBody, 'workspace
     await hook?.();
     return { stdout: args.includes('--show-current') ? 'feature/x\n' : args.includes('status') ? ' M a.ts\n?? b.ts\n' : '' };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec) });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   assert.equal((await postJson(`${base}/settings`, { ...body, workspaces: workspacesAt(repo) })).status, 200);
@@ -237,7 +237,7 @@ test('a boot removes the temporary transcript a saved copy mark names in its own
   await server.close();
   await writeFile(join(home, 'state.json'), JSON.stringify({ ...saved, workers: [...saved.workers, forged] }));
   await writeFile(join(transcriptDir(fakeMachine(), two), `${source}.jsonl`), `${TRANSCRIPT}\n`); // as the crashed Hive left it
-  const again = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }) });
+  const again = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(async () => ({ stdout: '' })) });
   const next = `http://127.0.0.1:${await again.listen(0)}`;
   t.after(() => again.close());
   assert.equal((await postJson(`${next}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);

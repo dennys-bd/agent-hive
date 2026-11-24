@@ -10,7 +10,7 @@ import { createSources } from '../src/source.js';
 import { SourceNotConnectedError, SourceRateLimitError } from '../src/source-errors.js';
 import type { ItemField, Source, SourceItem, SourceSpec } from '../src/types.js';
 import { HOUR_MS } from '../src/usage.js';
-import { combConfig, fakeSpawn, GITHUB_ENTRY, goneItem, move, OPTIONS, tempHive, WORKSPACE } from './fakes.js';
+import { combConfig, fakeSpawn, GITHUB_ENTRY, goneItem, move, OPTIONS, tempHive, WORKSPACE, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // #812: two sources of no GitHub shape (no quota()), work and notes. A listing throws the fake's limited; every write its writeLimited, else
@@ -47,7 +47,7 @@ async function start(t: TestContext, cap = 0): Promise<Harness> {
   const sources = [{ ...GITHUB_ENTRY, name: 'work', repository: 'acme/app' }, { ...GITHUB_ENTRY, name: 'notes', number: 8 }];
   const config = parseConfig(combConfig({ sources, stages: STAGES, path: repo }));
   const server = createServer({
-    secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }),
+    secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, exec: withToplevel(async () => ({ stdout: '' })),
     runtime: { config, sources: createSources(config, factory) }, state: { ...initialState(cap), workspaces: [WORKSPACE] },
   });
   const port = await server.listen(0);

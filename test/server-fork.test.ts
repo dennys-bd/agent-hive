@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../src/server.js';
 import type { Exec, WorkspaceFork } from '../src/types.js';
-import { tempHive, workspacesAt } from './fakes.js';
+import { tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -27,7 +27,7 @@ function forkExec(compare: () => string): { exec: Exec; gh: string[][] } {
 
 async function startFork(t: TestContext, fork: WorkspaceFork | false | null, exec: Exec): Promise<{ base: string; repo: string }> {
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

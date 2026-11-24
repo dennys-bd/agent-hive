@@ -10,7 +10,7 @@ import { worktreePath } from '../src/worktree.js';
 import { activityOf } from '../src/activities.js';
 import { slugFor } from '../src/tasks.js';
 import { readyOn, workPath } from './fixtures/work.js';
-import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
+import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { POSIX_TEMP_REPO } from './posix-only.js';
 import { HOST_PATHS } from './fake-machine.js';
@@ -66,7 +66,7 @@ async function startTwo(t: TestContext, source: Record<string, unknown> = {}, ma
   const calls: string[][] = [];
   const sourceFactory = (): Source => ({ item: goneItem, resolveFields: async () => {}, listItems: async () => [...listed], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => OPTIONS });
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: spawn, exec: twoGit(calls) });
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: spawn, exec: withToplevel(twoGit(calls)) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
