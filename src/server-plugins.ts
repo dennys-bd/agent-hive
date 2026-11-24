@@ -7,10 +7,11 @@ import { previewUpdate } from './custom-merge.js';
 import { type CustomStore, MINE } from './custom-store.js';
 import { isRefusal, type RefusalCode, refusal, type StoreRefusal } from './custom-versions.js';
 import { readDismissed, writeDismissed } from './dismissed-store.js';
+import { renderWorkspaceOf } from './fork.js';
 import { HIVE_ORIGIN, type ItemSources, itemId } from './item-sources.js';
 import { findItem, readCatalogueRead, readItem, readLintInput, type StageRef } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { type CatalogueItem, ITEM_KINDS, type LintInputRead, UPDATE_CHOICES, type Workspace, type WorkspaceVariables } from './types.js';
+import { type CatalogueItem, ITEM_KINDS, type LintInputRead, UPDATE_CHOICES, type Workspace } from './types.js';
 
 const HTTP_CREATED = 201;
 const HTTP_NO_CONTENT = 204;
@@ -47,13 +48,14 @@ const MAX_KEY_LENGTH = 4096; // a key ends with its line's text, so it is as lon
 const DISMISSED = z.object({ version: z.string().nullable(), keys: z.array(z.string().max(MAX_KEY_LENGTH)).max(MAX_DISMISSED) });
 
 export interface PluginRouteDeps {
-  requireLive(res: Response): { runtime: { config: { comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables'>[]; flows: readonly { stages: readonly StageRef[] }[] } } } } | undefined;
+  requireLive(res: Response): { runtime: { config: { baseBranch?: string; comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>[]; flows: readonly { stages: readonly StageRef[] }[] } } } } | undefined;
   store: CustomStore;
   home: string;
   pluginSource: string;
   log: Pick<Logger, 'error' | 'warn'>;
 }
-type Handle = (req: Request, res: Response, sources: ItemSources, stages: readonly StageRef[], variables: WorkspaceVariables) => Promise<void>;
+type Renders = Pick<LintInputRead, 'variables' | 'builtIns'>;
+type Handle = (req: Request, res: Response, sources: ItemSources, stages: readonly StageRef[], renders: Renders) => Promise<void>;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const refuse = (res: Response, refused: StoreRefusal): void => void res.status(STATUS[refused.code]).json({ error: refused.message, code: refused.code });
@@ -77,9 +79,11 @@ function route(deps: PluginRouteDeps, handle: Handle) {
     const current = deps.requireLive(res);
     if (!current) return;
     try {
-      const { comb } = current.runtime.config;
-      const variables: WorkspaceVariables = Object.fromEntries(comb.workspaces.map((w) => [w.name, w.variables])); // #621: the lint input's
-      await handle(req, res, { home: deps.home, pluginSource: deps.pluginSource, workspaces: comb.workspaces }, comb.flows.flatMap((f) => f.stages), variables);
+      const { config } = current.runtime;
+      const rendered = config.comb.workspaces.map((w) => renderWorkspaceOf(config, w));
+      // #621, #742: the lint input's values and built-ins, by workspace name, from the one helper the plugin render uses
+      const renders: Renders = { variables: Object.fromEntries(rendered.map((w) => [w.name, w.variables])), builtIns: Object.fromEntries(rendered.map((w) => [w.name, w.builtIns])) };
+      await handle(req, res, { home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }, config.comb.flows.flatMap((f) => f.stages), renders);
     } catch (err) {
       deps.log.error(`plugins: ${req.method} ${req.path} failed: ${errorMessage(err)}`);
       res.status(HTTP_SERVER_ERROR).json({ error: ITEMS_ERROR_MESSAGE });
@@ -191,8 +195,8 @@ async function dismissTarget(s: ItemSources, id: string, version: string | null)
 // The editor's lint input and its dismissals (#327). A dismissal is not a file edit: the store's original_locked does not apply, and nothing
 // renders from it, so it is not queued with the store's writes
 function registerLintRoutes(app: Express, deps: PluginRouteDeps): void {
-  app.get('/api/lint-input', route(deps, async (_req, res, s, _stages, variables) => {
-    const read: LintInputRead = { ...(await readLintInput(s)), variables };
+  app.get('/api/lint-input', route(deps, async (_req, res, s, _stages, renders) => {
+    const read: LintInputRead = { ...(await readLintInput(s)), ...renders };
     res.json(read);
   }));
   app.get('/api/items/:id/dismissed', route(deps, async (req, res, s) => {

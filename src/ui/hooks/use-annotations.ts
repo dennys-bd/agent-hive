@@ -2,14 +2,14 @@ import { type RefObject, useCallback, useContext, useEffect, useMemo, useRef, us
 import type { AgentAnnotation } from '../../reviewer';
 import { parseTemplate } from '../../template';
 import { type LintAnnotation, lintTemplate } from '../../template-lint';
-import type { CatalogueItem, LintInputRead, VariableValue, WorkspaceVariables } from '../../types';
+import type { CatalogueItem, LintInputRead, VariableValue } from '../../types';
 import type { ItemEditor, WriteResult } from '@/hooks/use-item-editor';
 import { fileKeyOf, itemKeyOf, type Review, ReviewerContext, type Scope, useReviewer } from '@/hooks/use-reviewer';
 import type { MessageKey } from '@/i18n';
 import { agentFixOf, fixOf } from '@/lib/annotation-fix';
 import { getJson, sendJson } from '@/lib/api';
 import { HIVE_ORIGIN } from '@/lib/plugins';
-import { renderFor } from '@/lib/workspace-values';
+import { renderFor, type WorkspaceRenders } from '@/lib/workspace-values';
 import { writeWorkspaceValue } from '@/lib/workspace-variables-api';
 import { isMarkdown } from '@/lib/template-view';
 
@@ -23,7 +23,7 @@ export const checkOf = (a: EditorAnnotation): string => (isAgent(a) ? 'agent' : 
  * menu (4.3) and the assist footer (4.5) read it too. */
 export interface Annotations {
   list: readonly EditorAnnotation[]; // the open file's, not dismissed: the lint's, then the agent's
-  values: WorkspaceVariables; // #621: each workspace's variables from the lint input, which the preview, a chain's reach and the pane read
+  values: WorkspaceRenders; // #621, #742: each workspace's variables and built-ins from the lint input, which the preview, a chain's reach and the pane read
   writeValue(workspace: string, name: string, value: VariableValue | undefined): Promise<MessageKey | undefined>; // #621: through its route; the pane shows the answer's error
   review: Review; // the reviewer's setting, run and failure (#329)
   open?: EditorAnnotation; // the card shown
@@ -44,7 +44,7 @@ interface Failure { item: string; dismissal: string } // the dismissal a write d
 interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): void; setFailed(update: (last: Failure | undefined) => Failure | undefined): void }
 
 const NONE: readonly LintAnnotation[] = [];
-const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [], variables: {} };
+const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [], variables: {}, builtIns: {} };
 const FIX_STALE: MessageKey = 'plugins.annotations.fixStale';
 const VALUE_FAILED: MessageKey = 'plugins.variables.workspaceValueFailed';
 type SetVariables = (workspace: string, variables: Record<string, VariableValue>) => void;
@@ -60,7 +60,7 @@ const idOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.tit
 const isKeys = (value: unknown): value is string[] => Array.isArray(value) && value.every((key) => typeof key === 'string');
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isLintInput = (value: unknown): value is LintInputRead =>
-  isRecord(value) && Array.isArray(value.catalogue) && Array.isArray(value.scripts) && isRecord(value.variables);
+  isRecord(value) && Array.isArray(value.catalogue) && Array.isArray(value.scripts) && isRecord(value.variables) && isRecord(value.builtIns);
 function dismissedUrl(id: string, version?: string | null): string {
   const base = `/api/items/${encodeURIComponent(id)}/dismissed`;
   return version === undefined || version === null ? base : `${base}?${new URLSearchParams({ version })}`;
@@ -118,7 +118,7 @@ function useLint(item: CatalogueItem | undefined, text: string, input: LintInput
   const name = item?.name;
   return useMemo(() => {
     if (origin === undefined || kind === undefined || name === undefined) return NONE;
-    return lintTemplate(parseTemplate(text), { self: { origin, kind, name }, catalogue: input.catalogue, workspaces: workspaces.map((w) => renderFor(input.variables, w)), scripts: input.scripts });
+    return lintTemplate(parseTemplate(text), { self: { origin, kind, name }, catalogue: input.catalogue, workspaces: workspaces.map((w) => renderFor(input, w)), scripts: input.scripts });
   }, [origin, kind, name, text, input, workspaces]);
 }
 
@@ -211,7 +211,7 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
   const [refused, setRefused] = useState<FileNote<MessageKey>>();
   const fixError = refused !== undefined && refused.file === file ? refused.value : undefined;
   return {
-    list, values: input.variables, writeValue: (workspace, name, value) => sendValue(workspace, name, value, setVariables), review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
+    list, values: input, writeValue: (workspace, name, value) => sendValue(workspace, name, value, setVariables), review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
     error: hasFailed ? 'plugins.annotations.dismissFailed' : fixError,
     openAt: card.openAt, close: card.close,
     next: () => {

@@ -2356,7 +2356,7 @@ export interface ForkBuiltIn { remote: string; pr: PrTarget; baseRemote: string 
 export interface BuiltIns { fork: ForkBuiltIn | null; baseBranch: string | null; nestedRepos: readonly string[] }
 /** Each workspace's built-ins by its name (#742): what GET /api/lint-input answers beside `variables`. */
 export type WorkspaceBuiltIns = Record<string, BuiltIns>;
-export interface LintInputRead { catalogue: LintItem[]; scripts: string[]; variables: WorkspaceVariables } // #621: each workspace's values, by name
+export interface LintInputRead { catalogue: LintItem[]; scripts: string[]; variables: WorkspaceVariables; builtIns: WorkspaceBuiltIns } // #621: each workspace's values, #742: its built-ins, by name
 
 /** A conflict's two answers in a version's update (#324): keep the version's text, or take the shipped one. */
 export const UPDATE_CHOICES = ['mine', 'hive'] as const;

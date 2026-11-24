@@ -50,7 +50,7 @@ test("the open file's variables, each with its origin and a value per workspace:
 });
 
 test('a card line names where its value comes from, override, workspace value or default, none for a missing one, and is read only (#621, decision 1)', async () => {
-  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { testCommand: 'npm test' } } } }));
+  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { testCommand: 'npm test' } }, builtIns: {} } }));
   render(<PluginsWindow />);
   await open('new-build');
   await waitFor(() => expect(value('testCommand', 'agent-hive')).toHaveTextContent('npm test'));
@@ -91,7 +91,7 @@ test('a required variable with no value for a workspace names it in red; an unus
 });
 
 test('a workspace value from the lint input satisfies a required variable: its missing line goes (#621, decision 3)', async () => {
-  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { e2eCommand: 'pnpm e2e' } } } }));
+  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { e2eCommand: 'pnpm e2e' } }, builtIns: {} } }));
   render(<PluginsWindow />);
   await open('new-build');
   await waitFor(() => expect(within(row('e2eCommand')).queryByText(/falta/)).not.toBeInTheDocument());
@@ -220,7 +220,7 @@ test('the form\'s workspace value goes through its route and never the template,
 test('"remover" in the form takes the overrides out through the editor and the line falls back to the workspace value (#621, decision 2)', async () => {
   const user = userEvent.setup();
   const saves: SaveBody[] = [];
-  stubItems(serverOf({ save: saving(saves), lintInput: { catalogue: [], scripts: [], variables: { 'hive-site': { delivery: 'single' } } } }));
+  stubItems(serverOf({ save: saving(saves), lintInput: { catalogue: [], scripts: [], variables: { 'hive-site': { delivery: 'single' } }, builtIns: {} } }));
   render(<PluginsWindow />);
   await open('new-build');
   await waitFor(() => expect(value('delivery', 'hive-site')).toHaveTextContent('stacked'));
@@ -235,7 +235,7 @@ test('"remover" in the form takes the overrides out through the editor and the l
   expect(value('delivery', 'hive-site').nextElementSibling).toHaveTextContent('valor do workspace');
 });
 test('a workspace value this template cannot take is red on its line and tints the card, with the values it accepts in the lint line (#621, decision 3)', async () => {
-  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { delivery: 'trunk' } } } }));
+  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { delivery: 'trunk' } }, builtIns: {} } }));
   render(<PluginsWindow />);
   await open('new-build');
   expect(await within(row('delivery')).findByText('fora de stacked, single · agent-hive')).toHaveClass('text-destructive');
