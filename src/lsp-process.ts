@@ -95,16 +95,17 @@ class ServerProcess implements LspProcess {
   constructor(spec: ProcessSpec) {
     this.spec = spec;
     this.log = { channel: spec.channel.id, run: randomUUID() };
+    const run = commandOf(spec);
+    // #932: before the console run opens, so a machine that runs no long-lived process throws to the host with nothing begun
+    const child = 'failure' in run ? run : spec.machine.process(run.file, [...run.args], { cwd: spec.cwd, env: { ...spec.env, ...run.env }, windowsVerbatimArguments: run.windowsVerbatimArguments });
     spec.consoleStore.begin(spec.channel, this.log.run, runHeader(spec.label, new Date()));
     this.append(`${commandLine(`> ${spec.shown}`)}\r\n`);
     if (spec.notice !== undefined) this.append(`${spec.notice}\r\n`);
-    const run = commandOf(spec);
-    if ('failure' in run) {
+    if ('failure' in child) {
       this.exited = Promise.resolve();
-      process.nextTick(() => this.end(run.failure)); // after the constructor returns, as a spawn's own error is
+      process.nextTick(() => this.end(child.failure)); // after the constructor returns, as a spawn's own error is
       return;
     }
-    const child = spec.machine.process(run.file, [...run.args], { cwd: spec.cwd, env: { ...spec.env, ...run.env }, windowsVerbatimArguments: run.windowsVerbatimArguments });
     this.child = child;
     this.exited = new Promise((resolve) => child.once('close', () => resolve()));
     this.wire(child);

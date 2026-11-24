@@ -5,7 +5,7 @@ import { type ChannelView, timeoutLine } from '../src/console.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, Command, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakePtys, type FakePty, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakePtys, type FakePty, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workPath } from './fixtures/work.js';
 
@@ -35,7 +35,7 @@ const channelUrl = (base: string, id: string): string => `${base}/console/${enco
 async function start(t: TestContext, command: Command = TEST): Promise<{ base: string; ptys: FakePty[]; server: HiveServer }> {
   const { home, repo } = await tempHive(t);
   const { spawnPty, ptys } = fakePtys();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, spawnPty, exec: noGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, spawnPty, exec: withToplevel(noGit) });
   const port = await server.listen(0);
   t.after(async () => {
     for (const pty of ptys) pty.exit(); // a fake pty's kill exits nothing, and close() awaits every run's exit

@@ -10,7 +10,8 @@ import { startLocal } from './server-local.js';
 import { parseRunPick } from './run-pick.js';
 import { checkBase } from './worktree.js';
 import { sizeIn } from './terminal-wire.js';
-import { type Machine, MachineError } from './machine.js';
+import { hostOnlyRefusal } from './benchmark-guards.js';
+import { machineRefusal } from './machines.js'; // #931: a workspace on a machine the registry cannot serve is refused before anything is dispatched
 import type { HiveEvent, State, Task } from './types.js';
 import {
   DELETING_MESSAGE, OUTSIDE_FLOW_MESSAGE, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE,
@@ -47,17 +48,6 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   return undefined;
 }
 
-// #931: a workspace on a machine the registry cannot serve is refused before anything is dispatched. Any other failure is the spawn's to report, as before
-async function machineRefusal(machine: Machine, path: string): Promise<Refusal | undefined> {
-  try {
-    await machine.fs.stat(path);
-    return undefined;
-  } catch (err) {
-    if (!(err instanceof MachineError) || err.code !== MachineError.UNAVAILABLE) return undefined;
-    return { status: HTTP_CONFLICT, message: err.message, code: MachineError.UNAVAILABLE, machine: machine.id, ...(err.reason === undefined ? {} : { reason: err.reason }) };
-  }
-}
-
 /** The start the body asks for. `base: null` is the popup's default and drops a saved base. No string base, or a delete activity stage (which
  * never gets one): today's start. A base must be a branch git has and not the task's own (#131), else the answer is a 409 with the
  * reason and nothing starts. The body's workspace is checked like right-click › Workspace and saved with the start (#179). The body's run picks
@@ -70,6 +60,9 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if ('status' in task) return task;
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
+  // #932: an evaluate stage's agents run on this computer: refused before any machine call or dispatch
+  const remote = stageOf(current.state.stages, task.stage)?.action === 'evaluate' ? hostOnlyRefusal(workspace) : undefined;
+  if (remote) return remote;
   const machine = deps.machineFor(activityOf(current.state, itemId) ?? workspace); // a live activity's machine is frozen; else the workspace's
   const unavailable = await machineRefusal(machine, workspace.path);
   if (unavailable) return unavailable;

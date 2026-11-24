@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { taskOfWorker } from './activities.js';
+import { activityOfWorker, taskOfWorker } from './activities.js';
 import { liveRecord } from './record-kit.js';
 import { freeEndRefused } from './runs.js';
 import { exitOf } from './transitions.js';
@@ -17,7 +17,7 @@ import { workerReview } from './mcp-review.js';
 import { conventionsAnswer, forkConventions, nestedConventions, workerWorkspace } from './mcp-conventions.js';
 import { type Answer, livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { registerOptionalTools } from './mcp-optional.js';
-import { SOURCE_ACTIONS, type Stage, type SourceConfig, type CloseReason, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Task, type Worker } from './types.js';
+import { LOCAL_MACHINE, SOURCE_ACTIONS, type Stage, type SourceConfig, type CloseReason, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Task, type Worker } from './types.js';
 
 const SERVER_INFO = { name: 'hive', version: '1.0.0' }; // Claude Code names the tools mcp__hive__<tool>
 const RESULT_MAX_BYTES = 64 * 1024; // serialized, UTF-8
@@ -237,8 +237,10 @@ function registerConventionsTool(server: McpServer, deps: McpDeps, header: strin
     const worker = ptyId === undefined ? undefined : current?.state.workers.find((s) => s.runId === ptyId);
     if (!current || !worker) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
     const workspace = workerWorkspace(current.state, current.config, worker);
-    const fork = await forkConventions(deps.exec, workspace, current.config); // #854
-    const nested = await nestedConventions(deps.exec, workspace); // #653
+    // #932: the worker's activity's machine, frozen at birth; a worker with no workspace reads nothing, so the host is only a name there
+    const machine = deps.machineFor(activityOfWorker(current.state, worker) ?? workspace ?? { machine: LOCAL_MACHINE });
+    const fork = await forkConventions(machine, workspace, current.config); // #854
+    const nested = await nestedConventions(machine, workspace); // #653
     return reply(JSON.stringify(conventionsAnswer(current.state, current.config, worker, fork, nested, workspace)));
   }));
 }

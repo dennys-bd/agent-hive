@@ -1,4 +1,5 @@
 import { agentRefusal, defaultModel } from './agents.js';
+import { hostOnlyRefusal } from './benchmark-guards.js';
 import { noWorkspaceReason, taskWorkspace } from './config.js';
 import { DiffTooLarge, diffBase, taskPatch } from './diff.js';
 import { cutPatch, JUDGE_SCHEMA, judgePrompt, parseFindings, parseScores, REVIEW_SCHEMA, reviewerPrompt, type Work } from './evaluate-prompt.js';
@@ -135,6 +136,8 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
     const broken = (message: string): HiveEvent => ({ type: 'evaluateBroken', activityId: activity.id, runId, message });
     const workspace = taskWorkspace(runtime.config, task);
     if (!workspace) return broken(noWorkspaceReason(task));
+    const remote = hostOnlyRefusal(workspace); // #932: a fill or a transit lands here too: nothing spawns on the host for a distro's worktree
+    if (remote) return broken(remote.message);
     const rows = await resolveRows(deps, effect.stage, workspace.name, runtime.config);
     if ('broken' in rows) return broken(rows.broken);
     let cwd: string | undefined;

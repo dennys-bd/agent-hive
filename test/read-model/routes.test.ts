@@ -13,6 +13,7 @@ import type { CombConfig, Exec, RepoPrs, Workspace } from '../../src/types.js';
 import {
   CLOSING_PRS, COMMENT_ROW, commentRow, GQL_COMMENT, GQL_ISSUE, HEAD, ISSUE_ROW, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, SOURCE, SYNCED, T1, T2, T3, tempModel,
 } from './fixtures.js';
+import { fakeMachine } from '../fake-machine.js';
 
 const SITE = 'acme/site';
 const LATER = '2026-10-06T00:00:00Z';
@@ -46,7 +47,7 @@ async function routesOn(t: TestContext, options: Options = {}): Promise<Harness>
     },
   };
   const deps: RepoRouteDeps = {
-    requireLive: () => ({ state: initialState(0), runtime: { config: { comb: COMB } } }), exec,
+    requireLive: () => ({ state: initialState(0), runtime: { config: { comb: COMB } } }), machineFor: () => fakeMachine({ exec }),
     gql: async (query, variables) => {
       gqlCalls += 1;
       if (options.gql) return options.gql(query, variables);

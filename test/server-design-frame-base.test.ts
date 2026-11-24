@@ -12,7 +12,7 @@ import { framePolicy } from '../src/server-design-frame.js';
 import { saveState } from '../src/state-store.js';
 import type { Exec, Task } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { fakeLog, tempHive } from './fakes.js';
+import { fakeLog, tempHive, withToplevel } from './fakes.js';
 import { savedActivityId, withWork, workPath } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -71,7 +71,7 @@ async function startBaseFrames(t: TestContext): Promise<BaseFrames> {
   await commitDesign(worktreePath(HOST_PATHS, repo, SLUG), git);
   await saveState(made.home, withWork({ ...initialState(0), localCount: 1, tasks: [TASK] }, 'local:1', { id: savedActivityId(1), slug: SLUG, base: { ref: BASE_REF, tellWorker: false } }));
   const { log, lines } = fakeLog();
-  const server = createServer({ secret: SECRET, home: made.home, exec, log });
+  const server = createServer({ secret: SECRET, home: made.home, exec: withToplevel(exec), log });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

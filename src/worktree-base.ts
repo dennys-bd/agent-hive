@@ -1,7 +1,7 @@
 import type { Logger } from './log.js';
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
 import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
-import type { Machine } from './machine.js';
+import { type Machine, MachineError } from './machine.js';
 import { samePath } from './same-path.js';
 
 // The start point of a new worktree or checkout branch (#119, #131), out of worktree.ts, which was at 398 lines when a fork's sync came around
@@ -48,6 +48,8 @@ export async function gitOrWords(repo: string, args: string[], exec: Exec): Prom
   try {
     return (await exec('git', ['-C', repo, ...args])).stdout;
   } catch (err) {
+    // #932: an unavailable machine's error keeps its code, so a read over many workspaces skips it and a route answers its 409
+    if (err instanceof MachineError && err.code === MachineError.UNAVAILABLE) throw err;
     throw new Error(wordsOf(err));
   }
 }

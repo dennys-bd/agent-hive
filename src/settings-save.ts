@@ -1,4 +1,3 @@
-import { realpath } from 'node:fs/promises';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { migrateTransitions } from './config-migrate.js';
 import { flatten, flowOf } from './flows.js';
@@ -9,7 +8,8 @@ import { inFlow } from './tasks.js';
 import { parseSetup } from './setup-script.js';
 import { nestedProblemText, nestedRepoProblem } from './nested-check.js';
 import type { CombConfig, Config, Flow, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
-import { LOCAL_DISK } from './machine-local.js';
+import type { MachineFor } from './machine.js';
+import { machineRefusal } from './machines.js';
 import { workspacePathProblem } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -102,27 +102,47 @@ function busyWorkspaces(config: Config, state: State): Set<string> {
   }));
 }
 
+// #932: a workspace this save keeps as the live config holds it: the same name, path and machine
+const isUnchanged = (workspace: Workspace, live: Pick<Config, 'comb'> | undefined): boolean =>
+  live?.comb.workspaces.some((w) => w.name === workspace.name && w.path === workspace.path && w.machine === workspace.machine) === true;
+
+/** The workspaces whose folder the save can check (#932): one on an unavailable machine is the 409 when the save adds or changes it, and is left
+ *  unchecked when the save keeps it as it was, so a stopped distro never blocks a save of anything else. */
+async function reachable(workspaces: readonly Workspace[], machineFor: MachineFor, live: Pick<Config, 'comb'> | undefined): Promise<Workspace[] | Refusal> {
+  const kept: Workspace[] = [];
+  for (const workspace of workspaces) {
+    const refusal = await machineRefusal(machineFor(workspace), workspace.path);
+    if (refusal === undefined) kept.push(workspace);
+    else if (!isUnchanged(workspace, live)) return refusal;
+  }
+  return kept;
+}
+
 // Two workspaces that resolve to the same folder (a trailing slash, a symlink and its target): the pair, name first, first found wins.
-// Run only once every path is a confirmed git top level, so realpath never sees a bad one.
-async function sameFolderPair(workspaces: Workspace[]): Promise<[Workspace, Workspace] | undefined> {
-  const real = await Promise.all(workspaces.map((p) => realpath(p.path)));
+// Run only once every path is a confirmed git top level, so realpath never sees a bad one. #932: each folder on its own machine, and only a
+// pair on one machine compares: a distro's /home/u/r is not the host's
+async function sameFolderPair(workspaces: Workspace[], machineFor: MachineFor): Promise<[Workspace, Workspace] | undefined> {
+  const real = await Promise.all(workspaces.map((p) => machineFor(p).fs.realpath(p.path)));
   for (let i = 0; i < workspaces.length; i += 1) {
     for (let j = i + 1; j < workspaces.length; j += 1) {
-      if (real[i] === real[j]) return [workspaces[i], workspaces[j]];
+      if (workspaces[i].machine === workspaces[j].machine && real[i] === real[j]) return [workspaces[i], workspaces[j]];
     }
   }
   return undefined;
 }
 
-/** Why a save cannot take `next`'s workspaces (#179, #202): every folder must be a repo's top level (400), two workspaces may not resolve to
- * the same folder (400: a live task's worktree in one would show as an orphan, removable, under the other), and a workspace a running task
- * resolves to cannot be removed or re-pathed (409): its worker stays in the old repo. Any other workspace may come and go. */
-export async function workspacesRefusal(next: Config, live?: { config: Config; state: State }): Promise<Refusal | undefined> {
-  for (const { path } of next.comb.workspaces) {
-    const problem = await workspacePathProblem(LOCAL_DISK, path);
+/** Why a save cannot take `next`'s workspaces (#179, #202): every folder must be a repo's top level on its machine (400, #932), two workspaces
+ * may not resolve to the same folder (400: a live task's worktree in one would show as an orphan, removable, under the other), and a workspace a
+ * running task resolves to cannot be removed or re-pathed (409): its worker stays in the old repo. A new or changed workspace on an unavailable
+ * machine is that machine's 409 (#932). Any other workspace may come and go. */
+export async function workspacesRefusal(next: Config, machineFor: MachineFor, live?: { config: Config; state: State }): Promise<Refusal | undefined> {
+  const reached = await reachable(next.comb.workspaces, machineFor, live?.config);
+  if (!Array.isArray(reached)) return reached;
+  for (const workspace of reached) {
+    const problem = await workspacePathProblem(machineFor(workspace), workspace.path);
     if (problem) return { status: HTTP_BAD_REQUEST, message: problem };
   }
-  const same = await sameFolderPair(next.comb.workspaces);
+  const same = await sameFolderPair(reached, machineFor);
   if (same) return { status: HTTP_BAD_REQUEST, message: `workspaces ${same[0].name} and ${same[1].name} point at the same folder` };
   if (!live) return undefined;
   const busy = busyWorkspaces(live.config, live.state);
@@ -132,11 +152,15 @@ export async function workspacesRefusal(next: Config, live?: { config: Config; s
 }
 
 /** Why a save cannot take a workspace's nested repos (#653): the first path git says cannot be one, named after its workspace, with the cause
- * and its fix (400). The parser already checked each path's shape, and workspacesRefusal each folder. */
-export async function nestedRefusal(next: { comb: Pick<CombConfig, 'workspaces'> }): Promise<Refusal | undefined> {
-  for (const workspace of next.comb.workspaces) {
+ * and its fix (400). The parser already checked each path's shape, and workspacesRefusal each folder. #932: on the workspace's machine; an
+ * unchanged workspace on an unavailable machine is skipped, a new or changed one is the 409. */
+export async function nestedRefusal(next: { comb: Pick<CombConfig, 'workspaces'> }, machineFor: MachineFor, live?: Pick<Config, 'comb'>): Promise<Refusal | undefined> {
+  const reached = await reachable(next.comb.workspaces, machineFor, live);
+  if (!Array.isArray(reached)) return reached;
+  for (const workspace of reached) {
+    const machine = machineFor(workspace);
     for (const path of workspace.nestedRepos) {
-      const problem = await nestedRepoProblem(workspace.path, path, LOCAL_DISK.paths);
+      const problem = await nestedRepoProblem(workspace.path, path, machine.paths, machine.exec);
       if (problem) return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: nested repo ${path}: ${nestedProblemText(path, problem)}` };
     }
   }
@@ -148,11 +172,11 @@ const SCRIPTS = [['setup', ''], ['teardown', 'teardown ']] as const;
 
 /** Why a save cannot take a workspace's worktree scripts (#299, #654): the first line parseSetup refuses, named after its workspace and, for
  * the teardown, the script (400). A LOAD file is read only when the script runs, so its own lines are checked then. */
-export function setupRefusal(next: Config): Refusal | undefined {
+export function setupRefusal(next: Config, machineFor: MachineFor): Refusal | undefined {
   for (const workspace of next.comb.workspaces) {
     for (const [key, prefix] of SCRIPTS) {
       try {
-        parseSetup(workspace[key] ?? '', { allowLoad: true, paths: LOCAL_DISK.paths });
+        parseSetup(workspace[key] ?? '', { allowLoad: true, paths: machineFor(workspace).paths }); // #932: its machine's paths; paths never call the machine
       } catch (err) {
         return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: ${prefix}${(err as Error).message}` };
       }

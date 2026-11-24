@@ -36,7 +36,7 @@ test('configurado: a row shows its path, its repository and the workspace\'s bas
   answer = { repos: [{ path: 'docs', repository: 'acme/docs', base: 'origin/main' }], suggested: [] };
   const seen = renderNested({ nestedRepos: [DOCS] });
   expect(await screen.findByText('acme/docs · parte da mesma base do workspace, origin/main')).toBeInTheDocument();
-  expect(urls()).toContain(`/settings/nested-repos?${new URLSearchParams({ path: '/app', repos: 'docs' })}`);
+  expect(urls()).toContain(`/settings/nested-repos?${new URLSearchParams({ path: '/app', repos: 'docs', machine: 'local' })}`);
   expect(screen.getByRole('textbox', { name: 'caminho do repo aninhado 1' })).toHaveValue('docs');
   await user.click(screen.getByRole('button', { name: '+ repo aninhado' }));
   expect(last(seen).nestedRepos.map((r) => r.path)).toEqual(['docs', '']);

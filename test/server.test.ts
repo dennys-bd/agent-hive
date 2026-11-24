@@ -34,13 +34,14 @@ import type { RunSpec } from '../src/machine.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceItemRead, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, fakeMachine, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem } from './fakes.js';
+import { bodyFlows, AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, fakeMachine, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure, writeTranscript, goneItem, withToplevel } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flatten } from '../src/flows.js';
+import { createMachines, NOT_SUPPORTED, unavailableMachine } from '../src/machines.js';
 import { flowed } from './fixtures/main-flow.js';
 import { HOST_PATHS } from './fake-machine.js';
 
@@ -95,7 +96,7 @@ const idle = (body: Omit<SettingsBody, 'workspaces'> = BODY): Omit<SettingsBody,
 async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BODY, log?: Logger, spawnOptions: FakeSpawnOptions = {}, extra: Partial<ServerDeps> = {}): Promise<Started> {
   const { home, repo } = await tempHive(t, NO_WORKER.has(body) ? 0 : 1);
   const { spawn, workers } = fakeSpawn(spawnOptions);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec: noGit, ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, ...extra, exec: withToplevel(extra.exec ?? noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -182,6 +183,7 @@ function fakeGit(failing?: string): { exec: Exec; calls: string[][]; clear(): vo
 function refsGit(answers: { listing?: string; heads?: string[]; remotes?: string[]; refs?: string[] } = {}): { exec: Exec; calls: string[][]; answers: typeof answers } {
   const calls: string[][] = [];
   const exec: Exec = async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     const command = args.slice(2);
     calls.push(command);
     if (command[0] === 'worktree' && command[1] === 'list') return { stdout: answers.listing ?? '' };
@@ -351,6 +353,7 @@ test('a spawn creates the task worktree before the worker exists and launches it
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     calls.push([file, ...args]);
     if (args.includes('rev-parse')) throw new Error('not a ref'); // the branch does not exist yet: the add creates it
     return { stdout: '' };
@@ -366,6 +369,7 @@ test('a spawn creates the task worktree before the worker exists and launches it
 test('git refusing to create the worktree is a spawnFailed: the worker frees, the task keeps git\'s own words and no worker starts', async (t) => {
   const stderr = "fatal: 'hive/1-from-ready' is already checked out at '/repo/.claude/worktrees/hive-1-from-ready'\n";
   const exec: Exec = async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     if (args.includes('add')) throw Object.assign(new Error('Command failed: git …'), { stderr });
     if (args.includes('rev-parse')) throw new Error('not a ref');
     return { stdout: '' };
@@ -377,7 +381,10 @@ test('git refusing to create the worktree is a spawnFailed: the worker frees, th
   assert.equal(work0(server)?.error, SPAWN_FAILED + stderr.trim(), 'git\'s words, not execFile\'s command line');
   // A git that answers nothing at all (no repository, no git on PATH) fails at the very first command: the base step tolerates
   // its own failures, but without a listing there is no worktree to hand the worker, so the task stops here too.
-  const broken = await start(t, BODY, undefined, {}, { exec: async () => { throw new Error('fatal: not a git repository'); } });
+  const broken = await start(t, BODY, undefined, {}, { exec: async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's check passes (#932): the spawn is what this git fails
+    throw new Error('fatal: not a git repository');
+  } });
   await waitFor(() => work0(broken.server)?.error !== undefined);
   assert.equal(broken.workers.length, 0);
   assert.equal(work0(broken.server)?.error, `${SPAWN_FAILED}fatal: not a git repository`);
@@ -552,6 +559,21 @@ test('POST /ptys/:id/stop kills the live run and keeps the session and the workt
   assert.equal(workers.length, 1, 'stopped: nothing runs it again');
 });
 
+test('a config with a workspace on an unavailable wsl:X boots, says where it is in the log, and builds no distro machine before a route asks (#932)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const { factory } = fakeSourceFactory();
+  const [hive] = workspacesAt(repo);
+  const config = parseConfig(combConfig({ sources: BODY.sources, workspaces: [hive, { ...hive, name: 'site', path: '/home/u/site', machine: 'wsl:X' }] }));
+  const built: string[] = [];
+  const machines = createMachines({ local: fakeMachine({ exec: noGit }), platform: 'win32', wsl: (distro) => { built.push(distro); return unavailableMachine(`wsl:${distro}`, NOT_SUPPORTED); } });
+  const { log, lines } = fakeLog();
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, exec: withToplevel(noGit), log, runtime: { config, sources: createSources(config, factory) }, state: initialState(0), machines });
+  await server.listen(0);
+  t.after(() => server.close());
+  assert.ok(lines.some((line) => line.includes('workspace site: on wsl:X, its checkout is read when a route asks')), lines.join('\n'));
+  assert.deepEqual(built, [], 'no call reached the distro at boot');
+});
+
 test('kill on a worker whose process the pool does not know (Hive restarted) frees the worker directly', async (t) => {
   const { home, repo } = await tempHive(t);
   const { factory } = fakeSourceFactory();
@@ -561,7 +583,7 @@ test('kill on a worker whose process the pool does not know (Hive restarted) fre
   const previous = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, flows: config.comb.flows, ...flatten(config.comb.flows) }, { type: 'poll', source: 'board', items: await source.listItems() }).state; // occupied by a worker of a previous run
   const state: State = { ...previous, signal: 'yellow' }; // yellow: the freed task is not run again, so the freed worker stays visible
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: noGit, runtime: { config, sources }, state });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: spawn, exec: withToplevel(noGit), runtime: { config, sources }, state });
   await server.listen(0);
   t.after(() => server.close());
   await server.dispatch({ type: 'stop', ptyId: state.workers[0].runId! });
@@ -655,7 +677,7 @@ test('GET /ptys counts the workers a stop would kill (#193) and lists them for t
     ],
   }, 'I1', { workerId: 'A' }), 'local:2', { workerId: 'B' }); // #629: the activities the runs point at, each with its stage run
   const server = createServer({
-    secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, exec: noGit,
+    secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit),
     runtime: { config, sources: createSources(config, factory) }, state,
   });
   const port = await server.listen(0);
@@ -678,7 +700,7 @@ test('every poll reads the source quota afterwards and persists it; a source wit
   assert.deepEqual(await json(postJson(`${base}/sources/refresh`)), { ok: true });
   assert.equal(server.getState()?.syncs.board?.quota, undefined);
   const { home, repo } = await tempHive(t, 1);
-  const withQuota = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory(0, QUOTA).factory, launchPty: fakeSpawn().spawn, exec: noGit });
+  const withQuota = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory(0, QUOTA).factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit) });
   const port = await withQuota.listen(0);
   t.after(() => withQuota.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200); // configure validates and writes; the poll runs in the background (#59)
@@ -729,7 +751,7 @@ test('the timer skips the source while nothing could start, and reads it again o
   const inner = fakeSourceFactory().factory;
   const { home, repo } = await tempHive(t);
   const server = createServer({
-    secret: SECRET, home, launchPty: fakeSpawn().spawn, exec: noGit,
+    secret: SECRET, home, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit),
     sourceFactory: (config) => {
       const board = inner(config);
       return { ...board, listItems: () => { polls += 1; return board.listItems(); } };
@@ -804,7 +826,7 @@ test('POST /settings reads the plan limits through the injected reader with no w
   let reads = 0;
   const { home, repo } = await tempHive(t);
   const server = createServer({
-    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit,
+    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit),
     readPlanLimits: async () => { reads += 1; return claudePlan({ ...PLAN, at: `2026-09-17T12:0${reads}:00.000Z` }); },
   });
   const port = await server.listen(0);
@@ -829,7 +851,7 @@ test('a failing agent keeps its last value and the Hive going; the reason is log
   let failWith: string | undefined = NO_TOKEN;
   const { home, repo } = await tempHive(t);
   const server = createServer({
-    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit, log,
+    secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit), log,
     readPlanLimits: async () => (failWith ? claudePlanFailure(failWith) : claudePlan(PLAN)),
   });
   const port = await server.listen(0);
@@ -868,7 +890,7 @@ test('without a readPlanLimits dep the server never reads the plan limits and lo
 test('POST /tasks/:id/start under yellow opens the task in the pool with its slug, marked manualStart; 404 for an unknown task, 409 before the settings', async (t) => {
   const { home, repo } = await tempHive(t, 2);
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: noGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -1105,7 +1127,7 @@ test('a save\'s sourceAction effects stay pinned to that save\'s own runtime eve
 });
 
 test('GET / serves the built index.html and its hashed asset through express.static; the old /ui/*.js routes are gone', async (t) => {
-  const server = createServer({ secret: SECRET, home: await tempDir(t, 'home-'), sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit }); // setup mode: the page must load before any config
+  const server = createServer({ secret: SECRET, home: await tempDir(t, 'home-'), sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit) }); // setup mode: the page must load before any config
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -1250,13 +1272,14 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   let refuse = true; // the listing itself is refused: the first git call, so the failure carries its stderr and nothing else runs
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     listings.push([file, ...args]);
     if (refuse) throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { stderr: `${message}\n` });
     return { stdout: '' }; // nothing listed, no branch on the task: nothing to remove, the delete activity is done
   };
   const stages: LegacyStage[] = [STAGES[0], { name: 'done', from: { board: ['In review'] }, onFinish: { board: [move('Done')] }, action: 'deleteActivity' }];
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -1407,11 +1430,12 @@ test('the first spawn refreshes the base and creates the worktree through deps.e
   const spawned: number[] = []; // how many workers had started when each git command ran
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     calls.push([file, ...args]);
     spawned.push(workers.length);
     return { stdout: '' }; // nothing resolves origin/main here: the start falls back to the local base
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
@@ -1443,11 +1467,12 @@ test('a worktree git already lists on the task\'s branch is adopted: no fetch, n
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     calls.push([file, ...args]);
     return { stdout: args.includes('list') ? listing : '' };
   };
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
@@ -2944,7 +2969,7 @@ test('a boot whose config lost a stage the saved state uses places its task in t
   const { home, repo } = await tempHive(t);
   const parked: Task = { item: { itemId: 'board:I7', source: 'board', id: '7', title: 'Task 7', body: '', url: 'https://github.com/acme/r/issues/7' }, stage: 'gone', boardColumn: 'Nowhere', auto: false };
   await saveState(home, withWork({ ...initialState(0), ...chained([...STAGES, { name: 'gone', from: {} }]), tasks: [parked] }, 'board:I7', { id: randomUUID(), slug: 'hive-7-task-7' })); // started: the save's poll keeps it past the listing (#568)
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { workspaces: workspacesAt(repo), ...onOwnStages(BODY) })).status, 200);

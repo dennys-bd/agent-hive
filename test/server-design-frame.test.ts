@@ -1,43 +1,69 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises';
+import { once } from 'node:events';
 import { join } from 'node:path';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
 import { bridgeScript } from '../src/design-bridge.js';
 import { PART_REASONS, partNotice } from '../src/design-parts.js';
 import { initialState } from '../src/orchestrator.js';
 import { SECRET_HEADER, secretCookie } from '../src/secret.js';
 import { MachineError, type Machine } from '../src/machine.js';
 import { createServer } from '../src/server.js';
-import { createDesignFrameTokens, framePolicy, withBridge } from '../src/server-design-frame.js';
+import { createDesignFrameTokens, framePolicy, registerDesignFrameRoute, withBridge } from '../src/server-design-frame.js';
 import { saveState } from '../src/state-store.js';
 import type { Task } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
-import { fakeLog, tempHive } from './fakes.js';
+import { HOST_PATHS, fakeMachine, fakeMachines, fakeWsl, statsOf } from './fake-machine.js';
+import { fakeLog, tempHive, withToplevel } from './fakes.js';
 import { savedActivityId, withWork, workPath } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
 import { directive, hiveFetch, SECRET } from './secret-client.js';
 
-test('the token store answers one 64-hex token per folder for the whole boot, and nothing for a token it never minted (#108)', () => {
+test('the token store answers one 64-hex token per folder and machine for the whole boot, and nothing for a token it never minted (#108, #932)', () => {
   const tokens = createDesignFrameTokens();
-  const one = tokens.mint('/work/design');
+  const design = { machine: 'local', folder: '/work/design' };
+  const one = tokens.mint(design);
   assert.match(one, /^[0-9a-f]{64}$/);
-  assert.equal(tokens.mint('/work/design'), one, 'minting the folder again');
-  const other = tokens.mint('/work/other');
-  assert.notEqual(other, one);
-  assert.deepEqual([tokens.folderOf(one), tokens.folderOf(other), tokens.folderOf('0'.repeat(64))], ['/work/design', '/work/other', undefined]);
-  assert.notEqual(createDesignFrameTokens().mint('/work/design'), one, 'another boot, another token');
+  assert.equal(tokens.mint({ ...design }), one, 'minting the folder again');
+  const other = tokens.mint({ machine: 'local', folder: '/work/other' });
+  const onDistro = tokens.mint({ machine: 'wsl:X', folder: '/work/design' });
+  assert.equal(new Set([one, other, onDistro]).size, 3, 'the same path on another machine is another folder');
+  assert.deepEqual([tokens.folderOf(one), tokens.folderOf(onDistro), tokens.folderOf('0'.repeat(64))], [design, { machine: 'wsl:X', folder: '/work/design' }, undefined]);
+  assert.notEqual(createDesignFrameTokens().mint(design), one, 'another boot, another token');
 });
 
-test('the token store answers one token per base folder for the boot, apart from the disk folders: a disk token is no base token, nor the reverse (#675)', () => {
+test('the token store answers one token per base folder for the boot, apart from the disk folders: a disk token is no base token, nor the reverse (#675, #932)', () => {
   const tokens = createDesignFrameTokens();
-  const base = { top: '/repo', commit: 'a'.repeat(40), folder: 'design' };
+  const base = { machine: 'local', top: '/repo', commit: 'a'.repeat(40), folder: 'design' };
   const one = tokens.mintBase(base);
   assert.match(one, /^[0-9a-f]{64}$/);
-  assert.equal(tokens.mintBase({ ...base }), one, 'the same triple again');
+  assert.equal(tokens.mintBase({ ...base }), one, 'the same base again');
   assert.notEqual(tokens.mintBase({ ...base, commit: 'b'.repeat(40) }), one, 'another commit, another token');
-  const disk = tokens.mint('/repo/design');
+  assert.notEqual(tokens.mintBase({ ...base, machine: 'wsl:X' }), one, 'another machine, another token');
+  const disk = tokens.mint({ machine: 'local', folder: '/repo/design' });
   assert.deepEqual([tokens.baseOf(one), tokens.folderOf(one), tokens.baseOf(disk)], [base, undefined, undefined]);
+});
+
+test('a folder token minted on wsl:X serves its files through that machine, never the host\'s disk (#932)', async (t) => {
+  const page = '<!doctype html><html><head></head><body>on the distro</body></html>';
+  const files = new Map([['/home/u/wt/design/home.hv.html', page]]);
+  const missing = (path: string): MachineError => new MachineError(`ENOENT: ${path}`, { code: 'ENOENT' });
+  const distro = fakeWsl('X', { fs: {
+    stat: async (path: string) => { if (!files.has(path)) throw missing(path); return statsOf('file'); },
+    readFile: (async (path: string) => Buffer.from(files.get(path) ?? '')) as unknown as Machine['fs']['readFile'],
+  } });
+  const tokens = createDesignFrameTokens();
+  const app = express();
+  registerDesignFrameRoute(app, { tokens, log: fakeLog().log, machineFor: (a) => (a.machine === 'wsl:X' ? distro : fakeMachine()) });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const token = tokens.mint({ machine: 'wsl:X', folder: '/home/u/wt/design' });
+  const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/design-frame/${token}/home.hv.html`);
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /<body>on the distro<\/body>/);
 });
 
 test('framePolicy sandboxes the frame to scripts, names the route in every source it allows, and closes connections, frames, forms and base (#108)', () => {
@@ -88,7 +114,7 @@ async function startFrames(t: TestContext, machine: Machine = fakeMachine()): Pr
   await writeFile(join(worktree, 'root.hv.html'), DESIGN);
   await saveState(made.home, withWork({ ...initialState(0), localCount: 1, tasks: [TASK] }, 'local:1', { id: savedActivityId(1), slug: SLUG }));
   const { log, lines } = fakeLog();
-  const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }), log, machines: fakeMachines(machine) });
+  const server = createServer({ secret: SECRET, home: made.home, exec: withToplevel(async () => ({ stdout: '' })), log, machines: fakeMachines(machine) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

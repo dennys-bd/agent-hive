@@ -11,7 +11,7 @@ import type { OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { pluginRenderPath } from '../src/plugin-render.js';
 import { workerLspPath } from '../src/worker-lsp.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // The workers' language servers through the server (#803): the plugin written on boot, on a save and on an install's end, and every claude
@@ -47,7 +47,7 @@ async function start(t: TestContext): Promise<Started> {
   await installGopls(home);
   const { spawn, workers } = fakeSpawn();
   const { facts, records } = fakeFacts();
-  const server = createServer({ secret: SECRET, home, facts, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, facts, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

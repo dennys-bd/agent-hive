@@ -8,7 +8,8 @@ import { revealCommand } from './platform-commands.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from './server-files.js';
 import { isLocal, pathFs, REMOTE_REFUSAL } from './machine-fs.js';
 import { treeFolder, treeItem } from './tree-paths.js';
-import type { FolderEntries, IgnoredEntries, TaskTree, GitMark, State } from './types.js';
+import { type FolderEntries, type IgnoredEntries, type TaskTree, type GitMark, type State, WSL_MACHINE_PREFIX } from './types.js';
+import { toWindowsPath } from './wsl/wsl-paths.js';
 import { toWire } from './wire-path.js';
 import { taskDir, wordsOf } from './worktree.js';
 import { gitIn, parseStatus, TREE_STATUS_ARGS } from './git-status.js';
@@ -162,14 +163,17 @@ function registerRevealRoute(app: Express, { exec, requireLive, machineFor }: Pi
     const root = treeRoot(current.state, current.runtime.config, id, machineFor);
     if (typeof root !== 'string') return refuse(res, root);
     const machine = treeMachine(current.state, id, machineFor);
-    if (!isLocal(machine)) return refuse(res, REMOTE_REFUSAL); // the file manager is this computer's; another machine's folder is not on it
+    // the file manager is this computer's; a distro's folder is on it too, at \\wsl.localhost\<distro>\… (#932), any other machine's is not
+    const distro = machine.id.startsWith(WSL_MACHINE_PREFIX) ? machine.id.slice(WSL_MACHINE_PREFIX.length) : undefined;
+    if (!isLocal(machine) && distro === undefined) return refuse(res, REMOTE_REFUSAL);
     const { path } = (req.body ?? {}) as { path?: unknown };
     if (path !== undefined && (typeof path !== 'string' || path === '')) return refuse(res, { status: HTTP_BAD_REQUEST, message: REVEAL_BODY_MESSAGE });
     try {
       const item = path === undefined ? root : await treeItem(root, path, pathFs(machine));
       if (typeof item !== 'string') return refuse(res, item);
       const isFile = path !== undefined && !(await machine.fs.lstat(item)).isDirectory(); // xdg-open would launch a file: Linux opens its folder
-      const [file, args] = revealCommand(process.platform, item, isFile); // an unsupported platform throws here and answers 500 with its reason (#658)
+      // an unsupported platform throws here and answers 500 with its reason (#658); a wsl: machine exists on win32 only, so Explorer (#932)
+      const [file, args] = distro === undefined ? revealCommand(process.platform, item, isFile) : revealCommand('win32', toWindowsPath(distro, item), isFile);
       await exec(file, [...args]);
       res.status(HTTP_NO_CONTENT).end();
     } catch (err) {

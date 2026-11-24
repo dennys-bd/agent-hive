@@ -12,7 +12,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import type { Task, Exec, PrReviewFile, Stage, TaskPr } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { tempHive } from './fakes.js';
+import { tempHive, withToplevel } from './fakes.js';
 import { NO_GQL } from './read-model/fixtures.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -135,7 +135,7 @@ export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, opts: S
   db.setRepo({ source: PR_SOURCE, repository: REPOSITORY, url: 'https://github.com/acme/app', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: null, methods: ['merge', 'squash'] });
   for (const n of [7, 8, 9]) seedPr(db, n);
   const readAccess = async () => ({ source: PR_SOURCE, rest: (path: string, etag?: string) => (gh.rest ?? UNCHANGED)(path, etag), gql: NO_GQL });
-  const server = createServer({ secret: SECRET, home, exec: ghOf(gh), readModel: db, readAccess, ...(log ? { log } : {}) });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(ghOf(gh)), readModel: db, readAccess, ...(log ? { log } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

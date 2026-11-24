@@ -179,6 +179,7 @@ test('a last hive choice whose entry the preview no longer offers opens on the s
   await writeDecomposition('a-I1', { source: 'hive', entry: { flow: 'gone' } });
   show();
   await screen.findByRole('dialog', { name: 'Criar tarefas' });
-  expect(screen.getByLabelText('entra em')).toHaveTextContent('main');
+  // the title comes from the last choice before the preview lands (the dialog is still aria-busy): wait for the field, as a slow runner needs
+  expect(await screen.findByLabelText('entra em')).toHaveTextContent('main');
   expect(createTasks()).toBeEnabled();
 });

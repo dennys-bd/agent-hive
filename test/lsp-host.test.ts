@@ -9,7 +9,8 @@ import type { CatalogLoad, SchemaCatalog } from '../src/json-schemas.js';
 import { parseConfig } from '../src/config.js';
 import { editorDir } from '../src/editor-install.js';
 import { createLspHost, type LspHost } from '../src/lsp-host.js';
-import type { Machine } from '../src/machine.js';
+import { type Machine, MachineError } from '../src/machine.js';
+import { unavailableMachine } from '../src/machines.js';
 import { serverDef } from '../src/languages.js';
 import { initialState } from '../src/orchestrator.js';
 import { EDITOR_DEFAULTS, type EditorConfig, type ServerId } from '../src/types.js';
@@ -77,6 +78,24 @@ test('the host resolves the folder and starts the server on the activity\'s mach
   const { lsp, root } = await host(t, EDITOR_DEFAULTS, 60_000, {}, undefined, catalog({ associations: [] }), machine);
   await lsp.attach(new FakeSocket(), ACTIVITY, 'pyright', 'pyright-langserver');
   assert.deepEqual(started, [root]);
+});
+
+test('a machine that runs no long-lived process closes the socket as out of scope, with no console run and no error logged (#932)', async (t) => {
+  const base = fakeMachine();
+  const machine: Machine = { ...base, id: 'wsl:X', process: () => { throw new MachineError('machine wsl:X runs no long-lived process over the mux', { code: 'not_supported' }); } };
+  const logged: string[] = [];
+  const { lsp, store } = await host(t, EDITOR_DEFAULTS, 60_000, {}, { error: (line) => logged.push(line) }, catalog({ associations: [] }), machine);
+  const socket = new FakeSocket();
+  await lsp.attach(socket, ACTIVITY, 'pyright', 'pyright-langserver');
+  assert.deepEqual([socket.closed, store.channels(), logged], [{ code: 4403, reason: 'no language server on this machine' }, [], []]);
+});
+
+test('an unavailable machine closes the socket as out of scope, with no error logged (#932)', async (t) => {
+  const logged: string[] = [];
+  const { lsp, store } = await host(t, EDITOR_DEFAULTS, 60_000, {}, { error: (line) => logged.push(line) }, catalog({ associations: [] }), unavailableMachine('wsl:X', 'not_windows'));
+  const socket = new FakeSocket();
+  await lsp.attach(socket, ACTIVITY, 'pyright', 'pyright-langserver');
+  assert.deepEqual([socket.closed, store.channels(), logged], [{ code: 4403, reason: 'no language server on this machine' }, [], []]);
 });
 
 test('a socket gets { root, log } first; two sockets on one key share one process and one initialize (#780)', async (t) => {

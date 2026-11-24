@@ -13,7 +13,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { worktreePath } from '../src/worktree.js';
 import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
-import { bodyFlows, AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive, withToplevel } from './fakes.js';
 import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workPath } from './fixtures/work.js';
@@ -77,6 +77,7 @@ async function start(t: TestContext, setup: string, gitHeld?: Promise<void>, mac
   await mkdir(gitDir, { recursive: true });
   const { log, lines } = fakeLog();
   const exec: Exec = async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932), never held: withToplevel answers the folder
     lines.push(`GIT ${args.join(' ')}`);
     await gitHeld; // a test holds the spawn in its git
     if (args.includes('worktree') && args.includes('add')) await mkdir(args[args.indexOf('--') + 1], { recursive: true });
@@ -84,7 +85,7 @@ async function start(t: TestContext, setup: string, gitHeld?: Promise<void>, mac
     return { stdout: args.includes('--absolute-git-dir') ? `${gitDir}\n` : '' };
   };
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec, log, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec), log, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

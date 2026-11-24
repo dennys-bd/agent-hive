@@ -130,8 +130,9 @@ async function openNow(deps: TaskRouteDeps, current: LiveView, task: Task, open:
   await answerOpen(deps, await deps.dispatch(openEvent(open, activityId), open.size), res);
 }
 
-// The machine a first open's disk is on: its activity's when it has one, else the workspace's (the local machine until node 9)
-const machineOf = (deps: Pick<TaskRouteDeps, 'machineFor'>, current: LiveView, task: Task): Machine => deps.machineFor(activityOf(current.state, task.item.itemId) ?? {});
+// The machine a first open's disk is on: its activity's when it has one (frozen at birth), else the workspace's (#932)
+const machineOf = (deps: Pick<TaskRouteDeps, 'machineFor'>, current: LiveView, task: Task, workspace: Pick<Workspace, 'machine'>): Machine =>
+  deps.machineFor(activityOf(current.state, task.item.itemId) ?? workspace);
 
 // A first open that prepares the worktree (#351, #576), with or without setup steps. openWorktreeRun is synchronous, dispatch reduces before its own first await and nothing was
 // awaited since openTask, so the mark lands in the same turn as the checks: a second open, Start, Continue or Restart is refused from here on,
@@ -143,7 +144,7 @@ async function openWithSetup(deps: OpenRouteDeps, current: LiveView, task: Task,
   if (!born) return noActivity(res);
   const { activityId, settled } = born;
   const base = shownBase(plan.place.base?.ref, workspaceBase(current.runtime.config, plan.workspace)); // #390: the branch row's
-  const setup = openWorktreeRun(machineOf(deps, current, task), deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base, nested: plan.workspace.nestedRepos });
+  const setup = openWorktreeRun(machineOf(deps, current, task, plan.workspace), deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base, nested: plan.workspace.nestedRepos });
   await Promise.all([settled, deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() })]);
   const logged = setup.machine; // the machine whose exec writes into the setup run
   let refusal: Refusal | undefined;
@@ -234,7 +235,7 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   if (activity?.workerId !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: RUNNING_MESSAGE });
   const plan = planWorktree(current, task, activity, body);
   if ('status' in plan) return refuse(res, plan);
-  await openFirst(deps, current, task, plan, open, res, deps.machineFor(activity ?? {}));
+  await openFirst(deps, current, task, plan, open, res, deps.machineFor(activity ?? plan.workspace)); // #932: no activity yet: the workspace's machine
 }
 
 /** Abrir sessão on any task (#164, #237, #283): the worktree first when the task has none or it is gone from disk (#208), then a terminal (openTerminal), or an

@@ -10,10 +10,10 @@ import { worktreePath } from '../src/worktree.js';
 import { activityOf } from '../src/activities.js';
 import { slugFor } from '../src/tasks.js';
 import { readyOn, workPath } from './fixtures/work.js';
-import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive } from './fakes.js';
+import { AUTH, STAGES, bodyFlows, fakeSpawn, goneItem, GITHUB_ENTRY, launchFlag, type FakeWorker, OPTIONS, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { POSIX_TEMP_REPO } from './posix-only.js';
-import { HOST_PATHS } from './fake-machine.js';
+import type { Machine, Machines } from '../src/machine.js';
+import { fakeMachine, fakeWsl, HOST_PATHS, wslMachines } from './fake-machine.js';
 
 // Several workspaces per Comb (#179): two git repos, hive and site, behind one GitHub-shaped source whose listing a test fills.
 const ORPHAN = 'hive-9-gone'; // a worktree every repo's git lists under .hive/worktrees, owned by no task
@@ -58,7 +58,7 @@ function twoGit(calls: string[][]): Exec {
   };
 }
 
-async function startTwo(t: TestContext, source: Record<string, unknown> = {}, maxConcurrent = 2, stages: Stage[] = STAGES): Promise<Two> {
+async function startTwo(t: TestContext, source: Record<string, unknown> = {}, maxConcurrent = 2, stages: Stage[] = STAGES, machinesOf?: (local: Machine) => Machines): Promise<Two> {
   const hive: Workspace = { name: 'hive', path: (await tempHive(t)).repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
   const { home, repo } = await tempHive(t, maxConcurrent);
   const site: Workspace = { name: 'site', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
@@ -66,7 +66,9 @@ async function startTwo(t: TestContext, source: Record<string, unknown> = {}, ma
   const calls: string[][] = [];
   const sourceFactory = (): Source => ({ item: goneItem, resolveFields: async () => {}, listItems: async () => [...listed], setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => OPTIONS });
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: spawn, exec: twoGit(calls) });
+  const exec = withToplevel(twoGit(calls));
+  const machines = machinesOf?.(fakeMachine({ exec, launch: spawn, home })); // #932: the host over the same git, and the test's distros
+  const server = createServer({ secret: SECRET, home, sourceFactory, launchPty: spawn, exec, ...(machines === undefined ? {} : { machines }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -279,14 +281,40 @@ test('GET /worktrees lists every workspace\'s worktrees, each row tagged with it
   assert.ok(two.calls.length > 0 && two.calls.every((c) => c[2].startsWith(two.site.path)));
 });
 
-// The whole test is skipped on win32: saving the wsl: workspace is what every assertion stands on, and the lane's temp repo is a C:\ path
-test('a start on a workspace whose machine is unavailable answers 409 machine_unavailable with the machine and the reason, and dispatches nothing (#931)', { skip: POSIX_TEMP_REPO }, async (t) => {
-  const two = await startTwo(t, {}, 0);
-  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, { ...two.site, machine: 'wsl:X' }] })).status, 200);
+test('a start on a workspace whose machine went unavailable after its save answers 409 machine_unavailable with the machine and the reason, and dispatches nothing (#931, #932)', async (t) => {
+  let isDown = false;
+  const two = await startTwo(t, {}, 0, STAGES, (local) => wslMachines(local, { X: fakeWsl('X', { isDown: () => isDown }) }));
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, { ...two.site, machine: 'wsl:X', path: '/home/u/site' }] })).status, 200);
+  isDown = true;
   two.listed.push(item('1', 'site'));
   await two.server.poll();
   const refused = await postJson(`${two.base}/tasks/board:I1/start`, { base: null });
   assert.equal(refused.status, 409);
   assert.deepEqual(await refused.json(), { error: 'machine wsl:X is unavailable: not_windows', code: 'machine_unavailable', machine: 'wsl:X', reason: 'not_windows' });
   assert.deepEqual([two.workers.length, activityOf(two.server.getState()!, 'board:I1')], [0, undefined], 'nothing dispatched: no worker, no activity');
+});
+
+test('a save keeps a workspace whose machine went unavailable when it is unchanged: trusted domains still save; a new workspace on an unavailable machine is 409 (#932)', async (t) => {
+  let isDown = false;
+  const two = await startTwo(t, {}, 0, STAGES, (local) => wslMachines(local, { X: fakeWsl('X', { isDown: () => isDown }) }));
+  const siteX = { ...two.site, machine: 'wsl:X', path: '/home/u/site' };
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, siteX] })).status, 200);
+  isDown = true;
+  const trusted = await postJson(`${two.base}/trusted-domains`, { host: 'docs.example.com' });
+  assert.deepEqual([trusted.status, await trusted.json()], [200, { ok: true }]);
+  const docs = { ...two.site, name: 'docs', machine: 'wsl:Y', path: '/home/u/docs' };
+  const added = await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, siteX, docs] });
+  assert.deepEqual([added.status, await added.json()], [409, { error: 'machine wsl:Y is unavailable: not_supported', code: 'machine_unavailable', machine: 'wsl:Y', reason: 'not_supported' }]);
+});
+
+const EVALUATE: Stage = { name: 'fila', from: { board: ['Ready'] }, action: 'evaluate', reviewers: [], judge: { agent: 'claude' }, threshold: 7, rubric: 'Done?' };
+
+test('a start of an evaluate stage on a wsl:X workspace answers 409 machine_remote naming the machine, and dispatches nothing (#932)', async (t) => {
+  const two = await startTwo(t, {}, 0, [EVALUATE], (local) => wslMachines(local, { X: fakeWsl('X') }));
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, { ...two.site, machine: 'wsl:X', path: '/home/u/site' }] })).status, 200);
+  two.listed.push(item('1', 'site'));
+  await two.server.poll();
+  const refused = await postJson(`${two.base}/tasks/board:I1/start`, { base: null });
+  assert.deepEqual([refused.status, await refused.json()], [409, { error: 'an evaluate stage runs on this computer only; the workspace is on wsl:X', code: 'machine_remote', machine: 'wsl:X' }]);
+  assert.deepEqual([two.workers.length, activityOf(two.server.getState()!, 'board:I1')], [0, undefined]);
 });

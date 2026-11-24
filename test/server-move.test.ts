@@ -13,7 +13,7 @@ import { saveState } from '../src/state-store.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Task, Exec, Language, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, SLEEP_NOTICE_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { HOST_PATHS, fakeMachine, fakeMachines } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
@@ -103,7 +103,7 @@ async function startMove(t: TestContext, systemLanguage?: Language, machine?: Ma
   }
   const tasks = [task(1, { worktree: wt }), task(2), task(3, { worktree: worktreePath(HOST_PATHS, repo, 'hive-3-task'), worktreeGone: true })];
   await saveState(home, savedTasks({ ...initialState(0), localCount: tasks.length }, tasks, SLUG_OF)); // #629: each worktree on its activity
-  const server = createServer({ secret: SECRET, home, exec: noGit, systemLanguage, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(noGit), systemLanguage, ...(machine === undefined ? {} : { machines: fakeMachines(machine) }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

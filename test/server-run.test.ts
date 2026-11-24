@@ -11,7 +11,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
 import type { Exec, OpenResult, Command, SettingsBody, WorkspaceFork } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive, withToplevel } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workId, workPath } from './fixtures/work.js';
@@ -41,7 +41,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 async function start(t: TestContext, env: Record<string, string> = {}, extra: Pick<SettingsBody, 'workspaces' | 'commands'> = { workspaces: [], commands: [] }): Promise<{ base: string; server: HiveServer; workers: FakeWorker[]; home: string }> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: noGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -170,7 +170,7 @@ const remotesGit: Exec = async (file, args) => ({ stdout: file === 'git' && args
 async function startFork(t: TestContext, fork: WorkspaceFork | false | null, env: Record<string, string> = {}): Promise<{ base: string; workers: FakeWorker[] }> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: remotesGit });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(remotesGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

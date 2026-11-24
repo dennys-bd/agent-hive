@@ -7,7 +7,7 @@ import type { GhToken } from '../src/github-token.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { AgentId, PlanLimitsReader, PlanLimitsReport, RateLimits, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure, fakeLog } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure, fakeLog, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { saveClaudeCredential } from '../src/credentials.js';
 import { tempDir } from './temp-dir.js';
@@ -33,7 +33,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 
 async function start(t: TestContext, extra: Partial<ServerDeps>, configure = true): Promise<{ base: string; server: HiveServer }> {
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, ...extra, exec: withToplevel(extra.exec ?? (async () => ({ stdout: '' }))) });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   if (configure) assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);
@@ -163,7 +163,7 @@ test('a disabled agent\'s plan limits are never read: not after the save, not on
     return claudePlan(HIGH);
   };
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }), readPlanLimits });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(async () => ({ stdout: '' })), readPlanLimits });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   const agentEnabled: Record<AgentId, boolean> = { claude: true, codex: false, copilot: false };
@@ -188,7 +188,7 @@ test('a named Claude account: the save clears Claude\'s windows, neither the tim
     return { readings: list.map((agent) => ({ agent, rateLimits: agent === 'claude' ? HIGH : codex })), failures: [] };
   };
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }), readPlanLimits, log, credentialsEnv: env });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(async () => ({ stdout: '' })), readPlanLimits, log, credentialsEnv: env });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   const save = (extra: Partial<SettingsBody> = {}): Promise<Response> => postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY, ...extra });

@@ -368,7 +368,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       await dispatch({ type: 'spawnFailed', ptyId, message: `workspace "${name}" não existe mais` });
       return;
     }
-    const machine = machineFor({}); // a workspace's shell: the local machine until node 9
+    const machine = machineFor(workspace); // #932: the workspace's own machine; its shell has no task's activity
     const env = await accountEnvOf(ptyId, undefined, await runEnv(machine, workspace)); // #953
     pool.start({
       ptyId, machine,

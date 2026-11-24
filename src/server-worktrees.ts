@@ -11,7 +11,9 @@ import type { Logger } from './log.js';
 import { activityOf, keptActivity, worktreeOwner } from './activities.js';
 import type { PtyHost } from './pty-host.js';
 import { removeInRun } from './task-setup.js';
-import type { Activity, Task, Config, Effect, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
+import { unavailableRefusal, whenAvailable } from './machines.js';
+import { refuse } from './server-tasks.js';
+import { LOCAL_MACHINE, type Activity, type Task, type Config, type Effect, type HiveEvent, type State, type Workspace, type WorktreeRow } from './types.js';
 import { taskDir, listWorktrees, wordsOf } from './worktree.js';
 import { cleanWorktree, removeWorktree } from './worktree-remove.js';
 import { refusalOf, UNEXPECTED } from './worktree-base.js';
@@ -27,7 +29,7 @@ const TASK_OWNED_MESSAGE = "use the task's remove"; // a task's worktree goes th
 const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 
 export interface WorktreeRouteDeps {
-  machineFor: MachineFor; // #158: the activity's machine
+  machineFor: MachineFor; // #158: the activity's machine; #932: a workspace's own
   log: Pick<Logger, 'info' | 'error'>;
   /** The workspace is read at call time: a POST /settings may have moved it (#202). baseBranch: what the activities' worktree line counts from (#586). */
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb' | 'baseBranch'>; promptsDir: string } } | undefined;
@@ -53,16 +55,17 @@ export function registerWorktreeRoutes(app: Express, deps: WorktreeRouteDeps): v
   app.get('/worktrees', async (_req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const machine = machineFor({}); // no activity: the workspace's own, until node 9
     try {
-      // every workspace, in config order (#179); a failure in any of them is the 500 with git's words
-      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map((workspace) => workspaceRows(machine, workspace, current.state)));
+      // every workspace, in config order (#179), each on its machine (#932); one whose machine is unavailable lists nothing, any other
+      // failure is the 500 with git's words
+      const perWorkspace = await Promise.all(current.runtime.config.comb.workspaces.map((workspace) => whenAvailable(() => workspaceRows(machineFor(workspace), workspace, current.state), [])));
       // #747: then the stranded task activities' worktrees, under their removed workspace; each failure drops only its own rows. A configured
       // workspace that shares the repo lists the same folder: a live task's row wins (a stale activity must never post its delete there),
       // while a row no task owns gives way to the stranded one, which knows its task
       const configured = perWorkspace.flat();
       const owned = new Set(configured.filter((row) => row.task !== undefined).map((row) => row.path));
-      const stranded = (await strandedRows(current.state, current.runtime.config, machine.exec, machine.paths)).filter((row) => !owned.has(row.path));
+      const host = machineFor({ machine: LOCAL_MACHINE }); // #932: strandedRows reads the host's disk, and its stand-in workspaces are local
+      const stranded = (await strandedRows(current.state, current.runtime.config, host.exec, host.paths)).filter((row) => !owned.has(row.path));
       const strandedPaths = new Set(stranded.map((row) => row.path));
       res.json([...configured.filter((row) => !strandedPaths.has(row.path)), ...stranded]);
     } catch (err) {
@@ -80,9 +83,9 @@ function registerBranchesRoute(app: Express, { machineFor, requireLive }: Worktr
   app.get('/workspaces/branches', async (_req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
-    const rows = await Promise.all(current.runtime.config.comb.workspaces.map(async ({ name, path }) => {
-      const branch = await machineFor({}).exec('git', ['-C', path, 'branch', '--show-current']).then(({ stdout }) => stdout.trim() || null, () => null);
-      return { name, branch };
+    const rows = await Promise.all(current.runtime.config.comb.workspaces.map(async (workspace) => {
+      const branch = await machineFor(workspace).exec('git', ['-C', workspace.path, 'branch', '--show-current']).then(({ stdout }) => stdout.trim() || null, () => null); // #932: on its machine
+      return { name: workspace.name, branch };
     }));
     res.json(rows);
   });
@@ -168,7 +171,7 @@ function registerRemoveRoute(app: Express, deps: WorktreeRouteDeps): void {
 // removal, which runs none. A failing step rejects as git's refusal does.
 function removeListed(deps: WorktreeRouteDeps, workspace: Workspace, slug: string, branch: string, force?: { promptsDir: string }): Promise<void> {
   const target = { id: orphanTeardownRunId(workspace.name, slug), label: slug, workspace, force: force !== undefined };
-  const machine = deps.machineFor({});
+  const machine = deps.machineFor(workspace); // #932: the workspace's own machine
   return removeInRun(machine, deps, target, (before) => (force
     ? removeWorktree(machine, workspace.path, { slug }, branch, force.promptsDir, workspace.nestedRepos)
     : cleanWorktree(machine, workspace.path, { slug }, branch, before, { nested: workspace.nestedRepos }))); // #653
@@ -187,8 +190,10 @@ async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps
   const { promptsDir } = before.runtime;
   let listed: Pick<WorktreeRow, 'slug' | 'branch'> | undefined;
   try {
-    listed = (await listWorktrees(deps.machineFor({}), repo)).find((w) => w.slug === slug);
+    listed = (await listWorktrees(deps.machineFor(workspace), repo)).find((w) => w.slug === slug); // #932: on the workspace's machine
   } catch (err) {
+    const unavailable = unavailableRefusal(err, workspace.machine);
+    if (unavailable) return refuse(res, unavailable);
     res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
     return;
   }

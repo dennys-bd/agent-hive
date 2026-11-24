@@ -8,7 +8,7 @@ import { saveState } from '../src/state-store.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Task, TaskFile, Exec, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import type { Machine } from '../src/machine.js';
 import { HOST_PATHS, fakeMachine, fakeMachines, statsOf } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
@@ -54,7 +54,7 @@ async function startFiles(t: TestContext, saved: Task = task(), isDeleted = fals
     if (failure) throw new Error(failure);
     return { stdout: args.includes('get-url') ? `${origin}\n` : '' };
   };
-  const server = createServer({ secret: SECRET, home: made.home, exec, ...(machine ? { machines: fakeMachines(machine) } : {}) });
+  const server = createServer({ secret: SECRET, home: made.home, exec: withToplevel(exec), ...(machine ? { machines: fakeMachines(machine) } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

@@ -22,3 +22,12 @@ export function requireWorkspacePath(raw: unknown, machine: MachineId, field: st
   if (typeof raw !== 'string' || !absolute(raw)) throw new Error(`${FILE}: "${field}.path" must be an absolute path`);
   return raw;
 }
+
+/** A ?machine= query (#932): 'local' or 'wsl:<distro>', the rule a workspace's machine follows; undefined for anything else. */
+export function machineQuery(raw: unknown): MachineId | undefined {
+  try {
+    return parseWorkspaceMachine(raw, 'machine');
+  } catch {
+    return undefined;
+  }
+}

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Exec } from '../src/types.js';
@@ -81,6 +81,15 @@ test('ensureWorktree on a path git does not list refreshes the base, then create
     ['rev-parse', '--verify', '--quiet', `refs/heads/${BRANCH}`],
     ['worktree', 'add', '-b', BRANCH, '--', worktree, 'origin/main'],
   ]);
+});
+
+test('ensureWorktree keeps .hive/ out of git on the machine it is given, once: a second call adds no line (#932)', async (t) => {
+  const { repo } = await tempHive(t); // git init: .git/info/exclude is there
+  const { exec } = baseGit({ 'symbolic-ref --short': 'origin/main\n', 'refs/remotes/origin/main': 'a1b2c3d\n' }, NO_BRANCH);
+  await ensureWorktree(fakeMachine({ exec }), repo, SLUG_7, BRANCH, ORIGIN, undefined);
+  await ensureWorktree(fakeMachine({ exec }), repo, SLUG_7, BRANCH, ORIGIN, undefined);
+  const lines = (await readFile(join(repo, '.git', 'info', 'exclude'), 'utf8')).split('\n');
+  assert.equal(lines.filter((line) => line === '.hive/').length, 1);
 });
 
 test('a branch that already exists with work of its own is reused (no -b and no start point) and answered as reused: a respawn or a continue of the same task must find its own commits (#267)', async (t) => {

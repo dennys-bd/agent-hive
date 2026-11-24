@@ -11,10 +11,10 @@ import type { Logger } from '../../src/log.js';
 import { fakeLog } from '../fakes.js';
 import { experiment, run, stateWith } from './fixtures.js';
 
-function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment; concurrentTimeoutMs?: number; log?: Logger } = {}) {
+function routes(t: TestContext, exp: Experiment, stub: { live?: boolean; answer?: StartAnswer; leak?: string; later?: Experiment; concurrentTimeoutMs?: number; log?: Logger; machines?: Record<string, string> } = {}) {
   let lives = 0;
   let reads = 0; // the first read is the request's own; `later` is what a read at dispatch time finds
-  let state = stateWith(exp);
+  let state = { ...stateWith(exp), workspaceMachines: stub.machines ?? {} }; // #932: the workspaces not on local
   const calls: unknown[][] = [];
   const events: BenchmarkEvent[] = [];
   const app = express();
@@ -168,4 +168,13 @@ test('every refusal of the control routes reaches the log with its code and mess
   assert.ok(lines.some((l) => l.startsWith('WARN benchmark exp-1: run refused 409 nothing_missing: every run of every round has run')), lines.join('\n'));
   await h.post('/exp-1/more-rounds', { pairs: 0 });
   assert.ok(lines.some((l) => l.includes('more-rounds refused 400 bad_body')), lines.join('\n'));
+});
+
+test('run and more-rounds of an experiment whose workspace is on wsl:X answer 409 machine_remote and never reach the runner (#932)', async (t) => {
+  const exp = experiment({ status: 'done' });
+  const h = routes(t, exp, { machines: { [exp.workspace]: 'wsl:X' } });
+  const remote = [409, { error: 'machine_remote', message: 'the benchmark runs on this computer only; the workspace is on wsl:X' }];
+  assert.deepEqual(await h.post('/exp-1/run'), remote);
+  assert.deepEqual(await h.post('/exp-1/more-rounds', { pairs: 1 }), remote);
+  assert.deepEqual([h.calls, h.events], [[], []]);
 });

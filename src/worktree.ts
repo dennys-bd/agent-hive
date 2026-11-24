@@ -2,7 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { Machine } from './machine.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
-import { HIVE_DIR } from './hooks-settings.js';
+import { excludeFromGit, HIVE_DIR } from './hooks-settings.js';
 import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, type Git, gitOrWords, refuseDirty, remoteHead, settleSync, WORKTREE_PREFIX, withSync, wordsOf } from './worktree-base.js';
 import { samePath } from './same-path.js';
 import { refuseDirtyNested } from './worktree-nested.js';
@@ -46,7 +46,7 @@ export const exists = (machine: Pick<Machine, 'fs'>, path: string): Promise<bool
 /**
  * Why `path` cannot be the Comb's workspace, undefined when it can (#202). It must be absolute and the top level of a git work tree: every
  * worktree command runs `git -C <workspace>`. git answers the top level by its real path (/private/var on macOS), so both sides go
- * through realpath. Its callers without a machine hand LOCAL_DISK, the real git and disk: the settings save and the boot's proposal each run it once.
+ * through realpath. On the workspace's machine (#932); the boot's proposal, before any workspace exists, runs it on the host's own disk.
  */
 export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs' | 'paths'>, path: string): Promise<string | undefined> {
   if (!machine.paths.isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;
@@ -82,6 +82,8 @@ export const hasBranch = (machine: Pick<Machine, 'exec'>, repo: string, branch: 
 export async function ensureWorktree(
   machine: Machine, repo: string, slug: string, branch: string, base: WorkspaceBase, chosen: string | undefined,
 ): Promise<PreparedWorktree> {
+  // #932: a workspace not on local is never touched at boot, and the first worktree of any workspace is made here: idempotent, one stat and one read when the line is there
+  await excludeFromGit(machine, repo);
   const { exec } = machine;
   const path = worktreePath(machine.paths, repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);

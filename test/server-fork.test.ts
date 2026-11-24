@@ -2,7 +2,8 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../src/server.js';
 import type { Exec, WorkspaceFork } from '../src/types.js';
-import { tempHive, workspacesAt } from './fakes.js';
+import { fakeMachine, fakeWsl, wslMachines } from './fake-machine.js';
+import { tempHive, withToplevel, workspacesAt } from './fakes.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -27,7 +28,7 @@ function forkExec(compare: () => string): { exec: Exec; gh: string[][] } {
 
 async function startFork(t: TestContext, fork: WorkspaceFork | false | null, exec: Exec): Promise<{ base: string; repo: string }> {
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -66,9 +67,30 @@ test('the manual sync is 404 for an unknown workspace and 409 unless the workspa
 
 test('GET /settings/remotes answers the folder\'s remotes with their GitHub repositories; a folder that is not a repository\'s top level is 400 (#854)', async (t) => {
   const { base, repo } = await startFork(t, null, forkExec(() => '{}').exec);
-  const read = await hiveFetch(`${base}/settings/remotes?${new URLSearchParams({ path: repo })}`);
+  const read = await hiveFetch(`${base}/settings/remotes?${new URLSearchParams({ path: repo, machine: 'local' })}`);
   assert.deepEqual(await read.json(), [{ name: 'origin', repository: 'me/app' }, { name: 'upstream', repository: 'acme/app' }]);
-  const bad = await hiveFetch(`${base}/settings/remotes?${new URLSearchParams({ path: 'relative/path' })}`);
+  const bad = await hiveFetch(`${base}/settings/remotes?${new URLSearchParams({ path: 'relative/path', machine: 'local' })}`);
   assert.equal(bad.status, 400);
-  assert.equal((await hiveFetch(`${base}/settings/remotes`)).status, 400);
+  assert.equal((await hiveFetch(`${base}/settings/remotes?${new URLSearchParams({ machine: 'local' })}`)).status, 400);
+});
+
+test('a wsl:X workspace\'s sync and remotes run on the distro\'s machine, never the host; a missing or bad machine is 400 (#932)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const onHost = forkExec(() => '{"ahead_by":0,"behind_by":0}');
+  const onX = forkExec(() => '{"ahead_by":0,"behind_by":0}');
+  const machines = wslMachines(fakeMachine({ exec: onHost.exec }), { X: fakeWsl('X', { exec: onX.exec }) });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(onHost.exec), machines });
+  const base = `http://127.0.0.1:${await server.listen(0)}`;
+  t.after(() => server.close());
+  const site = { ...workspacesAt(repo)[0], name: 'site', path: '/home/u/site', machine: 'wsl:X', fork: MANUAL };
+  assert.equal((await send(base, 'POST', '/settings', { ...settingsBody(repo), workspaces: [workspacesAt(repo)[0], site] })).status, 200);
+  onHost.gh.length = 0;
+  assert.deepEqual(await (await send(base, 'POST', '/workspaces/site/sync')).json(), { mode: 'github', base: 'me:main', result: 'current', commits: 0 });
+  assert.deepEqual([onHost.gh.length, onX.gh.length > 0], [0, true], 'gh ran on the distro');
+  const read = await hiveFetch(`${base}/settings/remotes?${new URLSearchParams({ path: '/home/u/site', machine: 'wsl:X' })}`);
+  assert.deepEqual(await read.json(), [{ name: 'origin', repository: 'me/app' }, { name: 'upstream', repository: 'acme/app' }]);
+  for (const query of [{ path: repo }, { path: repo, machine: 'ssh:x' }] as Record<string, string>[]) {
+    const res = await hiveFetch(`${base}/settings/remotes?${new URLSearchParams(query)}`);
+    assert.deepEqual([res.status, await res.json()], [400, { error: 'machine must be "local" or "wsl:<distro>"' }], JSON.stringify(query));
+  }
 });

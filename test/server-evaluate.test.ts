@@ -16,7 +16,7 @@ import { createServer, type Runtime } from '../src/server.js';
 import { shellQuote } from '../src/shell-init.js';
 import { saveState } from '../src/state-store.js';
 import type { Activity, AgentAvailability, AgentId, Effect, EvaluateRow, Exec, HiveEvent, Stage, StageEvaluate, Task } from '../src/types.js';
-import { combConfig, tempHive } from './fakes.js';
+import { combConfig, tempHive, withToplevel } from './fakes.js';
 import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -148,6 +148,15 @@ test('both reviewers run at once in the worktree, read-only; then evaluateJudgin
   assert.ok(h.logs.every((line) => !line.includes('a.ts') && !line.includes('diff --git')), 'no finding nor patch in the log');
 });
 
+test('an evaluate effect on a workspace not on local breaks before the worktree: nothing prepared, no agent run (#932)', async (t) => {
+  const h = await harness(t);
+  const { config } = h.runtime;
+  const runtime: Runtime = { ...h.runtime, config: { ...config, comb: { ...config.comb, workspaces: config.comb.workspaces.map((w) => ({ ...w, machine: 'wsl:X' })) } } };
+  await h.runner.run(runtime, h.effect([{ agent: 'claude', focus: 'slow' }]));
+  assert.equal(brokenText(h), 'an evaluate stage runs on this computer only; the workspace is on wsl:X');
+  assert.deepEqual(h.prepared, [], 'readyWorktree never ran');
+});
+
 test('zero reviewers: the judge reads the work alone; a failing score is logged by its index, never its text; a line rendering empty stays raw (#877)', async (t) => {
   const h = await harness(t, { env: { SCORES: scoresJson([8, 3]) } });
   const effect = h.effect([]);
@@ -226,8 +235,9 @@ test('POST /activities/:id/evaluate/stop ends the evaluation, stopped, with no v
   const { home, repo } = await tempHive(t);
   const local: Task = { ...TASK, auto: false, created: true };
   await saveState(home, { ...initialState(1), localCount: 1, tasks: [local] });
-  const exec: Exec = (file) => (file === 'git' ? new Promise(() => undefined) : Promise.resolve({ stdout: '' })); // the evaluation stays in its worktree step
-  const server = createServer({ secret: SECRET, home, exec });
+  // the evaluation stays in its worktree step; the save's workspace check (#932) answers, and withToplevel names the folder
+  const exec: Exec = (file, args) => (file === 'git' && !args.includes('--show-toplevel') ? new Promise(() => undefined) : Promise.resolve({ stdout: '' }));
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

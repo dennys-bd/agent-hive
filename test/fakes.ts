@@ -24,6 +24,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { type Machine, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type RunResult } from '../src/machine.js';
 import { fakeMachine as localMachine } from './fake-machine.js';
+export { withToplevel } from './fake-machine.js';
 import { createPtyHost } from '../src/pty-host.js';
 import { AGENTS } from '../src/agents.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
@@ -317,8 +318,8 @@ export async function getFreePort(): Promise<number> {
 }
 
 /** A fresh Hive's two folders, both removed after the test (#428): an empty home for its own files and a `git init` repo for its workspace.
- * POST /settings checks the workspace with the real git (`rev-parse --show-toplevel` must answer the folder itself), so a bare temp dir is not
- * enough. `cap` is the state's worker cap: 0 by default, so a test whose fake source has a task never starts a real claude. */
+ * POST /settings checks the workspace on machines.local (#932): its realpath is the real disk's and its git the test's exec, whose top level
+ * withToplevel answers. `cap` is the state's worker cap: 0 by default, so a test whose fake source has a task never starts a real claude. */
 export async function tempHive(t: AfterHost, cap = 0): Promise<{ home: string; repo: string }> {
   const home = await tempDir(t, 'home-');
   await saveState(home, initialState(cap)); // #727: the cap left the config; a server test's first boot reads it from here, and 0 spawns nothing

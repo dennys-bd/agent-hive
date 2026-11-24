@@ -11,7 +11,7 @@ import type { Activity, AgentAvailability, McpSettings, Task, Exec, SettingsBody
 import { activityOf, localActivityId } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
@@ -49,7 +49,7 @@ async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BO
     calls.push([file, ...args]);
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec, ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, ...extra, exec: withToplevel(extra.exec ?? exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

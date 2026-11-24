@@ -44,7 +44,7 @@ export interface WorkspaceNestedReposProps { row: WorkspaceDraft; oldSetup?: str
  * the draft; a suggestion already listed or dismissed is not shown. */
 export function WorkspaceNestedRepos({ row, oldSetup, flagId, onChange }: WorkspaceNestedReposProps) {
   const paths = nestedPaths(row);
-  const answer = useNestedRepos(row.path, paths);
+  const answer = useNestedRepos(row.path, paths, row.machine);
   const shown = answer.suggested.filter((s) => !paths.includes(s.path) && !row.notNestedRepos.includes(s.path));
   const setRows = (nestedRepos: NestedRepoDraft[]): void => onChange({ nestedRepos });
   return (

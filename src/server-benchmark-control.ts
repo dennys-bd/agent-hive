@@ -6,7 +6,8 @@ import { HH_MM } from './benchmark/deadline.js';
 import type { BenchRunner } from './benchmark/runner.js';
 import { missingRuns } from './benchmark/scheduler.js';
 import type { Logger } from './log.js';
-import type { BenchmarkEvent, Experiment, State } from './types.js';
+import { hostOnlyRefusal } from './benchmark-guards.js';
+import { LOCAL_MACHINE, type BenchmarkEvent, type Experiment, type MachineId, type State } from './types.js';
 
 const HTTP_OK = 200;
 const HTTP_ACCEPTED = 202;
@@ -38,8 +39,8 @@ const refuse = (deps: Pick<BenchControlRouteDeps, 'log'>, req: Request, res: Res
   fail(deps, req, res, HTTP_CONFLICT, 'status', `${action} is refused while the experiment is ${experiment.status}`);
 const isRunning = (experiment: Experiment): boolean => experiment.status === 'running' || experiment.status === 'sleeping';
 
-// current reads the experiment again from the live state, without touching the response
-interface Found { experiment: Experiment; current(): Experiment | undefined }
+// current reads the experiment again from the live state, without touching the response; machine: its workspace's (#932)
+interface Found { experiment: Experiment; machine: MachineId; current(): Experiment | undefined }
 
 // requireLive answers the response itself when the Hive is not live, so it is called once per request
 function found(deps: BenchControlRouteDeps, req: Request, res: Response): Found | undefined {
@@ -48,8 +49,9 @@ function found(deps: BenchControlRouteDeps, req: Request, res: Response): Found 
   const id = String(req.params.id);
   const current = (): Experiment | undefined => live.state.benchmark.experiments.find((e) => e.id === id);
   const experiment = current();
-  if (experiment === undefined) fail(deps, req, res, HTTP_NOT_FOUND, 'unknown_experiment', `no experiment ${id}`);
-  return experiment === undefined ? undefined : { experiment, current };
+  if (experiment === undefined) return void fail(deps, req, res, HTTP_NOT_FOUND, 'unknown_experiment', `no experiment ${id}`);
+  const machines = live.state.workspaceMachines; // only the workspaces not on local
+  return { experiment, current, machine: Object.hasOwn(machines, experiment.workspace) ? machines[experiment.workspace] : LOCAL_MACHINE };
 }
 
 // server-benchmark.ts keeps its own copy: importing it from there would close an import cycle
@@ -65,7 +67,9 @@ function parsed<T>(deps: BenchControlRouteDeps, schema: z.ZodType<T>, req: Reque
 interface PairsEdit { apply(): Promise<unknown>; undo(): Promise<unknown> }
 
 // The blindness of every arm that will run first, so a refusal starts and edits nothing (spec); then the edit
-async function start(deps: BenchControlRouteDeps, req: Request, res: Response, experiment: Experiment, edit?: PairsEdit): Promise<void> {
+async function start(deps: BenchControlRouteDeps, req: Request, res: Response, experiment: Experiment, machine: MachineId, edit?: PairsEdit): Promise<void> {
+  const remote = hostOnlyRefusal({ machine }, 'the benchmark'); // #932: a run's daemons start on this computer
+  if (remote) return fail(deps, req, res, remote.status, remote.code ?? 'machine_remote', remote.message);
   if (deps.runner.isLive(experiment.id)) return fail(deps, req, res, HTTP_CONFLICT, 'live', 'the experiment is running in this Hive');
   const leak = await deps.runner.blindness(experiment);
   if (leak !== undefined) return fail(deps, req, res, HTTP_UNPROCESSABLE, 'blindness', leak);
@@ -78,11 +82,12 @@ async function start(deps: BenchControlRouteDeps, req: Request, res: Response, e
 
 function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
   app.post(`${E}/run`, async (req, res) => {
-    const experiment = found(deps, req, res)?.experiment;
-    if (experiment === undefined) return;
+    const hit = found(deps, req, res);
+    if (hit === undefined) return;
+    const { experiment } = hit;
     if (isRunning(experiment)) return refuse(deps, req, res, experiment, 'run');
     if (missingRuns(experiment).length === 0) return fail(deps, req, res, HTTP_CONFLICT, 'nothing_missing', 'every run of every round has run');
-    await start(deps, req, res, experiment);
+    await start(deps, req, res, experiment, hit.machine);
   });
   app.post(`${E}/more-rounds`, async (req, res) => {
     const hit = found(deps, req, res);
@@ -101,7 +106,7 @@ function registerStartRoutes(app: Express, deps: BenchControlRouteDeps): void {
       await edit.apply();
       return ok(res, HTTP_OK);
     }
-    await start(deps, req, res, { ...experiment, pace: { ...experiment.pace, pairs: experiment.pace.pairs + body.pairs } }, edit);
+    await start(deps, req, res, { ...experiment, pace: { ...experiment.pace, pairs: experiment.pace.pairs + body.pairs } }, hit.machine, edit);
   });
 }
 

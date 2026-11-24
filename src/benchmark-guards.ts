@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import type { STAGE_OVERRIDE_FIELDS } from './benchmark/arms.js';
 import { isVersionName } from './custom-versions.js';
 import { parseItemId } from './item-sources.js';
+import { MACHINE_REMOTE } from './machine-fs.js';
+import type { Refusal } from './server-tasks.js';
 import { COMMIT, isJsonObject } from './state-guards.js';
-import { AGENT_IDS, BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, type AgentId, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchFlow, type BenchRunStatus, type Experiment, type StageOverride, type ExperimentStatus } from './types.js';
+import { AGENT_IDS, BENCH_RUN_STATUSES, BENCH_TOKEN, EXPERIMENT_ID, EXPERIMENT_STATUSES, isBranchName, LOCAL_MACHINE, type AgentId, type MachineId, type Arm, type BenchmarkState, type BenchRound, type BenchRun, type BenchFlow, type BenchRunStatus, type Experiment, type StageOverride, type ExperimentStatus } from './types.js';
 
 const STRINGS = ['name', 'createdAt', 'workspace', 'seedHash', 'tasksHash'] as const;
 const OBJECTS = ['base', 'seed', 'pace', 'isolation', 'blindness', 'evaluation', 'createdBy', 'plugin'] as const;
@@ -121,4 +123,13 @@ function loadExperiment(value: unknown, hiveDir: string): Experiment[] {
 export function loadBenchmark(raw: unknown, hiveDir: string): BenchmarkState {
   if (!isJsonObject(raw) || !Array.isArray(raw.experiments)) return { experiments: [] };
   return { experiments: firstBy(raw.experiments.flatMap((e) => loadExperiment(e, hiveDir)), (e) => e.id) };
+}
+
+const HTTP_CONFLICT = 409;
+
+/** #932: an evaluate stage's agents (runHeadless) and a benchmark run's daemons start on this computer, in host folders: a workspace on another
+ *  machine is refused before anything starts. The 409 names that machine; its code is machine_remote, as the host's desktop routes answer. */
+export function hostOnlyRefusal(workspace: { machine: MachineId }, what = 'an evaluate stage'): Refusal | undefined {
+  if (workspace.machine === LOCAL_MACHINE) return undefined;
+  return { status: HTTP_CONFLICT, message: `${what} runs on this computer only; the workspace is on ${workspace.machine}`, code: MACHINE_REMOTE, machine: workspace.machine };
 }

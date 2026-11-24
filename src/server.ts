@@ -147,7 +147,7 @@ import { trustedCopies } from './copy-sides.js';
 import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
-  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
+  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, LOCAL_MACHINE, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
   type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange,
@@ -990,7 +990,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
-    for (const { path } of config.comb.workspaces) await excludeFromGit(machineFor({}), path); // each workspace keeps its worktrees in <path>/.hive/ (#179); the local machine until node 9 gives a workspace its machines
+    for (const workspace of config.comb.workspaces) { // each workspace keeps its worktrees in <path>/.hive/ (#179)
+      // #932: no call reaches another machine at boot; ensureWorktree excludes .hive/ there before its first worktree
+      if (workspace.machine === LOCAL_MACHINE) await excludeFromGit(machines.local, workspace.path);
+      else log.info(`workspace ${workspace.name}: on ${workspace.machine}, its checkout is read when a route asks`);
+    }
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
     wiring.facts.setLevel(config.logLevel); // one switch for both files (#742)
     log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(flatten(config.comb.flows).stages)}`);
@@ -1164,7 +1168,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
-  mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
+  mountMcp(app, { exec, machineFor, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
     relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log, reportRetry }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
     reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve(),
     benchmark: drafter({ dispatch, home, pluginSource: shippedPlugin, exec, log, version: benchVersion, now: () => new Date(), queue: benchQueue,
@@ -1302,9 +1306,9 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964)
+    const refusal = (await workspacesRefusal(config, machineFor, current)) ?? (await nestedRefusal(config, machineFor, current?.config)) ?? setupRefusal(config, machineFor) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964); #932: each workspace on its machine
     if (refusal) {
-      res.status(refusal.status).json({ error: refusal.message });
+      res.status(refusal.status).json({ error: refusal.message, code: refusal.code, machine: refusal.machine, reason: refusal.reason }); // #932: an unavailable machine's id and why; absent fields drop out
       return;
     }
     // An entry whose baked-in parts match the live runtime's keeps its instance, so a write already in flight keeps its chain (#180: per source).
@@ -1459,7 +1463,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readLoop ?? (deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
-    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machines.local) : []),
+    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machineFor) : []),
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
   }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1473,7 +1477,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
     readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch, notify: notifyReadModel },
   };
-  registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log, ...repoModel });
+  registerRepoRoutes(app, { requireLive, machineFor, gql: cliGqlJson(gh), poll, log, ...repoModel });
   // The PR page (#592, #758): its read and review file, then its writes to GitHub; its reads answer from the read model and its writes upsert
   // their answer (#187), so it registers after the read loop
   const prDeps = { requireLive, dispatch, log, exec, prReviews, notifyPrReview, gql: prGql, gqlJson: cliGqlJson(gh), gh, ...repoModel, machineFor };
@@ -1481,13 +1485,14 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
   preloadPr ??= preloaderOf({
     ...repoModel, log,
-    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, machines.local)).some((r) => r.repository === repository),
+    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, machineFor)).some((r) => r.repository === repository),
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
-  registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
-  // GET /settings/copilot-trust (#880): the saved workspaces only, none in setup mode; the local machine's COPILOT_HOME, as its workers inherit it
-  registerCopilotTrustRoute(app, { workspacePaths: () => live?.runtime.config.comb.workspaces.map((w) => w.path) ?? [], info: () => machineFor({}).info() });
+  registerNestedRoute(app, { config: () => live?.runtime.config, machineFor }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes; #932: on the draft's machine
+  // GET /settings/copilot-trust (#880): the saved workspaces only, none in setup mode; the local machine's COPILOT_HOME, as its workers inherit
+  // it. #932: only local workspaces' folders, since a distro's Copilot config is its own
+  registerCopilotTrustRoute(app, { workspacePaths: () => live?.runtime.config.comb.workspaces.filter((w) => w.machine === LOCAL_MACHINE).map((w) => w.path) ?? [], info: () => machines.local.info() });
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held
   // reading, e.g. after a plan upgrade lowered the percent. The page only offers ↻ on agents with plan limits: anything else is a 400

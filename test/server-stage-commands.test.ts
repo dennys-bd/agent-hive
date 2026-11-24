@@ -10,7 +10,7 @@ import { createStageCommandRunner, OUTPUT_MAX, OUTPUT_THROTTLE_MS, outputTail } 
 import type { Activity, Command, Effect, HiveEvent, SettingsBody, Stage, StageCommands, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { bodyFlows, AUTH, combConfig, fakeMachine, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, SOURCE, tempHive, WORKSPACE } from './fakes.js';
+import { bodyFlows, AUTH, combConfig, fakeMachine, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, SOURCE, tempHive, WORKSPACE, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { HOST_PATHS } from './fake-machine.js';
 
@@ -173,7 +173,7 @@ const runOn = (server: HiveServer): StageCommands | undefined => server.getState
 async function start(t: TestContext): Promise<{ base: string; ptys: FakePty[]; server: HiveServer }> {
   const { home, repo } = await tempHive(t);
   const { spawnPty, ptys } = fakePtys();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, spawnPty, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, spawnPty, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(async () => {
     for (const pty of ptys) pty.exit(); // a fake pty's kill exits nothing, and close() awaits every run's exit

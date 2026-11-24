@@ -12,7 +12,7 @@ import { SECRET_HEADER } from '../src/secret.js';
 import { createServer } from '../src/server.js';
 import type { MemoryFile, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // The Hive's MCP as a local session meets it (#256), end to end: a workspace's local activity, a claude session opened there, no task. No
@@ -27,7 +27,7 @@ interface Local { client: Client; home: string }
 // A Hive whose one workspace has `memoryCap` and a local claude session running; the client speaks as that session
 async function startLocal(t: TestContext, memoryCap = 4000): Promise<Local> {
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(async () => ({ stdout: '' })) });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   const workspaces = workspacesAt(repo).map((w) => ({ ...w, memoryCap })); // what the workspace card saves (#73)

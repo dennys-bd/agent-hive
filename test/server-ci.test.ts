@@ -9,7 +9,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import { OUTPUT_MAX } from '../src/server-stage-commands.js';
 import { saveState } from '../src/state-store.js';
 import type { Activity, CiCheck, Exec, HiveEvent, Stage, StageCi, State, Task } from '../src/types.js';
-import { tempHive } from './fakes.js';
+import { tempHive, withToplevel } from './fakes.js';
 import { activityIdOf, savedActivityId, withWork } from './fixtures/work.js';
 import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
@@ -183,7 +183,7 @@ async function waitingServer(t: TestContext, checks: () => unknown[] = () => [])
     reads.push(query);
     return { stdout: JSON.stringify({ data: { p0: rollup('h1', checks()) } }) };
   };
-  const server = createServer({ secret: SECRET, home, exec });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

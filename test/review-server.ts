@@ -7,7 +7,7 @@ import { createServer, type HiveServer, type ServerDeps } from '../src/server.js
 import { saveState } from '../src/state-store.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, SLEEP_NOTICE_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, type Stage, type Task, type Exec, type SettingsBody } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
-import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
+import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { withLocal, withWork, savedActivityId } from './fixtures/work.js';
@@ -51,7 +51,7 @@ export async function startReviews(t: TestContext, extra: Partial<ServerDeps> = 
     if (args.includes('merge-base')) return { stdout: `${'a'.repeat(40)}\n` };
     return { stdout: args.includes('diff') ? DIFF_TEXT : '' };
   };
-  const server = createServer({ secret: SECRET, home, exec, ...extra });
+  const server = createServer({ secret: SECRET, home, ...extra, exec: withToplevel(extra.exec ?? exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

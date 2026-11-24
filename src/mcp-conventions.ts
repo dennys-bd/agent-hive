@@ -1,14 +1,14 @@
 // hive_conventions' pure answer (#294): kept out of mcp.ts, which was at 400 lines and needed room for hive_stop's block
-import { join } from 'node:path';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { forkRepos, workspaceBase } from './fork.js';
 import { systemLanguage } from './language.js';
+import type { Machine } from './machine.js';
 import { originRepository } from './repos/repositories.js';
 import { stageOf } from './tasks.js';
 import { gitOrWords } from './worktree.js';
 import { remoteHead } from './worktree-base.js';
-import type { Config, Exec, Language, PrTarget, State, Worker, Workspace } from './types.js';
+import type { Config, Language, PrTarget, State, Worker, Workspace } from './types.js';
 
 /** Where a fork workspace's PRs go (#854): the target, the two repositories (owner/name), the remote the work starts from and the effective base. */
 export interface ForkConventions { pr: PrTarget; original: string; fork: string; baseRemote: string; base: string }
@@ -39,22 +39,22 @@ export function conventionsAnswer(state: Pick<State, 'tasks' | 'stages' | 'activ
 }
 
 /** A fork workspace's PR target as the skills read it (#854): none for a workspace that is not a fork or whose remotes are off GitHub. The base
- * is the workspace's own, else config.baseBranch, else the base remote's HEAD, else main. */
-export async function forkConventions(exec: Exec, workspace: Workspace | undefined, config: Pick<Config, 'baseBranch'>): Promise<ForkConventions | undefined> {
+ * is the workspace's own, else config.baseBranch, else the base remote's HEAD, else main. #932: read on the asking worker's machine. */
+export async function forkConventions(machine: Pick<Machine, 'exec' | 'paths'>, workspace: Workspace | undefined, config: Pick<Config, 'baseBranch'>): Promise<ForkConventions | undefined> {
   if (!workspace?.fork) return undefined;
-  const repos = await forkRepos({ exec }, workspace);
+  const repos = await forkRepos(machine, workspace);
   if (!repos) return undefined;
   const { remote, branch } = workspaceBase(config, workspace);
-  const base = branch ?? (await remoteHead((...args) => gitOrWords(workspace.path, args, exec), remote));
+  const base = branch ?? (await remoteHead((...args) => gitOrWords(workspace.path, args, machine.exec), remote));
   return { pr: workspace.fork.pr, original: repos.original, fork: repos.fork, baseRemote: remote, base };
 }
 
 /** The nested repos of a worker's workspace as the skills read them (#653): each path, relative to the worktree, with the owner/name of its
- * GitHub origin; absent when its origin is off GitHub or it has none. None for a worker with no workspace. */
-export async function nestedConventions(exec: Exec, workspace: Workspace | undefined): Promise<NestedConventions[]> {
+ * GitHub origin; absent when its origin is off GitHub or it has none. None for a worker with no workspace. #932: joined with the machine's paths. */
+export async function nestedConventions(machine: Pick<Machine, 'exec' | 'paths'>, workspace: Workspace | undefined): Promise<NestedConventions[]> {
   if (!workspace) return [];
   return Promise.all(workspace.nestedRepos.map(async (path) => {
-    const repository = await originRepository({ exec }, join(workspace.path, path));
+    const repository = await originRepository(machine, machine.paths.join(workspace.path, path));
     return repository === undefined ? { path } : { path, repository };
   }));
 }

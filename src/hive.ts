@@ -255,6 +255,7 @@ async function bootSetupMode(
   // Nothing saved to prefill the form from (an empty home, a file from before the Comb): the folder `hive` ran in, when it is a repo's top
   // level. A viewer launched from the Dock has cwd `/`, so it proposes nothing (#202).
   const cwd = process.cwd();
+  // #932: the one LOCAL_DISK left in src/: at boot no workspace exists yet to name a machine, so the cwd is checked on the host's own disk
   const proposedWorkspace = proposed ?? (setupFallback?.config === undefined && (await workspacePathProblem(LOCAL_DISK, cwd)) === undefined ? cwd : undefined);
   // The read loop idles until the save sets a config: a round with no repositories reads no login and sends no request
   const server = createServer({ home, setupFallback, proposedWorkspace, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });

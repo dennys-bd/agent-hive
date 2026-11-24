@@ -9,7 +9,7 @@ import { removeTaskTranscript } from '../src/server-runs.js';
 import { worktreePath } from '../src/worktree.js';
 import type { Activity, OpenResult, Session, SettingsBody, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, tempHive } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, tempHive, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { HOST_PATHS, machineWith } from './fake-machine.js';
@@ -27,7 +27,7 @@ const send = (url: string, method: 'POST' | 'DELETE', body?: unknown): Promise<R
 async function start(t: TestContext): Promise<{ base: string; server: HiveServer; fake: ReturnType<typeof fakeSpawn> }> {
   const { home, repo } = await tempHive(t);
   const fake = fakeSpawn();
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fake.spawn, exec: async () => ({ stdout: '' }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fake.spawn, exec: withToplevel(async () => ({ stdout: '' })) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

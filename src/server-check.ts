@@ -9,6 +9,7 @@ import { findCandidate } from './formatter-detect.js';
 import { otherExtensions } from './formatters.js';
 import { languageOf } from './languages.js';
 import type { Machine } from './machine.js';
+import { whenAvailable } from './machines.js';
 import { withMachinePath } from './machine-fs.js';
 import { locate } from './server-editor.js';
 import { samePath } from './same-path.js';
@@ -76,11 +77,11 @@ async function check(req: Request, res: Response, current: Live, deps: { runs: C
 // Settings › editor's detection (#782): every checker on each workspace's checkout, as the formatters' are; a language-server one by its project
 // copy only (the Hive's install is the installs listing's), a command-line one by its candidates, the workspace's PATH before the daemon's
 async function checkerStates(_req: Request, res: Response, current: Live, machineFor: TaskRouteDeps['machineFor']): Promise<void> {
-  const machine = machineFor({}); // the workspaces' checkouts are the host's
   const { workspaces } = current.runtime.config.comb;
   const states = await Promise.all(CHECKERS.map(async (def): Promise<CheckerState> => {
     const found = await Promise.all(workspaces.map(async (w) => {
-      const binary = def.kind === 'lsp' ? await findCandidate(machine, def.project, w.path, '') : await findCandidate(machine, def.candidates, w.path, w.env.PATH ?? machine.info().path);
+      const machine = machineFor(w); // #932: the workspace's own machine; an unavailable one detects nothing
+      const binary = await whenAvailable(() => (def.kind === 'lsp' ? findCandidate(machine, def.project, w.path, '') : findCandidate(machine, def.candidates, w.path, w.env.PATH ?? machine.info().path)), undefined);
       return binary === undefined ? [] : [w.name];
     }));
     return { id: def.id, found: found.flat() };

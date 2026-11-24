@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { type Machine, MachineError, pathsOf } from '../src/machine.js';
-import { createMachines, unavailableMachine } from '../src/machines.js';
+import { createMachines, machineRefusal, NOT_SUPPORTED, unavailableMachine, unavailableRefusal, whenAvailable } from '../src/machines.js';
 import type { PtyHandlers } from '../src/types.js';
 import { fakeMachine } from './fake-machine.js';
 
@@ -88,4 +88,19 @@ test('close() closes every machine the registry made that holds something, and l
   machines.for({ machine: 'AB:CD' }); // an unavailable machine has nothing to close
   machines.close();
   assert.deepEqual([closed, localCloses], [['A', 'B'], 0]);
+});
+
+test('machineRefusal answers the 409 of an unavailable machine with its id and reason, and nothing for a folder that is only missing (#931, #932)', async () => {
+  assert.deepEqual(await machineRefusal(unavailableMachine('wsl:X', 'not_windows'), '/home/u/repo'), {
+    status: 409, message: 'machine wsl:X is unavailable: not_windows', code: 'machine_unavailable', machine: 'wsl:X', reason: 'not_windows',
+  });
+  assert.equal(await machineRefusal(local, '/nowhere/at/all'), undefined, 'ENOENT is the caller\'s to meet');
+  assert.equal(unavailableRefusal(new Error('boom'), 'wsl:X'), undefined);
+});
+
+test('whenAvailable answers `none` for a machine that is unavailable, sync throws included, and lets any other failure through (#932)', async () => {
+  const down = unavailableMachine('wsl:Y', NOT_SUPPORTED);
+  assert.deepEqual(await whenAvailable(() => down.fs.readdir('/x'), []), []);
+  assert.equal(await whenAvailable(async () => down.info().path, 'none'), 'none');
+  await assert.rejects(whenAvailable(() => Promise.reject(new Error('git broke')), []), { message: 'git broke' });
 });

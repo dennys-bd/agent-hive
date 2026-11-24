@@ -12,10 +12,10 @@ import { createServer, type HiveServer, killStrays } from '../src/server.js';
 import type { AgentId, Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
-import { fakeMachine } from './fake-machine.js';
+import { fakeMachine, fakeWsl, wslMachines } from './fake-machine.js';
 import { FOLDER_BODY_MESSAGE } from '../src/server-sessions.js';
 import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
-import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, writeTranscript } from './fakes.js';
+import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive, writeTranscript, withToplevel } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { workPath } from './fixtures/work.js';
@@ -47,7 +47,7 @@ async function start(t: TestContext, stdout: (args: string[]) => string = () => 
     git.push([file, ...args]);
     return { stdout: stdout(args) };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -75,6 +75,21 @@ test('POST /activities/local:<name>/shell opens a terminal in the workspace\'s c
     ['workspace', repo, true, undefined, [], undefined, undefined],
   );
   assert.deepEqual(git.slice(before), [], 'no git: no worktree, no checkout, no setup');
+});
+
+test('a wsl:X workspace\'s shell starts its pty on the distro\'s machine, in the workspace\'s folder there; the host launches nothing (#932)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const onHost = fakeSpawn();
+  const onX = fakeSpawn();
+  const exec: Exec = async () => ({ stdout: '' });
+  const machines = wslMachines(fakeMachine({ exec, launch: onHost.spawn, home }), { X: fakeWsl('X', { launch: onX.spawn, home }) });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: onHost.spawn, exec: withToplevel(exec), machines });
+  const base = `http://127.0.0.1:${await server.listen(0)}`;
+  t.after(() => server.close());
+  const site = { ...workspacesAt(repo)[0], name: 'site', path: '/home/u/site', machine: 'wsl:X' };
+  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [...workspacesAt(repo), site] })).status, 200);
+  assert.equal((await postJson(`${base}/activities/${encodeURIComponent(localActivityId('site'))}/shell`)).status, 200);
+  assert.deepEqual([onHost.workers.length, onX.workers.length, onX.workers[0]?.launch.cwd], [0, 1, '/home/u/site']);
 });
 
 test('a workspace the config no longer holds ends the shell in spawnFailed with the reason in the bar: a first open that never ran goes, and nothing runs (#292, #696)', async (t) => {

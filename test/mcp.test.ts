@@ -23,13 +23,13 @@ import type { Activity, Config, Exec, Source, SourceConfig, SourceSpec, State, T
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import { AUTH, STAGES, bodyFlows, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, STAGES, bodyFlows, fakeFacts, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive, withToplevel } from './fakes.js';
 import type { RecordInput } from '../src/facts.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flowed } from './fixtures/main-flow.js';
-import { HOST_PATHS } from './fake-machine.js';
+import { fakeMachine, HOST_PATHS } from './fake-machine.js';
 
 // One worker: the fake source's task runs in it, so its worker is the live one. `later` is a second Comb stage without a prompt.
 const MCP_STAGES = [...STAGES, { name: 'later', from: {} }];
@@ -54,7 +54,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
   const { facts, records } = fakeFacts();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: async () => ({ stdout: '' }), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, ...extra, exec: withToplevel(extra.exec ?? (async () => ({ stdout: '' }))) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -406,6 +406,7 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   mountMcp(app, {
     exec: async () => ({ stdout: '' }),
+    machineFor: () => fakeMachine(),
     live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
     relate: unused, canRelate: () => false,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
@@ -543,12 +544,12 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
   };
   const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
   const original = { pr: 'original', original: 'acme/app', fork: 'me/app', baseRemote: 'upstream', base: 'master' };
-  assert.deepEqual(await forkConventions(exec, app, {}), original);
-  assert.deepEqual(await forkConventions(exec, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });
-  assert.deepEqual(await forkConventions(exec, { ...app, fork: { remote: 'upstream', pr: 'fork', sync: 'github' } }, { baseBranch: 'main' }), { ...original, pr: 'fork', baseRemote: 'origin', base: 'main' });
-  assert.equal(await forkConventions(exec, { ...app, fork: null }, {}), undefined);
-  assert.equal(await forkConventions(async () => ({ stdout: 'https://gitlab.com/a/b.git\n' }), app, {}), undefined);
-  assert.equal(await forkConventions(exec, undefined, {}), undefined);
+  assert.deepEqual(await forkConventions({ exec, paths: HOST_PATHS }, app, {}), original);
+  assert.deepEqual(await forkConventions({ exec, paths: HOST_PATHS }, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });
+  assert.deepEqual(await forkConventions({ exec, paths: HOST_PATHS }, { ...app, fork: { remote: 'upstream', pr: 'fork', sync: 'github' } }, { baseBranch: 'main' }), { ...original, pr: 'fork', baseRemote: 'origin', base: 'main' });
+  assert.equal(await forkConventions({ exec, paths: HOST_PATHS }, { ...app, fork: null }, {}), undefined);
+  assert.equal(await forkConventions({ exec: async () => ({ stdout: 'https://gitlab.com/a/b.git\n' }), paths: HOST_PATHS }, app, {}), undefined);
+  assert.equal(await forkConventions({ exec, paths: HOST_PATHS }, undefined, {}), undefined);
   const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
   const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
   const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
@@ -567,7 +568,7 @@ test('conventionsAnswer answers the workspace\'s base when the workspace or the 
   assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local, undefined, [], { ...plain, baseBranch: 'devtest' }).base, 'devtest');
   assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local).base, 'main');
   const exec: Exec = async (_file, args) => ({ stdout: args.includes('get-url') ? 'https://github.com/acme/app.git\n' : '' });
-  const fork = await forkConventions(exec, { ...app, baseBranch: 'devtest' }, {});
+  const fork = await forkConventions({ exec, paths: HOST_PATHS }, { ...app, baseBranch: 'devtest' }, {});
   assert.equal(conventionsAnswer(state, config, local, fork, [], { ...app, baseBranch: 'devtest' }).base, fork?.base);
 });
 
@@ -664,9 +665,9 @@ test('nestedConventions answers each nested repo with its GitHub repository, non
   const urls: Record<string, string> = { [join('/app', 'docs')]: 'https://github.com/acme/docs.git\n', [join('/app', 'ee')]: 'https://gitlab.com/acme/ee.git\n' };
   const exec: Exec = async (_file, args) => ({ stdout: urls[args[1]] ?? '' });
   const app: Workspace = { name: 'app', path: '/app', env: {}, fork: null, nestedRepos: ['docs', 'ee'], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
-  const nested = await nestedConventions(exec, app);
+  const nested = await nestedConventions({ exec, paths: HOST_PATHS }, app);
   assert.deepEqual(nested, [{ path: 'docs', repository: 'acme/docs' }, { path: 'ee' }]);
-  assert.deepEqual(await nestedConventions(exec, undefined), []);
+  assert.deepEqual(await nestedConventions({ exec, paths: HOST_PATHS }, undefined), []);
   const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
   const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
   const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
