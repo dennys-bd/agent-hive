@@ -946,9 +946,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     await ci.readAll(); // #834: every tick, whatever shouldPoll says: a task holding no worker can delay the poll up to 5 minutes
   }
 
-  async function resolveBranch(cwd: string): Promise<string | undefined> {
+  // On the worker's own machine (#948): a distro's worktree path means nothing to the host's git, so a host read left its branch unknown
+  async function resolveBranch(ptyId: string, cwd: string): Promise<string | undefined> {
+    const worker = workerOf(ptyId);
+    const activity = worker && live ? activityOfWorker(live.state, worker) : undefined;
     try {
-      const { stdout } = await execFileAsync('git', ['-C', cwd, 'branch', '--show-current']);
+      const { stdout } = await machineFor(activity ?? {}).exec('git', ['-C', cwd, 'branch', '--show-current']);
       return stdout.trim() || undefined;
     } catch {
       return undefined;
@@ -1130,7 +1133,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const isChild = ptyId !== undefined && payload !== undefined && isChildSession(workerOf(ptyId), payload);
     let effects: Effect[] = [];
     if (ptyId && payload) {
-      const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
+      const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(ptyId, payload.cwd) : undefined;
       const turn = isChild ? undefined : await readTurn(ptyId, payload);
       if (!isChild) wiring.beforeHook(live?.state, ptyId, payload, turn?.usage); // #742: the human signals read the worker before this hook moves it
       effects = await dispatch({ type: 'hook', ptyId, payload, branch, tokens: turn?.tokens, title: turn?.title });

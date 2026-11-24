@@ -261,3 +261,19 @@ test('a copilot stage starts copilot with its MCP file, the Hive\'s tools allowe
   assert.ok((await readFile(join(dir, 'hive.instructions.md'), 'utf8')).startsWith('---\napplyTo: "**"\n---\n\n'));
   assert.equal(JSON.stringify(launch.agent?.argv).includes(SECRET), false);
 });
+
+test('a SessionStart reads the worktree\'s branch on the worker\'s machine, not the host\'s: a distro\'s path means nothing to the host\'s git (#948)', async (t) => {
+  const asked: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    asked.push([file, ...args]);
+    return { stdout: args.includes('--show-current') ? 'hive-1-on-the-machine\n' : '' };
+  };
+  const { base, server, workers } = await start(t, BODY, { exec }, 1, CLAUDE_ONLY);
+  await waitFor(() => workers.length === 1);
+  const cwd = '/machine-only/hive-1-from-ready'; // no such folder on the host: only the machine answers for it
+  const payload = { hook_event_name: 'SessionStart', session_id: '0b7e7c6a-1d1e-4d8e-9a43-5d1a2b3c4d5e', cwd };
+  assert.equal((await hookEvent(base, worker0(server).runId!, payload)).status, 204);
+  await waitFor(() => work0(server)?.worktree === cwd);
+  assert.equal(work0(server)?.branch, 'hive-1-on-the-machine');
+  assert.ok(asked.some((call) => call.join(' ') === `git -C ${cwd} branch --show-current`), asked.map((c) => c.join(' ')).join('\n'));
+});
