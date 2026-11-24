@@ -1,7 +1,7 @@
 // The structural lint of a skill or agent template (#312, node 1.3 of #309): the annotations the editor shows on every change (4.1).
 // Pure and node-free like src/template.ts: it reads the parse and what the caller gives, never the disk, so the UI runs the same code.
 import { Liquid, type StaticAnalysis } from 'liquidjs';
-import { liquidError, type ParsedTemplate, type RenderWorkspace, renderTemplate, type TemplateVariable, valueFor, workspaceValueProblem } from './template.js';
+import { BUILT_INS, liquidError, type ParsedTemplate, type RenderWorkspace, renderTemplate, type TemplateVariable, valueFor, workspaceValueProblem } from './template.js';
 import { type TemplateRef, templateRefs } from './template-refs.js';
 import type { ItemKind } from './types.js';
 
@@ -32,7 +32,6 @@ export interface LintInput {
   scripts: string[];
 }
 
-const BUILT_IN = 'workspace';
 const RENDER_BUDGET_MS = 1000; // the render limit of src/template.ts: one runaway render's worth per lint
 // item-sources.ts names the plugin's origin too, but it reads the disk, so the lint cannot import it
 const HIVE_ORIGIN = 'hive';
@@ -75,7 +74,7 @@ function variableFindings(parsed: ParsedTemplate): LintAnnotation[] {
   if (!('globals' in analysis)) return [analysis];
   const declared = new Set(parsed.variables.map((variable) => variable.name));
   const undeclared = Object.entries(analysis.globals)
-    .filter(([name]) => name !== BUILT_IN && !declared.has(name))
+    .filter(([name]) => !(BUILT_INS as readonly string[]).includes(name) && !declared.has(name)) // #742: the four built-ins are always there
     .flatMap(([name, uses]) =>
       uses.map((use) =>
         finding(parsed.bodyLine + use.location.row - 1, 'red', 'undeclared', `undeclared variable ${name}`, `"${name}" is used here but not declared under variables: in the header.`, { variable: name }),

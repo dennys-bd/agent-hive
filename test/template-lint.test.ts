@@ -263,3 +263,8 @@ test('two templates that give a name different values are no finding while the w
   const input = { ...INPUT, catalogue: [called], workspaces: [at('hive', { flags: 'b' })] };
   assert.deepEqual(brief(lintTemplate(template(['variables:', '  flags: { values: [a, b], default: a }'], ['{{ flags }}, then /hive:stacked-branch.']), input)), []);
 });
+
+test('a template reading fork.pr, baseBranch or nestedRepos without declaring them has no undeclared finding; declaring fork is the parse\'s red (#742, decision 6)', () => {
+  assert.deepEqual(lint([], ['{% if fork %}{{ fork.pr }}{% endif %} {{ baseBranch }} {{ nestedRepos | join: ", " }}']), []);
+  assert.deepEqual(lint(['variables:', '  fork: { default: x }'], ['{{ fork }}']), ['4 red parse variable "fork": fork is built in and cannot be declared']);
+});
