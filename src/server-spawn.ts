@@ -2,7 +2,7 @@ import { AccountError, ptyAccountEnv, refusalLine, type AccountSeam, type RunAcc
 import type { Machine, MachineFor, RunInputs, RunSpec } from './machine.js';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
-import { agentOf, agentRefusal, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
+import { agentOf, defaultModel, disabledRefusal, ranAgent, runModel } from './agents.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { runners } from './agents/registry.js';
 import { taskBranch } from './task-runs.js';
@@ -27,12 +27,13 @@ import { agentPrompt } from './stage-agent.js';
 import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
-import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, HiveEvent, Terminal, Workspace } from './types.js';
+import type { Activity, AgentId, Config, Task, TaskBase, Stage, Effect, HiveEvent, Language, Terminal, Workspace } from './types.js';
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { prepareNested } from './worktree-nested.js';
 import { taskDir, ensureCheckout, ensureWorktree } from './worktree.js';
 import type { FactLog } from './facts.js';
+import { agentCheck, type RunPlace, runRefusal } from './wsl/distro-status.js';
 
 // How a run starts (#283, #251), out of server.ts, which was over 900 lines: the stage run and the user's own session.
 
@@ -73,7 +74,7 @@ export interface SpawnerDeps {
   isLive(ptyId: string): boolean; // the worker still holds this run (#299): a Stop during the setup freed it
   ptys: Pick<PtyHost, 'has' | 'subscribe' | 'adopt'>; // a run command's output (#353) and a worktree setup's (#351) reach the console through the pty host
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
-  agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a stage whose agent is missing never reaches its worktree
+  language(): Language; // #946: the words of a refusal on a distro: the config's language, else the system's
   home: string; // #696: where a terminal's ring lives (its history is the machine's, #947); #797: the protocol files
   facts?: Pick<FactLog, 'write'>; // #742: the worktree setup's worktree.step
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, once the renders queued so far have landed
@@ -140,12 +141,15 @@ const sized = (size?: TerminalSize): Pick<RunSpec, 'size'> => (size === undefine
 const skillRefusal = (stage: Stage, pluginDir: string): string | undefined =>
   (stage.action === 'skill' && !hasSkill(pluginDir, stage.skill ?? '') ? `skill hive:${stage.skill ?? ''} is not in this workspace's Hive plugin` : undefined);
 
+type StageLaunch = { agent: AgentId; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> };
+
 // What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the stage's specialized agent
 // (#710) under the picks' specialized agent and args, after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an
-// agent boot did not find (#516) or the config disables (#482), a skill (#710) or a specialized agent (#257) the plugin no longer has
-function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
+// agent the config disables (#482), a skill (#710), an agent its machine lacks or a distro's claude logged out (#946, after the stat that
+// waits for a distro's helper), or a specialized agent (#257) the plugin no longer has
+async function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], pluginDir: string, place: RunPlace): Promise<StageLaunch | { refusal: string }> {
   const agent = worker.agent ?? agentOf(stage, config);
-  const refusal = agentRefusal(agent, agents, config.agentEnabled) ?? skillRefusal(stage, pluginDir);
+  const refusal = disabledRefusal(agent, config.agentEnabled) ?? skillRefusal(stage, pluginDir) ?? (await runRefusal(agent, place));
   if (refusal !== undefined) return { refusal };
   const launch = stageRunLaunch(stage, worker.launch); // #710: a manual pick wins
   const picked = launchRun(launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
@@ -154,7 +158,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, agents, home, facts, plugin, externalMcp, machineFor, runAccounts } = deps;
+  const { pool, log, dispatch, exitOf, fail, isLive, ptys, consoleStore, home, facts, plugin, externalMcp, machineFor, runAccounts } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -171,6 +175,13 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     await dispatch({ type: 'spawnFailed', ptyId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) });
     return undefined;
   };
+
+  // #317: the workspace's plugin folder, then the stage's launch on the activity's machine (#946): a refusal leaves nothing behind
+  async function placedLaunch(effect: SpawnEffect, config: Runtime['config'], placed: Workspace): Promise<StageLaunch | { refusal: string }> {
+    const folder = await pluginFolder(plugin, placed.name);
+    if ('refusal' in folder) return folder;
+    return stageLaunch(effect, config, folder.pluginDir, { machine: machineFor(effect.activity), folder: placed.path, ...agentCheck(config, deps.language()) });
+  }
 
   // Where a stage starts (#283): HEAD in the worktree, kept as the stage-start ref and on the activity, which is what Restart resets to. One
   // per stage (#812): a start the stage already has (a free session's, an earlier run's, a feedback or handoff turn's) stays, so Restart undoes
@@ -231,8 +242,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const slug = workSlug(activity, task);
     const { config } = runtime;
     const placed = taskWorkspace(config, task); // #317: a task whose workspace left the config never starts: it has no folder to load
-    const folder = placed ? await pluginFolder(plugin, placed.name) : { refusal: noWorkspaceReason(task) };
-    const launch = 'refusal' in folder ? folder : stageLaunch(effect, config, agents, folder.pluginDir); // #516, #290: before prepare, so a run that cannot start leaves no worktree, setup or prompt behind
+    const launch = placed ? await placedLaunch(effect, config, placed) : { refusal: noWorkspaceReason(task) }; // #516, #290, #946: before prepare, so a run that cannot start leaves no worktree, setup or prompt behind
     if ('refusal' in launch) {
       await dispatch({ type: 'spawnFailed', ptyId, message: launch.refusal });
       return;
@@ -290,6 +300,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       return;
     }
     const machine = machineFor(effect.activity);
+    const onMachine = await runRefusal(agent, { machine, folder: place.workspace.path, ...agentCheck(config, deps.language()) }); // #946: the session gains the stage's check, before the stage start is recorded
+    if (onMachine !== undefined) return void (await failed(ptyId, new Error(onMachine)));
     // #854, #953: before the stage start is recorded, as every refusal above; a refused account or a gone env frees the worker through spawnFailed
     const env = await accountEnvOf(ptyId, agent, await runEnv(machine, place.workspace)).catch((err: unknown) => failed(ptyId, err));
     if (env === undefined) return;
