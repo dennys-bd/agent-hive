@@ -207,6 +207,10 @@ const en = {
   'decomposition.runningHive': 'You can close this: the creation goes on in the background and the tasks appear in the flow when it ends. If something fails, a notice shows.', // #784: the status note under the hive
   'decomposition.hiveFailed': 'Not every task was created. The ones created so far are kept: press "create tasks" again to continue from where it stopped.', // #784: a hive write's failure (code hive); the server's words go to hive.log
   'decomposition.failedTitleHive': 'Creating the tasks of {ref} stopped', // #784: the toast's title under the hive
+  'decomposition.titleNeutral': 'Decomposition', // #916: the title before the preview, with no recorded choice
+  'decomposition.createNeutral': 'create', // #916: the disabled primary before the preview, with no recorded choice
+  'decomposition.reading': 'reading the decomposition…', // #916: the status line while the preview loads
+  'decomposition.readFailed': 'Could not read the decomposition: {error}. Close and open it again to retry.', // #916: the preview's read failed
   'approval.startNow': 'start now',
   'approval.queue': 'in order',
   'approval.hint': 'start now resumes the task\'s session. in order, it waits for a free worker.',
@@ -3800,6 +3804,10 @@ const pt: Record<MessageKey, string> = {
   'decomposition.runningHive': 'pode fechar: a criação continua em segundo plano e as tarefas aparecem no fluxo ao terminar. se algo falhar, um aviso aparece.',
   'decomposition.hiveFailed': 'As tarefas não foram todas criadas. As já criadas ficam: clique em "criar tarefas" de novo para continuar de onde parou.',
   'decomposition.failedTitleHive': 'A criação das tarefas de {ref} parou',
+  'decomposition.titleNeutral': 'Decomposição',
+  'decomposition.createNeutral': 'criar',
+  'decomposition.reading': 'lendo a decomposição…',
+  'decomposition.readFailed': 'Não foi possível ler a decomposição: {error}. Feche e abra de novo para tentar outra vez.',
   'approval.startNow': 'começar agora',
   'approval.queue': 'na ordem',
   'approval.hint': 'começar agora retoma a sessão da tarefa. na ordem, a tarefa espera um worker livre.',

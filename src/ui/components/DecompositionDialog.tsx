@@ -172,23 +172,65 @@ function Sources({ preview, choice, isRunning, onChoice }: { preview: Decomposit
   );
 }
 
+// Whose words the dialog speaks (#784; #916): the chosen target's once the preview is read, before it the last recorded choice's, else neutral
+type Words = 'issues' | 'tasks' | 'neutral';
+const TITLE = { issues: 'decomposition.title', tasks: 'decomposition.titleHive', neutral: 'decomposition.titleNeutral' } as const;
+const CREATE = { issues: 'decomposition.create', tasks: 'decomposition.createHive', neutral: 'decomposition.createNeutral' } as const;
+
+function wordsOf(isRead: boolean, hive: DecompositionHive | undefined, last: DecompositionChoice | undefined): Words {
+  if (hive !== undefined) return 'tasks';
+  if (isRead) return 'issues';
+  if (last?.source === undefined) return 'neutral';
+  return last.source === HIVE_SOURCE ? 'tasks' : 'issues';
+}
+
+// #916: static bars where the description, the summary, the target and the two pickers go, so the dialog opens near its final height; no
+// pulse, as the timeline's skeleton. The repository bar only for a GitHub target, as the loaded dialog has no repository row under the hive
+const BAR = 'block h-2.5 rounded-[3px] bg-muted';
+function LoadingSkeleton({ isHive }: { isHive: boolean }) {
+  const line = (width: string) => <span className="flex h-5 items-center"><span className={BAR} style={{ width }} /></span>;
+  const picker = <div className="flex flex-col gap-1">{line('40%')}<span className="block h-9 rounded-md bg-muted" /></div>;
+  return (
+    <div aria-hidden="true" data-testid="decomposition-skeleton" className="flex flex-col gap-3">
+      {line('62%')}
+      <div className="flex flex-col gap-1">{line('34%')}{line('26%')}</div>
+      <div className="flex flex-col gap-1">{!isHive && line('48%')}{line('88%')}</div>
+      <div className="grid grid-cols-2 gap-2">{picker}{picker}</div>
+    </div>
+  );
+}
+
+const closeWithEsc = (onClose: () => void) => (
+  <Button type="button" variant="outline" onClick={onClose}>{t('base.close')}<span aria-hidden="true" className="text-xs tracking-widest opacity-60">esc</span></Button>
+);
+
 // #781: while the write runs, fechar replaces cancelar, since closing leaves the write going rather than cancelling it, and the primary is busy
-// with no second press. esc is the key's own name, as SearchChrome's. #784: the hive's words under the hive
-function Footer({ isRunning, canWrite, isHive, onWrite, onClose }: { isRunning: boolean; canWrite: boolean; isHive: boolean; onWrite(): void; onClose(): void }) {
+// with no second press. esc is the key's own name, as SearchChrome's. #784: the hive's words under the hive. #916: a failed read leaves
+// nothing to create, so only fechar; while the preview loads the primary is disabled and has no hint, since its key does nothing yet
+function Footer({ isRunning, isRead, hasReadFailed, canWrite, words, onWrite, onClose }: { isRunning: boolean; isRead: boolean; hasReadFailed: boolean; canWrite: boolean; words: Words; onWrite(): void; onClose(): void }) {
   if (isRunning) {
     return (
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>{t('base.close')}<span aria-hidden="true" className="text-xs tracking-widest opacity-60">esc</span></Button>
-        <Button type="button" disabled><Spinner />{t(isHive ? 'decomposition.creatingHive' : 'decomposition.creating')}</Button>
+        {closeWithEsc(onClose)}
+        <Button type="button" disabled><Spinner />{t(words === 'tasks' ? 'decomposition.creatingHive' : 'decomposition.creating')}</Button>
       </DialogFooter>
     );
   }
+  if (hasReadFailed) return <DialogFooter>{closeWithEsc(onClose)}</DialogFooter>;
   return (
     <DialogFooter>
       <Button type="button" variant="outline" onClick={onClose}>{t('base.cancel')}</Button>
-      <Button type="button" onClick={onWrite} disabled={!canWrite}>{t(isHive ? 'decomposition.createHive' : 'decomposition.create')}<ButtonKeyHint id="confirm" /></Button>
+      <Button type="button" onClick={onWrite} disabled={!canWrite}>{t(CREATE[words])}{isRead && <ButtonKeyHint id="confirm" />}</Button>
     </DialogFooter>
   );
+}
+
+// The one status region (#781), mounted from the open so a screen reader announces each change: the read while the preview loads (#916),
+// the write's note while it runs; sr-only while empty, so it takes no row
+function StatusLine({ isRunning, isLoading, isHive }: { isRunning: boolean; isLoading: boolean; isHive: boolean }) {
+  if (isRunning) return <p role="status" className={`${MUTED} text-sm`}>{t(isHive ? 'decomposition.runningHive' : 'decomposition.running')}</p>;
+  if (isLoading) return <p role="status" className={`${MUTED} flex items-center gap-2 text-sm`}><Spinner />{t('decomposition.reading')}</p>;
+  return <p role="status" className="sr-only" />;
 }
 
 /** The decomposition's confirm (#865): what the tree writes, or its problems with their lines; the target repository; the GitHub source
@@ -205,10 +247,11 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
       .then((read) => { setPreview(read); setChoice(openingChoice(read, lastChoice(activityId))); }, (err: Error) => setReadFailure(err.message));
   }, [activityId]);
   const hive = choice.source === HIVE_SOURCE ? preview?.hive : undefined; // #784: the hive chosen, and offered
-  // #784, decision 3: blank until the preview loads, then the chosen target's title
-  const title = preview === undefined ? '' : t(hive === undefined ? 'decomposition.title' : 'decomposition.titleHive');
+  const isRead = preview !== undefined;
+  const isLoading = !isRead && readFailure === undefined;
   // a running write's words come from its own choice until the preview loads (or when its read failed), so a hive write never reads issues
-  const isHive = hive !== undefined || (preview === undefined && lastChoice(activityId)?.source === HIVE_SOURCE);
+  const words = wordsOf(isRead, hive, lastChoice(activityId));
+  const isHive = words === 'tasks';
   const canWrite = preview !== undefined && !isRunning && isWritable(preview, choice);
   const write = (): void => { void writeDecomposition(activityId, choice); };
   const close = (): void => closeDecomposition(activityId);
@@ -216,21 +259,21 @@ function DecompositionDialog({ activityId }: { activityId: string }) {
   const onKeyDown = (e: KeyboardEvent): void => {
     if (canWrite && pressed(e.nativeEvent, 'confirm')) { e.preventDefault(); write(); }
   };
-  const error = writeFailure ?? readFailure;
+  const error = writeFailure ?? (readFailure === undefined ? undefined : t('decomposition.readFailed', { error: readFailure }));
   return (
     <Dialog open onOpenChange={(o) => { if (!o) close(); }}>
-      <DialogContent aria-busy={isRunning} onKeyDown={onKeyDown}>
+      <DialogContent aria-busy={isRunning || isLoading} onKeyDown={onKeyDown}>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>{t(TITLE[words])}</DialogTitle>
           <DialogDescription>{preview?.title ?? ''}</DialogDescription>
         </DialogHeader>
         {preview && <Summary preview={preview} hive={hive} />}
         {preview && <Target preview={preview} hive={hive} />}
         {preview && <Sources preview={preview} choice={choice} isRunning={isRunning} onChoice={setChoice} />}
-        {/* #781: mounted from the open and filled when the write starts, so a screen reader announces it; sr-only while empty, so it takes no row */}
-        <p role="status" className={isRunning ? `${MUTED} text-sm` : 'sr-only'}>{isRunning ? t(isHive ? 'decomposition.runningHive' : 'decomposition.running') : ''}</p>
+        <StatusLine isRunning={isRunning} isLoading={isLoading} isHive={isHive} />
+        {isLoading && <LoadingSkeleton isHive={isHive} />}
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
-        <Footer isRunning={isRunning} canWrite={canWrite} isHive={isHive} onWrite={write} onClose={close} />
+        <Footer isRunning={isRunning} isRead={isRead} hasReadFailed={readFailure !== undefined} canWrite={canWrite} words={words} onWrite={write} onClose={close} />
       </DialogContent>
     </Dialog>
   );
