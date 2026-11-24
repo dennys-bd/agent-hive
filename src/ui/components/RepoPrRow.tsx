@@ -18,22 +18,25 @@ const REVIEW: Record<PrReviewDecision, { key: MessageKey; tone: string }> = {
 };
 
 /** The merge cell's value (#758): `none` is the empty cell. */
-export type MergeCell = 'draft' | 'conflict' | 'failing' | 'review' | 'ready' | 'none';
+export type MergeCell = 'draft' | 'conflict' | 'failing' | 'pending' | 'review' | 'ready' | 'none';
 
-/** What the merge cell says (#758, handoff 03), the first that holds: a draft —; conflicts; failing checks; not approved, awaiting review;
+/** What the merge cell says (#758, handoff 03), the first that holds: a draft —; conflicts; failing checks; pending checks; not approved, awaiting review;
  * ready while GitHub says it merges clean or with hooks; anything else (blocked, behind, unknown) empty. The list never reads again to resolve
- * an unknown: GitHub computes it lazily and the PR's page reads it again. */
+ * an unknown: GitHub computes it lazily and the PR's page reads it again. `unstable` is never read here: GitHub says it for any non-passing
+ * status, pending included (#1019); awaiting checks wait on a maintainer, not the user, so they fall through (#854). */
 export function mergeCell(row: Pick<PrRow, 'isDraft' | 'mergeState' | 'checks' | 'decision'>): MergeCell {
   if (row.isDraft) return 'draft';
   if (row.mergeState === 'conflicts') return 'conflict';
-  if (row.checks === 'failure' || row.mergeState === 'unstable') return 'failing';
+  if (row.checks === 'failure') return 'failing';
+  if (row.checks === 'pending') return 'pending';
   if (row.decision !== 'approved') return 'review';
   return row.mergeState === 'clean' || row.mergeState === 'hooks' ? 'ready' : 'none';
 }
 
 const MERGE: Record<Exclude<MergeCell, 'draft' | 'none'>, { key: MessageKey; tone: string }> = {
   ready: { key: 'prs.merge.ready', tone: 'text-working' }, conflict: { key: 'prs.merge.conflict', tone: 'text-destructive' },
-  failing: { key: 'prs.merge.failing', tone: 'text-destructive' }, review: { key: 'prs.merge.review', tone: MUTED },
+  failing: { key: 'prs.merge.failing', tone: 'text-destructive' }, pending: { key: 'prs.merge.pending', tone: 'text-waiting' },
+  review: { key: 'prs.merge.review', tone: MUTED },
 };
 
 // A PR's k/n in its task's stack in its repository (#698), from the records; undefined out of a stack

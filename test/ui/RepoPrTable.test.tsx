@@ -80,12 +80,16 @@ test('the list reads the open PRs: the segments, the columns, each cell\'s state
   expect(screen.getByText('↵ abre o PR')).toBeInTheDocument();
 });
 
-test('the merge cell takes the first that holds: a draft, conflicts, failing checks, not approved, then ready on clean or hooks, else empty (#758)', () => {
+test('the merge cell takes the first that holds: a draft, conflicts, failing checks, pending checks, not approved, then ready on clean or hooks, else empty (#758, #1019)', () => {
   const cell = (extra: Partial<PrRow>) => mergeCell({ ...row(1, { decision: 'approved' }), ...extra });
   expect(cell({ isDraft: true, mergeState: 'conflicts' })).toBe('draft');
   expect(cell({ mergeState: 'conflicts', checks: 'failure' })).toBe('conflict');
   expect(cell({ checks: 'failure' })).toBe('failing');
-  expect(cell({ mergeState: 'unstable' })).toBe('failing');
+  // GitHub's UNSTABLE is any non-passing status, pending included: only a failed check says failing (#1019)
+  expect([cell({ mergeState: 'unstable' }), cell({ mergeState: 'unstable', checks: 'success' })]).toEqual(['none', 'none']);
+  expect(cell({ mergeState: 'unstable', checks: 'pending', decision: undefined })).toBe('pending');
+  expect(cell({ checks: 'awaiting' })).toBe('ready');
+  expect(cell({ checks: 'awaiting', decision: undefined })).toBe('review');
   expect(cell({ decision: 'changes' })).toBe('review');
   expect(cell({ decision: undefined })).toBe('review');
   expect([cell({}), cell({ mergeState: 'hooks' })]).toEqual(['ready', 'ready']);
