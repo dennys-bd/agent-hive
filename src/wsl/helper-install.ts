@@ -43,8 +43,9 @@ export const PROBE_LINE = 'exec 1>&3 3>&-; command -v "$1" >/dev/null 2>&1 || ex
 export const PROBE_JS = `const os = require('node:os'); const fs = require('node:fs'); const dir = os.homedir() + '${FOLDER_TAIL}'; console.log(process.versions.node); console.log(dir); console.log(fs.existsSync(dir + '/helper-' + process.argv[1] + '.mjs') ? 'yes' : 'no');`;
 // $1 the folder, $2 the helper's path, $3 the bundle's byte count: written through a temp file and moved only when whole, since a wsl.exe
 // killed mid-pipe ends cat's stdin early and a short helper would pass the probe forever; then every other helper-*.mjs removed. chmod
-// tightens a folder mkdir found already there
-export const INSTALL_LINE = 'mkdir -p -m 700 "$1" && chmod 700 "$1" && cat > "$2.tmp" && { [ "$(wc -c < "$2.tmp")" -eq "$3" ] || { rm -f -- "$2.tmp"; exit 1; }; } && mv -f "$2.tmp" "$2" && for f in "$1"/helper-*.mjs; do [ "$f" = "$2" ] || rm -f -- "$f"; done';
+// tightens a folder mkdir found already there. umask instead of mkdir -m, and a chmod refusal passed only on a folder of our own: Git's
+// sh.exe (the Windows lane's fake distro) is denied changing a profile temp folder's permissions, which a real distro never is
+export const INSTALL_LINE = '(umask 077 && mkdir -p "$1") && { chmod 700 "$1" || [ -O "$1" ]; } && cat > "$2.tmp" && { [ "$(wc -c < "$2.tmp")" -eq "$3" ] || { rm -f -- "$2.tmp"; exit 1; }; } && mv -f "$2.tmp" "$2" && for f in "$1"/helper-*.mjs; do [ "$f" = "$2" ] || rm -f -- "$f"; done';
 
 export type Probe = { folder: string; nodeVersion: string; isInstalled: boolean } | { reason: string };
 
