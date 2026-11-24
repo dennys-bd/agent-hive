@@ -12,7 +12,7 @@ import { bodyFlows, LOCAL_STAGES, workspacesAt, tempHive, withToplevel } from '.
 import { hiveFetch, SECRET } from './secret-client.js';
 import { savedTasks, type WithWork } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
-import { HOST_PATHS } from './fake-machine.js';
+import { fakeMachine, fakeWsl, HOST_PATHS, wslMachines } from './fake-machine.js';
 
 // GET /activities/worktrees (#586) over a Comb with no source and no worker: its tasks are local ones saved in state.json before the first save.
 // git is a fake that answers the merge-base, the commit count and the status, fails in the worktree `broken` names, and records every call.
@@ -182,4 +182,55 @@ test('GET /worktrees keeps a configured task\'s row and drops the stranded one w
     ['hive', ORPHAN_SLUG, 'noTask', undefined, undefined],
     ['hive', GONE_SLUG, undefined, 'local:8', undefined],
   ]);
+});
+
+// #932: hive at a temp repo on the host, site at /home/u/site on wsl:X, docs at /home/u/docs on wsl:Y, which stops when the test says. git on
+// each machine records its argv; X's lists one orphan worktree and has hive/x out
+const ORPHAN = 'hive-9-gone';
+interface OnMachines { base: string; onHost: string[][]; onX: string[][]; stopY(): void }
+async function serveOnMachines(t: TestContext): Promise<OnMachines> {
+  const { home, repo } = await tempHive(t);
+  const onHost: string[][] = [];
+  const onX: string[][] = [];
+  let isYDown = false;
+  const hostGit: Exec = async (_file, args) => { onHost.push(args); return { stdout: '' }; };
+  const xGit: Exec = async (_file, args) => {
+    onX.push(args);
+    if (args.includes('--show-current')) return { stdout: 'hive/x\n' };
+    const listing = `worktree /home/u/site\nHEAD 1111\nbranch refs/heads/main\n\nworktree /home/u/site/.hive/worktrees/${ORPHAN}\nHEAD 3333\nbranch refs/heads/hive/9-gone\n`;
+    return { stdout: args.includes('list') ? listing : '' };
+  };
+  const machines = wslMachines(fakeMachine({ exec: hostGit }), { X: fakeWsl('X', { exec: xGit }), Y: fakeWsl('Y', { isDown: () => isYDown }) });
+  const server = createServer({ secret: SECRET, home, exec: withToplevel(hostGit), machines });
+  const base = `http://127.0.0.1:${await server.listen(0)}`;
+  t.after(() => server.close());
+  const [hive] = workspacesAt(repo);
+  const workspaces = [hive, { ...hive, name: 'site', path: '/home/u/site', machine: 'wsl:X' }, { ...hive, name: 'docs', path: '/home/u/docs', machine: 'wsl:Y' }];
+  assert.equal((await postJson(`${base}/settings`, { ...settingsBody(repo), workspaces })).status, 200);
+  onHost.length = 0;
+  onX.length = 0;
+  return { base, onHost, onX, stopY: () => { isYDown = true; } };
+}
+const getUi = (url: string): Promise<Response> => hiveFetch(url, { headers: { 'x-hive-ui': '1' } });
+const inSite = (calls: string[][]): boolean => calls.some((args) => args[1] === '/home/u/site');
+
+test('GET /worktrees and /workspaces/branches read each workspace on its machine; a machine gone unavailable drops its rows and the others answer (#932)', async (t) => {
+  const f = await serveOnMachines(t);
+  const listed = await getUi(`${f.base}/worktrees`);
+  assert.equal(listed.status, 200);
+  assert.deepEqual(((await listed.json()) as WorktreeRow[]).filter((row) => row.workspace === 'site').map((row) => row.slug), [ORPHAN]);
+  assert.deepEqual([inSite(f.onX), inSite(f.onHost)], [true, false], 'site\'s git ran on wsl:X only');
+  assert.deepEqual(await (await getUi(`${f.base}/workspaces/branches`)).json(), [{ name: 'hive', branch: null }, { name: 'site', branch: 'hive/x' }, { name: 'docs', branch: null }]);
+  f.stopY();
+  const down = await getUi(`${f.base}/worktrees`);
+  assert.deepEqual([down.status, ((await down.json()) as WorktreeRow[]).some((row) => row.workspace === 'site')], [200, true]);
+});
+
+test('removing a wsl:X workspace\'s orphan worktree runs its git on the distro, never the host; on a stopped machine it is that machine\'s 409 (#932)', async (t) => {
+  const f = await serveOnMachines(t);
+  await postJson(`${f.base}/worktrees/site/${ORPHAN}/remove`, {});
+  assert.deepEqual([inSite(f.onX), inSite(f.onHost)], [true, false]);
+  f.stopY();
+  const down = await postJson(`${f.base}/worktrees/docs/${ORPHAN}/remove`, {});
+  assert.deepEqual([down.status, await down.json()], [409, { error: 'machine wsl:Y is unavailable: not_windows', code: 'machine_unavailable', machine: 'wsl:Y', reason: 'not_windows' }]);
 });
