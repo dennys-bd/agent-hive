@@ -182,3 +182,53 @@ test('a 409 add-pending resumes the add the daemon already holds instead of show
   expect(screen.queryByRole('alert')).toBeNull();
   expect(screen.queryByText(t('settings.accounts.add.failed.exited'))).toBeNull();
 });
+
+test('github\'s add starts at once; before gh prints the code the wait says so, then shows the code to type and the link; connected lists the login in github\'s and copilot\'s groups (#965)', async () => {
+  const d = daemon();
+  const onChange = vi.fn();
+  renderCard(onChange);
+  await read();
+  d.githubAdd = { state: 'pending' };
+  fireEvent.click(screen.getByRole('button', { name: t('settings.accounts.add.github') }));
+  expect(await screen.findByText(t('settings.accounts.add.github.waiting'))).toBeInTheDocument();
+  expect(screen.getByText(t('settings.accounts.add.github.newLogin'))).toBeInTheDocument();
+  expect(d.bodies).toEqual([undefined]);
+  d.githubAdd = { state: 'pending', code: 'ABCD-1234', url: 'https://github.com/login/device' };
+  await tick();
+  expect(await screen.findByText('ABCD-1234')).toHaveClass('font-mono', 'select-all');
+  expect(screen.getByText(t('settings.accounts.add.github.code'))).toHaveClass('sr-only');
+  expect(screen.getByText(t('settings.accounts.add.github.typeCode'))).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: t('settings.accounts.add.github.link') })).toHaveAttribute('href', 'https://github.com/login/device');
+  d.github = ['alice', 'bob'];
+  d.githubAdd = { state: 'connected', login: 'bob' };
+  await tick();
+  expect(await within(radios('github')).findByRole('radio', { name: 'bob' })).not.toBeChecked();
+  expect(within(radios('copilot')).getByRole('radio', { name: 'bob' })).not.toBeChecked();
+  expect(screen.queryByText('ABCD-1234')).toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
+  const polls = count(d, `GET ${GITHUB_ADD}`);
+  await tick();
+  expect(count(d, `GET ${GITHUB_ADD}`)).toBe(polls);
+});
+
+test('a failed github add says why in our words; try again starts gh again and close puts the group at rest (#965)', async () => {
+  const d = daemon();
+  renderCard();
+  await read();
+  d.githubAdd = { state: 'pending' };
+  fireEvent.click(screen.getByRole('button', { name: t('settings.accounts.add.github') }));
+  await screen.findByText(t('settings.accounts.add.github.waiting'));
+  d.githubAdd = { state: 'failed', reason: 'token' };
+  await tick();
+  expect(await screen.findByText(`${t('settings.accounts.add.failed.token')} ·`)).toBeInTheDocument();
+  d.githubAdd = { state: 'pending' };
+  fireEvent.click(screen.getByRole('button', { name: t('settings.accounts.retry') }));
+  await screen.findByText(t('settings.accounts.add.github.waiting'));
+  expect(count(d, `POST ${GITHUB_ADD}`)).toBe(2);
+  d.githubAdd = { state: 'failed', reason: 'exited' };
+  await tick();
+  expect(await screen.findByText(`${t('settings.accounts.add.failed.ghExited')} ·`)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: t('settings.accounts.add.close') }));
+  expect(screen.queryByText(`${t('settings.accounts.add.failed.ghExited')} ·`)).toBeNull();
+  expect(screen.getByRole('button', { name: t('settings.accounts.add.github') })).not.toHaveClass('invisible');
+});

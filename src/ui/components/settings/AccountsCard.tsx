@@ -1,7 +1,7 @@
 import { RadioGroup } from 'radix-ui';
 import { type ReactNode, useId } from 'react';
 import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
-import { type AddSlots, ClaudeAccountAdd, FailedLine, TextButton } from '@/components/settings/AccountAdd';
+import { type AddSlots, ClaudeAccountAdd, FailedLine, GithubLoginAdd, TextButton } from '@/components/settings/AccountAdd';
 import { scrollToConnections } from '@/components/settings/ConnectionsGroup';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Spinner } from '@/components/ui/spinner';
@@ -104,7 +104,7 @@ export function AccountsCard({ draft, saved, onChange, onOpenFlow }: AccountsCar
     <SettingsGroup title="settings.accounts" hint="settings.accounts.hint" flush>
       <ClaudeAccountAdd onConnected={accounts.refetch} render={group('claude')} />
       {group('copilot')()}
-      {group('github')()}
+      <GithubLoginAdd onConnected={accounts.refetch} render={group('github')} />
     </SettingsGroup>
   );
 }

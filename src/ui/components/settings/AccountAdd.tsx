@@ -118,3 +118,42 @@ export function ClaudeAccountAdd({ onConnected, render }: AddProps) {
   const action = <HeaderAdd label="settings.accounts.add.claude" isHidden={isFormOpen || status.state === 'pending'} onClick={() => setNaming(true)} />;
   return render({ action, foot });
 }
+
+// The one-time code under the row, indented to the label: large enough to read and type, selected whole on a click
+function GithubPending({ code, url, onCancel }: { code?: string; url?: string; onCancel(): void }) {
+  const hint = t(code === undefined ? 'settings.accounts.add.github.waiting' : 'settings.accounts.add.github.typeCode');
+  return (
+    <>
+      <PendingRow label={t('settings.accounts.add.github.newLogin')} hint={hint} onCancel={onCancel} />
+      {code !== undefined && (
+        <div className="flex flex-col gap-1 pl-[26px]">
+          <p>
+            <span className="sr-only">{t('settings.accounts.add.github.code')} </span>
+            <span className="select-all font-mono font-semibold text-[20px] leading-7 tracking-[.08em]">{code}</span>
+          </p>
+          {url !== undefined && <span className="text-xs"><SignInLink url={url} label="settings.accounts.add.github.link" /></span>}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** GitHub's add (#965): gh's browser login, started at once; while pending, the one-time code gh printed and the link to type it at. */
+export function GithubLoginAdd({ onConnected, render }: AddProps) {
+  const add = useAccountAdd('github', onConnected);
+  const { status } = add;
+  const start = (): void => { void add.start(); };
+  const foot = (
+    <>
+      {status.state === 'pending' && <GithubPending code={status.code} url={status.url} onCancel={add.cancel} />}
+      {status.state === 'failed' && (
+        <div className="flex items-center gap-2">
+          <FailedLine text={`${t(failedKey(status))} ·`}><TextButton onClick={start}>{t('settings.accounts.retry')}</TextButton></FailedLine>
+          <Button type="button" variant="ghost" size="xs" className="ml-auto" onClick={add.dismiss}>{t('settings.accounts.add.close')}</Button>
+        </div>
+      )}
+      <Done name={add.added} />
+    </>
+  );
+  return render({ action: <HeaderAdd label="settings.accounts.add.github" isHidden={status.state !== 'idle'} onClick={start} />, foot });
+}
