@@ -63,6 +63,16 @@ test('bootHive copies the budget from hive.config.json over the one saved in sta
   assert.deepEqual(server.getState()?.budget, { maxTokensPerHour: 50_000 });
 });
 
+test('bootHive gives a workspace from before #621 its variables and writes them to hive.config.json before the parse (#621, decision 7)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  await rewriteWorkspaces(home, (workspace) => Object.fromEntries(Object.entries(workspace).filter(([key]) => key !== 'variables')));
+  const { server } = await bootHive(home);
+  t.after(() => server.close());
+  const saved = JSON.parse(await readFile(join(home, 'hive.config.json'), 'utf8')) as { comb: { workspaces: { variables?: unknown }[] } };
+  assert.deepEqual(saved.comb.workspaces.map((w) => w.variables), [{}]);
+  assert.equal(server.getState() === undefined, false, 'hive mode: the parse took the migrated file');
+});
+
 test('bootHive opens under yellow even when state.json saved green, and under red when it saved red', async (t) => {
   const { home: homeGreen } = await hiveWithConfig(t, {});
   await saveState(homeGreen, { ...initialState(0), signal: 'green' });
