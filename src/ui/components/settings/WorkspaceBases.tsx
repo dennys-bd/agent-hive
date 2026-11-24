@@ -10,7 +10,7 @@ import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 // One workspace's base (handoff item 5): its colour and name, the field whose placeholder is the effective base, the hint for its fork
 function BaseRow({ row, general, onChange }: { row: WorkspaceDraft; general: string; onChange(baseBranch: string): void }) {
-  const remotes = useRemotes(row.path);
+  const remotes = useRemotes(row.path, row.machine);
   const name = row.name.trim();
   const remote = baseRemote({ fork: row.fork });
   const { fork } = row;

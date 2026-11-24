@@ -1485,7 +1485,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
-  registerNestedRoute(app, { config: () => live?.runtime.config }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes
+  registerNestedRoute(app, { config: () => live?.runtime.config, machineFor }); // GET /settings/nested-repos (#653): also in setup mode, as /settings/remotes; #932: on the draft's machine
   // GET /settings/copilot-trust (#880): the saved workspaces only, none in setup mode; the local machine's COPILOT_HOME, as its workers inherit it
   registerCopilotTrustRoute(app, { workspacePaths: () => live?.runtime.config.comb.workspaces.map((w) => w.path) ?? [], info: () => machineFor({}).info() });
 

@@ -111,7 +111,7 @@ export interface WorkspaceForkProps { row: WorkspaceDraft; saved: boolean; state
 /** Settings › workspaces › repositório (#854, handoff items 1-4, 6, 7): the suggestion, the fork switch, the original's remote and the PR target,
  * and how the fork keeps up. The remotes come from GET /settings/remotes, never the draft. */
 export function WorkspaceFork({ row, saved, state, onChange }: WorkspaceForkProps) {
-  const remotes = useRemotes(row.path);
+  const remotes = useRemotes(row.path, row.machine);
   const { fork } = row;
   const set: Change = (next) => onChange({ fork: next });
   return (
