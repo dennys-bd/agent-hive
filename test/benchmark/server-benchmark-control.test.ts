@@ -173,7 +173,7 @@ test('every refusal of the control routes reaches the log with its code and mess
 test('run and more-rounds of an experiment whose workspace is on wsl:X answer 409 machine_remote and never reach the runner (#932)', async (t) => {
   const exp = experiment({ status: 'done' });
   const h = routes(t, exp, { machines: { [exp.workspace]: 'wsl:X' } });
-  const remote = [409, { error: 'machine_remote', message: 'an evaluate stage runs on this computer only; the workspace is on wsl:X' }];
+  const remote = [409, { error: 'machine_remote', message: 'the benchmark runs on this computer only; the workspace is on wsl:X' }];
   assert.deepEqual(await h.post('/exp-1/run'), remote);
   assert.deepEqual(await h.post('/exp-1/more-rounds', { pairs: 1 }), remote);
   assert.deepEqual([h.calls, h.events], [[], []]);

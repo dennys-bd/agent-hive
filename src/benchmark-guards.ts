@@ -129,7 +129,7 @@ const HTTP_CONFLICT = 409;
 
 /** #932: an evaluate stage's agents (runHeadless) and a benchmark run's daemons start on this computer, in host folders: a workspace on another
  *  machine is refused before anything starts. The 409 names that machine; its code is machine_remote, as the host's desktop routes answer. */
-export function hostOnlyRefusal(workspace: { machine: MachineId }): Refusal | undefined {
+export function hostOnlyRefusal(workspace: { machine: MachineId }, what = 'an evaluate stage'): Refusal | undefined {
   if (workspace.machine === LOCAL_MACHINE) return undefined;
-  return { status: HTTP_CONFLICT, message: `an evaluate stage runs on this computer only; the workspace is on ${workspace.machine}`, code: MACHINE_REMOTE, machine: workspace.machine };
+  return { status: HTTP_CONFLICT, message: `${what} runs on this computer only; the workspace is on ${workspace.machine}`, code: MACHINE_REMOTE, machine: workspace.machine };
 }

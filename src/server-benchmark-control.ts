@@ -68,7 +68,7 @@ interface PairsEdit { apply(): Promise<unknown>; undo(): Promise<unknown> }
 
 // The blindness of every arm that will run first, so a refusal starts and edits nothing (spec); then the edit
 async function start(deps: BenchControlRouteDeps, req: Request, res: Response, experiment: Experiment, machine: MachineId, edit?: PairsEdit): Promise<void> {
-  const remote = hostOnlyRefusal({ machine }); // #932: a run's daemons start on this computer
+  const remote = hostOnlyRefusal({ machine }, 'the benchmark'); // #932: a run's daemons start on this computer
   if (remote) return fail(deps, req, res, remote.status, remote.code ?? 'machine_remote', remote.message);
   if (deps.runner.isLive(experiment.id)) return fail(deps, req, res, HTTP_CONFLICT, 'live', 'the experiment is running in this Hive');
   const leak = await deps.runner.blindness(experiment);
