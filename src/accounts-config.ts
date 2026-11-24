@@ -25,10 +25,12 @@ const noGithubLogin = (key: 'github' | 'copilot'): string => `"accounts.${key}" 
 const isStored = (map: object, name: string | undefined): boolean => name === undefined || Object.hasOwn(map, name);
 
 /** Why a save cannot take its accounts (#952, #959): the store has no Claude credential, or no GitHub login, by that name (400). Copilot runs
- * on a GitHub login. Checked only when the body carries a name, so an unrelated save never fails on a selection made earlier, and never on
- * boot: a token removed after the save is the run seam's to refuse (#953). The message names the key, never the token. */
-export async function accountsRefusal(accounts: AccountsConfig | undefined, env?: NodeJS.ProcessEnv): Promise<Refusal | undefined> {
-  const { claude: claudeName, github: githubName, copilot: copilotName } = accounts ?? {};
+ * on a GitHub login. Only a member that differs from `saved`, the saved config's, is checked (#964): the form sends accounts on every save, so
+ * an unrelated save never fails on a selection made earlier, and a name removed since is the run seam's to refuse (#953), as on boot. The
+ * message names the key, never the token. */
+export async function accountsRefusal(accounts: AccountsConfig | undefined, env?: NodeJS.ProcessEnv, saved: AccountsConfig = {}): Promise<Refusal | undefined> {
+  const changed = (key: AccountProvider): string | undefined => (accounts?.[key] === saved[key] ? undefined : accounts?.[key]);
+  const [claudeName, githubName, copilotName] = [changed('claude'), changed('github'), changed('copilot')];
   if (claudeName === undefined && githubName === undefined && copilotName === undefined) return undefined;
   const { claude = {}, github = {} } = await readCredentials(env);
   const checks: [boolean, string][] = [

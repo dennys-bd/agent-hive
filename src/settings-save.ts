@@ -85,7 +85,7 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
     editor: body.editor ?? current?.editor, // the form always sends it (#780); an API caller that omits it keeps the saved one
     mcp: body.mcp ?? current?.mcp ?? DEFAULT_CONFIG.mcp, // #333: the form never sends it, the MCP routes do; a first save, or a file from before the key, writes the defaults
     reviewer: body.reviewer ?? current?.reviewer, // the form never sends it (#328); the reviewer menu (4.3) may; an omitted key keeps the saved one
-    accounts: body.accounts ?? current?.accounts ?? {}, // #952: the form sends it from #964 on; until then every save (memory cap, trusted domains) keeps the saved selection, and a first save writes {}
+    accounts: body.accounts ?? current?.accounts ?? {}, // #952: the form always sends it (#964); an API caller that omits it (memory cap, trusted domains) keeps the saved selection, and a first save writes {}
   });
 }
 

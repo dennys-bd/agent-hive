@@ -20,6 +20,7 @@ import { type FlowScope, type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPr
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
 import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
 import { agentEnabledDraft, agentModelsDraft, agentModelsFrom, agentsProblem } from './settings-agents.js';
+import { type AccountsDraft, accountsDraft, accountsFrom } from './settings-accounts.js';
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
 import { type SemaphoreDraft, semaphoreDrafts, semaphoresFrom, semaphoresProblem } from './settings-semaphores.js';
 import { isEmptyOrNonNegativeInt, limitFrom, numberField, optional, type StageDraft, stageDraft, stageRenamesFrom } from './settings-stages.js';
@@ -75,6 +76,7 @@ export interface SettingsDraft {
   trustedDomains: string[]; // the chips (#404, #513), normalized as added
   consoleLines: string; // the Limits tab's field as typed (#353)
   shortcuts: Shortcuts; // only the user's changes, as the config holds them (#449): the atalhos tab edits the map itself
+  accounts: AccountsDraft; // #964: one name per provider, '' = the machine's login, edited on execution
 }
 export interface SettingsProblem { section: SettingsSection; message: string; transition?: string; stage?: string } // transition (#918): the draft id Settings selects on the chart; stage (#482): the stage draft it selects
 
@@ -174,6 +176,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     terminalFont: config?.terminalFont ?? '', // a new form uses the system monospace (#376); the parser still requires the key
     trustedDomains: config?.trustedDomains ?? [], // a new form trusts nothing (#404); the parser still requires the key
     shortcuts: config?.shortcuts ?? {}, // a new form changes no shortcut (#449); the parser still requires the key
+    accounts: accountsDraft(config?.accounts), // #964: a member left out is the machine's login
   };
 }
 
@@ -364,6 +367,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     trustedDomains: draft.trustedDomains, // always sent (#404), [] included: an emptied field un-trusts everything
     consoleLines: Number(draft.consoleLines.trim()), // always sent (#353); validateSettings ran first
     shortcuts: draft.shortcuts, // always sent (#449), {} included: Restaurar todos must reach the file
+    accounts: accountsFrom(draft.accounts), // always sent (#964), {} included: choosing the machine's login drops the member
   };
 }
 

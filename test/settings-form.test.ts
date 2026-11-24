@@ -121,6 +121,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
     fileIcons: { set: 'material', scope: 'all', muted: true }, // FILE_ICONS_DEFAULTS on a new form (#754)
     sidebarsPerView: { left: false, right: false, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, // SIDEBARS_PER_VIEW_DEFAULTS on a new form (#821)
     signals: SIGNALS_DEFAULTS, // today's table on a new form (#727)
+    accounts: { claude: '', copilot: '', github: '' }, // every group on the machine's login (#964)
   });
   assert.equal(draftFrom(undefined).language, 'en');
   assert.equal(github.auth, 'api');
@@ -211,6 +212,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     trustedDomains: ['github.com', 'docs.example.com'],
     shortcuts: { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null },
     consoleLines: 20000,
+    accounts: {}, // always sent (#964): CONFIG selects nothing
   });
   assert.equal('id' in sentOf(body).stages[0]!, false, 'id is a draft-only field, never sent to the server');
   assert.equal('id' in body.usageRules![0]!, false, 'id is a draft-only field, never sent to the server');
@@ -855,4 +857,11 @@ test('a stage renamed in the same save carries into a jira source\'s switchAt (#
   assert.ok(saved);
   assert.deepEqual([saved.type, saved.switchAt], ['jira', 'build']);
   assert.deepEqual({ ...saved, switchAt: 'dev' }, JIRA_SAVED);
+});
+
+test('draftFrom fills accounts from the saved selection, a missing member as the machine\'s login; toSettingsBody always sends accounts with the stored names only (#964)', () => {
+  const draft = draftFrom(info({ ...CONFIG, accounts: { claude: 'work', github: 'alice' } }));
+  assert.deepEqual(draft.accounts, { claude: 'work', copilot: '', github: 'alice' });
+  assert.deepEqual(toSettingsBody(draft).accounts, { claude: 'work', github: 'alice' }, 'the card reopens on the saved choice');
+  assert.deepEqual(toSettingsBody({ ...draft, accounts: { claude: '', copilot: '', github: '' } }).accounts, {}, 'the key still goes, empty');
 });

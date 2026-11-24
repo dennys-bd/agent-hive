@@ -17,12 +17,13 @@ test('the agents card hint ends in a link that opens the Flow tab (#527)', () =>
   expect(onOpenFlow).toHaveBeenCalledTimes(1);
 });
 
-test('execução stacks its four cards full width, in order: agents, sessions and waiting, branches, delete activity (#778)', () => {
+test('execução stacks its five cards full width, in order: agents, accounts, sessions and waiting, branches, delete activity (#778, #964)', () => {
   render(<ExecutionSection draft={draftFrom(undefined)} agents={FOUND} onChange={vi.fn()} onOpenFlow={vi.fn()} />);
-  const titles = [t('settings.agents'), t('settings.group.waiting'), t('settings.group.branches'), t('settings.deleteActivity')];
+  const titles = [t('settings.agents'), t('settings.accounts'), t('settings.group.waiting'), t('settings.group.branches'), t('settings.deleteActivity')];
   expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(titles);
-  const [agent, sessions, branches] = titles.slice(0, 3).map((name) => screen.getByRole('region', { name }));
+  const [agent, accounts, sessions, branches] = titles.slice(0, 4).map((name) => screen.getByRole('region', { name }));
   expect(agent.parentElement).toBe(branches.parentElement);
+  expect(accounts.parentElement).toBe(branches.parentElement);
   expect(sessions.parentElement).toBe(branches.parentElement);
   expect(document.querySelector('.md\\:grid-cols-2')).toBeNull();
 });
@@ -99,8 +100,8 @@ test('the agents card holds one arguments field per agent, named after it, each 
   expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '', copilot: '' } });
 });
 
-test('the search lists the agents card and, per agent, its model, its arguments and its switch (#482)', () => {
+test('the search lists the agents card and, per agent, its model, its arguments and its switch (#482), and the accounts groups (#964)', () => {
   const labels = searchEntries().map((e) => (typeof e.label === 'string' ? e.label : 'key' in e.label ? e.label.key : e.label.raw));
-  expect(labels).toEqual(expect.arrayContaining(['settings.agents', 'settings.agents.model.of', 'settings.agentArgs', 'settings.agents.enabled.of']));
+  expect(labels).toEqual(expect.arrayContaining(['settings.agents', 'settings.agents.model.of', 'settings.agentArgs', 'settings.agents.enabled.of', 'settings.accounts.github']));
   expect(labels).not.toContain('settings.defaultAgent');
 });

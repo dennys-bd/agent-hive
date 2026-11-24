@@ -19,6 +19,7 @@ export const SECTION_OF: Record<keyof SettingsDraft, FormSection> = {
   closeSessionTab: 'execution', closeStageTab: 'execution', closeSessionTabNotice: 'execution', closeStageTabNotice: 'execution', // #614
   closeTerminalTab: 'execution', closeTerminalTabNotice: 'execution', // #696
   sleepNotice: 'execution', sleepAutoNotice: 'execution', sleepIdleNotice: 'execution', sleepAllNotice: 'execution', // #672
+  accounts: 'execution', // #964: the card follows the agents card
   budgetHour: 'rules', budgetDay: 'rules', rules: 'rules', showGithubQuota: 'rules', signals: 'rules',
   language: 'app', theme: 'app', fileIcons: 'app', sidebarsPerView: 'app', terminalFont: 'app', trustedDomains: 'app', consoleLines: 'app', onClose: 'app', notifications: 'app',
   editor: 'editor', // #780

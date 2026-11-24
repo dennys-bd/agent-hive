@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { saveGithubCredential } from '../src/credentials.js';
+import { removeGithubCredential, saveGithubCredential } from '../src/credentials.js';
 import { createGithubAccount, type GithubAccount } from '../src/github-account.js';
 import type { GhToken } from '../src/github-token.js';
 import type { ReadModelLoop } from '../src/read-model/loop.js';
@@ -45,7 +45,7 @@ test('the Settings listing reads as the query\'s auth: api before any save lists
 const UI_HEADERS = { 'content-type': 'application/json', 'x-hive-ui': '1' };
 const MACHINE: GhToken = { login: async () => 'gh-user', token: async () => { throw new Error('the machine token was read'); }, invalidate: () => undefined };
 
-interface Harness { base: string; home: string; repo: string; account: GithubAccount; kicks(): number; resolvedAs: string[] }
+interface Harness { base: string; home: string; repo: string; env: NodeJS.ProcessEnv; account: GithubAccount; kicks(): number; resolvedAs: string[] }
 
 function countingLoop(): { loop: ReadModelLoop; kicks(): number } {
   let kicks = 0;
@@ -80,7 +80,7 @@ async function start(t: TestContext): Promise<Harness> {
   const server = createServer({ secret: SECRET, home, sourceFactory, githubAccount: account, readLoop: loop, credentialsEnv: env, githubLogin: { env } });
   const port = await server.listen(0);
   t.after(() => server.close());
-  return { base: `http://127.0.0.1:${port}`, home, repo, account, kicks, resolvedAs };
+  return { base: `http://127.0.0.1:${port}`, home, repo, env, account, kicks, resolvedAs };
 }
 
 const save = (h: Harness, accounts: AccountsConfig): Promise<Response> => hiveFetch(`${h.base}/settings`, {
@@ -125,4 +125,15 @@ test('POST /settings with accounts.github or accounts.copilot naming no stored l
   }
   await assert.rejects(stat(join(h.home, 'hive.config.json')), 'nothing written');
   assert.equal(h.kicks(), 0);
+});
+
+// Copilot, not github: the save's source check reads as accounts.github, which this test leaves on the machine's login
+test('a save that keeps a selection the store has since lost passes; one that changes to a login not stored is refused (#964)', async (t) => {
+  const h = await start(t);
+  assert.equal((await save(h, { copilot: 'bob' })).status, 200);
+  await removeGithubCredential('bob', h.env);
+  assert.equal((await save(h, { copilot: 'bob' })).status, 200, 'an unrelated save keeps the stale login: the run seam refuses the run (#953)');
+  const refused = await save(h, { copilot: 'carol' });
+  assert.equal(refused.status, 400);
+  assert.deepEqual(await refused.json(), { error: '"accounts.copilot" names no saved GitHub login' });
 });

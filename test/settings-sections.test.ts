@@ -31,3 +31,10 @@ test('the editor section (#749, #780) follows app in the nav and owns the editor
   assert.deepEqual(unsavedSections(['editor', 'theme']), ['app', 'editor']);
 });
 
+
+test('a group\'s choice marks execution unsaved; choosing back the saved one is no change (#964)', () => {
+  const picked = { ...saved, accounts: { ...saved.accounts, github: 'alice' } };
+  assert.deepEqual(unsavedKeys(saved, picked), ['accounts']);
+  assert.deepEqual(unsavedSections(unsavedKeys(saved, picked)), ['execution']);
+  assert.deepEqual(unsavedKeys(saved, { ...picked, accounts: { ...picked.accounts, github: '' } }), [], 'back on the machine\'s login');
+});
