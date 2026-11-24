@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MachineError } from '../src/machine.js';
+import { MachineError, type RunSpec } from '../src/machine.js';
 import { createPtyHost } from '../src/pty-host.js';
 import { helperHash, INSTALL_LINE, PROBE_LINE } from '../src/wsl/helper-install.js';
 import { SPAWN_LINE } from '../src/wsl/helper-link.js';
@@ -163,4 +163,29 @@ test('a helper that never says hello fails the start with helper_failed once the
   assert.ok(helper, 'the start reached the hello\'s wait');
   await exitOf(helper);
   assert.equal(helper.killed, true);
+});
+
+const HANDLERS = { onExit: (): void => {}, onError: (): void => {} };
+const terminal = (ptyId: string, cwd: string, more: Partial<RunSpec> = {}): RunSpec => ({ ptyId, slug: 'hive-945', workspace: 'w', cwd, terminal: true, ...more });
+
+test('a pty through the machine starts once the helper has, with GH_TOKEN in its lent env and in no argv; a caller\'s own lent value wins (#945)', async (t) => {
+  const r = await rig(t);
+  await r.machine.pty.spawn(terminal('P945', r.home), HANDLERS).started;
+  await r.machine.pty.spawn(terminal('P946', r.home, { lent: { GH_TOKEN: 'caller-945' } }), HANDLERS).started;
+  const [lent, own] = r.fakePty.ptys;
+  assert.ok(lent && own);
+  assert.equal(lent.options.env.GH_TOKEN, TOKEN);
+  assert.ok(String(lent.options.env.WSLENV).split(':').includes('GH_TOKEN'));
+  assert.equal(own.options.env.GH_TOKEN, 'caller-945');
+  assert.ok(![lent, own].some((p) => [p.file, ...p.args].some((arg) => arg.includes(TOKEN))));
+  assert.equal(r.machine.pty.pid('P945'), undefined);
+  for (const pty of r.fakePty.ptys) pty.exit(0);
+});
+
+test('a pty on a machine whose start fails rejects started with the reason, and its kill resolves (#945)', async (t) => {
+  const r = await rig(t, { node: 'no-such-node-945' });
+  const handle = r.machine.pty.spawn(terminal('P947', r.home), HANDLERS);
+  await assert.rejects(handle.started, refusedWith('node_missing'));
+  await handle.kill();
+  assert.equal(r.fakePty.ptys.length, 0);
 });

@@ -2,19 +2,19 @@
 // distro's helper and goes to the link it is on now. The start (probe, install, helper, hello, relay, the Hive's folder) is one promise
 // shared by every call that arrives during it (decision 1): a failed start leaves nothing behind, and an ended helper is started again by
 // the next call (decision 13). No timeout of its own on any call: only the start is bounded (decision 2).
-import { type Machine, MachineError, type MachineInfo, type MachineWatcher, pathsOf, toMachineError } from '../machine.js';
-import { unavailableMachine } from '../machines.js';
+import { type Machine, MachineError, type MachineInfo, type MachinePty, type MachineWatcher, pathsOf, toMachineError } from '../machine.js';
 import type { PluginRender } from '../plugin-render.js';
 import type { PtyHost } from '../pty-host.js';
 import { answerRelay } from '../relay/relay-answer.js';
 import { createMuxMachine } from '../remote/machine-client.js';
 import { type Language, WSL_MACHINE_PREFIX } from '../types.js';
-import { prepareDistroHome } from './distro-home.js';
+import { distroPluginDir, prepareDistroHome } from './distro-home.js';
 import { HELPER_FAILED, helperHash, installHelper, probeHelper, type SpawnChild, startReason, unavailable } from './helper-install.js';
 import { type HelperLink, startLink } from './helper-link.js';
 import type { HelperHello } from './helper-main.js';
 import { stableFs } from './stable-fs.js';
 import { type RunFile, wslExec } from './wsl-exe.js';
+import { createWslPty } from './wsl-pty.js';
 
 export const HELLO_TIMEOUT_MS = 30_000; // the probe, the install and the hello together: a cold distro's boot is the one wait the machine owns
 export const STARTING = 'starting'; // info() before the first hello
@@ -46,17 +46,22 @@ export interface WslMachineDeps {
 /** A distro's machine (decision 14): close() is the quit's, after which every call rejects with closed. */
 export type WslMachine = Machine & { close(): void };
 
-interface Live { link: HelperLink; machine: Machine; info: MachineInfo }
+interface Live { link: HelperLink; machine: Machine; pty: MachinePty; info: MachineInfo }
 interface Bundle { hash: string; bytes: Buffer }
 interface StartContext { id: string; deps: WslMachineDeps & { distro: string }; stable: Machine; closing: AbortSignal; bundle(): Promise<Bundle> }
 
-// After the hello (decision 10): the relay answered against the Hive's port, then the Hive's folder rendered for the port the helper listens on
+// After the hello (decision 10): the relay answered against the Hive's port, the Hive's folder rendered for the port the helper listens on,
+// and the distro's pty (#944) over that folder. The pty and the plugin copy get the stable machine: distro-home keys its queue by identity
 async function joined({ id, deps, stable }: StartContext, link: HelperLink, hello: HelperHello): Promise<Live> {
   answerRelay(link.mux, { port: deps.hivePort() });
   const machine = createMuxMachine(link.mux, { id, pty: stable.pty, info: hello.info });
   const secretLine = `x-hive-secret: ${deps.secret}`;
-  await prepareDistroHome(machine, deps.host, { relayPort: hello.relayPort, secretLine, shimWords: deps.shimWords(), language: deps.language() });
-  return { link, machine, info: hello.info };
+  const home = await prepareDistroHome(machine, deps.host, { relayPort: hello.relayPort, secretLine, shimWords: deps.shimWords(), language: deps.language() });
+  const pty = createWslPty({
+    command: deps.command, distro: deps.distro, machine: stable, ptys: deps.ptys, home, relayPort: hello.relayPort, secret: deps.secret,
+    pluginDir: (workspace) => distroPluginDir(stable, deps.host, deps.plugins, workspace), hostEnv: deps.env, hostCwd: deps.hostCwd,
+  });
+  return { link, machine, pty, info: hello.info };
 }
 
 // Probe, install and hello under one timeout, which close() also ends; each step is one wsl.exe call, so a failure names its step
@@ -108,8 +113,34 @@ function watchOn(on: () => Promise<Machine>, path: string, options: { recursive:
   return { close: () => { isClosed = true; inner?.close(); } };
 }
 
+// spawn waits for the start, then hands the spec on with the token lent; the sync members are the daemon's PtyHost, as #944's are. pid:
+// wsl.exe's on the host, never the distro shell's, so none (#944)
+function stablePty(ready: () => Promise<Live>, token: () => Promise<Record<string, string>>, ptys: PtyHost): MachinePty {
+  return {
+    spawn: (spec, handlers) => {
+      const inner = ready().then(async (live) => live.pty.spawn({ ...spec, lent: { ...(await token()), ...spec.lent } }, handlers));
+      let killing: Promise<void> | undefined;
+      return {
+        started: inner.then((handle) => handle.started),
+        kill: () => {
+          killing ??= inner.then((handle) => handle.kill(), () => undefined);
+          return killing;
+        },
+      };
+    },
+    write: (ptyId, data) => ptys.write(ptyId, data),
+    resize: (ptyId, cols, rows, redraw) => ptys.resize(ptyId, cols, rows, redraw),
+    subscribe: (ptyId, onData, onExit) => ptys.subscribe(ptyId, onData, onExit),
+    kill: (ptyId) => ptys.kill(ptyId),
+    pid: () => undefined,
+    has: (ptyId) => ptys.has(ptyId),
+    adopt: (ptyId, pty) => ptys.adopt(ptyId, pty),
+    forget: (ptyId) => ptys.forget(ptyId),
+  };
+}
+
 // Every member but info and close (decision 11): each waits for the helper; exec and run get the lent token
-function members(id: string, ready: () => Promise<Live>, token: () => Promise<Record<string, string>>): Omit<Machine, 'info'> {
+function members(id: string, ready: () => Promise<Live>, token: () => Promise<Record<string, string>>, ptys: PtyHost): Omit<Machine, 'info'> {
   const on = async (): Promise<Machine> => (await ready()).machine;
   return {
     id, paths: pathsOf('linux'), fs: stableFs(on),
@@ -123,7 +154,7 @@ function members(id: string, ready: () => Promise<Live>, token: () => Promise<Re
       return machine.run({ ...p, env: withLent(p.env, await token()) ?? p.env });
     },
     watch: (path, options, onEvent, onError) => watchOn(on, path, options, onEvent, onError),
-    pty: unavailableMachine(id, NOT_SUPPORTED).pty, // temporary: Task 5 replaces it with the distro's pty
+    pty: stablePty(ready, token, ptys),
     process: () => {
       throw new MachineError(`machine ${id} runs no long-lived process`, { code: NOT_SUPPORTED });
     },
@@ -163,7 +194,7 @@ export function createWslMachine(distro: string, deps: WslMachineDeps): WslMachi
     return starting;
   };
   const stable: WslMachine = {
-    ...members(id, ready, () => lent(deps, distro)),
+    ...members(id, ready, () => lent(deps, distro), deps.ptys),
     // decision 12: the last hello's facts; before the first there is nothing true to answer, so it starts the helper and refuses
     info: () => {
       if (lastInfo !== undefined) return lastInfo;
