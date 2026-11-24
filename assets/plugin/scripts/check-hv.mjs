@@ -64,14 +64,48 @@ function shapeOf(raw) {
   return typeof bounds === 'string' ? bounds : { type, ...bounds, ...grouped };
 }
 
-function defOf(name, raw) {
+// One key of a when (#1034): a tweak declared above, with a non-empty list of unique values it takes; a single value is a list of one
+function conditionOf(other, raw, above) {
+  const def = above.find((tweak) => tweak.name === other);
+  if (def === undefined) return `when names "${other}", not a tweak declared above it`;
+  const values = Array.isArray(raw) ? raw : [raw];
+  if (values.length === 0 || values.length > TWEAK_OPTIONS_MAX || new Set(values).size !== values.length) {
+    return `when: ${other}'s values must be a non-empty list of unique values, at most ${TWEAK_OPTIONS_MAX}`;
+  }
+  const fitted = values.map((value) => fitValue(def, value));
+  const misfit = fitted.indexOf(undefined);
+  return misfit === -1 ? [other, fitted] : `when: ${JSON.stringify(values[misfit])} does not fit ${other}`;
+}
+
+// A condition that can never hold is refused rather than silently hiding a control (#1034)
+function whenOf(raw, above) {
+  if (!isRecord(raw) || Object.keys(raw).length === 0) return 'when must be a non-empty object of tweak name to value';
+  const conditions = Object.entries(raw).map(([other, values]) => conditionOf(other, values, above));
+  const reason = conditions.find((condition) => typeof condition === 'string');
+  return reason ?? Object.fromEntries(conditions);
+}
+
+function defOf(name, raw, above) {
   if (!TWEAK_NAME.test(name)) return `"${name}" is not a tweak name: [a-z][a-z0-9-]*`;
   if (name.length > TWEAK_NAME_MAX) return `"${name.slice(0, 16)}…" is longer than ${TWEAK_NAME_MAX} characters`;
   if (!isRecord(raw)) return `${name}: a definition is an object`;
   const shape = shapeOf(raw);
   if (typeof shape === 'string') return `${name}: ${shape}`;
   const value = fitValue(shape, raw.default);
-  return value === undefined ? `${name}: the default does not fit` : { name, ...shape, default: value };
+  if (value === undefined) return `${name}: the default does not fit`;
+  const when = raw.when === undefined ? undefined : whenOf(raw.when, above);
+  if (typeof when === 'string') return `${name}: ${when}`;
+  return { name, ...shape, default: value, ...(when === undefined ? {} : { when }) };
+}
+
+// Each definition checked against those declared above it (#1034): a when names only an earlier tweak, so no cycle can form
+function defsOf(entries) {
+  return entries.reduce((above, [name, raw]) => {
+    if (typeof above === 'string') return above;
+    const def = defOf(name, raw, above);
+    // biome-ignore lint/performance/noAccumulatingSpread: at most TWEAKS_MAX entries, and the schema above stays unmutated
+    return typeof def === 'string' ? def : [...above, def];
+  }, []);
 }
 
 function viewportsOf(raw) {
@@ -90,9 +124,8 @@ export function parseTweaks(raw) {
   if (typeof viewports === 'string') return { ok: false, reason: viewports };
   const entries = Object.entries(tweaks);
   if (entries.length > TWEAKS_MAX) return { ok: false, reason: `at most ${TWEAKS_MAX} tweaks` };
-  const defs = entries.map(([name, def]) => defOf(name, def));
-  const reason = defs.find((def) => typeof def === 'string');
-  return reason === undefined ? { ok: true, schema: defs, viewports } : { ok: false, reason };
+  const schema = defsOf(entries);
+  return typeof schema === 'string' ? { ok: false, reason: schema } : { ok: true, schema, viewports };
 }
 
 // --- a copy of src/design-markup.ts and of src/design-parts.ts's path rules (#421), reasons included ---
