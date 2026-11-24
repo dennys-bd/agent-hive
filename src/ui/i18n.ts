@@ -2326,7 +2326,7 @@ const en = {
   'prs.col.task': 'task', 'prs.col.updated': 'updated',
   'prs.state.open': 'open', 'prs.state.draft': 'draft', 'prs.state.merged': 'merged', 'prs.state.closed': 'closed',
   'prs.review.approved': 'approved', 'prs.review.changes': 'changes requested', 'prs.review.pending': 'pending',
-  'prs.merge.ready': 'ready', 'prs.merge.conflict': 'conflict', 'prs.merge.failing': 'checks failing', 'prs.merge.review': 'awaits review',
+  'prs.merge.ready': 'ready', 'prs.merge.conflict': 'conflict', 'prs.merge.failing': 'checks failing', 'prs.merge.pending': 'checks pending', 'prs.merge.review': 'awaits review',
   'prs.footer': '{n} open', 'prs.open': '↵ opens the PR', 'prs.truncated': 'showing the first 100',
   'pr.tab.conversation': 'conversation', 'pr.tab.files': 'files', // #758: the PR page
   'pr.task': 'task #{n} · {repo}',
@@ -5944,7 +5944,7 @@ const pt: Record<MessageKey, string> = {
   'prs.col.task': 'tarefa', 'prs.col.updated': 'atualizado',
   'prs.state.open': 'aberto', 'prs.state.draft': 'rascunho', 'prs.state.merged': 'mergeado', 'prs.state.closed': 'fechado',
   'prs.review.approved': 'aprovado', 'prs.review.changes': 'mudanças pedidas', 'prs.review.pending': 'pendente',
-  'prs.merge.ready': 'pronto', 'prs.merge.conflict': 'conflito', 'prs.merge.failing': 'checks falhando', 'prs.merge.review': 'aguarda review',
+  'prs.merge.ready': 'pronto', 'prs.merge.conflict': 'conflito', 'prs.merge.failing': 'checks falhando', 'prs.merge.pending': 'checks pendentes', 'prs.merge.review': 'aguarda review',
   'prs.footer': '{n} abertos', 'prs.open': '↵ abre o PR', 'prs.truncated': 'mostrando os primeiros 100',
   'pr.tab.conversation': 'conversa', 'pr.tab.files': 'arquivos', // #758: a página do PR
   'pr.task': 'tarefa #{n} · {repo}',
