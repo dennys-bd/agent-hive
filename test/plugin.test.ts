@@ -27,16 +27,6 @@ const VARIABLES: Record<string, string[]> = {
   'new-pr': ['specsDir', 'plansDir', 'walkthroughsDir', 'docsLanguage', 'chatLanguage'],
   decomposition: ['specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
 };
-// What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
-const NO_VALUE: Record<string, string> = {
-  docsRepo: 'none: the docs live in this repository',
-  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/design`', systemDesignsDir: '`docs/hive/system-design`',
-  docsLanguage: '`English`', chatLanguage: 'the Hive\'s `hiveLanguage`, else the language the user writes in',
-  delivery: '`single`',
-  designSystem: 'none: no design system',
-  uiCheck: 'none: no automatic visual check', testCommand: 'the test gate the repository\'s agent instructions file names', decompositionLabel: '`decomposed`',
-};
-
 // A template rendered for `workspace`, with its values (#621); a failure names its first error
 function renderedFor(text: string, workspace = 'a', variables: Record<string, VariableValue> = {}): string {
   const result = renderTemplate(parseTemplate(text), { name: workspace, variables });
@@ -104,7 +94,7 @@ test('the plugin ships the manifest, the five skills, the fourteen agents and th
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'changelog.yaml', 'reference', 'scripts', 'skills'], 'changelog.yaml holds the notes the update screen shows (#492)');
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html', 'system-design.md'], 'reference/ holds the conventions every new-* skill reads first, the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares, the system design subset the system designer and its reviewer read');
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['decomposition.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html', 'system-design.md'], 'reference/ holds the decomposition file the skill writes and its reviewer reads, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares, the system design subset the system designer and its reviewer read');
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => agentPath(a).slice('agents/'.length)));
@@ -146,7 +136,7 @@ test('every shipped skill and agent credits its origins in basedOn, each a file 
 });
 
 test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere it delivers', async () => {
-  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'reference/system-design.md', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
+  const others = ['CREDITS.md', 'reference/decomposition.md', 'reference/design.md', 'reference/skeleton.hv.html', 'reference/system-design.md', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
   const items = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...AGENTS.map(agentPath)];
   for (const [file, isItem] of [...others.map((f): [string, boolean] => [f, false]), ...items.map((f): [string, boolean] => [f, true])]) {
     const raw = await readFile(join(PLUGIN, file), 'utf8');
@@ -166,8 +156,12 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
   }
 });
 
-test('no skill reads reference/conventions.md: each carries its own rules (#430 to #434)', async () => {
-  for (const skill of SKILLS) assert.doesNotMatch(await skillText(skill), /conventions\.md/, `skills/${skill} reads reference/conventions.md`);
+test('no file under assets/plugin names conventions.md, and reference/conventions.md is gone: each skill carries its own rules (#430 to #434, #621)', async () => {
+  const entries = await readdir(PLUGIN, { recursive: true, withFileTypes: true });
+  const files = entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
+  assert.ok(files.length > 0, 'the plugin directory was read');
+  for (const file of files) assert.doesNotMatch(await readFile(file, 'utf8'), /conventions\.md/, file);
+  assert.equal(files.some((file) => file.endsWith('conventions.md')), false);
 });
 
 test('every shipped template renders a workspace\'s value for each variable it declares as it renders its own entry, and its own entry over a workspace\'s value (#621, decision 3)', async () => {
@@ -389,6 +383,7 @@ test('/hive:new-pr declares its own variables, interpolated where used, and read
   assert.doesNotMatch(rendered, /\{\{|\{%|## Conventions/, 'no Liquid and no list of values');
   for (const part of ['under `docs/hive/walkthroughs`', 'is written in English']) assert.ok(rendered.includes(part), part);
   assert.ok(!rendered.includes('Talk in'), 'with no value, nothing says Talk in');
+  assert.doesNotMatch(text, /handoff\.md|<YYYY-MM-DD>-<slug>\//, 'no design handoff path of its own, and no dated design folder (#743)');
 });
 
 test('/hive:new-pr rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#433)', async () => {
@@ -528,17 +523,6 @@ test('no shipped skill, raw or rendered, resolves a convention through hive_conv
   }
 });
 
-test('reference/conventions.md names every variable with its default, the variables panel that sets it, and what hive_conventions is still read for (#317)', async () => {
-  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  for (const [name, fallback] of Object.entries(NO_VALUE)) {
-    assert.ok(text.includes(`| \`${name}\` |`), `${name} has a row`);
-    assert.ok(text.includes(`| ${fallback} |`), `${name}'s default`);
-  }
-  for (const part of ['variables panel', '`fork` and `hiveLanguage`', '<home>/custom/hive/<skill>/<version>/']) assert.ok(text.includes(part), part);
-  assert.equal(text.includes('| `sliceSize` |'), false, 'sliceSize is sliceMin and sliceMax');
-  assert.equal(text.includes('`conventions` key'), false, 'hive_conventions answers no conventions key (#318)');
-});
-
 test('the docs folders default under docs/hive, and no plugin file names the old docs/specs, docs/plans or docs/walkthroughs', async () => {
   const entries = await readdir(PLUGIN, { recursive: true, withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
@@ -547,18 +531,14 @@ test('the docs folders default under docs/hive, and no plugin file names the old
     const text = await readFile(file, 'utf8');
     assert.doesNotMatch(text, /(?<!hive\/)docs\/(specs|plans|walkthroughs)/, `${file} names an old default docs folder`);
   }
-  const conventions = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  for (const folder of ['docs/hive/specs', 'docs/hive/plans', 'docs/hive/walkthroughs', 'docs/hive/design']) {
-    assert.ok(conventions.includes(`\`${folder}\``), `reference/conventions.md does not name ${folder} as a default`);
-  }
 });
 
-test('no plugin file names a Hive conventions section, and neither hive:designer nor reference/conventions.md resolves a convention from CLAUDE.md or AGENTS.md (#416)', async () => {
+test('no plugin file names a Hive conventions section, and neither hive:designer nor hive:system-designer resolves a convention from CLAUDE.md or AGENTS.md (#416)', async () => {
   const entries = await readdir(PLUGIN, { recursive: true, withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
   assert.ok(files.length > 0, 'the plugin directory was read');
   for (const file of files) assert.doesNotMatch(await readFile(file, 'utf8'), /Hive conventions/, file);
-  for (const path of [agentPath('designer'), agentPath('system-designer'), 'reference/conventions.md']) {
+  for (const path of [agentPath('designer'), agentPath('system-designer')]) {
     assert.doesNotMatch(await readFile(join(PLUGIN, path), 'utf8'), /CLAUDE\.md|AGENTS\.md/, path);
   }
 });
@@ -573,7 +553,7 @@ test('hive:design-reviewer and hive:system-design-reviewer report and never edit
 
 test('every section the design agents and the decomposition reviewer quote by name is a heading of a reference or of the agent itself', async () => {
   const headings = new Set<string>();
-  for (const file of ['design.md', 'conventions.md', 'decomposition.md', 'system-design.md']) {
+  for (const file of ['design.md', 'decomposition.md', 'system-design.md']) {
     const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
     for (const [, heading] of text.matchAll(/^#{2,3} (.+)$/gm)) headings.add(heading.trim());
   }
@@ -723,12 +703,6 @@ test('hive:system-designer writes new diagrams pending, never marks a laid-out o
   for (const name of ['SendMessage', 'hive:system-design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
 });
 
-test('reference/conventions.md names hive:system-designer among the templates that declare their own variables, and says its systemDesignsDir is relative to the worktree (#957)', async () => {
-  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  assert.match(text, /`hive:system-designer`[\s\S]{0,40}declare their own variables/, 'the intro stays true');
-  assert.match(text, /^\| `systemDesignsDir` \| .*`hive:system-designer`'s own.*relative to the worktree \| `docs\/hive\/system-design` \|$/m);
-});
-
 // #743: prose wraps at any space; a phrase is checked on the text with its whitespace collapsed
 const flat = (text: string): string => text.replace(/\s+/g, ' ');
 
@@ -792,14 +766,3 @@ test('/hive:new-build finds the design handoff in {result.design}, else in desig
   assert.match(rendered, /its key in the task's `result` \(`plan`, `spec`,\s+`walkthrough`\)/, 'the design handoff has its own order');
 });
 
-test('reference/conventions.md: designsDir is one living folder, the design handoff is a text or design-handoff.md, and the Results name design and systemDesign (#743)', async () => {
-  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  assert.match(text, /^\| a session that ran `hive:designer` \| `design` /m);
-  assert.match(text, /^\| a session that ran `hive:system-designer` \| `systemDesign` /m);
-  assert.match(text, /^\| `designsDir` \| [^|]*one living folder/m);
-  for (const part of ['`<designsDir>/design-handoff.md`', '--diff-filter=AM', '`systemDesign`']) assert.ok(text.includes(part), part);
-  assert.ok(!text.includes('<YYYY-MM-DD>-<slug>/handoff.md'), 'no dated design folder');
-  assert.doesNotMatch(text, /one subfolder per task/);
-  const newPr = await skillText('new-pr');
-  assert.doesNotMatch(newPr, /handoff\.md|<YYYY-MM-DD>-<slug>\//, '/hive:new-pr reads the lookup in the reference, never a path of its own');
-});

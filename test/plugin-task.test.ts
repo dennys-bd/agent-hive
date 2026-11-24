@@ -9,15 +9,6 @@ const read = (...parts: string[]): Promise<string> => readFile(join(PLUGIN, ...p
 const skill = (name: string): Promise<string> => read('skills', name, 'SKILL.md.liquid');
 const NEW_SKILLS = ['new-build', 'new-plan', 'new-pr', 'new-spec'];
 
-test('reference/conventions.md says once to read the task with hive_task, and when to fall back to the branch name and gh issue view (#7)', async () => {
-  const text = await read('reference', 'conventions.md');
-  assert.match(text, /^## The task$/m);
-  for (const part of ['`hive_task`', '`task: null`', 'the branch name', 'gh issue view <n> --json number,title,body,url,comments', '`commentsError`', 'GitHub issue']) {
-    assert.ok(text.includes(part), part);
-  }
-  assert.match(text, /result` `hive_task` answers/, 'the previous stage\'s files are looked up in the task\'s result too');
-});
-
 test('every new-* skill and decomposition read the task through hive_task alone, whatever its source (#7, #431, #432, #433, #434, #622)', async () => {
   for (const name of [...NEW_SKILLS, 'decomposition']) {
     const text = await skill(name);
