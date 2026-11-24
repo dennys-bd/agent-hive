@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { FOLDER_QUERY_MESSAGE, inTreeOf, nestedRepoOf, nestedRepos, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot, untrackedMarks } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
+import { toWindowsPath } from '../src/wsl/wsl-paths.js';
+import { POSIX_TEMP_REPO } from './posix-only.js';
 import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
 import { LOCAL_ACTIVITY_MESSAGE } from '../src/activity-routes.js';
@@ -232,6 +234,16 @@ test('POST /activities/:id/reveal on a machine that is not local answers 409 mac
   const res = await postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`, { path: 'src/b.ts' });
   assert.deepEqual([res.status, await res.json()], [409, { error: MACHINE_REMOTE_MESSAGE, code: MACHINE_REMOTE }]);
   assert.deepEqual(f.calls, []);
+});
+
+// Skipped on win32: the activity's worktree is the lane's C:\ temp repo, which no distro path can name; the translation itself is wsl-paths' test
+test('POST /activities/:id/reveal on a wsl:Debian activity reveals the item\'s \\\\wsl.localhost path with the host\'s explorer.exe, isFile asked of the distro (#932)', { skip: POSIX_TEMP_REPO }, async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(HOST_PATHS, repo, 'hive-1-task') })], { machines: fakeMachines(fakeMachine({ id: 'wsl:Debian' })) });
+  const wt = worktreePath(HOST_PATHS, f.repo, 'hive-1-task');
+  await mkdir(join(wt, 'src'), { recursive: true });
+  await writeFile(join(wt, 'src', 'b.ts'), 'b');
+  assert.equal((await postJson(`${f.base}${workPath(f.server, 'local:1')}/reveal`, { path: 'src/b.ts' })).status, 204);
+  assert.deepEqual(f.calls, [revealCommand('win32', toWindowsPath('Debian', join(await realpath(wt), 'src', 'b.ts')), true)]);
 });
 
 test('nestedRepos: the untracked folders, the ignored ones included, that hold .git (a directory or a worktree\'s file), sorted; one ls-files with no exclude (#868, HIVE-22)', async () => {
