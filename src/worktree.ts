@@ -2,7 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { Machine } from './machine.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
-import { HIVE_DIR } from './hooks-settings.js';
+import { excludeFromGit, HIVE_DIR } from './hooks-settings.js';
 import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, type Git, gitOrWords, refuseDirty, remoteHead, settleSync, WORKTREE_PREFIX, withSync, wordsOf } from './worktree-base.js';
 import { samePath } from './same-path.js';
 import { refuseDirtyNested } from './worktree-nested.js';
@@ -82,6 +82,8 @@ export const hasBranch = (machine: Pick<Machine, 'exec'>, repo: string, branch: 
 export async function ensureWorktree(
   machine: Machine, repo: string, slug: string, branch: string, base: WorkspaceBase, chosen: string | undefined,
 ): Promise<PreparedWorktree> {
+  // #932: a workspace not on local is never touched at boot, and the first worktree of any workspace is made here: idempotent, one stat and one read when the line is there
+  await excludeFromGit(machine, repo);
   const { exec } = machine;
   const path = worktreePath(machine.paths, repo, slug);
   const git: Git = (...args) => gitOrWords(repo, args, exec);

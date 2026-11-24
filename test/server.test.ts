@@ -41,6 +41,7 @@ import { isListing, listing, strayKill } from './stray-kill.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { flatten } from '../src/flows.js';
+import { createMachines, NOT_SUPPORTED, unavailableMachine } from '../src/machines.js';
 import { flowed } from './fixtures/main-flow.js';
 import { HOST_PATHS } from './fake-machine.js';
 
@@ -556,6 +557,21 @@ test('POST /ptys/:id/stop kills the live run and keeps the session and the workt
   workers[0].handlers.onExit();
   await waitFor(() => worker0(server).status === 'empty');
   assert.equal(workers.length, 1, 'stopped: nothing runs it again');
+});
+
+test('a config with a workspace on an unavailable wsl:X boots, says where it is in the log, and builds no distro machine before a route asks (#932)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const { factory } = fakeSourceFactory();
+  const [hive] = workspacesAt(repo);
+  const config = parseConfig(combConfig({ sources: BODY.sources, workspaces: [hive, { ...hive, name: 'site', path: '/home/u/site', machine: 'wsl:X' }] }));
+  const built: string[] = [];
+  const machines = createMachines({ local: fakeMachine({ exec: noGit }), platform: 'win32', wsl: (distro) => { built.push(distro); return unavailableMachine(`wsl:${distro}`, NOT_SUPPORTED); } });
+  const { log, lines } = fakeLog();
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, exec: withToplevel(noGit), log, runtime: { config, sources: createSources(config, factory) }, state: initialState(0), machines });
+  await server.listen(0);
+  t.after(() => server.close());
+  assert.ok(lines.some((line) => line.includes('workspace site: on wsl:X, its checkout is read when a route asks')), lines.join('\n'));
+  assert.deepEqual(built, [], 'no call reached the distro at boot');
 });
 
 test('kill on a worker whose process the pool does not know (Hive restarted) frees the worker directly', async (t) => {

@@ -147,7 +147,7 @@ import { trustedCopies } from './copy-sides.js';
 import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
-  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
+  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, LOCAL_MACHINE, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
   type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange,
@@ -990,7 +990,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
-    for (const { path } of config.comb.workspaces) await excludeFromGit(machineFor({}), path); // each workspace keeps its worktrees in <path>/.hive/ (#179); the local machine until node 9 gives a workspace its machines
+    for (const workspace of config.comb.workspaces) { // each workspace keeps its worktrees in <path>/.hive/ (#179)
+      // #932: no call reaches another machine at boot; ensureWorktree excludes .hive/ there before its first worktree
+      if (workspace.machine === LOCAL_MACHINE) await excludeFromGit(machines.local, workspace.path);
+      else log.info(`workspace ${workspace.name}: on ${workspace.machine}, its checkout is read when a route asks`);
+    }
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
     wiring.facts.setLevel(config.logLevel); // one switch for both files (#742)
     log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(flatten(config.comb.flows).stages)}`);
