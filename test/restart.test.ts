@@ -57,7 +57,7 @@ test('restartPlan: a branch origin does not have, or has at the starting commit,
   const start = (await recordStageStart(machine, repo, repo, SLUG))!;
   await commit(repo, 'a.txt');
   assert.deepEqual(await restartPlan(machine, repo, BRANCH, BRANCH, start), { mode: 'reset' }, 'never pushed');
-  await git(repo, 'push', '--quiet', 'origin', `${start}:refs/heads/${BRANCH}`);
+  await git(repo, 'push', 'origin', `${start}:refs/heads/${BRANCH}`);
   assert.deepEqual(await restartPlan(machine, repo, BRANCH, BRANCH, start), { mode: 'reset' }, 'origin sits at the starting commit');
 });
 
@@ -65,12 +65,12 @@ test('restartPlan: a published branch that moved gives the first <branch>-r<n> n
   const { repo } = await repoWithRemote(t);
   await commit(repo, 'a.txt');
   const start = (await recordStageStart(machine, repo, repo, SLUG))!;
-  await git(repo, 'push', '--quiet', 'origin', BRANCH);
+  await git(repo, 'push', 'origin', BRANCH);
   await git(repo, 'commit', '--quiet', '--amend', '-m', 'a amended');
-  await git(repo, 'push', '--quiet', '-f', 'origin', BRANCH);
+  await git(repo, 'push', '-f', 'origin', BRANCH);
   await collect(repo);
   await git(repo, 'branch', `${BRANCH}-r2`);
-  await git(repo, 'push', '--quiet', 'origin', `HEAD:refs/heads/${BRANCH}-r3`);
+  await git(repo, 'push', 'origin', `HEAD:refs/heads/${BRANCH}-r3`);
   assert.deepEqual(await restartPlan(machine, repo, BRANCH, BRANCH, start), { mode: 'branch', newBranch: `${BRANCH}-r4` });
   await git(repo, 'remote', 'set-url', 'origin', join(repo, 'no-such-remote'));
   assert.deepEqual(await restartPlan(machine, repo, BRANCH, BRANCH, start), { mode: 'branch', newBranch: `${BRANCH}-r3` }, 'offline: only the local branches are known');
@@ -121,16 +121,16 @@ test('a second Restart on a published <template>-r2 that moved gives <template>-
   const { repo } = await repoWithRemote(t);
   await commit(repo, 'a.txt');
   const start = (await recordStageStart(machine, repo, repo, SLUG))!;
-  await git(repo, 'push', '--quiet', 'origin', BRANCH);
+  await git(repo, 'push', 'origin', BRANCH);
   await commit(repo, 'b.txt');
-  await git(repo, 'push', '--quiet', 'origin', BRANCH); // published past the start: the first Restart branches off
+  await git(repo, 'push', 'origin', BRANCH); // published past the start: the first Restart branches off
   const first = await restartPlan(machine, repo, BRANCH, BRANCH, start);
   assert.deepEqual(first, { mode: 'branch', newBranch: `${BRANCH}-r2` });
   await git(repo, 'switch', '--quiet', '-c', `${BRANCH}-r2`, start);
   await commit(repo, 'c.txt');
-  await git(repo, 'push', '--quiet', 'origin', `${BRANCH}-r2`); // the variant is published and moved too
+  await git(repo, 'push', 'origin', `${BRANCH}-r2`); // the variant is published and moved too
   assert.deepEqual(await restartPlan(machine, repo, `${BRANCH}-r2`, BRANCH, start), { mode: 'branch', newBranch: `${BRANCH}-r3` });
-  await git(repo, 'push', '--quiet', 'origin', `${start}:refs/heads/${BRANCH}-r2`, '-f');
+  await git(repo, 'push', 'origin', `${start}:refs/heads/${BRANCH}-r2`, '-f');
   assert.deepEqual(await restartPlan(machine, repo, `${BRANCH}-r2`, BRANCH, start), { mode: 'reset' }, 'the variant on origin sits at the start: reset in place');
 });
 
