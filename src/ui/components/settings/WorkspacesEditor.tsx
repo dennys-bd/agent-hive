@@ -4,6 +4,7 @@ import { EnvEditor } from '@/components/settings/EnvEditor';
 import { MemorySection } from '@/components/settings/MemorySection';
 import { WorkspaceBenchmarkPr } from '@/components/settings/WorkspaceBenchmarkPr';
 import { WorkspaceColorPicker } from '@/components/settings/WorkspaceColorPicker';
+import { WorkspaceMachine, showsMachine } from '@/components/settings/WorkspaceMachine';
 import { WorkspaceFork } from '@/components/settings/WorkspaceFork';
 import { WorkspaceNestedRepos } from '@/components/settings/WorkspaceNestedRepos';
 import { WorkspaceRemoveButton } from '@/components/settings/WorkspaceRemoveButton';
@@ -13,15 +14,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
+import { useMachines } from '@/lib/machines';
 import type { WorkspaceDraft } from '@/lib/settings-form';
 import { settingAnchor } from '@/lib/settings-search';
 import { nestedPaths, oldSetupPath } from '@/lib/settings-nested';
-import type { State } from '../../../types';
+import type { MachineStatus, State } from '../../../types';
 import { workspaceNameFor } from '../../../tasks';
 
 interface WorkspacesEditorProps { workspaces: WorkspaceDraft[]; savedNames: readonly string[]; state?: State; onChange(workspaces: WorkspaceDraft[]): void; onCapSaved(workspace: string, cap: number): void }
 interface FieldsProps { row: WorkspaceDraft; n: number; onChange(patch: Partial<WorkspaceDraft>): void }
-interface WorkspaceCardProps extends FieldsProps { canRemove: boolean; saved: boolean; state?: State; onPick(path: string): void; onRemove(): void; onCapSaved(cap: number): void }
+interface WorkspaceCardProps extends FieldsProps { machines: readonly MachineStatus[]; canRemove: boolean; saved: boolean; state?: State; onPick(path: string): void; onRemove(): void; onCapSaved(cap: number): void }
 
 const STEPS = ['copy', 'run', 'load', 'del'] as const;
 
@@ -83,7 +85,7 @@ export function CardGroup({ title, hint, anchor, children }: { title: string; hi
 }
 
 // One workspace (#511): its own card, named after it, so each is a surface of the page like the commands card.
-function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRemove, onCapSaved }: WorkspaceCardProps) {
+function WorkspaceCard({ row, n, machines, canRemove, saved, state, onChange, onPick, onRemove, onCapSaved }: WorkspaceCardProps) {
   const id = useId();
   const name = row.name.trim() || t('settings.workspaces.card', { n }); // not the name field's own label, which it would shadow
   const remove = t('settings.workspaces.remove', { n });
@@ -107,6 +109,12 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
         {window.hive ? <Button type="button" variant="outline" onClick={() => chooseFolder(onPick)}>{t('settings.workspaces.choose')}</Button> : <span />}
         <WorkspaceRemoveButton name={row.name.trim()} label={remove} isSaved={saved} isDisabled={!canRemove} onRemove={onRemove} />
       </div>
+      {/* #933: the machine the workspace runs on, shown only when a distro exists or the saved one is gone */}
+      {showsMachine(machines, row.machine) ? (
+        <CardGroup title={t('settings.workspaces.machine')} hint={t('settings.workspaces.machineHint')} anchor={settingAnchor('settings.workspaces.machine', row.id)}>
+          <WorkspaceMachine row={row} saved={saved} machines={machines} onChange={onChange} />
+        </CardGroup>
+      ) : null}
       {/* #854: where the workers' worktrees start from and where their PRs go */}
       <CardGroup title={t('settings.fork.group')} hint={t('settings.fork.hint')} anchor={settingAnchor('settings.fork.group', row.id)}>
         <WorkspaceFork row={row} saved={saved} state={state} onChange={onChange} />
@@ -142,6 +150,7 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
  * its env (#348) and its memory (#797), whose total limit the memory dialog saves (#115); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
 export function WorkspacesEditor({ workspaces, savedNames, state, onChange, onCapSaved }: WorkspacesEditorProps) {
   // the removal answers after an async holdings read (#751): it filters the rows as they are then, never the ones of the click's render
+  const machines = useMachines(); // once per open of the section, never per card
   const latest = useRef(workspaces);
   latest.current = workspaces;
   const update = (id: string, patch: Partial<WorkspaceDraft>): void => onChange(workspaces.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -151,7 +160,7 @@ export function WorkspacesEditor({ workspaces, savedNames, state, onChange, onCa
     <>
       {workspaces.map((row, i) => (
         <WorkspaceCard
-          key={row.id} row={row} n={i + 1} canRemove={workspaces.length > 1} saved={savedNames.includes(row.name.trim())} state={state} onChange={(patch) => update(row.id, patch)} onPick={pick(row)} onCapSaved={(cap) => onCapSaved(row.name.trim(), cap)}
+          key={row.id} row={row} n={i + 1} machines={machines} canRemove={workspaces.length > 1} saved={savedNames.includes(row.name.trim())} state={state} onChange={(patch) => update(row.id, patch)} onPick={pick(row)} onCapSaved={(cap) => onCapSaved(row.name.trim(), cap)}
           onRemove={() => onChange(latest.current.filter((p) => p.id !== row.id))}
         />
       ))}
