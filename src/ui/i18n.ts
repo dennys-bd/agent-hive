@@ -1392,6 +1392,17 @@ const en = {
   'settings.workspaces.customColor': 'custom color',
   'settings.workspaces.presetColor': 'color {n}', // #78: a preset circle's name for a screen reader
   'settings.workspaces.path': 'folder',
+  'settings.workspaces.machine': 'machine',
+  'settings.workspaces.machineHint': 'where the workspace\'s folder and its workers live',
+  'settings.workspaces.machineLocal': 'this computer',
+  'settings.workspaces.machineMissing': '{distro} (not found)',
+  'settings.workspaces.machineLocked': 'a saved workspace cannot move to another machine',
+  'machine.status.stopped': '{distro} is stopped: run wsl -d {distro} on Windows',
+  'machine.status.node_missing': 'Node 24 or later is missing: install it inside {distro}',
+  'machine.status.node_old': 'Node is older than 24: update it inside {distro}',
+  'machine.status.unreachable': '{distro} cannot be reached ({reason})',
+  'machine.status.noAgent': '{agent} is not installed: install it inside {distro}',
+  'machine.status.noGh': 'gh is missing or not logged in: install it and run gh auth login inside {distro}',
   'settings.workspaces.remove': 'remove workspace {n}',
   'settings.workspaces.removal.title': 'Remove {name}', // #751
   'settings.workspaces.removal.lead': 'the workspace still holds work on disk.', // #751
@@ -5015,6 +5026,17 @@ const pt: Record<MessageKey, string> = {
   'settings.workspaces.customColor': 'outra cor',
   'settings.workspaces.presetColor': 'cor {n}',
   'settings.workspaces.path': 'pasta',
+  'settings.workspaces.machine': 'máquina',
+  'settings.workspaces.machineHint': 'onde ficam a pasta do workspace e seus workers',
+  'settings.workspaces.machineLocal': 'este computador',
+  'settings.workspaces.machineMissing': '{distro} (não encontrada)',
+  'settings.workspaces.machineLocked': 'um workspace salvo não pode mudar de máquina',
+  'machine.status.stopped': '{distro} está parada: rode wsl -d {distro} no Windows',
+  'machine.status.node_missing': 'falta o Node 24 ou mais novo: instale-o dentro de {distro}',
+  'machine.status.node_old': 'o Node é mais antigo que o 24: atualize-o dentro de {distro}',
+  'machine.status.unreachable': 'não foi possível alcançar {distro} ({reason})',
+  'machine.status.noAgent': '{agent} não está instalado: instale-o dentro de {distro}',
+  'machine.status.noGh': 'falta o gh ou o login dele: instale-o e rode gh auth login dentro de {distro}',
   'settings.workspaces.remove': 'remover workspace {n}',
   'settings.workspaces.removal.title': 'Remover {name}', // #751
   'settings.workspaces.removal.lead': 'o workspace ainda guarda trabalho no disco.', // #751
