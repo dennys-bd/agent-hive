@@ -16,8 +16,8 @@ const isOptions = isOptional(isRecord);
 const isData: Check = (value) => isString(value) || value instanceof Uint8Array;
 const isMode: Check = (value) => isNumber(value) || isString(value);
 const isStrings: Check = (value) => Array.isArray(value) && value.every(isString);
-// maxBytes required: a readFile with no cap would read the whole file (MachineFs.readFile's contract)
-const isCap: Check = (value) => isRecord(value) && isNumber(value.maxBytes) && isOptional(isString)(value.encoding);
+// maxBytes required: a readFile with no cap would read the whole file (MachineFs.readFile's contract); noFollow only ever true (#882)
+const isCap: Check = (value) => isRecord(value) && isNumber(value.maxBytes) && isOptional(isString)(value.encoding) && isOptional((v) => v === true)(value.noFollow);
 const isRun: Check = (value) => isRecord(value) && isString(value.command) && isStrings(value.args) && isString(value.cwd) && isRecord(value.env)
   && isOptional(isString)(value.input) && isOptional(isNumber)(value.timeoutMs) && isOptional(isNumber)(value.maxBytes);
 const isWatch: Check = (value) => isRecord(value) && typeof value.recursive === 'boolean';

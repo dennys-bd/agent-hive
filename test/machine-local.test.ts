@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import path, { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { MachineError } from '../src/machine.js';
@@ -220,4 +220,26 @@ test('a watch of a missing path reports ENOENT through onError once, after watch
   watch(missing, { recursive: false }, () => undefined, (err) => suppressed.push(err)).close();
   await settle();
   assert.deepEqual(suppressed, []);
+});
+
+test('fs.readFile with noFollow reads a regular file, and refuses a link as the last component with ELOOP and a file over maxBytes with too_large; without it a link is read as before (#882)', async (t) => {
+  const dir = await tempDir(t, 'machine-');
+  const file = join(dir, 'a.html');
+  const link = join(dir, 'link.html');
+  await writeFile(file, '<p>a</p>'); // 8 bytes
+  await symlink(file, link);
+  const { fs } = createLocalMachine(deps());
+  assert.equal(await fs.readFile(file, { maxBytes: 8, noFollow: true, encoding: 'utf8' }), '<p>a</p>');
+  assert.deepEqual(await fs.readFile(file, { maxBytes: 8, noFollow: true }), Buffer.from('<p>a</p>'));
+  await assert.rejects(fs.readFile(link, { maxBytes: 64, noFollow: true }), (err: unknown) => err instanceof MachineError && err.code === 'ELOOP');
+  await assert.rejects(fs.readFile(file, { maxBytes: 7, noFollow: true }), (err: unknown) => err instanceof MachineError && err.code === MachineError.TOO_LARGE);
+  assert.equal(await fs.readFile(link, { maxBytes: 64, encoding: 'utf8' }), '<p>a</p>');
+});
+
+// mkfifo is POSIX: the FIFO is this test's only case, so the whole test is skipped on win32
+test('fs.readFile with noFollow refuses a FIFO with not_file instead of waiting on it for a writer (#882)', { skip: NO_POSIX_FAULTS }, async (t) => {
+  const fifo = join(await tempDir(t, 'machine-'), 'pipe.html');
+  await promisify(execFile)('mkfifo', [fifo]);
+  const { fs } = createLocalMachine(deps());
+  await assert.rejects(fs.readFile(fifo, { maxBytes: 64, noFollow: true }), (err: unknown) => err instanceof MachineError && err.code === MachineError.NOT_FILE);
 });

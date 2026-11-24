@@ -1,7 +1,7 @@
 // The machine on the far side of a mux (#937): each member is one request on channel 1 and the rebuild of its answer, so a caller cannot
 // tell it from the local machine. info comes from the hello and the pty from the caller (#945); a long-lived process is refused. No direct
 // node: import, as the rest of src/remote/; ../machine.js brings node:path, so it loads on Node only.
-import { keepTail, type Machine, MachineError, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type RunResult, tailOf } from '../machine.js';
+import { keepTail, type Machine, MachineError, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type ReadOptions, type RunResult, tailOf } from '../machine.js';
 import { CHANNEL, isRecord, isString } from './frames.js';
 import {
   asBuffer, asString, asStrings, badAnswer, type BigIntStats, type Dirent, direntsOf, type MachineMethod, machineErrorOf, splitLines, type Stats,
@@ -47,9 +47,9 @@ function muxFs(ask: Ask): MachineFs {
   function readdir(path: string, options?: { withFileTypes: true; recursive?: boolean }): Promise<string[] | Dirent[]> {
     return options === undefined ? ask('fs.readdir', [path], asStrings) : ask('fs.readdir', [path, options], direntsOf);
   }
-  function readFile(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
-  function readFile(path: string, options: { maxBytes: number }): Promise<Buffer>;
-  function readFile(path: string, options: { maxBytes: number; encoding?: BufferEncoding }): Promise<string | Buffer> {
+  function readFile(path: string, options: ReadOptions & { encoding: BufferEncoding }): Promise<string>;
+  function readFile(path: string, options: ReadOptions): Promise<Buffer>;
+  function readFile(path: string, options: ReadOptions & { encoding?: BufferEncoding }): Promise<string | Buffer> {
     return options.encoding === undefined ? ask('fs.readFile', [path, options], asBuffer) : ask('fs.readFile', [path, options], asString);
   }
   // maxBytes already bounds the read, so the lines come from one readFile; its refusals (not_file, too_large) reject the first next()

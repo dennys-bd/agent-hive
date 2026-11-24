@@ -49,6 +49,11 @@ export class MachineError extends Error {
   }
 }
 
+/** readFile's options. maxBytes required: no caller reads a worktree file through a machine without a bound; over it, MachineError
+ *  TOO_LARGE, nothing read. noFollow (#882): a symbolic link as the last component rejects with a MachineError of code ELOOP, checked at
+ *  the open, so a link swapped in after a caller's own check is refused too. */
+export interface ReadOptions { maxBytes: number; noFollow?: true }
+
 /** What the code does with a task's disk today, each as node:fs/promises takes and answers it, but readFile (a required cap) and writeAtomic. */
 export interface MachineFs {
   stat(path: string): Promise<Stats>;
@@ -59,9 +64,8 @@ export interface MachineFs {
   access(path: string, mode?: number): Promise<void>;
   readdir(path: string): Promise<string[]>;
   readdir(path: string, options: { withFileTypes: true; recursive?: boolean }): Promise<Dirent[]>; // recursive: the COPY step's file count (#159)
-  // maxBytes required: no caller reads a worktree file through a machine without a bound. Over it: MachineError TOO_LARGE, nothing read
-  readFile(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
-  readFile(path: string, options: { maxBytes: number }): Promise<Buffer>;
+  readFile(path: string, options: ReadOptions & { encoding: BufferEncoding }): Promise<string>;
+  readFile(path: string, options: ReadOptions): Promise<Buffer>;
   // A regular file's lines, CR LF as one break (#161). Refused before any read as readFile is: not_file, too_large, on the first next()
   readLines(path: string, options: { maxBytes: number }): AsyncIterable<string>;
   writeFile(path: string, data: string | Uint8Array, options?: { flag?: string; mode?: Mode }): Promise<void>;

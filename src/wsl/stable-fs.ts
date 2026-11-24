@@ -1,7 +1,7 @@
 // The WSL machine's fs (#945): every member waits for the helper and calls the fs of the link it is on now, so a caller that holds the
 // machine across a restart never sees the swap. The overloaded members forward the form they were called with.
 import type { BigIntStats, Dirent, Stats } from 'node:fs';
-import type { Machine, MachineFs } from '../machine.js';
+import type { Machine, MachineFs, ReadOptions } from '../machine.js';
 
 type Disk = () => Promise<MachineFs>;
 
@@ -18,11 +18,12 @@ function overloaded(disk: Disk): Pick<MachineFs, 'lstat' | 'readdir' | 'readFile
     const fs = await disk();
     return options === undefined ? fs.readdir(path) : fs.readdir(path, options);
   }
-  function readFile(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
-  function readFile(path: string, options: { maxBytes: number }): Promise<Buffer>;
-  async function readFile(path: string, { maxBytes, encoding }: { maxBytes: number; encoding?: BufferEncoding }): Promise<string | Buffer> {
+  function readFile(path: string, options: ReadOptions & { encoding: BufferEncoding }): Promise<string>;
+  function readFile(path: string, options: ReadOptions): Promise<Buffer>;
+  // every option forwarded as given (#882): a noFollow dropped here would read through the link its caller refused
+  async function readFile(path: string, { encoding, ...cap }: ReadOptions & { encoding?: BufferEncoding }): Promise<string | Buffer> {
     const fs = await disk();
-    return encoding === undefined ? fs.readFile(path, { maxBytes }) : fs.readFile(path, { maxBytes, encoding });
+    return encoding === undefined ? fs.readFile(path, cap) : fs.readFile(path, { ...cap, encoding });
   }
   // a start that fails rejects the first next(), as the unavailable machine's readLines does
   async function* readLines(path: string, options: { maxBytes: number }): AsyncGenerator<string> {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { type Machine, MachineError, type MachineFs, type MachineInfo } from '../src/machine.js';
 import { createMuxMachine } from '../src/remote/machine-client.js';
@@ -369,4 +369,14 @@ test('process throws not_supported at once; paths is path.posix for a linux mach
   far.onRequest(1, () => 42);
   const odd = createMuxMachine(host, { id: 'wsl:X', pty: served.pty, info: INFO });
   await assert.rejects(odd.fs.realpath('/a'), (err: unknown) => err instanceof MachineError && err.code === 'bad_frame');
+});
+
+test('readFile\'s noFollow crosses as given: the far disk refuses a link with ELOOP, and a noFollow other than true is bad_params (#882)', async (t) => {
+  const dir = await tempDir(t, 'mux-nofollow-');
+  await writeFile(join(dir, 'a.html'), '<p>a</p>');
+  await symlink(join(dir, 'a.html'), join(dir, 'link.html'));
+  const { host, client } = over(fakeMachine());
+  assert.equal(await client.fs.readFile(join(dir, 'a.html'), { maxBytes: 64, noFollow: true, encoding: 'utf8' }), '<p>a</p>');
+  await assert.rejects(client.fs.readFile(join(dir, 'link.html'), { maxBytes: 64, noFollow: true }), (err: unknown) => err instanceof MachineError && err.code === 'ELOOP');
+  await assert.rejects(host.request(1, 'fs.readFile', [join(dir, 'a.html'), { maxBytes: 64, noFollow: 'yes' }]), remote('bad_params'));
 });
