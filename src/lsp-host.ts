@@ -10,7 +10,8 @@ import { findCandidate } from './formatter-detect.js';
 import { HOST } from './host-fs.js';
 import type { CatalogLoad, SchemaCatalog } from './json-schemas.js';
 import type { Logger } from './log.js';
-import type { MachineFor } from './machine.js';
+import { MachineError, type MachineFor } from './machine.js';
+import { NOT_SUPPORTED } from './machines.js';
 import { type Arch, inScope, isServerId, type Launch, languagesOfServer, type ServerDef, serverDef } from './languages.js';
 import { createLspProcess, type LspPeer, type LspProcess, type ProcessSpec } from './lsp-process.js';
 import { fileUri } from './lsp-uri.js';
@@ -48,6 +49,10 @@ const OPEN = 1;
 type Spec = Omit<ProcessSpec, 'consoleStore' | 'onGone'>;
 type Resolved = { key: string; server: ServerId; spec: Spec } | { code: number; reason: string };
 const refused = (reason: string): Resolved => ({ code: LSP_CLOSE.refused, reason });
+// #932: a machine that runs no long-lived process (a distro over the mux) or none at all: the file has no server there, as one off in its
+// workspace, so the page shows nothing; no console run, no error bar
+const isNoProcess = (err: unknown): boolean => err instanceof MachineError && (err.code === NOT_SUPPORTED || err.code === MachineError.UNAVAILABLE);
+const NO_PROCESS = { code: LSP_CLOSE.outOfScope, reason: 'no language server on this machine' };
 
 type Editor = Config['editor'];
 
@@ -150,12 +155,19 @@ export function createLspHost(deps: LspHostDeps): LspHost {
     async attach(socket, activityId, server, binary) {
       // resolve touches the disk (realpath, installed.json, PATH): a throw there must close this socket, never reject into the daemon
       const resolved = await resolve(deps, activityId, server, binary, (key) => entries.has(key)).catch((err: unknown): Resolved => {
+        if (isNoProcess(err)) return NO_PROCESS;
         (deps.log ?? console).error(`language server ${server} could not start: ${err instanceof Error ? err.message : String(err)}`);
         return refused(`${server} could not start`);
       });
       if (socket.readyState !== OPEN) return; // the page left while the checks ran
       if ('code' in resolved) return socket.close(resolved.code, resolved.reason);
-      const proc = entries.get(resolved.key)?.proc ?? start(resolved.key, resolved.server, resolved.spec);
+      let proc: LspProcess;
+      try {
+        proc = entries.get(resolved.key)?.proc ?? start(resolved.key, resolved.server, resolved.spec);
+      } catch (err) {
+        if (!isNoProcess(err)) throw err; // any other spawn failure is reported as before
+        return socket.close(NO_PROCESS.code, NO_PROCESS.reason);
+      }
       connect(socket, resolved.key, proc, resolved.spec.root);
     },
     stopServer: async (id) => { await Promise.all([...entries].filter(([, e]) => e.server === id).map(([key]) => stopKey(key, { code: LSP_CLOSE.absent, reason: 'removed' }))); },
