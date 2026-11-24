@@ -126,8 +126,13 @@ a plan with no index, or a `Design:` paragraph, is built top to bottom.
    task's section of the plan copied whole (heading, files, interfaces,
    steps with their code), the plan's `## Global Constraints` copied
    whole, the test command, and the paths of the plan and the spec, which
-   it opens only when its task is not enough. Never the whole plan. Run
-   the test command after every task; each green task is committed.
+   it opens only when its task is not enough. Never the whole plan. With
+   no plan file, one dispatch gets the `Design:` paragraph and the test
+   command. Each dispatch commits its task once the test command is green;
+   run the test command after every task to confirm it. A dispatch that
+   answers it made no commit: when the tests are red, go to step 2; when it
+   answers that its task cannot be built as written, stop with its reason
+   and name the uncommitted changes it leaves in place.
 2. **Build-fix.** When the build or the tests break and the fix is not
    obvious from the plan, dispatch `hive:build-fixer` with the failing
    output, the command that produced it, and the failing task's section
@@ -229,8 +234,9 @@ PR), left out when the PR was skipped.
 3. a decision no assumption settles safely;
 4. a failure still there after 3 `hive:build-fixer` dispatches, or one a
    dispatch answers needs the plan changed;
-5. CRITICAL findings that cannot be fixed without changing the spec;
-6. a CRITICAL or HIGH finding of stage 3 still open after its confirming
+5. a `hive:tdd` dispatch that answers its task cannot be built as written;
+6. CRITICAL findings that cannot be fixed without changing the spec;
+7. a CRITICAL or HIGH finding of stage 3 still open after its confirming
    dispatch.
 
 On a stop, leave the branch and its commits in place and say which stage

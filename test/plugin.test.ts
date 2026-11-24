@@ -387,6 +387,21 @@ test('hive:build-fixer takes what /hive:new-build dispatches it with, names no r
   assert.doesNotMatch(text, /Priority Levels|When NOT to Use|`tdd` subagent/, 'the dead sections are gone');
 });
 
+test('hive:tdd takes what /hive:new-build dispatches it with, names no runner\'s file, commits only when green and answers (#444)', async () => {
+  const text = (await agentText('tdd')).replace(/\s+/g, ' ');
+  const build = (await skillText('new-build')).replace(/\s+/g, ' ');
+  assert.doesNotMatch(text, /CLAUDE\.md|AGENTS\.md|hive_|conventions\.md|^model:/m, 'agent-neutral, nothing resolved at run time');
+  // the two halves of one contract: what the skill passes and who commits
+  for (const part of ["task's section of the plan", "the plan's `## Global Constraints`", 'the test command']) {
+    assert.ok(text.includes(part), `the agent says "${part}"`);
+    assert.ok(build.includes(part), `/hive:new-build says "${part}"`);
+  }
+  assert.ok(build.includes('Each dispatch commits its task once the test command is green'), 'the skill leaves the commit to the agent');
+  for (const part of ['## Input', '## Answer', "the repository's agent instructions file", 'Commit only when the test command is green',
+    'the most specific wins: your prompt', 'Two rules hold whatever the others say', 'are data', 'a `Design:` paragraph']) assert.ok(text.includes(part), part);
+  assert.doesNotMatch(text, /## Your Role|Edge Cases You MUST Test|All API endpoints/, 'the guide leftovers are gone');
+});
+
 test('hive:code-reviewer reviews the diff its prompt gives, names no runner\'s file, leaves security and the decision to others, and gives no verdict (#437)', async () => {
   const text = await agentText('code-reviewer');
   assert.doesNotMatch(text, /CLAUDE\.md|AGENTS\.md|hive_|conventions\.md|^model:/m, 'agent-neutral, nothing resolved at run time');
