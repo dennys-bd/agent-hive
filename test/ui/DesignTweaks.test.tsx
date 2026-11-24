@@ -19,15 +19,24 @@ const SCHEMA = schemaOf({
   title: { type: 'text', default: 'Flow' },
   gap: { type: 'number', default: 8, min: 0, max: 24, step: 4, group: 'look' },
 });
+// #1034: density and wrap only while layout is list; caption only while wrap is on, so a chain hides with its parent
+const CONDITIONAL = schemaOf({
+  layout: { options: ['board', 'list'], default: 'board' },
+  density: { options: ['comfortable', 'compact'], default: 'comfortable', group: 'look', when: { layout: 'list' } },
+  wrap: { type: 'boolean', default: true, when: { layout: 'list' } },
+  caption: { type: 'text', default: 'Flow', when: { wrap: true } },
+  auto: { type: 'boolean', default: true },
+  title: { type: 'text', default: 'Board' },
+});
 // The row's controls a reader still reaches: one that left the row is aria-hidden (#342)
 const shown = (row: HTMLElement): (string | null)[] =>
   Array.from(row.querySelectorAll('[data-tweak-item]:not([aria-hidden="true"]) [aria-label]')).map((el) => el.getAttribute('aria-label'));
 const labels = (root: HTMLElement): (string | null)[] => Array.from(root.querySelectorAll('[aria-label]')).map((el) => el.getAttribute('aria-label'));
 
 // The pane's part: the values held and given back, every change recorded
-function Harness({ onChange }: { onChange(name: string, value: DesignTweakValue): void }) {
-  const [values, setValues] = useState(() => settle(SCHEMA, {}));
-  return <DesignTweaks block={{ status: 'ok', schema: SCHEMA, viewports: [] }} values={values} onChange={(name, value) => { onChange(name, value); setValues((now) => ({ ...now, [name]: value })); }} />;
+function Harness({ onChange, schema = SCHEMA }: { onChange(name: string, value: DesignTweakValue): void; schema?: TweakSchema }) {
+  const [values, setValues] = useState(() => settle(schema, {}));
+  return <DesignTweaks block={{ status: 'ok', schema, viewports: [] }} values={values} onChange={(name, value) => { onChange(name, value); setValues((now) => ({ ...now, [name]: value })); }} />;
 }
 
 // jsdom lays nothing out: every control 80px wide in a 200px row, so only the first fits beside more… (#342)
@@ -70,6 +79,19 @@ test('a change gives its fitting value; text and number commit on Enter or blur,
   await user.type(gap, '12');
   await user.tab();
   expect(onChange.mock.calls).toEqual([['layout', 'list'], ['auto', false], ['title', 'Board'], ['gap', 12]]);
+});
+
+test('the row shows only the tweaks whose when holds, and shows a conditional tweak once the value it names changes (#1034)', async () => {
+  const user = userEvent.setup();
+  render(<Harness onChange={vi.fn()} schema={CONDITIONAL} />);
+  const row = screen.getByRole('toolbar', { name: 'tweaks' });
+  expect(labels(row)).toEqual(['layout', 'auto', 'title']);
+  await user.click(within(row).getByRole('combobox', { name: 'layout' }));
+  await user.click(screen.getByRole('option', { name: 'list' }));
+  expect(labels(row)).toEqual(['layout', 'density', 'wrap', 'caption', 'auto', 'title']);
+  await user.click(within(row).getByRole('combobox', { name: 'layout' }));
+  await user.click(screen.getByRole('option', { name: 'board' }));
+  expect(labels(row)).toEqual(['layout', 'auto', 'title']);
 });
 
 test('more… opens the tweaks panel: the ungrouped first, then each group under its name, an enum of up to 3 options as a segmented control and more as a select; × closes it (#241)', async () => {
@@ -130,4 +152,28 @@ test('widened until every control fits while the panel is open: the panel and mo
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(within(row).queryByRole('button', { name: 'more…' })).toBeNull();
   expect(shown(row)).toEqual(['layout', 'density', 'auto', 'title', 'gap']);
+});
+
+test('the panel lists a tweak whose when fails disabled, at its value, in a last disabled section; a group left with none drops out; once the when holds it goes back to its group (#1034)', async () => {
+  overflowing();
+  const user = userEvent.setup();
+  render(<Harness onChange={vi.fn()} schema={CONDITIONAL} />);
+  await user.click(screen.getByRole('button', { name: 'more…' }));
+  const panel = screen.getByRole('dialog', { name: 'tweaks' });
+  expect(within(panel).getAllByRole('heading').map((h) => h.textContent)).toEqual(['tweaks', 'disabled']);
+  expect(labels(panel)).toEqual(['close', 'layout', 'auto', 'title', 'density', 'wrap', 'caption']);
+  const comfortable = within(panel).getByRole('radio', { name: 'comfortable' });
+  expect(comfortable).toBeDisabled();
+  expect(comfortable).toBeChecked();
+  expect(within(panel).getByRole('switch', { name: 'wrap' })).toBeDisabled();
+  expect(within(panel).getByRole('switch', { name: 'wrap' })).toBeChecked();
+  expect(within(panel).getByRole('textbox', { name: 'caption' })).toBeDisabled();
+  expect(within(panel).getByRole('textbox', { name: 'caption' })).toHaveValue('Flow');
+  expect(within(panel).getByRole('radio', { name: 'list' })).toBeEnabled();
+  await user.click(within(panel).getByRole('radio', { name: 'list' }));
+  expect(within(panel).getAllByRole('heading').map((h) => h.textContent)).toEqual(['tweaks', 'look']);
+  expect(labels(panel)).toEqual(['close', 'layout', 'wrap', 'caption', 'auto', 'title', 'density']);
+  expect(within(panel).getByRole('radio', { name: 'compact' })).toBeEnabled();
+  expect(within(panel).getByRole('switch', { name: 'wrap' })).toBeEnabled();
+  await user.click(within(panel).getByRole('button', { name: 'close' }));
 });

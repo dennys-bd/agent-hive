@@ -1,6 +1,6 @@
 import { XIcon } from 'lucide-react';
 import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react';
-import { fitValue, TWEAK_TEXT_MAX, type TweakSchema } from '../../design-tweaks';
+import { fitValue, shownTweaks, TWEAK_TEXT_MAX, type TweakSchema } from '../../design-tweaks';
 import type { DesignTweakValue } from '../../types';
 import { TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
 import { Button } from '@/components/ui/button';
@@ -21,30 +21,31 @@ type EnumTweak = Extract<Tweak, { type: 'enum' }>;
 type FieldTweak = Extract<Tweak, { type: 'text' | 'number' }>;
 type Values = Readonly<Record<string, DesignTweakValue>>;
 type OnChange = (name: string, value: DesignTweakValue) => void;
-interface ControlProps { tweak: Tweak; value: DesignTweakValue; onChange: OnChange; isPanel?: boolean }
+interface ControlProps { tweak: Tweak; value: DesignTweakValue; onChange: OnChange; isPanel?: boolean; isDisabled?: boolean }
+type PartProps<T extends Tweak> = { tweak: T; value: DesignTweakValue; onChange: OnChange; isDisabled: boolean };
 
 const SEGMENTED_MAX = 3; // the panel's enum of up to 3 options is a segmented control (mockup, image 2)
 const FIELD = 'h-5 rounded-sm px-1.5 text-xs md:text-xs';
 
-function EnumSelect({ tweak, value, onChange }: { tweak: EnumTweak; value: DesignTweakValue; onChange: OnChange }) {
+function EnumSelect({ tweak, value, onChange, isDisabled }: PartProps<EnumTweak>) {
   return (
-    <Select value={String(value)} onValueChange={(next) => onChange(tweak.name, next)}>
+    <Select value={String(value)} disabled={isDisabled} onValueChange={(next) => onChange(tweak.name, next)}>
       <SelectTrigger size="sm" aria-label={tweak.name} className={`${FIELD} gap-1 data-[size=sm]:h-5`}><SelectValue /></SelectTrigger>
       <SelectContent>{tweak.options.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
     </Select>
   );
 }
 
-function EnumSegments({ tweak, value, onChange }: { tweak: EnumTweak; value: DesignTweakValue; onChange: OnChange }) {
+function EnumSegments({ tweak, value, onChange, isDisabled }: PartProps<EnumTweak>) {
   return (
-    <ToggleGroup type="single" size="xs" aria-label={tweak.name} value={String(value)} onValueChange={(next) => { if (next !== '') onChange(tweak.name, next); }} className={TOGGLE_TRACK}>
+    <ToggleGroup type="single" size="xs" aria-label={tweak.name} value={String(value)} disabled={isDisabled} onValueChange={(next) => { if (next !== '') onChange(tweak.name, next); }} className={TOGGLE_TRACK}>
       {tweak.options.map((option) => <ToggleGroupItem key={option} value={option} className={TOGGLE_ITEM}>{option}</ToggleGroupItem>)}
     </ToggleGroup>
   );
 }
 
 // Text and number commit on blur and on Enter, and only a value that fits: a misfit (out of bounds, not a number) goes back to the last good one
-function TweakInput({ tweak, value, onChange }: { tweak: FieldTweak; value: DesignTweakValue; onChange: OnChange }) {
+function TweakInput({ tweak, value, onChange, isDisabled }: PartProps<FieldTweak>) {
   const [draft, setDraft] = useState(String(value));
   const [shown, setShown] = useState(value);
   if (shown !== value) { // a comment's state or a new block moved the value: the field follows it
@@ -65,18 +66,21 @@ function TweakInput({ tweak, value, onChange }: { tweak: FieldTweak; value: Desi
   const limits = tweak.type === 'number' ? { min: tweak.min, max: tweak.max, step: tweak.step } : { maxLength: TWEAK_TEXT_MAX };
   return (
     <Input
-      aria-label={tweak.name} type={isNumber ? 'number' : 'text'} value={draft} {...limits} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={onKeyDown}
+      aria-label={tweak.name} type={isNumber ? 'number' : 'text'} value={draft} disabled={isDisabled} {...limits} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={onKeyDown}
       className={`${FIELD} ${isNumber ? 'w-16' : 'w-28'}`}
     />
   );
 }
 
-function TweakControl({ tweak, value, onChange, isPanel = false }: ControlProps) {
+// A disabled control still shows its value: the value stays applied while its when fails (#1034)
+function TweakControl({ tweak, value, onChange, isPanel = false, isDisabled = false }: ControlProps) {
   if (tweak.type === 'enum') {
-    return isPanel && tweak.options.length <= SEGMENTED_MAX ? <EnumSegments tweak={tweak} value={value} onChange={onChange} /> : <EnumSelect tweak={tweak} value={value} onChange={onChange} />;
+    return isPanel && tweak.options.length <= SEGMENTED_MAX
+      ? <EnumSegments tweak={tweak} value={value} onChange={onChange} isDisabled={isDisabled} />
+      : <EnumSelect tweak={tweak} value={value} onChange={onChange} isDisabled={isDisabled} />;
   }
-  if (tweak.type === 'boolean') return <Switch aria-label={tweak.name} checked={value === true} onCheckedChange={(on) => onChange(tweak.name, on)} />;
-  return <TweakInput tweak={tweak} value={value} onChange={onChange} />;
+  if (tweak.type === 'boolean') return <Switch aria-label={tweak.name} checked={value === true} disabled={isDisabled} onCheckedChange={(on) => onChange(tweak.name, on)} />;
+  return <TweakInput tweak={tweak} value={value} onChange={onChange} isDisabled={isDisabled} />;
 }
 
 const Labelled = (props: ControlProps) => (
@@ -92,6 +96,15 @@ function groupsOf(schema: TweakSchema): { name?: string; tweaks: Tweak[] }[] {
   const loose = schema.filter((tweak) => tweak.group === undefined);
   return [...(loose.length > 0 ? [{ tweaks: loose }] : []), ...names.map((name) => ({ name, tweaks: schema.filter((tweak) => tweak.group === name) }))];
 }
+
+interface SectionProps { name?: string; tweaks: Tweak[]; values: Values; onChange: OnChange; isDisabled?: boolean }
+
+const PanelSection = ({ name, tweaks, values, onChange, isDisabled = false }: SectionProps) => (
+  <section className="flex flex-col gap-2 border-b p-2.5 text-muted-foreground last:border-b-0">
+    {name !== undefined && <h3 className="font-medium text-foreground">{name}</h3>}
+    {tweaks.map((tweak) => <Labelled key={tweak.name} tweak={tweak} value={values[tweak.name] ?? tweak.default} onChange={onChange} isPanel isDisabled={isDisabled} />)}
+  </section>
+);
 
 interface Offset { x: number; y: number }
 
@@ -124,12 +137,14 @@ function useDragOffset(): { offset: Offset; handle: DragHandle } {
   };
 }
 
-interface PanelProps { schema: TweakSchema; values: Values; onChange: OnChange; isOpen: boolean; setOpen(open: boolean): void }
+interface PanelProps { schema: TweakSchema; shown: ReadonlySet<string>; values: Values; onChange: OnChange; isOpen: boolean; setOpen(open: boolean): void }
 
-// The offset outlives a close: the panel stays mounted while more… shows, so it opens again where it was dragged to, never persisted
-function TweaksPanel({ schema, values, onChange, isOpen, setOpen }: PanelProps) {
+// The offset outlives a close: the panel stays mounted while more… shows, so it opens again where it was dragged to, never persisted.
+// The panel stays the full list (#1034): a tweak whose when fails leaves its group for a last section, disabled, and an emptied group drops out
+function TweaksPanel({ schema, shown, values, onChange, isOpen, setOpen }: PanelProps) {
   const { offset, handle } = useDragOffset();
   const title = t('design.tweaks');
+  const off = schema.filter((tweak) => !shown.has(tweak.name));
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
       <PopoverTrigger asChild><Button type="button" size="xs" variant="ghost" data-tweak-more className="absolute right-0 shrink-0 bg-background text-muted-foreground">{t('design.tweaks.more')}</Button></PopoverTrigger>
@@ -138,12 +153,10 @@ function TweaksPanel({ schema, values, onChange, isOpen, setOpen }: PanelProps) 
           <h2 className="font-medium">{title}</h2>
           <Button type="button" size="icon-xs" variant="ghost" className="ml-auto" aria-label={t('design.tweaks.close')} title={t('design.tweaks.close')} onClick={() => setOpen(false)}><XIcon /></Button>
         </div>
-        {groupsOf(schema).map((group) => (
-          <section key={group.name === undefined ? '' : `g:${group.name}`} className="flex flex-col gap-2 border-b p-2.5 text-muted-foreground last:border-b-0">
-            {group.name !== undefined && <h3 className="font-medium text-foreground">{group.name}</h3>}
-            {group.tweaks.map((tweak) => <Labelled key={tweak.name} tweak={tweak} value={values[tweak.name] ?? tweak.default} onChange={onChange} isPanel />)}
-          </section>
+        {groupsOf(schema.filter((tweak) => shown.has(tweak.name))).map((group) => (
+          <PanelSection key={group.name === undefined ? '' : `g:${group.name}`} name={group.name} tweaks={group.tweaks} values={values} onChange={onChange} />
         ))}
+        {off.length > 0 && <PanelSection name={t('design.tweaks.disabled')} tweaks={off} values={values} onChange={onChange} isDisabled />}
       </PopoverContent>
     </Popover>
   );
@@ -155,16 +168,18 @@ const HIDDEN = { 'aria-hidden': true, inert: true, className: 'invisible flex sh
 function TweakRow({ schema, values, onChange }: { schema: TweakSchema; values: Values; onChange: OnChange }) {
   const row = useRef<HTMLDivElement>(null);
   const [isOpen, setOpen] = useState(false);
-  const fits = useTweakOverflow(row, schema.map((tweak) => tweak.name));
-  if (isOpen && fits >= schema.length) setOpen(false); // widened until all fit: more… leaves, and the row must not stay hidden behind it
+  const shown = shownTweaks(schema, values);
+  const tweaks = schema.filter((tweak) => shown.has(tweak.name)); // a control that means nothing in this state takes no room (#1034)
+  const fits = useTweakOverflow(row, tweaks.map((tweak) => tweak.name));
+  if (isOpen && fits >= tweaks.length) setOpen(false); // widened until all fit: more… leaves, and the row must not stay hidden behind it
   return (
     <div ref={row} className="relative flex min-w-0 flex-1 items-center gap-3 self-stretch overflow-hidden">
-      {schema.map((tweak, index) => (
+      {tweaks.map((tweak, index) => (
         <span key={tweak.name} data-tweak-item {...(isOpen || index >= fits ? HIDDEN : { className: 'flex shrink-0' })}>
           <Labelled tweak={tweak} value={values[tweak.name] ?? tweak.default} onChange={onChange} />
         </span>
       ))}
-      {fits < schema.length && <TweaksPanel schema={schema} values={values} onChange={onChange} isOpen={isOpen} setOpen={setOpen} />}
+      {fits < tweaks.length && <TweaksPanel schema={schema} shown={shown} values={values} onChange={onChange} isOpen={isOpen} setOpen={setOpen} />}
     </div>
   );
 }
