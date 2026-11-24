@@ -1191,7 +1191,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   let preloadPr = deps.preloadPr; // #497: bound after the PR routes, which own the changes' reader
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
-  mountMcp(app, { exec, machineFor, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
+  mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
     relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log, reportRetry }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
     reviews, notifyReview, localReviews, notifyLocalReview, facts: wiring.facts, memory, preloadPr: (url) => preloadPr?.(url) ?? Promise.resolve(),
     benchmark: drafter({ dispatch, home, pluginSource: shippedPlugin, exec, log, version: benchVersion, now: () => new Date(), queue: benchQueue,

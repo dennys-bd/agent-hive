@@ -8,7 +8,6 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import assert from 'node:assert/strict';
 import { localActivityId } from '../src/activities.js';
 import { mountMcp } from '../src/mcp.js';
-import { fakeMachine } from './fake-machine.js';
 import { TASK_DESCRIPTION } from '../src/mcp-optional.js';
 import { taskAnswer, taskComments } from '../src/mcp-task.js';
 import { initialState } from '../src/orchestrator.js';
@@ -125,7 +124,7 @@ async function harness(t: TestContext, state: State, sources: Sources, off: Opti
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   const app = express().use(express.json());
   mountMcp(app, {
-    exec, machineFor: () => fakeMachine(), live: () => ({ state, config: configWith(off), sources }), poll: async () => undefined, dispatch: async () => [],
+    exec, live: () => ({ state, config: configWith(off), sources }), poll: async () => undefined, dispatch: async () => [],
     canClose: () => false, relate: unused, canRelate: () => false, facts, memory: { read: unused, update: unused },
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, benchmark: { draft: unused },
   });

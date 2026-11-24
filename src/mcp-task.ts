@@ -1,10 +1,16 @@
 // hive_task's answer (#7): the calling worker's own task as the Hive holds it. Pure, but for the comments, read live on every call as the
 // panel's GET /tasks/:id/comments reads them; the registration lives in mcp-optional.ts with the other optional tools
-import { resultOf, taskOfWorker } from './activities.js';
-import { workerWorkspace } from './mcp-conventions.js';
+import { activityOfWorker, resultOf, taskOfWorker } from './activities.js';
+import { taskWorkspace, workspaceByName } from './config.js';
 import type { McpDeps } from './mcp-kit.js';
 import { originRepository } from './repos/repositories.js';
-import type { BlockerRef, Exec, Item, Source, State, Task, TaskComment, Worker } from './types.js';
+import type { BlockerRef, Config, Exec, Item, Source, State, Task, TaskComment, Worker, Workspace } from './types.js';
+
+/** The workspace a worker runs in (#692): its task's, or a local activity's own. */
+export function workerWorkspace(state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, config: Pick<Config, 'comb'>, worker: Worker): Workspace | undefined {
+  const task = taskOfWorker(state, worker);
+  return task ? taskWorkspace(config, task) : workspaceByName(config, activityOfWorker(state, worker)?.workspace);
+}
 
 /** A task of the tree (#7): its display id, title and stage when the Hive holds it; its itemId alone when it does not. */
 export interface TaskRef { id: string; title?: string; stage?: string; closed?: true }

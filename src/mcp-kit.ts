@@ -3,7 +3,6 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { correlationOf } from './fact-derive.js';
 import type { Drafter } from './benchmark/drafts.js';
 import type { FactLog, RecordInput, RefusalCode } from './facts.js';
-import type { MachineFor } from './machine.js';
 import type { MemoryStore } from './memory.js';
 import type { ReplyReviews } from './mcp-review.js';
 import type { RelateOutcome } from './server-blockers.js';
@@ -15,7 +14,7 @@ export const UNKNOWN_WORKER_MESSAGE = 'unknown worker';
 /** What the tools read and do: the live state with the config (undefined while the Hive has no config), and the server's dispatch. The
  * review files hive_reply answers in come with ReplyReviews (#591, #344). */
 export interface McpDeps extends ReplyReviews {
-  live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create' | 'comments'>> } | undefined; // hive_task's comments (#7); config: the Comb's prefix and createIn (hive_create_task), the Hive's language and a fork's base (hive_conventions)
+  live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create' | 'comments'>> } | undefined; // hive_task's comments (#7); config: the Comb's prefix and createIn (hive_create_task), and mcp.off (#333)
   poll(names: string[], manual?: string[]): Promise<void>; // #846: hive_create_task on a source polls it through the route's own path
   dispatch(event: HiveEvent): Promise<Effect[]>;
   canClose(itemId: string): boolean; // hive_stop's reason (#314): whether the task's source can close its item
@@ -26,7 +25,6 @@ export interface McpDeps extends ReplyReviews {
   preloadPr?(url: string): Promise<void>; // #497: hive_pr's PR read and stored ahead of its page; never awaited
   benchmark: Drafter; // #478: benchmark_draft's write, the routes' cores through their queue
   exec: Exec; // hive_task's reads (mcp-task.ts)
-  machineFor: MachineFor; // #932: the asking worker's machine, whose git hive_conventions reads
 }
 
 // A refusal's code rides on a symbol key (#742): JSON drops symbol keys, so the agent reads only the text, exactly as before

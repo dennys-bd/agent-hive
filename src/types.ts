@@ -1405,7 +1405,7 @@ export interface ReviewerConfig { on: boolean; when: ReviewWhen; agent: AgentId 
 export const REVIEWER_DEFAULTS: ReviewerConfig = { on: true, when: 'save', agent: null, model: null, version: null };
 
 /** The Hive's MCP tools no config can turn off (#333): the stages and the skills depend on them. */
-export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply', 'hive_conventions'] as const;
+export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply'] as const;
 /** The tools mcp.off may turn off for the whole Hive (#333, screen 11f). */
 export const OPTIONAL_TOOLS = ['hive_remember', 'hive_recall', 'hive_revise', 'hive_forget', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'] as const;
 export type OptionalTool = (typeof OPTIONAL_TOOLS)[number];
