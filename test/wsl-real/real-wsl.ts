@@ -16,7 +16,7 @@ import { SECRET } from '../secret-client.js';
 
 const execFileBuffer = promisify(execFile); // as src/server.ts: wsl.exe's own messages are UTF-16LE, so its output is read as Buffers
 const POLL_MS = 250;
-const CLOSED_PORT = 1; // nothing listens there: the relay's answer is a refusal, which only the relay test changes
+export const CLOSED_PORT = 1; // nothing listens there: the relay's answer is a refusal, which only the relay test changes
 const WSL_FOLDER = ['.config', 'agent-hive', 'wsl']; // the distro's Hive folder (#943): hooks.json, hive.secret, relay-port, prompts/
 
 function laneDistro(): string {
