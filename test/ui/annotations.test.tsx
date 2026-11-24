@@ -176,6 +176,7 @@ function marginOf(extra: Partial<Stub> = {}, canFix = true): Stub {
   const annotations: Stub = {
     list: [LINT_FIX, LINT_ADVICE, AGENT_FIX, AGENT_ADVICE],
     values: {},
+    writeValue: vi.fn(),
     review: { config: { ...REVIEWER_DEFAULTS, when: 'demand' }, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
     canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(), passage: vi.fn(), ...extra,
   };

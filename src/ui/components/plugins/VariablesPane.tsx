@@ -12,7 +12,7 @@ interface BodyProps extends PaneProps { path: string }
 
 // #327: a row's lines are the editor's annotations on its variable, the pane's two checks only; a parse annotation never lands on a row,
 // nor an agent's (#329), which names no variable
-const ROW_CHECKS: readonly LintAnnotation['check'][] = ['required', 'unused'];
+const ROW_CHECKS: readonly LintAnnotation['check'][] = ['required', 'unused', 'value']; // #621: a workspace value this template cannot take
 const findingsOf = (list: readonly EditorAnnotation[], name: string): LintAnnotation[] =>
   list.filter((a): a is LintAnnotation => !isAgent(a) && ROW_CHECKS.includes(a.check) && a.variable === name);
 
@@ -39,6 +39,7 @@ function PaneBody({ editor, annotations, workspaces, path }: BodyProps) {
     <VariableList
       text={editor.textOf(path)} workspaces={workspaces} onApply={editor.applyEdit} originOf={originOf} viewAs={editor.viewAs}
       findings={(name) => findingsOf(annotations.list, name)} onFinding={annotations.openAt}
+      values={annotations.values} onWorkspaceValue={annotations.writeValue}
     />
   );
 }

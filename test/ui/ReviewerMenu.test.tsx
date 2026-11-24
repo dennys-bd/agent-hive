@@ -146,7 +146,7 @@ test("an agent annotation's card carries the agent mark, its title and body, and
 test('without a scope (a non-markdown file) review now is disabled (#329)', async () => {
   const user = userEvent.setup();
   const review = { config: SAVED, running: false, canReview: false, now: vi.fn(), set: vi.fn() };
-  const annotations = { list: [], values: {}, review, canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn() } satisfies Annotations;
+  const annotations = { list: [], values: {}, writeValue: vi.fn(), review, canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn() } satisfies Annotations;
   render(<ReviewerMenu annotations={annotations} workspaces={[]} />);
   await user.click(screen.getByRole('button', { name: 'revisor · nenhuma anotação' }));
   expect(await screen.findByRole('button', { name: 'revisar agora' })).toBeDisabled();
@@ -156,6 +156,7 @@ test('without a scope (a non-markdown file) review now is disabled (#329)', asyn
 const annotationsOf = (severities: readonly ('red' | 'yellow')[]): Annotations => ({
   list: severities.map((severity, line): AgentAnnotation => ({ line, severity, title: `t${line}`, body: 'b', source: 'agent', kind: 'advice' })),
   values: {},
+  writeValue: vi.fn(),
   review: { config: SAVED, running: false, canReview: true, now: vi.fn(), set: vi.fn() },
   canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn(),
 });

@@ -2,7 +2,7 @@ import { type RefObject, useCallback, useContext, useEffect, useMemo, useRef, us
 import type { AgentAnnotation } from '../../reviewer';
 import { parseTemplate } from '../../template';
 import { type LintAnnotation, lintTemplate } from '../../template-lint';
-import type { CatalogueItem, LintInputRead, WorkspaceVariables } from '../../types';
+import type { CatalogueItem, LintInputRead, VariableValue, WorkspaceVariables } from '../../types';
 import type { ItemEditor, WriteResult } from '@/hooks/use-item-editor';
 import { fileKeyOf, itemKeyOf, type Review, ReviewerContext, type Scope, useReviewer } from '@/hooks/use-reviewer';
 import type { MessageKey } from '@/i18n';
@@ -10,6 +10,7 @@ import { agentFixOf, fixOf } from '@/lib/annotation-fix';
 import { getJson, sendJson } from '@/lib/api';
 import { HIVE_ORIGIN } from '@/lib/plugins';
 import { renderFor } from '@/lib/workspace-values';
+import { writeWorkspaceValue } from '@/lib/workspace-variables-api';
 import { isMarkdown } from '@/lib/template-view';
 
 /** An annotation the editor shows (#329): the lint's, or the template reviewer's, which carries source: 'agent' (#328). */
@@ -23,6 +24,7 @@ export const checkOf = (a: EditorAnnotation): string => (isAgent(a) ? 'agent' : 
 export interface Annotations {
   list: readonly EditorAnnotation[]; // the open file's, not dismissed: the lint's, then the agent's
   values: WorkspaceVariables; // #621: each workspace's variables from the lint input, which the preview, a chain's reach and the pane read
+  writeValue(workspace: string, name: string, value: VariableValue | undefined): Promise<MessageKey | undefined>; // #621: through its route; the pane shows the answer's error
   review: Review; // the reviewer's setting, run and failure (#329)
   open?: EditorAnnotation; // the card shown
   revealed?: { line: number; n: number }; // the source line openAt last revealed; n changes on every reveal, so one line twice reveals twice
@@ -44,6 +46,8 @@ interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): 
 const NONE: readonly LintAnnotation[] = [];
 const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [], variables: {} };
 const FIX_STALE: MessageKey = 'plugins.annotations.fixStale';
+const VALUE_FAILED: MessageKey = 'plugins.variables.workspaceValueFailed';
+type SetVariables = (workspace: string, variables: Record<string, VariableValue>) => void;
 const MAX_KEYS = 1000; // server-plugins.ts's MAX_DISMISSED: that module is the server's
 // What apply writes: the lint's edit, an agent fix's new text, 'stale' once that fix's span left its line (#981), nothing for an advice
 function writeOf(annotation: EditorAnnotation, text: string): WriteResult | 'stale' | undefined {
@@ -73,8 +77,9 @@ function scopeOf({ item, read, path, viewAs }: ItemEditor): Scope | undefined {
   return { id: item.id, version: read.version, path };
 }
 
-// The catalogue's variables and the plugin's scripts, read once and again when the catalogue changes; a failed read lints against nothing
-function useLintInput(items: readonly CatalogueItem[] | undefined): LintInputRead {
+// The catalogue's variables, the plugin's scripts and each workspace's values (#621), read once and again when the catalogue changes; a
+// failed read lints against nothing. A workspace value the pane saved replaces that workspace's values here, so nothing waits on a read
+function useLintInput(items: readonly CatalogueItem[] | undefined): { input: LintInputRead; setVariables: SetVariables } {
   const [input, setInput] = useState<LintInputRead>(EMPTY_INPUT);
   useEffect(() => {
     if (items === undefined) return undefined;
@@ -87,7 +92,24 @@ function useLintInput(items: readonly CatalogueItem[] | undefined): LintInputRea
     getJson<unknown>('/api/lint-input').then((read) => { if (!live) return; if (isLintInput(read)) setInput(read); else fail(read); }, fail);
     return () => { live = false; };
   }, [items]);
-  return input;
+  const setVariables = useCallback<SetVariables>((workspace, variables) => {
+    setInput((last) => ({ ...last, variables: { ...last.variables, [workspace]: variables } }));
+  }, []);
+  return { input, setVariables };
+}
+
+// #621: a workspace's value through its route. The answer replaces that workspace's values, so the lint, the preview and the pane read it at
+// once; a refusal keeps the values and answers the pane's error
+async function sendValue(workspace: string, name: string, value: VariableValue | undefined, setVariables: SetVariables): Promise<MessageKey | undefined> {
+  try {
+    const answer: unknown = await writeWorkspaceValue(workspace, name, value);
+    if (!isRecord(answer) || !isRecord(answer.variables)) throw new Error('the answer holds no variables');
+    setVariables(workspace, answer.variables as Record<string, VariableValue>);
+    return undefined;
+  } catch (err) {
+    console.error(`annotations: ${name} of ${workspace} was not saved`, err);
+    return VALUE_FAILED;
+  }
 }
 
 function useLint(item: CatalogueItem | undefined, text: string, input: LintInputRead, workspaces: readonly string[]): readonly LintAnnotation[] {
@@ -171,7 +193,7 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
   const scope = scopeOf(editor);
   const path = scope?.path;
   const text = path === undefined ? '' : editor.textOf(path);
-  const input = useLintInput(items);
+  const { input, setVariables } = useLintInput(items);
   const linted = useLint(scope === undefined ? undefined : editor.item, text, input, workspaces);
   const saved = path === undefined ? undefined : editor.read?.files.find((file) => file.path === path)?.text;
   const { config, save } = useContext(ReviewerContext);
@@ -189,7 +211,7 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
   const [refused, setRefused] = useState<FileNote<MessageKey>>();
   const fixError = refused !== undefined && refused.file === file ? refused.value : undefined;
   return {
-    list, values: input.variables, review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
+    list, values: input.variables, writeValue: (workspace, name, value) => sendValue(workspace, name, value, setVariables), review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
     error: hasFailed ? 'plugins.annotations.dismissFailed' : fixError,
     openAt: card.openAt, close: card.close,
     next: () => {

@@ -106,6 +106,7 @@ export interface ItemsServer {
   reviewer?: ReviewerConfig; // #329: the saved `reviewer` key, which an ok POST /settings writes; set, the harness provides the setting
   postSettings?(body: SettingsPost): Response;
   launchOptions?: LaunchOptions;
+  putVariable?(workspace: string, name: string, body: { value: unknown } | undefined): Response; // #621: PUT (a body) or DELETE (none) …/variables/:name
 }
 
 function answerDismissed(server: ItemsServer, id: string, url: URL, init?: RequestInit): Response {
@@ -148,6 +149,11 @@ export function stubItems(server: ItemsServer) {
     if (url.pathname === '/api/lint-input') return json(server.lintInput ?? { catalogue: [], scripts: [], variables: {} });
     if (url.pathname === '/settings') return answerSettings(server, init);
     if (url.pathname === '/launch-options') return json(server.launchOptions ?? {});
+    const variable = /^\/workspaces\/([^/]+)\/variables\/([^/]+)$/.exec(url.pathname); // #621
+    if (variable !== null) {
+      const body = init?.method === 'DELETE' ? undefined : (JSON.parse(String(init?.body)) as { value: unknown });
+      return server.putVariable?.(decodeURIComponent(variable[1] ?? ''), decodeURIComponent(variable[2] ?? ''), body) ?? notServed('variable');
+    }
     const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign' | 'dismissed', version
     if (rawId === undefined) return json({ items: server.catalogue });
     const id = decodeURIComponent(rawId);
