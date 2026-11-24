@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { addVariable, updateVariable } from '../../src/template-edit';
+import { addVariable, setVariableValue } from '../../src/template-edit';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
 import { CATALOGUE, json, readOf, type SaveBody, stubItems, VARS_ORIGINAL, VARS_TEXT } from './plugins-fixtures';
@@ -46,7 +46,8 @@ test('"+ variable" with a list type and two values writes a valid declaration: t
   await user.type(within(form).getByRole('textbox', { name: 'valores, um por linha' }), 'fast{Enter}deep');
   await user.click(within(form).getByRole('combobox', { name: 'default' }));
   await user.click(await screen.findByRole('option', { name: 'fast' }));
-  await user.click(within(form).getByRole('combobox', { name: 'hive-site' }));
+  await user.click(within(form).getByRole('button', { name: '+ só neste template' }));
+  await user.click(within(form).getByRole('combobox', { name: 'hive-site · só neste template' }));
   await user.click(await screen.findByRole('option', { name: 'deep' }));
   await user.click(within(form).getByRole('button', { name: 'criar' }));
   const added = addVariable(VARS_TEXT, { name: 'reviewer', values: ['fast', 'deep'], default: 'fast', workspaces: { 'hive-site': 'deep' } });
@@ -77,7 +78,7 @@ test('a name already declared, or workspace, shows its copy in the form and writ
   expect([view().model.getValue(), saves]).toEqual([VARS_TEXT, []]);
 });
 
-test("edit opens the form on a variable with its name read-only and rewrites the declaration in place, keeping a gone workspace's entry (#321, decisions 7, 11)", async () => {
+test("edit opens the form on a variable with its name read-only, and an override written there lands in the declaration in place, keeping a gone workspace's entry (#321, decisions 7, 11; #621)", async () => {
   const user = userEvent.setup();
   const saves = serve();
   render(<PluginsWindow />);
@@ -86,26 +87,29 @@ test("edit opens the form on a variable with its name read-only and rewrites the
   const form = screen.getByRole('form', { name: 'editar e2eCommand' });
   expect(within(form).getByRole('textbox', { name: 'nome' })).toHaveAttribute('readonly');
   expect(within(form).getByRole('switch', { name: 'obrigatória' })).toBeChecked();
-  expect(within(form).getByRole('textbox', { name: 'hive-site' })).toHaveValue('pnpm e2e');
-  await user.type(within(form).getByRole('textbox', { name: 'agent-hive' }), 'npx playwright test');
+  expect(within(form).getByRole('textbox', { name: 'hive-site · só neste template' })).toHaveValue('pnpm e2e');
+  await user.type(within(form).getByRole('textbox', { name: 'agent-hive · só neste template' }), 'npx playwright test');
   await user.click(within(form).getByRole('button', { name: 'salvar' }));
-  const updated = updateVariable(VARS_TEXT, 'e2eCommand', { required: true, workspaces: { 'agent-hive': 'npx playwright test', 'hive-site': 'pnpm e2e' } });
+  const updated = setVariableValue(VARS_TEXT, 'e2eCommand', 'agent-hive', 'npx playwright test');
   if (!updated.ok) throw new Error(updated.error.message);
   await waitFor(() => expect(saves.at(-1)?.text).toBe(updated.text));
   expect(updated.parsed.variables.find((v) => v.name === 'e2eCommand')?.workspaces).toEqual({ 'agent-hive': 'npx playwright test', 'hive-site': 'pnpm e2e', 'old-site': 'x' });
   expect(updated.text.split('\n')[4]).toMatch(/^ {2}e2eCommand: \{ required: true, workspaces: \{ /);
+  expect(screen.getByRole('listitem', { name: 'e2eCommand' })).toBeInTheDocument();
   expect(screen.queryByRole('form', { name: 'editar e2eCommand' })).not.toBeInTheDocument();
 });
 
-test('emptying a workspace in the edit form removes its entry, so the default applies (#321, decision 14)', async () => {
+test('emptying an override in the edit form removes its entry, so the workspace value or the default applies (#321, decision 14; #621)', async () => {
   const user = userEvent.setup();
   const saves = serve();
   render(<PluginsWindow />);
   await open('new-build');
   await user.click(within(row('delivery')).getByRole('button', { name: 'editar delivery' }));
   const form = screen.getByRole('form', { name: 'editar delivery' });
-  await user.click(within(form).getByRole('combobox', { name: 'hive-site' }));
-  await user.click(await screen.findByRole('option', { name: 'default' }));
+  // the keyboard opens it: after a click whose target unmounted (the card, the form), user-event's next click cannot open a Radix select in jsdom
+  within(form).getByRole('combobox', { name: 'hive-site · só neste template' }).focus();
+  await user.keyboard('{Enter}');
+  await user.click((await screen.findAllByRole('option'))[0]); // the empty option, which reads the value it falls back to
   await user.click(within(form).getByRole('button', { name: 'salvar' }));
   await waitFor(() => expect(saves).toHaveLength(1));
   const declaration = saves[0]?.text.split('\n')[3] ?? '';
