@@ -1,5 +1,6 @@
 // The start route, out of server-tasks.ts (#159): POST /tasks/:id/start with its refusals.
 import type { Express, Request, Response } from 'express';
+import { knownAgent, stageAgentIn } from './agents.js';
 import { activityOf } from './activities.js';
 import { branchFor, inFlow, inAction, stageOf, isBlocked } from './tasks.js';
 import { hiveAction, runsAgent } from './stage-agent.js';
@@ -8,6 +9,9 @@ import { discardOrphan } from './server-orphan.js';
 import { AWAITING_MESSAGE } from './server-approval.js';
 import { startLocal } from './server-local.js';
 import { parseRunPick } from './run-pick.js';
+import type { Machine } from './machine.js';
+import { isRecord } from './rate-limits.js';
+import { agentCheck, agentOnMachine, machineAgents } from './wsl/distro-status.js';
 import { checkBase } from './worktree.js';
 import { sizeIn } from './terminal-wire.js';
 import { hostOnlyRefusal } from './benchmark-guards.js';
@@ -48,6 +52,18 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   return undefined;
 }
 
+// #946: the agent the run will use (the body's pick, else the stage's) on the task's machine, before the picks, so a stage agent the machine
+// lacks is refused at Start too: a 409 naming both. None for a stage the Hive runs itself; an unknown pick is parseRunPick's 400
+async function machineAgentRefusal(deps: TaskRouteDeps, current: LiveView, task: Task, body: unknown, machine: Machine): Promise<Refusal | undefined> {
+  const stage = stageOf(current.state.stages, task.stage);
+  if (stage === undefined || hiveAction(stage) !== undefined) return undefined;
+  const asked = isRecord(body) ? body.agent : undefined;
+  const agent = asked === undefined ? stageAgentIn(current.state, stage) : knownAgent(asked);
+  if (agent === undefined) return undefined;
+  const refused = await agentOnMachine(agent, machine, agentCheck(current.runtime.config, deps.language()));
+  return refused === undefined ? undefined : { status: HTTP_CONFLICT, ...refused };
+}
+
 /** The start the body asks for. `base: null` is the popup's default and drops a saved base. No string base, or a delete activity stage (which
  * never gets one): today's start. A base must be a branch git has and not the task's own (#131), else the answer is a 409 with the
  * reason and nothing starts. The body's workspace is checked like right-click › Workspace and saved with the start (#179). The body's run picks
@@ -64,10 +80,12 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   const remote = stageOf(current.state.stages, task.stage)?.action === 'evaluate' ? hostOnlyRefusal(workspace) : undefined;
   if (remote) return remote;
   const machine = deps.machineFor(activityOf(current.state, itemId) ?? workspace); // a live activity's machine is frozen; else the workspace's
-  const unavailable = await machineRefusal(machine, workspace.path);
+  const unavailable = await machineRefusal(machine, workspace.path); // #946: on a distro it is also the wait for its helper, before info()
   if (unavailable) return unavailable;
+  const missing = await machineAgentRefusal(deps, current, task, body, machine);
+  if (missing) return missing;
   await deps.plugin.ready(); // #316: a render a save queued lands before the picks read the folder
-  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), () => deps.plugin.dir(workspace.name), current.runtime.config.agentEnabled); // #290: the run picks, before any git; #316: its workspace's agents
+  const picked = parseRunPick(body, current.state, task, machineAgents(machine), deps.language(), () => deps.plugin.dir(workspace.name), current.runtime.config.agentEnabled); // #290: the run picks, before any git; #316: its workspace's agents
   if ('status' in picked) return picked;
   const placed = { ...(raw === undefined ? {} : { workspace: task.workspace }), ...picked };
   if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };

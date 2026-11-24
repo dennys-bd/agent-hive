@@ -28,7 +28,7 @@ import { registerCopyRoutes } from './server-copy.js';
 import { registerSessionRoutes } from './server-sessions.js';
 import { registerDismissErrorRoute, registerRetryRoute } from './server-retry.js';
 import { registerFlowRoutes } from './server-task-flow.js';
-import type { Activity, AgentAvailability, BaseOptions, Source, Task, Config, CreatedRef, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
+import type { Activity, BaseOptions, Source, Task, Config, CreatedRef, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { baseOptions, } from './worktree.js';
 import type { Logger } from './log.js';
 import type { ConsoleStore } from './console.js';
@@ -59,7 +59,7 @@ const REMOVAL_MESSAGE: Record<RemovalBlocker, string> = {
   running: RUNNING_MESSAGE, deleting: DELETING_MESSAGE, nothingToDelete: NOTHING_TO_DELETE_MESSAGE,
 };
 
-export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string; machine?: string; reason?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name; #931: an unavailable machine's id and why
+export interface Refusal { status: number; message: string; ref?: CreatedRef; code?: string; workspace?: string; resetsAt?: string; machine?: string; reason?: string; agent?: string } // #812: a source's rate limit, when to retry; #767/#811: the item a failed create left behind; #748: a gone workspace's code and name; #931: an unavailable machine's id and why; #946: the agent its machine cannot run
 
 export interface TaskRouteDeps {
   machineFor: MachineFor; // #158: the activity's machine; #159, #160 and #161 read it
@@ -71,11 +71,10 @@ export interface TaskRouteDeps {
    * call time, a POST /settings may have changed them; the source is the live one. */
   requireLive(res: Response): {
     state: State;
-    runtime: { config: Pick<Config, 'agentArgs' | 'agentEnabled' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string };
+    runtime: { config: Pick<Config, 'accounts' | 'agentArgs' | 'agentEnabled' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string };
   } | undefined;
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, reaches only the spawns this event causes
   language(): Language; // the Hive's effective language, the config's else the system's: a kept-both item's " - copy" suffix (#594)
-  agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a start's picked agent must be one (#290)
   /** The pool's own started(ptyId) (#249): resolves once the run's pty exists (#251), rejects on a spawn failure or an unknown id.
    * What POST /tasks/:id/open and POST /activities/:id/sessions/:session/open await before answering the run they just started. */
   started(ptyId: string): Promise<void>;
@@ -105,7 +104,7 @@ function closeRefusal(state: State, itemId: string): Refusal | undefined {
 
 export const refuse = (res: Response, refusal: Refusal): void => {
   // #767: a failed create that left an issue says which, so the client does not retry it into a second one. #748: a gone workspace's code and name, which the page words; undefined drops out of the JSON
-  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, machine: refusal.machine, reason: refusal.reason, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }), ...(refusal.resetsAt === undefined ? {} : { resetsAt: refusal.resetsAt }) });
+  res.status(refusal.status).json({ error: refusal.message, code: refusal.code, workspace: refusal.workspace, machine: refusal.machine, reason: refusal.reason, agent: refusal.agent, ...(refusal.ref === undefined ? {} : { ref: refusal.ref }), ...(refusal.resetsAt === undefined ? {} : { resetsAt: refusal.resetsAt }) });
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */

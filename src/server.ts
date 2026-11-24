@@ -1422,7 +1422,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, agents, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });

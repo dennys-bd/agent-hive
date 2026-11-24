@@ -35,7 +35,7 @@ function pickRefusal(state: State, task: Task, language: Language): Refusal | un
   return startsFresh(startMode(task, state)) ? undefined : refusal('continue', language, HTTP_CONFLICT);
 }
 
-/** The run picks a start's body asks for (#290): none asked is none ({}), so today's start is unchanged; else the agent (one this machine has),
+/** The run picks a start's body asks for (#290): none asked is none ({}), so today's start is unchanged; else the agent (one the task's machine has: `agents` is machineAgents of it, #946),
  * the session (new, previous or one of the task's, recorded by that agent) and #257's launch, checked with no continueId: a stage resume runs
  * the stage's prompt with the new picks. Absent fields stay the stage's. A 400 names the field, a 409 the run that takes no picks. `pluginDir`
  * answers the task's workspace's plugin folder, whose agents a specialized agent must be one of (#316); it is read only when one is named (#317). `enabled` is the config's agentEnabled: a disabled agent is refused here, before any worktree (#482). */
