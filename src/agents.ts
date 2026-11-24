@@ -127,8 +127,12 @@ export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLower
 /** Whether boot found `agent` on PATH (#516); one it never checked is not. The menus that open a session disable the others (#931). */
 export const isAvailable = (agent: AgentId, agents: readonly AgentAvailability[]): boolean => agents.some((a) => a.agent === agent && a.available);
 
+/** Why a run of an agent boot did not find cannot start here (#516): what a refusal on the local machine still says (#946), since a restart
+ *  is still its fix there. */
+export const notOnPathRefusal = (agent: AgentId): string => `agent ${agent} is not on PATH: install it, then restart the Hive`;
+
 /** Why a run of `agent` cannot start, or undefined: one boot did not find (or never checked), then one the config disables (#482); both refused
  * before any worktree. */
 export function agentRefusal(agent: AgentId, agents: readonly AgentAvailability[], enabled: Record<AgentId, boolean>): string | undefined {
-  return isAvailable(agent, agents) ? disabledRefusal(agent, enabled) : `agent ${agent} is not on PATH: install it, then restart the Hive`;
+  return isAvailable(agent, agents) ? disabledRefusal(agent, enabled) : notOnPathRefusal(agent);
 }

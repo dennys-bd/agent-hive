@@ -661,6 +661,8 @@ const en = {
   'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
   'launch.refused.workspace': '"workspace" must name one of the workspaces', // #317: GET /launch-options with no workspace, or one the config does not have
   'runPick.refused.agent': '"agent" must be an agent installed on this machine', // #290: the start route's run picks
+  'machine.agentUnavailable': 'agent {agent} is not available on {machine}', // #946: a start's 409 and a spawn's spawnFailed on a distro
+  'machine.agentLoggedOut': 'agent {agent} is not logged in on {machine}: run {agent} inside the distro and log in', // #946
   'runPick.refused.session': '"session" must be new, previous or a session of the task that agent recorded',
   'runPick.refused.action': 'a stage that runs no agent takes no "agent", "session", "model", "specializedAgent" or "args"',
   'runPick.refused.handover': 'the transition already decides the task\'s next run: no "agent", "session", "model", "specializedAgent" or "args"',
@@ -4288,6 +4290,8 @@ const pt: Record<MessageKey, string> = {
   'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
   'launch.refused.workspace': '"workspace" precisa ser um dos workspaces',
   'runPick.refused.agent': '"agent" precisa ser um agente instalado nesta máquina', // #290: the start route's run picks
+  'machine.agentUnavailable': 'o agente {agent} não está disponível em {machine}', // #946: a start's 409 and a spawn's spawnFailed on a distro
+  'machine.agentLoggedOut': 'o agente {agent} não está logado em {machine}: rode {agent} dentro da distro e faça login', // #946
   'runPick.refused.session': '"session" precisa ser new, previous ou uma sessão da tarefa registrada por esse agente',
   'runPick.refused.action': 'uma etapa que não executa agente não aceita "agent", "session", "model", "specializedAgent" nem "args"',
   'runPick.refused.handover': 'a transição já decide a próxima execução da tarefa: sem "agent", "session", "model", "specializedAgent" nem "args"',
