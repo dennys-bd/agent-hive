@@ -62,6 +62,9 @@ test('a workspace on the distro: its task starts, gets a worktree on the distro\
     assert.equal(activity.worktree, worktreePath(machine.paths, repo, activity.slug));
     const listed = await stdoutOf(machine, 'git', ['worktree', 'list', '--porcelain'], { cwd: repo });
     assert.ok(listed.split('\n').includes(`worktree ${activity.worktree}`), listed);
+    // read by the Hive with git on the distro at the SessionStart: the host's git cannot open a distro's path
+    const branch = await stdoutOf(machine, 'git', ['branch', '--show-current'], { cwd: activity.worktree });
+    assert.equal(activity.branch, branch.trim());
   });
 
   await t.test('the setup RUN line runs in that worktree: its file appears there', async () => {

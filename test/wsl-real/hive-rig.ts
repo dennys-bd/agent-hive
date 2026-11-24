@@ -22,19 +22,26 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
 };
 
 // The lane's claude: CI has no login, so this stands in for one. Like Claude Code it reads the hooks file --settings names and runs the
-// command it gives for UserPromptSubmit with the payload on stdin; that command reads HIVE_PTY_ID and HIVE_SECRET_FILE from the run's env.
-// Then it stays up, as a session does, until the server's close kills the run
+// commands it gives, the payload on stdin: SessionStart first, with the session --session-id names and its own cwd, which is how the Hive
+// learns a started task's worktree and branch; then UserPromptSubmit. The commands read HIVE_PTY_ID and HIVE_SECRET_FILE from the run's
+// env. Then it stays up, as a session does, until the server's close kills the run. Every payload is JSON written by node, never by sh
 const FAKE_CLAUDE = [
   '#!/bin/sh',
   // the Hive asks a distro's claude for its login before a run (src/wsl/distro-status.ts): this one answers as a logged-in one does
   'if [ "$1" = auth ] && [ "$2" = status ]; then printf \'%s\\n\' \'{"loggedIn":true}\'; exit 0; fi',
   'settings=',
+  'session=',
   'while [ "$#" -gt 0 ]; do',
-  '  if [ "$1" = --settings ]; then settings=$2; fi',
+  '  case "$1" in --settings) settings=$2 ;; --session-id) session=$2 ;; esac',
   '  shift',
   'done',
-  `hook=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks.UserPromptSubmit[0].hooks[0].command)' "$settings")`,
-  `printf '%s' '{"hook_event_name":"UserPromptSubmit","prompt":"the WSL lane"}' | sh -c "$hook"`,
+  // $1 the event, $2 the payload's JSON
+  'hook() {',
+  `  command=$(node -e 'process.stdout.write(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).hooks[process.argv[2]][0].hooks[0].command)' "$settings" "$1")`,
+  '  printf \'%s\' "$2" | sh -c "$command"',
+  '}',
+  `hook SessionStart "$(node -e 'process.stdout.write(JSON.stringify({ hook_event_name: "SessionStart", session_id: process.argv[1], cwd: process.cwd() }))' "$session")"`,
+  `hook UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"the WSL lane"}'`,
   'exec sleep 300', // bounded, so a run the server failed to kill still ends before the next lane's distro is gone
   '',
 ].join('\n');
