@@ -849,3 +849,35 @@ test('the accounts card reads as the handoff writes it, in both languages; the a
   ]);
   assert.ok(!('settings.accounts.claude' in MESSAGES.en) && !('settings.accounts.copilot' in MESSAGES.en));
 });
+
+test('the accounts card\'s add and remove read as the handoff writes them, in both languages (#965)', () => {
+  const keys = [
+    'settings.accounts.add.claude', 'settings.accounts.add.github', 'settings.accounts.add.name.label', 'settings.accounts.add.name.hint',
+    'settings.accounts.add.submit', 'settings.accounts.add.cancel', 'settings.accounts.add.close', 'settings.accounts.add.refused.name-empty',
+    'settings.accounts.add.refused.name-too-long', 'settings.accounts.add.refused.name-taken', 'settings.accounts.add.claude.pending',
+    'settings.accounts.add.claude.link', 'settings.accounts.add.github.newLogin', 'settings.accounts.add.github.waiting',
+    'settings.accounts.add.github.typeCode', 'settings.accounts.add.github.code', 'settings.accounts.add.github.link',
+    'settings.accounts.add.failed.exited', 'settings.accounts.add.failed.ghExited', 'settings.accounts.add.failed.token',
+    'settings.accounts.add.failed.timeout', 'settings.accounts.add.failed.store', 'settings.accounts.add.done', 'settings.accounts.remove.label',
+    'settings.accounts.remove.confirm', 'settings.accounts.remove.confirmHint', 'settings.accounts.remove.locked', 'settings.accounts.remove.inUse',
+    'settings.accounts.remove.failed',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    '+ account', '+ login', 'account name', 'a name to tell the account apart · you sign in in the browser next', 'add', 'cancel', 'close',
+    'give the account a name', 'name too long: up to {max} characters', 'an account with this name already exists · choose another',
+    'finish signing in in the browser', 'open the sign-in page', 'new login', 'waiting for gh…', 'type this code on GitHub', 'one-time code:',
+    'open GitHub', 'the sign-in stopped before it finished', 'gh stopped before the sign-in finished', 'GitHub sent no token back',
+    'the sign-in took too long and was stopped', 'signed in, but the account couldn\'t be stored', '{name} added', 'remove {name}', 'remove?',
+    'deletes the stored token', 'chosen for runs · choose and save another before removing it',
+    '{name} is in use by runs · choose and save another before removing it', 'couldn\'t remove {name} right now ·',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    '+ conta', '+ login', 'nome da conta', 'um nome para reconhecer a conta · depois você entra no navegador', 'adicionar', 'cancelar', 'fechar',
+    'dê um nome à conta', 'nome longo demais: até {max} caracteres', 'já existe uma conta com esse nome · escolha outro',
+    'termine o login no navegador', 'abrir a página de login', 'novo login', 'esperando o gh…', 'digite este código no GitHub',
+    'código de uso único:', 'abrir o GitHub', 'o login parou antes de terminar', 'o gh parou antes de terminar o login',
+    'o GitHub não devolveu um token', 'o login demorou demais e foi cancelado', 'o login deu certo, mas não deu para guardar a conta',
+    '{name} adicionada', 'remover {name}', 'remover?', 'apaga o token guardado', 'escolhida para as execuções · escolha e salve outra antes de remover',
+    '{name} está em uso nas execuções: escolha e salve outra antes de remover', 'não deu para remover {name} agora ·',
+  ]);
+});
