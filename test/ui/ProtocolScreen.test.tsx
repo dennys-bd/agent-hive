@@ -179,7 +179,7 @@ test('ver como a workspace shows its stage text read-only with no cards and the 
   expect(screen.getByRole('radio', { name: 'template' })).toHaveAttribute('aria-checked', 'true');
 });
 
-test("the right pane lists the selected passage's variables; a value set there changes the draft, not the server, until salvar (#337)", async () => {
+test("the right pane lists the selected passage's variables; a value set in its form changes the draft, not the server, until salvar (#337, #621)", async () => {
   const user = userEvent.setup();
   const text = '---\nafter: ask\nvariables:\n  docsRepo: { default: null }\n---\nSee {{ docsRepo }}.\n';
   const { calls } = stubProtocol({ read: () => withPassages({ ...passageOf('p1', 'ask', ''), text }), write: () => json({ id: 'p1' }) });
@@ -189,9 +189,11 @@ test("the right pane lists the selected passage's variables; a value set there c
   expect(within(aside).getByText('mostra o texto que a sessão recebe neste workspace')).toBeInTheDocument();
   expect(within(aside).getByText('selecione um trecho para ver as variáveis dele')).toBeInTheDocument();
   await user.click(within(card).getByRole('textbox', { name: BODY }));
-  await user.click(within(within(aside).getByRole('listitem', { name: 'docsRepo' })).getByLabelText('docsRepo · hive-site'));
-  await user.type(within(aside).getByRole('textbox', { name: 'docsRepo · hive-site' }), 'site-docs{Enter}');
-  await waitFor(() => expect(within(aside).getByLabelText('docsRepo · hive-site')).toHaveTextContent('site-docs'));
+  await user.click(within(within(aside).getByRole('listitem', { name: 'docsRepo' })).getByRole('button', { name: 'editar docsRepo' }));
+  const form = within(aside).getByRole('form', { name: 'editar docsRepo' });
+  await user.type(within(form).getByRole('textbox', { name: 'hive-site · só neste template' }), 'site-docs');
+  await user.click(within(form).getByRole('button', { name: 'salvar' }));
+  await waitFor(() => expect(within(aside).getByTitle('docsRepo · hive-site')).toHaveTextContent('site-docs'));
   expect(calls).toEqual([]);
   expect(within(card).getByRole('textbox', { name: BODY })).toHaveValue('See {{ docsRepo }}.\n');
   const written = setVariableValue(text, 'docsRepo', 'hive-site', 'site-docs');
