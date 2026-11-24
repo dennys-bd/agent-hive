@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { apiGql, cliGql, cliGqlJson, ghExecFor, gqlFor, loggedGql, NO_TOKEN_MESSAGE } from '../../src/sources/github-gql.js';
+import { writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
+import { apiGql, cliGql, cliGqlJson, ghExecFor, gqlFor, loggedGql, NO_TOKEN_MESSAGE, selectedGhExec } from '../../src/sources/github-gql.js';
 import type { SelectedGithub } from '../../src/github-account.js';
 import type { GhToken } from '../../src/github-token.js';
 import { PROJECT_FIELDS, VIEWER } from '../../src/sources/github-queries.js';
 import { writeCredentials } from '../../src/credentials.js';
 import { fakeLog } from '../fakes.js';
+import { NO_SH_SCRIPT } from '../posix-only.js';
 import { tempDir } from '../temp-dir.js';
 
 const TOKEN = 'gho_thisMustNeverBeLogged';
@@ -162,4 +165,13 @@ test('gqlFor api with the account\'s holder reads its bearer from it, and its 40
   assert.deepEqual(await gql(VIEWER), { viewer: { login: 'ana' } });
   assert.equal((calls[0].init.headers as Record<string, string>).Authorization, `Bearer ${token}`);
   await assert.rejects(gql(VIEWER), { message: `github api: HTTP 401: ${refused}` });
+});
+
+test('ghExecFor hands the lookup\'s env to gh itself, and selectedGhExec lays the selected env over the daemon\'s per call (#961)', { skip: NO_SH_SCRIPT }, async (t) => {
+  // a fake gh that prints the token it was given, first on PATH
+  const dir = await tempDir(t, 'gh-env-');
+  await writeFile(join(dir, 'gh'), '#!/bin/sh\nprintf %s "$GH_TOKEN"\n', { mode: 0o755 });
+  const path = `${dir}${delimiter}${process.env.PATH ?? ''}`;
+  assert.equal(await ghExecFor(process.platform, { env: { ...process.env, PATH: path, GH_TOKEN: 'gho_test' } })(['--version']), 'gho_test');
+  assert.equal(await selectedGhExec(async () => ({ GH_TOKEN: 'gho_test', PATH: path }))(['--version']), 'gho_test');
 });

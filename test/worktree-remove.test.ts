@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { withGhMachine, type GhEnv } from '../src/github-account.js';
 import type { Activity, Exec, TaskPr } from '../src/types.js';
-import { cleanWorktree, removeWorktree } from '../src/worktree-remove.js';
+import { cleanWorktree, mergedByPr, removeWorktree } from '../src/worktree-remove.js';
 import { worktreePath } from '../src/worktree.js';
 import { fakeMachine } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
@@ -356,4 +357,21 @@ test('a refusal check that fails never calls beforeRemove; a listed worktree who
   const pruned = cleanGit(gone.repo, porcelain(gone.repo, [[gone.path, CLEAN_BRANCH]]), [CLEAN_BRANCH]);
   await cleanWorktree(fakeMachine({ exec: pruned.exec }), gone.repo, { slug: SLUG }, CLEAN_BRANCH, async (_at, present) => { called.push(present); });
   assert.deepEqual(called, [false]);
+});
+
+// mergedByPr through a gh-aware machine (#961): git answers the tip, gh a merge at it; the GH_TOKEN each gh call received
+async function mergedTokens(ghEnv: GhEnv): Promise<(string | undefined)[]> {
+  const tokens: (string | undefined)[] = [];
+  const exec: Exec = async (file, _args, opts) => {
+    if (file !== 'gh') return { stdout: `${TIP}\n` }; // rev-parse --verify
+    tokens.push(opts?.env?.GH_TOKEN);
+    return { stdout: JSON.stringify({ state: 'MERGED', headRefOid: TIP }) };
+  };
+  assert.equal(await mergedByPr(withGhMachine(fakeMachine({ exec }), ghEnv), '/repo', CLEAN_BRANCH, [mergedPr()]), TIP);
+  return tokens;
+}
+
+test('mergedByPr\'s gh pr view runs as the selected login through a gh-aware machine, and with no env on the machine\'s (#961)', async () => {
+  assert.deepEqual(await mergedTokens(async () => ({ GH_TOKEN: 'gho_test' })), ['gho_test']);
+  assert.deepEqual(await mergedTokens(async () => ({})), [undefined]);
 });

@@ -49,7 +49,7 @@ test('accounts.copilot naming a stored login that the check answers with an enti
   const fake = answering(200, user('work'));
   t.mock.method(globalThis, 'fetch', fake.fetch);
   const deps: AccountEnvDeps = { accounts: { copilot: 'work', github: 'other' }, credentials: async () => STORE, machineGithub: machine() };
-  assert.deepEqual(await accountEnv({ agent: 'copilot' }, deps), { env: { COPILOT_GITHUB_TOKEN: STORED_TOKEN }, accounts: { copilot: 'work' } });
+  assert.deepEqual(await accountEnv({ agent: 'copilot' }, deps), { env: { GH_TOKEN: 'not-a-real-token-962-other', COPILOT_GITHUB_TOKEN: STORED_TOKEN }, accounts: { github: 'other', copilot: 'work' } });
   const [call] = fake.calls;
   assert.deepEqual([fake.calls.length, call?.url, bearer(call), call?.init?.redirect, call?.init?.signal instanceof AbortSignal], [1, COPILOT_USER_URL, `Bearer ${STORED_TOKEN}`, 'manual', true]);
 });
@@ -58,7 +58,7 @@ test('no accounts.copilot is gh\'s machine login: its token, checked against its
   const fake = answering(200, user('octo'));
   t.mock.method(globalThis, 'fetch', fake.fetch);
   const deps: AccountEnvDeps = { accounts: { github: 'work' }, credentials: async () => STORE, machineGithub: machine('octo') };
-  assert.deepEqual(await accountEnv({ agent: 'copilot' }, deps), { env: { COPILOT_GITHUB_TOKEN: MACHINE_TOKEN }, accounts: {} });
+  assert.deepEqual(await accountEnv({ agent: 'copilot' }, deps), { env: { GH_TOKEN: STORED_TOKEN, COPILOT_GITHUB_TOKEN: MACHINE_TOKEN }, accounts: { github: 'work' } });
   assert.equal(bearer(fake.calls[0]), `Bearer ${MACHINE_TOKEN}`);
 });
 

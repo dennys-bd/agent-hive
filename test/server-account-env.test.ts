@@ -30,19 +30,25 @@ async function waitFor(check: () => boolean): Promise<void> {
 
 interface Hive { base: string; server: HiveServer; workers: FakeWorker[]; lines: string[]; records: RecordInput[] }
 
-// A Hive whose one workspace has `env`, a credential store holding a Claude token, every log line and fact kept
-async function start(t: TestContext, env: Record<string, string> = {}, extra: Partial<ServerDeps> = {}, settings: object = {}): Promise<Hive> {
+const GH_TEST = 'gho_test'; // the stored GitHub login's placeholder token (#961)
+
+// A Hive whose one workspace has `env`, a credential store holding a Claude token and the GitHub login octo, every log line and fact kept.
+// `settings`: extra members of the saved body (accounts, #961)
+async function start(t: TestContext, env: Record<string, string> = {}, extra: Partial<ServerDeps> = {}, settings: Record<string, unknown> = {}): Promise<Hive> {
   const { home, repo } = await tempHive(t);
   const { spawn, workers } = fakeSpawn();
   const { log, lines } = fakeLog();
   const { facts, records } = fakeFacts();
   const credentialsEnv = { XDG_CONFIG_HOME: await tempDir(t, 'cred-') };
-  await writeCredentials({ claude: { work: { token: FAKE_TOKEN } } }, credentialsEnv);
-  const server = createServer({ secret: SECRET, home, log, facts, credentialsEnv, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: async () => ({ stdout: '' }), ...extra });
+  await writeCredentials({ claude: { work: { token: FAKE_TOKEN } }, github: { octo: { token: GH_TEST } } }, credentialsEnv);
+  const server = createServer({
+    secret: SECRET, home, log, facts, credentialsEnv, githubLogin: { env: credentialsEnv }, sourceFactory: fakeSourceFactory().factory, launchPty: spawn,
+    exec: async () => ({ stdout: '' }), ...extra,
+  });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  const body = { ...settingsBody(repo, STAGES), auth: AUTH, sources: [GITHUB_ENTRY], ...settings, workspaces: workspacesAt(repo).map((w) => ({ ...w, env })) };
+  const body = { ...settingsBody(repo, STAGES), auth: AUTH, sources: [GITHUB_ENTRY], workspaces: workspacesAt(repo).map((w) => ({ ...w, env })), ...settings };
   assert.equal((await postJson(`${base}/settings`, body)).status, 200);
   await server.poll();
   return { base, server, workers, lines, records };
@@ -215,4 +221,14 @@ test('a Copilot session whose account check refuses spawns nothing: gh logged ou
   await postJson(`${base}/tasks/${TASK}/open`, { kind: 'copilot' });
   await waitFor(() => server.getState()?.error === 'account copilot missing');
   assert.equal(workers.length, 0);
+});
+
+test('with accounts.github selected, a terminal\'s launch and a captured session\'s reply both carry its GH_TOKEN (#961)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: {} }));
+  const { base, workers } = await start(t, {}, {}, { accounts: { github: 'octo' } });
+  const id = await openShell(base);
+  await waitFor(() => workers.length === 1);
+  assert.equal(workers[0]?.launch.env?.GH_TOKEN, GH_TEST);
+  const [, count = '0', ...rest] = (await (await register(base, id)).text()).split('\n');
+  assert.ok(rest.slice(0, Number(count)).includes(`GH_TOKEN=${GH_TEST}`), 'the reply exports it');
 });

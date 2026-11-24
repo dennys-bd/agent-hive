@@ -2021,8 +2021,8 @@ export interface SettingsBody {
   reviewer?: ReviewerConfig;
   /** The Hive's MCP settings (#333): the Settings form never sends it, the MCP routes do. */
   mcp?: McpSettings;
-  /** The account selection (#952): no form control until #964, so an API caller that omits it keeps the saved one and a first save writes {}.
-   * A Claude name needs a saved credential (accountsRefusal). */
+  /** The account selection (#952): the form always sends it (#964), {} included; an API caller that omits it keeps the saved one and a first
+   * save writes {}. A changed name needs a saved credential or login (accountsRefusal); an unchanged one is not re-checked. */
   accounts?: AccountsConfig;
   /** Old source name → new source name (#278). The form always sends it ({} when nothing was renamed); an API caller that omits it renames
    * nothing; a first setup ignores it. Never written to hive.config.json. */

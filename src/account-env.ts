@@ -1,5 +1,5 @@
 // The run env seam (#953): the one place a run's account env is composed, at every spawn, before anything is spawned, for a pty run and a
-// headless run alike. It asks the run's agent's runner (AgentRunner.accountEnv); #961 adds the GitHub provider under it. A provider that
+// headless run alike. The GitHub provider (#961) answers for every run; the run's agent's runner (AgentRunner.accountEnv) is asked over it. A provider that
 // cannot give the account throws AccountError, which every start path turns into a refusal. Also the accounts each pty's run resolved, kept
 // for the run's life, so a worker's report is attributed to the account its run started on.
 import { AccountError } from './account-error.js';
@@ -29,13 +29,24 @@ export type AccountSeam = (run: { agent?: AgentId }) => Promise<AccountEnvAnswer
 // Which provider an agent's account is (#950: Codex has none). One table, no runner field
 const AGENT_PROVIDER: Record<AgentId, AccountProvider | undefined> = { claude: 'claude', copilot: 'copilot', codex: undefined };
 
-/** One run's account env and the accounts it names. No agent (a terminal): nothing yet, #961's GitHub provider comes here. */
+// The GitHub provider (#961): only accounts.github selects. Absent is the machine's login, nothing set, whatever auth.github and the store say
+async function githubEnv(deps: AccountEnvDeps): Promise<AccountEnvAnswer> {
+  const login = deps.accounts.github;
+  if (login === undefined) return { env: {}, accounts: {} };
+  const logins = (await deps.credentials()).github ?? {};
+  if (!Object.hasOwn(logins, login)) throw new AccountError('github', 'missing', `no stored token for the login ${login}`); // never a silent fall back to the machine's login
+  return { env: { GH_TOKEN: logins[login].token }, accounts: { github: login } };
+}
+
+/** One run's account env and the accounts it names: the GitHub provider's for every run, then the agent's laid over it (the more specific one). */
 export async function accountEnv(run: { agent?: AgentId }, deps: AccountEnvDeps): Promise<AccountEnvAnswer> {
-  if (run.agent === undefined) return { env: {}, accounts: {} };
+  const github = await githubEnv(deps);
+  if (run.agent === undefined) return github;
   const provider = AGENT_PROVIDER[run.agent];
   const selected = provider === undefined ? undefined : deps.accounts[provider];
   const answer = await runners[run.agent].accountEnv({ ...(selected === undefined ? {} : { selected }), credentials: deps.credentials, machineGithub: deps.machineGithub });
-  return { env: answer.env, accounts: provider === undefined || answer.account === undefined ? {} : { [provider]: answer.account } };
+  const agentAccounts = provider === undefined || answer.account === undefined ? {} : { [provider]: answer.account };
+  return { env: { ...github.env, ...answer.env }, accounts: { ...github.accounts, ...agentAccounts } };
 }
 
 export interface RunAccountsStore { set(ptyId: string, accounts: RunAccounts): void; get(ptyId: string): RunAccounts | undefined; drop(ptyId: string): void }

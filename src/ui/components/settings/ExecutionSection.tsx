@@ -1,3 +1,4 @@
+import { AccountsCard, accountsEntries } from '@/components/settings/AccountsCard';
 import { AgentsCard } from '@/components/settings/AgentsCard';
 import { CHILD, FIELD, FIELD_LABEL, FIELD_ROW } from '@/components/settings/field-row';
 import { SESSION_SYNONYMS, SessionsTable } from '@/components/settings/SessionsTable';
@@ -11,9 +12,10 @@ import { t } from '@/i18n';
 import type { SettingsDraft } from '@/lib/settings-form';
 import { cardEntries, type SettingEntry, settingAnchor, settingEntry } from '@/lib/settings-search';
 import { agentName } from '../../../agents';
-import { AGENT_IDS, type AgentAvailability, type DeleteActivityScope } from '../../../types';
+import { AGENT_IDS, type AccountsConfig, type AgentAvailability, type DeleteActivityScope } from '../../../types';
 
-interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; launchWorkspace?: string; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
+// savedAccounts (#964): the saved config's selection, which the accounts card's stale row reads; absent before a first save
+interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; launchWorkspace?: string; savedAccounts?: AccountsConfig; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
 
 // Literal text, never through t(): its placeholder regex would read {id} as a placeholder.
 const BRANCH_TOKENS = ['{id}', '{title}', '{slug}'] as const;
@@ -57,10 +59,11 @@ function SessionsGroup({ draft, onChange }: Pick<ExecutionSectionProps, 'draft' 
 }
 
 // Settings › execution (#510): how each worker starts (#516), waits for you and what goes when its activity is deleted.
-export function ExecutionSection({ draft, agents, launchWorkspace, onChange, onOpenFlow }: ExecutionSectionProps) {
+export function ExecutionSection({ draft, agents, launchWorkspace, savedAccounts = {}, onChange, onOpenFlow }: ExecutionSectionProps) {
   return (
     <>
       <AgentsCard draft={draft} agents={agents} launchWorkspace={launchWorkspace} onChange={onChange} onOpenFlow={onOpenFlow} />
+      <AccountsCard draft={draft} saved={savedAccounts} onChange={onChange} onOpenFlow={onOpenFlow} />
       <SessionsGroup draft={draft} onChange={onChange} />
       <SettingsGroup title="settings.group.branches" hint="settings.group.branches.hint">
         <div className={FIELD_ROW}>
@@ -95,6 +98,7 @@ export function searchEntries(): SettingEntry[] {
       label: { key, vars: { agent: agentName(agent) } }, path: ['settings.section.execution', 'settings.agents'],
       view: { section: 'execution' }, anchor: settingAnchor(key, agent),
     }))),
+    ...accountsEntries(), // #964
     settingEntry('settings.group.waiting', 'execution'),
     ...SESSION_SYNONYMS.map(([row, keys]) => settingEntry(`settings.sessions.${row}`, 'execution', 'settings.group.waiting', keys)),
     ...cardEntries('execution', 'settings.group.branches', ['settings.branch', 'settings.baseBranch', 'settings.baseBranch.perWorkspace']),

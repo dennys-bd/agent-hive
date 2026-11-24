@@ -16,8 +16,8 @@ import { replaceFile } from './replace-file.js';
 import { createSource, createSources, resolveSources } from './source.js';
 import { awaitDeviceLogin, requestDeviceCode, store as storeGithubLogin, type DeviceCode, type GithubLoginDeps } from './sources/github-auth.js';
 import { createExec } from './exec-path.js';
-import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, gqlFor } from './sources/github-gql.js';
-import { createGithubAccount, selectionOf, switchSelection, type GithubAccount } from './github-account.js';
+import { cliGql, cliGqlJson, type Exec as GhExec, gqlFor, selectedGhExec } from './sources/github-gql.js';
+import { createGithubAccount, ghEnvOf, ghMachines, selectionOf, switchSelection, withGhEnv, type GhEnv, type GithubAccount } from './github-account.js';
 import { createGhToken } from './github-token.js';
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
@@ -349,18 +349,22 @@ export function createServer(deps: ServerDeps): HiveServer {
   // A terminal woken in the same id (#696) has a new entry by the time the old pty's late exit runs: that exit frees nothing of the new one's
   const pool: PtyPool = { ...ptyPool, start: (o) => ptyPool.start({ ...o, onExit: () => { if (!ptyPool.has(o.ptyId)) semaphores?.ended(o.ptyId); o.onExit(); } }) };
   const agents = deps.agents ?? ALL_AGENTS;
-  const exec = deps.exec ?? execFileAsync;
+  // #961: every gh call of the daemon that passes no env of its own runs as accounts.github's login, through the exec, the machines and the
+  // PR routes' gh alike; with the member absent each call is today's. The local machine is built on the bare exec: ghMachines wraps it once
+  const ghEnv: GhEnv = () => ghEnvOf(account);
+  const baseExec = deps.exec ?? execFileAsync;
+  const exec: Exec = withGhEnv(baseExec, ghEnv);
   // #158: every task's machine; #931: a wsl: id gets a machine that refuses every call until 5.3 hands a factory. listen() binds the port after this
-  const machines = deps.machines ?? createMachines({
+  const machines = ghMachines(deps.machines ?? createMachines({
     local: createLocalMachine({
-      exec, launch, ...spawnOptions, home, secret: deps.secret, agents, pluginDir: pluginRender.dir, lspDir: workerLsp.dir, // #947: what a RunSpec's workspace resolves to
+      exec: baseExec, launch, ...spawnOptions, home, secret: deps.secret, agents, pluginDir: pluginRender.dir, lspDir: workerLsp.dir, // #947: what a RunSpec's workspace resolves to
       port: () => {
         if (boundPort === undefined) throw new Error('machine: listen() has not bound the port yet');
         return boundPort;
       },
     }),
     platform: process.platform,
-  });
+  }), ghEnv);
   const machineFor: MachineFor = (activity) => machines.for(activity);
   // The language servers (#780): processes of the Hive, on the console like the runs; the config and state are read per socket
   const lsp = createLspHost({ home, consoleStore, log, machineFor, schemas: createSchemaCatalog(), live: () => (live ? { config: live.runtime.config, state: live.state } : undefined) });
@@ -392,9 +396,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   // #472: the benchmark's loops, one per running experiment; a Quit aborts them before the evaluations they would start
   const benchRunner = createBenchRunner({ latest: () => live?.state, config: () => live?.runtime.config, dispatch, hiveDir: home, evaluator: benchEvaluator, log, now: () => new Date() });
-  // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
-  // gh: a write's stdin reaches it as `input`. The real runner is ghExec, which pipes the input itself.
-  const gh: GhExec = deps.exec ? async (args, input) => (await exec('gh', args, input === undefined ? undefined : { input })).stdout : ghExec;
+  // The PR's transport (#207, #592): gh, as the selected login (#961), source or no source. Through an injected exec, so no test runs gh: a
+  // write's stdin reaches it as `input`, and the wrapped exec adds the login's env. The real runner pipes the input itself.
+  const gh: GhExec = deps.exec ? async (args, input) => (await exec('gh', args, input === undefined ? undefined : { input })).stdout : selectedGhExec(ghEnv);
   const prGql = cliGql(gh);
   // #834: the CI of every task waiting in a wait-for-CI stage, read on the timer apart from the poll, with the PR poll's transport
   const ci = createCiReader({ gql: prGql, exec, dispatch, log, state: () => live?.state });
@@ -1286,7 +1290,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv)); // all before any write (#278, #299, #653, #565, #952)
+    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964)
     if (refusal) {
       res.status(refusal.status).json({ error: refusal.message });
       return;
@@ -1385,7 +1389,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const customStore = createCustomStore({ home, pluginSource: shippedPlugin, workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: shippedPlugin, log });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
-  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
+  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, ghEnv, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written

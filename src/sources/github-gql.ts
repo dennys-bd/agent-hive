@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolveExec } from '../exec-path.js';
-import { defaultGithubToken, refusalOf, unauthorized, type SelectedGithub } from '../github-account.js';
+import { defaultGithubToken, refusalOf, unauthorized, type GhEnv, type SelectedGithub } from '../github-account.js';
 import { bearer, type GhToken } from '../github-token.js';
 import type { Logger } from '../log.js';
 import type { GithubAuth, Gql } from '../types.js';
@@ -25,7 +25,8 @@ export const ghExecFor = (platform: NodeJS.Platform, lookup: GhLookup = {}): Exe
   try {
     const env = lookup.env ?? process.env;
     const gh = resolveExec('gh', args, { platform, env, isFile: lookup.isFile });
-    const childEnv = gh.env === undefined ? {} : { env: { ...env, ...gh.env } }; // the .cmd runner's: no bare name looked up in the cwd
+    // a lookup env is gh's own (#961: the selected login's GH_TOKEN); the .cmd runner's lines (no bare name looked up in the cwd) go over it. Neither: gh inherits the daemon's, as today
+    const childEnv = lookup.env === undefined && gh.env === undefined ? {} : { env: { ...env, ...gh.env } };
     const run = execFileAsync(gh.file, [...gh.args], { maxBuffer: GH_MAX_BUFFER, windowsVerbatimArguments: gh.windowsVerbatimArguments, ...childEnv });
     if (input !== undefined) {
       // gh exiting before it reads the body is an EPIPE here; its exit status already carries the failure, and an unhandled one would kill the server
@@ -41,6 +42,12 @@ export const ghExecFor = (platform: NodeJS.Platform, lookup: GhLookup = {}): Exe
 };
 
 export const ghExec: Exec = ghExecFor(process.platform);
+
+/** gh as the selected login (#961), read per call: a named login's env over the daemon's; the machine's login runs ghExecFor as today. */
+export const selectedGhExec = (ghEnv: GhEnv, platform: NodeJS.Platform = process.platform): Exec => async (args, input) => {
+  const env = await ghEnv();
+  return ghExecFor(platform, Object.keys(env).length === 0 ? {} : { env: { ...process.env, ...env } })(args, input);
+};
 
 interface GqlBody { data?: unknown; errors?: { message?: string }[] }
 

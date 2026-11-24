@@ -27,3 +27,5 @@ export const ONLY_WIN32: string | false = process.platform !== 'win32' && 'Windo
 export const MSYS_TTY: string | false = process.platform === 'win32' && 'MSYS\'s [ -t 0 ] over a ConPTY is not proven: the copilot shim\'s terminal check is tested on POSIX only';
 // #931: a wsl: workspace's path is checked as POSIX on every host, and the lane's temp repo is a C:\ path the parse refuses (win32's reason is not_supported anyway)
 export const POSIX_TEMP_REPO: string | false = process.platform === 'win32' && 'a wsl: workspace needs a POSIX path, and the temp repo on win32 is a C:\\ path the parse refuses';
+// #961: the fake gh is a #!/bin/sh file found on PATH; win32 runs no shebang script by its bare name
+export const NO_SH_SCRIPT: string | false = process.platform === 'win32' && 'win32 runs no shebang script as gh: the fake gh is a sh file found on PATH';
