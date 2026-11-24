@@ -19,7 +19,7 @@ const serverOf = (extra: Partial<ItemsServer> = {}): ItemsServer => ({ catalogue
 const view = (): FakeEditor => FakeEditor.all.at(-1)!;
 const pane = (): HTMLElement => screen.getByRole('list', { name: 'variáveis' });
 const row = (name: string): HTMLElement => within(pane()).getByRole('listitem', { name });
-const value = (name: string, workspace: string): HTMLElement => within(row(name)).getByLabelText(`${name} · ${workspace}`);
+const value = (name: string, workspace: string): HTMLElement => within(row(name)).getByTitle(`${name} · ${workspace}`);
 async function open(name: string): Promise<void> {
   fireEvent.click(await within(await screen.findByRole('region', { name: 'skills' })).findByRole('button', { name: new RegExp(`^${name}`) }));
   await waitFor(() => expect(view().hiddenAreas.length).toBeGreaterThan(0));
@@ -47,6 +47,38 @@ test("the open file's variables, each with its origin and a value per workspace:
   expect(value('testCommand', 'agent-hive')).toHaveTextContent('null');
   expect(within(row('e2eCommand')).getByText('old-site · x').parentElement).toHaveClass('opacity-50');
   expect([within(row('e2eCommand')).getByText('sua'), within(row('testCommand')).getByText('da hive')]).toHaveLength(2);
+});
+
+test('a card line names where its value comes from, override, workspace value or default, none for a missing one, and is read only (#621, decision 1)', async () => {
+  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { testCommand: 'npm test' } } } }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  await waitFor(() => expect(value('testCommand', 'agent-hive')).toHaveTextContent('npm test'));
+  const sourceOf = (name: string, workspace: string): string | null | undefined => value(name, workspace).nextElementSibling?.textContent;
+  expect([sourceOf('delivery', 'hive-site'), sourceOf('delivery', 'agent-hive'), sourceOf('testCommand', 'agent-hive')]).toEqual(['sobrescrita', 'default', 'valor do workspace']);
+  expect(value('testCommand', 'agent-hive')).toHaveClass('text-foreground');
+  expect(value('e2eCommand', 'agent-hive').nextElementSibling).toBeNull();
+  for (const name of ['delivery', 'e2eCommand', 'reviewDepth', 'testCommand']) {
+    expect(within(row(name)).queryAllByRole('textbox')).toEqual([]);
+    expect(within(row(name)).queryAllByRole('combobox')).toEqual([]);
+    expect(within(row(name)).queryAllByRole('checkbox')).toEqual([]);
+    expect(within(row(name)).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).not.toContain(`${name} · agent-hive`);
+  }
+});
+
+test('editing a variable replaces its card with the open form, and cancel brings the card back (#621)', async () => {
+  const user = userEvent.setup();
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open('new-build');
+  await user.click(within(row('delivery')).getByRole('button', { name: 'editar delivery' }));
+  const form = screen.getByRole('form', { name: 'editar delivery' });
+  expect(within(pane()).queryByRole('listitem', { name: 'delivery' })).not.toBeInTheDocument();
+  expect(screen.queryByTitle('delivery · agent-hive')).not.toBeInTheDocument();
+  expect(pane()).toContainElement(form); // in the card's place, not above the list
+  await user.click(within(form).getByRole('button', { name: 'cancelar' }));
+  expect(row('delivery')).toBeInTheDocument();
+  expect(screen.queryByRole('form', { name: 'editar delivery' })).not.toBeInTheDocument();
 });
 
 test('a required variable with no value for a workspace names it in red; an unused one shows its yellow line (#321, decision 6)', async () => {
@@ -85,31 +117,36 @@ test('view as a workspace switches the editor to its preview and "template" swit
   expect(row('delivery')).toBeInTheDocument();
 });
 
-test('a value written on a clean file goes into the header and saves; on a dirty file it only changes the buffer (#321, decisions 5, 13)', async () => {
+test('an override saved on a clean file goes into the header and saves; on a dirty file it only changes the buffer (#321, decisions 5, 13; #621)', async () => {
   const user = userEvent.setup();
   const saves: SaveBody[] = [];
   stubItems(serverOf({ save: saving(saves) }));
   render(<PluginsWindow />);
   await open('new-build');
-  await user.click(within(row('testCommand')).getByRole('checkbox', { name: 'só este template · agent-hive' })); // #621: an override, as before
-  await user.click(value('testCommand', 'agent-hive'));
-  await user.type(within(row('testCommand')).getByRole('textbox', { name: 'testCommand · agent-hive' }), 'pnpm test{Enter}');
+  await user.click(within(row('testCommand')).getByRole('button', { name: 'editar testCommand' }));
+  const form = screen.getByRole('form', { name: 'editar testCommand' });
+  await user.click(within(form).getByRole('button', { name: '+ só neste template' }));
+  await user.type(within(form).getByRole('textbox', { name: 'agent-hive · só neste template' }), 'pnpm test');
+  await user.click(within(form).getByRole('button', { name: 'salvar' }));
   const written = setVariableValue(VARS_TEXT, 'testCommand', 'agent-hive', 'pnpm test');
   if (!written.ok) throw new Error(written.error.message);
   await waitFor(() => expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: written.text }]));
   await waitFor(() => expect(value('testCommand', 'agent-hive')).toHaveTextContent('pnpm test'));
 
   act(() => view().model.type(`${written.text}typed\n`));
-  await user.click(within(row('delivery')).getByRole('checkbox', { name: 'só este template · agent-hive' }));
-  await user.click(value('delivery', 'agent-hive'));
+  await user.click(within(row('delivery')).getByRole('button', { name: 'editar delivery' }));
+  const edit = screen.getByRole('form', { name: 'editar delivery' });
+  // the keyboard opens it: after a click whose target unmounted (the card, the form), user-event's next click cannot open a Radix select in jsdom
+  within(edit).getByRole('combobox', { name: 'agent-hive · só neste template' }).focus();
+  await user.keyboard('{Enter}');
   await user.click(await screen.findByRole('option', { name: 'stacked' }));
+  await user.click(within(edit).getByRole('button', { name: 'salvar' }));
   const chosen = setVariableValue(`${written.text}typed\n`, 'delivery', 'agent-hive', 'stacked');
   if (!chosen.ok) throw new Error(chosen.error.message);
   await waitFor(() => expect(view().model.getValue()).toBe(chosen.text));
   expect(saves).toHaveLength(1);
   expect(screen.getByRole('tab', { name: 'SKILL.md.liquid' })).toHaveAttribute('data-dirty', 'true');
 });
-
 test('a used "yours" variable goes after a confirmation naming its lines, an unused one at once; a "from hive" one offers no remove (#321, decisions 8, 9)', async () => {
   const user = userEvent.setup();
   stubItems(serverOf({ save: saving([]) }));
@@ -160,7 +197,7 @@ test("a variable's annotation line reads from the editor's annotations: a dismis
   expect(within(row('e2eCommand')).getByText('falta · sem valor em agent-hive')).toBeInTheDocument();
 });
 
-test('a workspace\'s line writes the workspace value through its route and never the template, and says where its value comes from (#621, decision 4)', async () => {
+test('the form\'s workspace value goes through its route and never the template, and the line then names it (#621, decision 2)', async () => {
   const user = userEvent.setup();
   const saves: SaveBody[] = [];
   const puts: [string, string, unknown][] = [];
@@ -171,44 +208,51 @@ test('a workspace\'s line writes the workspace value through its route and never
   stubItems(serverOf({ save: saving(saves), putVariable }));
   render(<PluginsWindow />);
   await open('new-build');
-  expect(within(row('delivery')).getByText('sobrescrita')).toBeInTheDocument(); // hive-site's own entry
-  await user.click(value('testCommand', 'agent-hive'));
-  await user.type(within(row('testCommand')).getByRole('textbox', { name: 'testCommand · agent-hive' }), 'pnpm test{Enter}');
+  await user.click(within(row('testCommand')).getByRole('button', { name: 'editar testCommand' }));
+  const form = screen.getByRole('form', { name: 'editar testCommand' });
+  await user.type(within(form).getByRole('textbox', { name: 'agent-hive' }), 'pnpm test');
+  await user.click(within(form).getByRole('button', { name: 'salvar' }));
   await waitFor(() => expect(puts).toEqual([['agent-hive', 'testCommand', { value: 'pnpm test' }]]));
   await waitFor(() => expect(value('testCommand', 'agent-hive')).toHaveTextContent('pnpm test'));
   expect(within(row('testCommand')).getByText('valor do workspace')).toBeInTheDocument();
   expect(saves).toEqual([]);
 });
-
-test('an override is removed through the editor and the line falls back to the workspace value (#621, decision 4)', async () => {
+test('"remover" in the form takes the overrides out through the editor and the line falls back to the workspace value (#621, decision 2)', async () => {
   const user = userEvent.setup();
   const saves: SaveBody[] = [];
   stubItems(serverOf({ save: saving(saves), lintInput: { catalogue: [], scripts: [], variables: { 'hive-site': { delivery: 'single' } } } }));
   render(<PluginsWindow />);
   await open('new-build');
   await waitFor(() => expect(value('delivery', 'hive-site')).toHaveTextContent('stacked'));
-  await user.click(within(row('delivery')).getByRole('button', { name: 'remover sobrescrita · hive-site' }));
+  await user.click(within(row('delivery')).getByRole('button', { name: 'editar delivery' }));
+  const form = screen.getByRole('form', { name: 'editar delivery' });
+  await user.click(within(form).getByRole('button', { name: 'remover' }));
+  await user.click(within(form).getByRole('button', { name: 'salvar' }));
   const removed = setVariableValue(VARS_TEXT, 'delivery', 'hive-site', undefined);
   if (!removed.ok) throw new Error(removed.error.message);
   await waitFor(() => expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: removed.text }]));
   await waitFor(() => expect(value('delivery', 'hive-site')).toHaveTextContent('single'));
-  expect(within(row('delivery')).getByText('valor do workspace')).toBeInTheDocument();
+  expect(value('delivery', 'hive-site').nextElementSibling).toHaveTextContent('valor do workspace');
 });
-
-test('a workspace value this template cannot take is red on its line with the lint\'s words (#621, decision 6)', async () => {
+test('a workspace value this template cannot take is red on its line and tints the card, with the values it accepts in the lint line (#621, decision 3)', async () => {
   stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: { 'agent-hive': { delivery: 'trunk' } } } }));
   render(<PluginsWindow />);
   await open('new-build');
-  expect(await within(row('delivery')).findByText('valor que este template não aceita · agent-hive')).toHaveClass('text-destructive');
+  expect(await within(row('delivery')).findByText('fora de stacked, single · agent-hive')).toHaveClass('text-destructive');
+  expect(value('delivery', 'agent-hive')).toHaveTextContent('trunk');
+  expect(value('delivery', 'agent-hive')).toHaveClass('text-destructive');
+  expect(row('delivery')).toHaveClass('border-destructive/30');
 });
-
-test('a workspace value the route refuses keeps the line as it was and shows the pane\'s error (#621)', async () => {
+test('a workspace value the route refuses keeps the form open with its error and the line as it was (#621, decision 2)', async () => {
   const user = userEvent.setup();
   stubItems(serverOf({ putVariable: () => json({ error: 'name: a variable name is …' }, 400) }));
   render(<PluginsWindow />);
   await open('new-build');
-  await user.click(value('testCommand', 'agent-hive'));
-  await user.type(within(row('testCommand')).getByRole('textbox', { name: 'testCommand · agent-hive' }), 'pnpm test{Enter}');
-  expect(await within(pane().parentElement ?? pane()).findByRole('alert')).toHaveTextContent('O valor do workspace não foi salvo.');
+  await user.click(within(row('testCommand')).getByRole('button', { name: 'editar testCommand' }));
+  const form = screen.getByRole('form', { name: 'editar testCommand' });
+  await user.type(within(form).getByRole('textbox', { name: 'agent-hive' }), 'pnpm test');
+  await user.click(within(form).getByRole('button', { name: 'salvar' }));
+  expect(await within(form).findByRole('alert')).toHaveTextContent('O valor do workspace não foi salvo.');
+  await user.click(within(form).getByRole('button', { name: 'cancelar' }));
   expect(value('testCommand', 'agent-hive')).toHaveTextContent('null');
 });

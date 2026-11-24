@@ -18,7 +18,6 @@ export interface TemplateVariable {
   required: boolean;
   workspaces: Record<string, VariableValue>;
   line: number; // the declaration's key
-  from?: 'task'; // #492: the value is the task's, read by the skill at run time
 }
 
 export interface BasedOn {
@@ -55,9 +54,7 @@ const FENCE = '---';
 const HEADER_FIRST_LINE = 2; // the header starts right under the opening fence
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const BUILT_IN = 'workspace';
-const DECLARATION_KEYS = ['type', 'values', 'default', 'required', 'workspaces', 'from'];
-const TASK_ORIGIN = 'task';
-const TASK_REFUSED = ['type', 'values', 'default', 'required', 'workspaces'];
+const DECLARATION_KEYS = ['type', 'values', 'default', 'required', 'workspaces'];
 const BASED_ON_KEYS = ['name', 'repo', 'ref', 'license', 'url'];
 const YAML_POSITION = / at line \d+, column \d+:?$/;
 const LIQUID_MARK = /\{\{|\{%/;
@@ -133,10 +130,6 @@ function valueProblem(kind: VariableKind, values: string[], value: unknown): str
 function declarationProblem(raw: Record<string, unknown>): string | undefined {
   const unknownKey = Object.keys(raw).find((key) => !DECLARATION_KEYS.includes(key));
   if (unknownKey !== undefined) return `unknown key "${unknownKey}" (known: ${DECLARATION_KEYS.join(', ')})`;
-  if (raw.from !== undefined && raw.from !== TASK_ORIGIN) return 'from may only be task';
-  // #492: a task's value is read at run time, so nothing here could give it one
-  const given = raw.from === TASK_ORIGIN ? TASK_REFUSED.find((key) => Object.hasOwn(raw, key)) : undefined;
-  if (given !== undefined) return `a variable from the task has no ${given}`;
   if (raw.type !== undefined && raw.type !== 'boolean') return 'type may only be boolean';
   if (raw.type === 'boolean' && raw.values !== undefined) return 'a boolean has no values';
   if (raw.values !== undefined && !isValueList(raw.values)) return 'values must be a non-empty list of distinct strings';
@@ -175,7 +168,6 @@ function readVariable(name: string, line: number, raw: unknown): TemplateVariabl
     required: raw.required === true,
     workspaces: workspaces as Record<string, VariableValue>,
     line,
-    ...(raw.from === TASK_ORIGIN ? { from: 'task' as const } : {}),
   };
 }
 
@@ -232,20 +224,17 @@ export const hasDeclarations = (header: Record<string, unknown>): boolean =>
  * satisfies it, so a caller passes the workspace as it is. */
 export type RenderWorkspace = Pick<Workspace, 'name' | 'variables'>;
 /** Where a variable's value comes from for a workspace (#621, decision 3). */
-export type ValueSource = 'task' | 'override' | 'workspace' | 'default';
+export type ValueSource = 'override' | 'workspace' | 'default';
 
-// #492: a variable from the task renders the {result.<name>} the skills read with hive_task, since the plugin renders per workspace and
-// never knows the task. #621, decision 3: then first match wins, the template's own workspaces: entry, the workspace's value, the default;
-// an explicit null is a value at each step
+// #621, decision 3: first match wins, the template's own workspaces: entry, the workspace's value, the default; an explicit null is a value
+// at each step
 export function valueSource(variable: TemplateVariable, workspace: RenderWorkspace): ValueSource {
-  if (variable.from === TASK_ORIGIN) return 'task';
   if (Object.hasOwn(variable.workspaces, workspace.name)) return 'override';
   return Object.hasOwn(workspace.variables, variable.name) ? 'workspace' : 'default';
 }
 
 export function valueFor(variable: TemplateVariable, workspace: RenderWorkspace): VariableValue {
   const source = valueSource(variable, workspace);
-  if (source === 'task') return `{result.${variable.name}}`;
   if (source === 'override') return variable.workspaces[workspace.name];
   return source === 'workspace' ? workspace.variables[variable.name] : variable.default;
 }

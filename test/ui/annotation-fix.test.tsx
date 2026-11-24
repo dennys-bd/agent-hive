@@ -31,7 +31,7 @@ const ADVICE: AgentAnnotation = { line: 1, severity: 'yellow', title: 'vague', b
 // Lines: the step 1, a stop 2, the same step again 3
 const STEPS = 'Run it.\nStop.\nRun it.\n';
 const FIX: AgentFix = { line: 3, severity: 'yellow', title: 'vague', body: 'say what runs', source: 'agent', kind: 'fix', span: 'Run it.', replacement: 'Run the tests.' };
-const CHECKS: LintAnnotation['check'][] = ['parse', 'render', 'undeclared', 'unused', 'required', 'reference', 'callRequired', 'heading', 'taskCondition'];
+const CHECKS: LintAnnotation['check'][] = ['parse', 'render', 'undeclared', 'unused', 'required', 'reference', 'callRequired', 'heading'];
 
 test("kindOf: a lint finding is a fix when hasFix holds and an advice otherwise, for every check; an agent finding's kind is its own (#981)", () => {
   expect(annotations.filter((a) => kindOf(a) === 'fix').map((a) => a.check)).toEqual(['unused', 'undeclared', 'heading']);
