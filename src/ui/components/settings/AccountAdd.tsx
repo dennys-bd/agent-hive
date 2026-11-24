@@ -56,7 +56,8 @@ function PendingRow({ label, hint, onCancel }: { label: string; hint: ReactNode;
 
 // The eye sees the new row; a screen reader hears it (the handoff: no visible note)
 function Done({ name }: { name?: string }) {
-  return name === undefined ? null : <span role="status" className="sr-only">{t('settings.accounts.add.done', { name })}</span>;
+  // Always mounted: a screen reader may skip a live region that arrives already filled
+  return <span role="status" className="sr-only">{name === undefined ? '' : t('settings.accounts.add.done', { name })}</span>;
 }
 
 interface NameFormProps { initialName: string; refusal?: NameRefusal; failure?: MessageKey; onSubmit(name: string): void; onCancel(): void }
@@ -100,6 +101,8 @@ export function ClaudeAccountAdd({ onConnected, render }: AddProps) {
   const add = useAccountAdd('claude', onConnected);
   const [isNaming, setNaming] = useState(false);
   const { status } = add;
+  // A wait resumed by the mount read takes over an open field: its end must not reopen the field unasked
+  useEffect(() => { if (status.state === 'pending') setNaming(false); }, [status.state]);
   const submit = (name: string): void => { void add.start(name).then((outcome) => setNaming(outcome === 'refused')); };
   const close = (): void => { setNaming(false); add.dismiss(); };
   const isFormOpen = status.state === 'failed' || (status.state === 'idle' && isNaming);

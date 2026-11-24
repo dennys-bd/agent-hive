@@ -81,7 +81,10 @@ export function useAccountAdd(list: AccountList, onConnected: () => void): Accou
   };
   const cancel = (): void => {
     setStatus(IDLE);
-    sendJson<unknown>('DELETE', addRoute(list)).catch((err: unknown) => console.error(`accounts: the ${list} add was not cancelled`, err));
+    // An add that finished just before the DELETE is stored though its connected answer was dropped: re-read the list either way
+    sendJson<unknown>('DELETE', addRoute(list))
+      .catch((err: unknown) => console.error(`accounts: the ${list} add was not cancelled`, err))
+      .finally(() => connected.current());
   };
   const dismiss = (): void => { setRefusal(undefined); setStatus(IDLE); };
   return { status, added, refusal, start, cancel, dismiss };

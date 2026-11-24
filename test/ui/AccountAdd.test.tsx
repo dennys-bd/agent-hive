@@ -232,3 +232,25 @@ test('a failed github add says why in our words; try again starts gh again and c
   expect(screen.queryByText(`${t('settings.accounts.add.failed.ghExited')} ·`)).toBeNull();
   expect(screen.getByRole('button', { name: t('settings.accounts.add.github') })).not.toHaveClass('invisible');
 });
+
+test('cancel reads the list again, so an add that finished just before the DELETE shows its account (#965)', async () => {
+  const d = daemon();
+  renderCard();
+  await read();
+  const row = await startClaude(d, 'work');
+  d.claude = ['personal', 'work'];
+  fireEvent.click(within(row).getByRole('button', { name: t('settings.accounts.add.cancel') }));
+  expect(await screen.findByRole('radio', { name: 'work' })).toBeInTheDocument();
+});
+
+test('a wait resumed on mount closes a name field opened before it; its end leaves the group at rest (#965)', async () => {
+  const d = daemon();
+  d.claudeAdd = { state: 'pending', name: 'home' };
+  renderCard();
+  fireEvent.click(screen.getByRole('button', { name: t('settings.accounts.add.claude') }));
+  await claudeRow();
+  d.claudeAdd = { state: 'cancelled', name: 'home' };
+  await tick();
+  await waitFor(() => expect(screen.queryByText(t('settings.accounts.add.claude.pending'), { exact: false })).toBeNull());
+  expect(screen.queryByRole('textbox')).toBeNull();
+});
