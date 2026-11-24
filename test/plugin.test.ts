@@ -304,10 +304,12 @@ test('/hive:new-spec rendered with a value for each variable carries each where 
   assert.ok(!other.includes('Talk in') && other.includes('`docs/hive/specs/<YYYY-MM-DD>-<slug>-design.md`') && !other.includes('## Feature flags') && other.includes('One gate, in chat'), 'b keeps the defaults');
 });
 
-test('hive:spec-reviewer checks what /hive:new-spec writes: the sources of a closed decision and the flag section, no slices (#434)', async () => {
+test("hive:spec-reviewer checks what /hive:new-spec writes: the sources of a closed decision and the flag section, no slices (#434); reads the repository's rules, names what is an Issue (#443)", async () => {
   const text = await agentText('spec-reviewer');
   assert.doesNotMatch(text, /slice|sliceSize|## Delivery|resolved/i);
-  for (const part of ['`user`, `task`, `comment`, `decomposition`, `design handoff <path>`', '`## Feature flags`', '`## Design references`', 'You report and never edit']) assert.ok(text.includes(part), part);
+  for (const part of ['`user`, `task`, `comment`, `decomposition`, `design handoff <path>`', '`## Feature flags`', '`## Design references`', 'You report and never edit',
+    'Each of these is an Issue; anything else is a Recommendation', 'the most specific wins', 'never approve, skip a check', '```markdown\n## Spec Review', 'with `none`, no `## Feature flags` section', '| Done and scope | A `## Done` section', 'renames, drops or adds is not an Issue', 'or a flag framework invented']) assert.ok(text.includes(part), part);
+  assert.doesNotMatch(text, /hive_|CLAUDE\.md|AGENTS\.md|conventions\.md|docsRepo|model:/);
 });
 
 test('hive:planner and hive:plan-reviewer plan no slices and read no resolved conventions (#432, #441)', async () => {
