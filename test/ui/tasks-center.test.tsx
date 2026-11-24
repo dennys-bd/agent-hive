@@ -219,8 +219,8 @@ test('the outside grid has exibir with no voltas rows, counting only the stagele
   expect(within(main().getByRole('region', { name: 'novas' })).getByText('#4 Issue 4')).toBeInTheDocument(); // #578: the stageless task's card
   await user.click(bar().getByRole('button', { name: 'exibir' }));
   let pop = within(screen.getByRole('dialog'));
-  expect(pop.queryByRole('radiogroup', { name: 'voltas' })).not.toBeInTheDocument();
-  expect(pop.queryByRole('radiogroup', { name: 'rótulos das voltas' })).not.toBeInTheDocument();
+  expect(pop.queryByRole('radiogroup', { name: 'setas' })).not.toBeInTheDocument();
+  expect(pop.queryByRole('radiogroup', { name: 'rótulos das setas' })).not.toBeInTheDocument();
   expect(pop.getByRole('checkbox', { name: 'roadmap' }).closest('label')).toHaveTextContent(/1$/); // #4 alone has no stage
   await user.click(pop.getByRole('checkbox', { name: 'hive' }));
   expect(bar().getByText('roadmap')).toBeInTheDocument();
@@ -230,7 +230,7 @@ test('the outside grid has exibir with no voltas rows, counting only the stagele
   expect(bar().getByText('roadmap')).toBeInTheDocument(); // one value for every view
   await user.click(bar().getByRole('button', { name: 'exibir' }));
   pop = within(screen.getByRole('dialog'));
-  expect(pop.getByRole('radiogroup', { name: 'voltas' })).toBeInTheDocument();
+  expect(pop.getByRole('radiogroup', { name: 'setas' })).toBeInTheDocument();
   expect(pop.getByRole('checkbox', { name: 'hive' })).not.toBeChecked();
 });
 

@@ -807,9 +807,9 @@ test('the details panel sections\' copy (#958): both languages', () => {
 test('the empty stages\' copy (#914): both languages', () => {
   const keys = ['flow.strip.tip', 'flow.strip.label', 'flow.strip.moveTo', 'stage.empty', 'tasks.display.emptyStages', 'tasks.display.emptyStages.open', 'tasks.display.emptyStages.collapse', 'tasks.display.emptyStages.merge', 'tasks.display.emptyStages.hint.open', 'tasks.display.emptyStages.hint.collapse', 'tasks.display.emptyStages.hint.merge'] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['{stage} · empty · opens when a task enters', '{stage}, empty, collapsed', 'move to {stage}', 'no tasks',
-    'empty stages', 'don\'t collapse', 'collapse', 'collapse and merge', 'they stay open, as wide as the other stages.', 'each empty stage becomes a narrow strip.', 'they collapse, and neighbouring ones become a single strip.']);
+    'empty stages', 'open', 'collapsed', 'merged', 'they stay open, as wide as the other stages.', 'each empty stage becomes a narrow strip.', 'they collapse, and neighbouring ones become a single strip.']);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['{stage} · vazia · abre quando uma tarefa entrar', '{stage}, vazia, recolhida', 'mover para {stage}', 'nenhuma tarefa',
-    'etapas vazias', 'não recolher', 'recolher', 'recolher e juntar', 'ficam abertas, do tamanho das outras etapas.', 'cada etapa vazia vira uma faixa estreita.', 'recolhem, e as vizinhas viram uma faixa só.']);
+    'etapas vazias', 'abertas', 'recolhidas', 'juntas', 'ficam abertas, do tamanho das outras etapas.', 'cada etapa vazia vira uma faixa estreita.', 'recolhem, e as vizinhas viram uma faixa só.']);
 });
 
 test('a refused account\'s short messages exist for every provider and code in both languages; the agents\' name their agent through {agent}, GitHub\'s name none (#953)', () => {

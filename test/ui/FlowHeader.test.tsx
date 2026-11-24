@@ -294,7 +294,7 @@ test('the flowchart\'s exibir counts the flow\'s tasks by source and the legend 
   await user.click(within(header()).getByRole('button', { name: 'exibir' }));
   const pop = within(screen.getByRole('dialog'));
   expect(pop.getByRole('checkbox', { name: 'roadmap' }).closest('label')).toHaveTextContent(/2$/); // #1 and #3; #2's notes is no configured source
-  expect(pop.getByRole('radiogroup', { name: 'voltas' })).toBeInTheDocument();
+  expect(pop.getByRole('radiogroup', { name: 'setas' })).toBeInTheDocument();
   await user.click(pop.getByRole('checkbox', { name: 'hive' }));
   expect(legendOf()).toHaveTextContent('roadmap');
   await user.click(pop.getByRole('checkbox', { name: 'roadmap' }));
