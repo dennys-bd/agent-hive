@@ -306,3 +306,15 @@ test('a save keeps a workspace whose machine went unavailable when it is unchang
   const added = await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, siteX, docs] });
   assert.deepEqual([added.status, await added.json()], [409, { error: 'machine wsl:Y is unavailable: not_supported', code: 'machine_unavailable', machine: 'wsl:Y', reason: 'not_supported' }]);
 });
+
+const EVALUATE: Stage = { name: 'fila', from: { board: ['Ready'] }, action: 'evaluate', reviewers: [], judge: { agent: 'claude' }, threshold: 7, rubric: 'Done?' };
+
+test('a start of an evaluate stage on a wsl:X workspace answers 409 machine_remote naming the machine, and dispatches nothing (#932)', async (t) => {
+  const two = await startTwo(t, {}, 0, [EVALUATE], (local) => wslMachines(local, { X: fakeWsl('X') }));
+  assert.equal((await postJson(`${two.base}/settings`, { ...two.body, workspaces: [two.hive, { ...two.site, machine: 'wsl:X', path: '/home/u/site' }] })).status, 200);
+  two.listed.push(item('1', 'site'));
+  await two.server.poll();
+  const refused = await postJson(`${two.base}/tasks/board:I1/start`, { base: null });
+  assert.deepEqual([refused.status, await refused.json()], [409, { error: 'an evaluate stage runs on this computer only; the workspace is on wsl:X', code: 'machine_remote', machine: 'wsl:X' }]);
+  assert.deepEqual([two.workers.length, activityOf(two.server.getState()!, 'board:I1')], [0, undefined]);
+});

@@ -10,6 +10,7 @@ import { startLocal } from './server-local.js';
 import { parseRunPick } from './run-pick.js';
 import { checkBase } from './worktree.js';
 import { sizeIn } from './terminal-wire.js';
+import { hostOnlyRefusal } from './benchmark-guards.js';
 import { machineRefusal } from './machines.js'; // #931: a workspace on a machine the registry cannot serve is refused before anything is dispatched
 import type { HiveEvent, State, Task } from './types.js';
 import {
@@ -59,6 +60,9 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if ('status' in task) return task;
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
+  // #932: an evaluate stage's agents run on this computer: refused before any machine call or dispatch
+  const remote = stageOf(current.state.stages, task.stage)?.action === 'evaluate' ? hostOnlyRefusal(workspace) : undefined;
+  if (remote) return remote;
   const machine = deps.machineFor(activityOf(current.state, itemId) ?? workspace); // a live activity's machine is frozen; else the workspace's
   const unavailable = await machineRefusal(machine, workspace.path);
   if (unavailable) return unavailable;

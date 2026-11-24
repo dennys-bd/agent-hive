@@ -148,6 +148,15 @@ test('both reviewers run at once in the worktree, read-only; then evaluateJudgin
   assert.ok(h.logs.every((line) => !line.includes('a.ts') && !line.includes('diff --git')), 'no finding nor patch in the log');
 });
 
+test('an evaluate effect on a workspace not on local breaks before the worktree: nothing prepared, no agent run (#932)', async (t) => {
+  const h = await harness(t);
+  const { config } = h.runtime;
+  const runtime: Runtime = { ...h.runtime, config: { ...config, comb: { ...config.comb, workspaces: config.comb.workspaces.map((w) => ({ ...w, machine: 'wsl:X' })) } } };
+  await h.runner.run(runtime, h.effect([{ agent: 'claude', focus: 'slow' }]));
+  assert.equal(brokenText(h), 'an evaluate stage runs on this computer only; the workspace is on wsl:X');
+  assert.deepEqual(h.prepared, [], 'readyWorktree never ran');
+});
+
 test('zero reviewers: the judge reads the work alone; a failing score is logged by its index, never its text; a line rendering empty stays raw (#877)', async (t) => {
   const h = await harness(t, { env: { SCORES: scoresJson([8, 3]) } });
   const effect = h.effect([]);
