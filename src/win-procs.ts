@@ -14,7 +14,7 @@ const LIST_TIMEOUT_MS = 15_000;
 // command line's spaces, tabs and line breaks out of the separators
 const LISTING = [
   "$ErrorActionPreference = 'Stop'", // a WMI failure exits non-zero, so the exec rejects instead of printing nothing
-  '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8', // 5.1 prints in the OEM code page otherwise
+  '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8', // keeps 5.1's stdout UTF-8, though every field it prints is ASCII now
   '$utf8 = [System.Text.Encoding]::UTF8',
   "foreach ($p in ([wmisearcher]'SELECT ProcessId, ParentProcessId, CommandLine FROM Win32_Process').Get()) {",
   "  $line = ''",
@@ -37,7 +37,7 @@ export function parseProcesses(stdout: string): ProcessRow[] {
   });
 }
 
-// Started from pwsh 7, PSModulePath names 7's modules first and 5.1 fails to load them (as home-acl.ts found for Get-Acl): 5.1 uses its own
+// Started from pwsh 7, PSModulePath names 7's modules first and 5.1 fails to load them (as home-acl.ts found when it still used Get-Acl): 5.1 uses its own
 const withoutPsModulePath = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
   Object.fromEntries(Object.entries(env).filter(([name]) => name.toUpperCase() !== 'PSMODULEPATH'));
 

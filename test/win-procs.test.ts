@@ -92,7 +92,7 @@ test('parseProcesses reads a listing that starts with a UTF-8 byte order mark (#
   assert.deepEqual(parseProcesses(`\uFEFF7 1 ${b64('x')}\r\n`), [{ pid: 7, ppid: 1, line: 'x' }]);
 });
 
-test('listProcesses caps the PowerShell run and drops PSModulePath, so a stuck CIM never holds the boot and 5.1 loads its own modules (#638)', async () => {
+test('listProcesses caps the PowerShell run and drops PSModulePath, so a stuck WMI query never holds the boot and 5.1 loads its own modules (#638)', async () => {
   const seen: { timeout?: number; env?: NodeJS.ProcessEnv }[] = [];
   const exec: Exec = async (_file, _args, opts) => {
     seen.push({ timeout: opts?.timeout, env: opts?.env });
