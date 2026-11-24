@@ -10,7 +10,6 @@ import { promisify } from 'node:util';
 import { agentsOnPath } from '../src/agents.js';
 import type { MachineInfo } from '../src/machine.js';
 import { localFs, localWatch } from '../src/machine-local-fs.js';
-import { runDetached } from '../src/machine-run.js';
 import { unavailableMachine } from '../src/machines.js';
 import { createMuxMachine } from '../src/remote/machine-client.js';
 import { CHANNEL, createMux, type Mux, REMOTE_PROTOCOL_VERSION, RemoteError } from '../src/remote/protocol.js';
@@ -48,12 +47,12 @@ test('keepPort creates the folder, writes the port and a line break, and replace
   assert.deepEqual(await readdir(folder), [RELAY_PORT_FILE]);
 });
 
-test('helperMachine is the local disk, runDetached and the local watch under the id local, with the info it was given; process and pty refuse with not_supported (#941)', () => {
+test('helperMachine is the local disk, a run and the local watch under the id local, with the info it was given; process and pty refuse with not_supported (#941)', () => {
   const info: MachineInfo = { platform: 'linux', arch: 'x64', homedir: '/home/u', tmpdir: '/tmp', path: '/usr/bin', shell: '/bin/sh', agents: [] };
   const machine = helperMachine(info);
   assert.deepEqual(
-    [machine.id, machine.fs === localFs, machine.run === runDetached, machine.watch === localWatch, machine.paths === path.posix, machine.info()],
-    ['local', true, true, true, true, info],
+    [machine.id, machine.fs === localFs, typeof machine.run, machine.watch === localWatch, machine.paths === path.posix, machine.info()],
+    ['local', true, 'function', true, true, info],
   );
   const refused = (err: unknown): boolean => err instanceof RemoteError && err.code === 'not_supported';
   assert.throws(() => machine.process(process.execPath, [], { cwd: '/', env: {} }), refused);
@@ -66,6 +65,14 @@ test('helperMachine\'s exec lays a call\'s env over the helper\'s own, so a lent
   const script = 'process.stdout.write([process.env.KEPT_945, process.env.LENT_945].join("|"))';
   assert.equal((await machine.exec(process.execPath, ['-e', script], { env: { LENT_945: 'lent' } })).stdout, 'own|lent');
   assert.equal((await machine.exec(process.execPath, ['-e', script])).stdout, '|');
+});
+
+test('helperMachine\'s run lays a call\'s env over the helper\'s own too, so a run with only the lent GH_TOKEN keeps PATH and HOME (#945)', async () => {
+  const info: MachineInfo = { platform: 'linux', arch: 'x64', homedir: '/home/u', tmpdir: '/tmp', path: '/usr/bin', shell: '/bin/sh', agents: [] };
+  const machine = helperMachine(info, { ...process.env, KEPT_945: 'own' });
+  const script = 'process.stdout.write([process.env.KEPT_945, process.env.LENT_945].join("|"))';
+  const result = await machine.run({ command: process.execPath, args: ['-e', script], cwd: process.cwd(), env: { LENT_945: 'lent' } });
+  assert.deepEqual([result.code, result.stdout.toString('utf8')], [0, 'own|lent']);
 });
 
 test('isExecutableFile, as the helper passes it to agentsOnPath: an executable file in ~/.local/bin is an agent, a directory of that name is not (#941)', async (t) => {

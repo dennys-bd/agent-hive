@@ -94,10 +94,11 @@ export const overOwnEnv = (exec: Exec, own: NodeJS.ProcessEnv): Exec => (file, a
   exec(file, args, opts?.env === undefined ? opts : { ...opts, env: { ...own, ...opts.env } });
 
 /** The distro's own machine (#941): the local disk and exec, runDetached and the local watch, composed here rather than through
- *  createLocalMachine, whose pty half is a native module. serveMachine serves only fs, exec, run and watch. env: what a call's env lays over. */
+ *  createLocalMachine, whose pty half is a native module. serveMachine serves only fs, exec, run and watch. env: what a call's env lays
+ *  over, for exec and run alike: a run's env is as whole as execFile's. */
 export function helperMachine(info: MachineInfo, env: NodeJS.ProcessEnv = process.env): Machine {
   return {
-    id: LOCAL_MACHINE, ...localDisk(overOwnEnv(promisify(execFile), env)), run: runDetached, watch: localWatch, paths: pathsOf(info.platform),
+    id: LOCAL_MACHINE, ...localDisk(overOwnEnv(promisify(execFile), env)), run: (p) => runDetached({ ...p, env: { ...env, ...p.env } }), watch: localWatch, paths: pathsOf(info.platform),
     info: () => info, process: refuse('process'), pty: refusingPty(),
   };
 }
