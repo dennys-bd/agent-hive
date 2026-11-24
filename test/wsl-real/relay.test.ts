@@ -27,7 +27,8 @@ test('curl inside the distro to 127.0.0.1:<relayPort> gets the answer of the ser
   const { machine } = realWsl(t, { hivePort: () => port });
   const portFile = machine.paths.join(await hiveFolderOf(machine), RELAY_PORT_FILE);
   const relayPort = (await machine.fs.readFile(portFile, { maxBytes: PORT_FILE_MAX, encoding: 'utf8' })).trim();
-  const answer = await stdoutOf(machine, 'curl', ['-sS', '-f', '-m', '30', '--noproxy', '*', '-X', 'POST', '--data-binary', BODY, `http://127.0.0.1:${relayPort}/hooks/relay-948`]);
+  // the helper refuses a request with no x-hive-secret (relay-listen.ts); the plain server checks none, so any value passes it
+  const answer = await stdoutOf(machine, 'curl', ['-sS', '-f', '-m', '30', '--noproxy', '*', '-H', 'x-hive-secret: wsl-lane', '-X', 'POST', '--data-binary', BODY, `http://127.0.0.1:${relayPort}/hooks/relay-948`]);
   assert.equal(answer, `echo:${BODY}`);
   assert.deepEqual(seen, ['POST /hooks/relay-948']); // only /hooks/ crosses the relay (isRelayPath)
 });
