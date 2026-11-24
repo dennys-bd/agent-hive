@@ -3,6 +3,7 @@
 import type { Stats } from 'node:fs';
 import { type Machine, MachineError, type MachineFs, type MachineInfo, type Machines, pathsOf } from '../src/machine.js';
 import { createLocalMachine, type LocalMachineDeps } from '../src/machine-local.js';
+import { createMachines, NOT_SUPPORTED, NOT_WINDOWS, unavailableMachine } from '../src/machines.js';
 import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import type { Exec, LaunchPty, MachineId } from '../src/types.js';
 
@@ -65,3 +66,22 @@ export function fakeFiles(...files: string[]): Pick<MachineFs, 'access' | 'stat'
 
 /** The flavour fakeMachine() answers when no platform is given: the host's, for a fake of PathFs, TreeFs or a file query on host paths (#929). */
 export const HOST_PATHS = pathsOf(process.platform);
+
+/** A distro's machine for a route test (#932): the local machine over the given deps, under the id wsl:<distro> with Linux paths, its realpath
+ *  answering the path as given (a /home/u/<name> folder exists on no lane). isDown: from then on its exec and fs probes refuse as an
+ *  unavailable machine does, a distro that stopped after the save. */
+export function fakeWsl(distro: string, { isDown = () => false, fs, ...over }: Partial<LocalMachineDeps> & FakeMachineOverrides & { isDown?: () => boolean } = {}): Machine {
+  const id = `wsl:${distro}`;
+  const base = fakeMachine({ id, info: { platform: 'linux' }, ...over, fs: { realpath: async (path: string) => path, ...fs } });
+  const down = (): MachineError => new MachineError(`machine ${id} is unavailable: ${NOT_WINDOWS}`, { code: MachineError.UNAVAILABLE, reason: NOT_WINDOWS });
+  const guard = <A extends unknown[], R>(call: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => {
+    if (isDown()) throw down();
+    return call(...args);
+  };
+  return { ...base, exec: guard(base.exec), fs: { ...base.fs, stat: guard(base.fs.stat), realpath: guard(base.fs.realpath), access: guard(base.fs.access) } };
+}
+
+/** The registry a route test hands createServer (#932): `local`, and each listed distro's machine, on win32 so every lane runs it. A distro not
+ *  listed is unavailable (not_supported), as one 5.3 has no factory for. */
+export const wslMachines = (local: Machine, distros: Readonly<Record<string, Machine>>): Machines =>
+  createMachines({ local, platform: 'win32', wsl: (distro) => (Object.hasOwn(distros, distro) ? distros[distro] as Machine : unavailableMachine(`wsl:${distro}`, NOT_SUPPORTED)) });

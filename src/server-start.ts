@@ -10,7 +10,7 @@ import { startLocal } from './server-local.js';
 import { parseRunPick } from './run-pick.js';
 import { checkBase } from './worktree.js';
 import { sizeIn } from './terminal-wire.js';
-import { type Machine, MachineError } from './machine.js';
+import { machineRefusal } from './machines.js'; // #931: a workspace on a machine the registry cannot serve is refused before anything is dispatched
 import type { HiveEvent, State, Task } from './types.js';
 import {
   DELETING_MESSAGE, OUTSIDE_FLOW_MESSAGE, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE,
@@ -45,17 +45,6 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
   if (isBlocked(task.item)) return { status: HTTP_CONFLICT, message: blockedMessage(task) };
   if (stage === undefined || !runsAgent(stage)) return { status: HTTP_CONFLICT, message: 'etapa sem prompt' }; // #710: a skill stage runs one
   return undefined;
-}
-
-// #931: a workspace on a machine the registry cannot serve is refused before anything is dispatched. Any other failure is the spawn's to report, as before
-async function machineRefusal(machine: Machine, path: string): Promise<Refusal | undefined> {
-  try {
-    await machine.fs.stat(path);
-    return undefined;
-  } catch (err) {
-    if (!(err instanceof MachineError) || err.code !== MachineError.UNAVAILABLE) return undefined;
-    return { status: HTTP_CONFLICT, message: err.message, code: MachineError.UNAVAILABLE, machine: machine.id, ...(err.reason === undefined ? {} : { reason: err.reason }) };
-  }
 }
 
 /** The start the body asks for. `base: null` is the popup's default and drops a saved base. No string base, or a delete activity stage (which
