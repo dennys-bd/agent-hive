@@ -4,7 +4,7 @@
 import type { ExecOptions, Machine, RunProcess } from '../machine.js';
 import { CHANNEL, isRecord, RemoteError } from './frames.js';
 import {
-  type BigIntStats, CALL_PARAMS, type Check, type Dirent, encodeDirent, encodeStats, FS_METHODS, FS_PARAMS, type FsMethod, fitsParams, remoteErrorOf,
+  type BigIntStats, CALL_PARAMS, capFromWire, type Check, type Dirent, encodeDirent, encodeStats, FS_METHODS, FS_PARAMS, type FsMethod, fitsParams, remoteErrorOf,
   type Stats,
 } from './machine-wire.js';
 import type { Mux, RequestContext } from './protocol.js';
@@ -39,7 +39,8 @@ const serveExec: Serve = (machine, [file, args, opts], ctx) =>
 
 const serveRun: Serve = (machine, [p], ctx) => {
   const { command, args, cwd, env } = p as RunProcess;
-  return machine.run({ command, args, cwd, env, ...pick<RunProcess>(p, RUN_KEYS), signal: ctx.signal, onOutput: (text) => ctx.emit(text) });
+  const run = { ...(p as RunProcess), maxBytes: capFromWire((p as RunProcess).maxBytes) };
+  return machine.run({ command, args, cwd, env, ...pick<RunProcess>(run, RUN_KEYS), signal: ctx.signal, onOutput: (text) => ctx.emit(text) });
 };
 
 // Open until the caller's close() cancels the request, or until the watcher fails, whose error is the request's answer. A cancel that

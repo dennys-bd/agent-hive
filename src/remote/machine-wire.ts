@@ -19,7 +19,12 @@ const isStrings: Check = (value) => Array.isArray(value) && value.every(isString
 // maxBytes required: a readFile with no cap would read the whole file (MachineFs.readFile's contract); noFollow only ever true (#882)
 const isCap: Check = (value) => isRecord(value) && isNumber(value.maxBytes) && isOptional(isString)(value.encoding) && isOptional((v) => v === true)(value.noFollow);
 const isRun: Check = (value) => isRecord(value) && isString(value.command) && isStrings(value.args) && isString(value.cwd) && isRecord(value.env)
-  && isOptional(isString)(value.input) && isOptional(isNumber)(value.timeoutMs) && isOptional(isNumber)(value.maxBytes);
+  && isOptional(isString)(value.input) && isOptional(isNumber)(value.timeoutMs) && isOptional((v) => isNumber(v) || v === NO_CAP)(value.maxBytes);
+
+/** run's maxBytes for no cap (#948): JSON writes Infinity as null, so null is what crosses, and the server reads it back as Infinity. */
+export const NO_CAP = null;
+export const capToWire = (maxBytes: number | undefined): number | typeof NO_CAP | undefined => (maxBytes === Number.POSITIVE_INFINITY ? NO_CAP : maxBytes);
+export const capFromWire = (maxBytes: unknown): unknown => (maxBytes === NO_CAP ? Number.POSITIVE_INFINITY : maxBytes);
 const isWatch: Check = (value) => isRecord(value) && typeof value.recursive === 'boolean';
 
 /** Every MachineFs member that crosses, as `fs.<member>`; readLines crosses as readFile (#937). */
