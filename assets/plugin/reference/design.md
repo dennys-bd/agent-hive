@@ -135,7 +135,10 @@ Technical checks of what is measurable.
   its screen, a tweak, or a state its controls reach.
 - Every option of every tweak (each enum value, each boolean both ways, a text
   at its default and at a long value, a number at its bounds) renders with no
-  clipping, no overlap and no scroll inside its section.
+  clipping, no overlap and no scroll inside its section. A conditional tweak's
+  options render with its `when` held: each tweak it names at the first value
+  its `when` lists (that tweak's own `when` held the same way), the others at
+  their default.
 - No URL or absolute path outside the screen's folder (`## The .hv.html format`).
 - The screen is specific to this product, not interchangeable with another.
 - Name the evidence: rendered at which width, or read from the CSS.
@@ -223,6 +226,7 @@ A screen declares its tweaks in one block in `<head>`:
 {
   "viewports": ["desktop", "mobile"],
   "layout": { "options": ["board", "list"], "default": "board", "group": "view" },
+  "density": { "options": ["comfortable", "compact"], "default": "comfortable", "when": { "layout": "list" } },
   "auto": { "type": "boolean", "default": true },
   "title": { "type": "text", "default": "Fluxo" },
   "gap": { "type": "number", "default": 8, "min": 0, "max": 24, "step": 4 }
@@ -241,6 +245,16 @@ A screen declares its tweaks in one block in `<head>`:
   Boolean, text (up to 200 characters) and number (`min`, `max`, `step`
   optional) carry a `type`. Every default fits its own definition; `group`
   names the section of the pane's tweaks panel a tweak sits in.
+- `when` makes a tweak conditional: an object of tweak name to one value or
+  a list of them (non-empty, unique, at most 64), each a value that tweak
+  takes. It holds when every tweak it names is at one of its values. It
+  names only tweaks declared above it, of any type, never itself or
+  `viewports`; a text or a number matches exactly. A tweak whose `when`
+  names a tweak that is not shown is not shown either. While `when` does
+  not hold, the pane's row hides the control and its tweaks panel shows it
+  disabled, in a last section. Its value stays applied, so its CSS is
+  scoped under the condition's attribute too:
+  `:root[data-tweak-layout="list"][data-tweak-density="compact"] .card { padding: 4px; }`.
 - The design pane shows a control per tweak, sets each value on `<html>` as
   `data-tweak-<name>` (booleans `"true"` or `"false"`, numbers as decimals),
   then fires `hv:tweak` on `window` with `{name, value}`.
@@ -371,7 +385,9 @@ Screenshot each enum option once, and each boolean the other way: copy the
 designs folder into the temporary folder and write there, beside the screen's
 copy so its relative links still hold, one copy of the screen per value, with
 `data-tweak-<name>="<value>"` added to its `<html>` tag and the other tweaks
-at their default.
+at their default. A conditional tweak's copy also sets each tweak its `when`
+names to the first value it lists, and so on up through that tweak's own
+`when`.
 
 A screen that includes parts shows its `<hv-include>` markers from disk,
 not the parts: say that its parts were not seen rendered.

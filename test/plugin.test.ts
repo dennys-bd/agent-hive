@@ -627,6 +627,16 @@ test('the design rules describe parts, their markers and the check\'s findings; 
   assert.match(reviewer, /should be a part/, 'the reviewer flags repeated markup');
 });
 
+test('the design rules describe a tweak\'s when and its coverage; the designer declares it and the reviewer renders a conditional tweak with it held (#1034)', async () => {
+  const flatten = (text: string): string => text.replace(/\s+/g, ' ');
+  const design = flatten(await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8'));
+  for (const part of ['"when": { "layout": "list" }', 'names only tweaks declared above it', 'is not shown either', 'value stays applied', 'shows it disabled, in a last section', 'the first value its `when` lists', 'to the first value it lists']) {
+    assert.ok(design.includes(part), `design.md names ${part}`);
+  }
+  assert.match(flatten(await agentText('designer')), /declares `when`/, 'the designer declares when');
+  assert.match(flatten(await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8')), /a conditional tweak's with its `when` held/, 'the reviewer renders a conditional tweak with its when held');
+});
+
 test('/hive:new-pr opens each nested repo\'s PR on that repository: every gh call for it passes -R <nested repo>, (#653, #433)', async () => {
   const text = await skillText('new-pr');
   const calls = text.match(/gh pr \w+[^`\n]*<nested (?:PR|head)>[^`\n]*/g) ?? [];
