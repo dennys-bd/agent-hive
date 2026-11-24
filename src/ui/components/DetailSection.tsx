@@ -1,35 +1,9 @@
-import { ChevronRightIcon, InfoIcon } from 'lucide-react';
-import { type KeyboardEvent, type MouseEvent, type ReactNode, useId } from 'react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { t } from '@/i18n';
+import { ChevronRightIcon } from 'lucide-react';
+import { type ReactNode, useId } from 'react';
+import { InfoTip } from '@/components/InfoTip';
 
 /** A closed line on its own row under the name (handoff `.sum`), indented past the chevron (12px) and its gap (6px). */
 export const SUMMARY_LINE = 'min-w-0 basis-full truncate pl-[18px] text-muted-foreground tabular-nums';
-
-const TOGGLE_KEYS = new Set(['Enter', ' ']);
-
-// The icon sits inside <summary>, whose activation toggles the section: a click or a toggle key on it only shows the note
-function keepSection(event: MouseEvent | KeyboardEvent): void {
-  event.preventDefault();
-  event.stopPropagation();
-}
-
-function NoteIcon({ note }: { note: string }) {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          type="button" aria-label={t('detail.section.info')}
-          className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded text-muted-foreground"
-          onClick={keepSection} onKeyDown={(event) => { if (TOGGLE_KEYS.has(event.key)) keepSection(event); }}
-        >
-          <InfoIcon aria-hidden="true" className="size-3" />
-        </TooltipTrigger>
-        <TooltipContent>{note}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
 
 export interface DetailSectionProps { name: string; note?: string; summary: ReactNode; defaultOpen?: boolean; children: ReactNode }
 
@@ -46,7 +20,7 @@ export function DetailSection({ name, note, summary, defaultOpen = false, childr
       >
         <ChevronRightIcon aria-hidden="true" className="size-3 shrink-0 transition-transform group-open/section:rotate-90 motion-reduce:transition-none" />
         <span className="whitespace-nowrap font-medium text-foreground">{name}</span>
-        {note !== undefined && <NoteIcon note={note} />}
+        {note !== undefined && <InfoTip note={note} />}
         {summary}
       </summary>
       {/* Outside the summary, so its accessible name stays short and the note is read once, as its description */}
