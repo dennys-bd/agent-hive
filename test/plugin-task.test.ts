@@ -18,12 +18,13 @@ test('reference/conventions.md says once to read the task with hive_task, and wh
   assert.match(text, /result` `hive_task` answers/, 'the previous stage\'s files are looked up in the task\'s result too');
 });
 
-test('every new-* skill reads the task through hive_task alone, whatever its source; decomposition calls hive_task itself and keeps gh issue view as its fallback (#7, #431, #432, #433, #434)', async () => {
-  for (const name of NEW_SKILLS) {
+test('every new-* skill and decomposition read the task through hive_task alone, whatever its source (#7, #431, #432, #433, #434, #622)', async () => {
+  for (const name of [...NEW_SKILLS, 'decomposition']) {
     const text = await skill(name);
     assert.ok(text.includes('as `hive_task` answers it'), `${name} names the task tool itself`);
     assert.doesNotMatch(text, /gh issue|branch name|under "The task"/, `${name} has no source of its own to fall back on: outside the Hive it has only its argument`);
   }
   const decomposition = await skill('decomposition');
-  for (const part of ['`hive_task`', '`task: null`', 'gh issue view', 'branch name']) assert.ok(decomposition.includes(part), part);
+  for (const part of ['`task: null`', 'Nothing else is read for the goal', 'only names an issue (`36`, `#36`, its link) is no goal', 'ask the user for the goal and stop']) assert.ok(decomposition.includes(part), part);
+  assert.doesNotMatch(decomposition, /GitHub|\bgh /, 'the goal\'s source is the Hive\'s: the skill names none');
 });
