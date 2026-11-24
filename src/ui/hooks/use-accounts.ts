@@ -1,16 +1,29 @@
 import { useEffect, useState } from 'react';
-import { getJson } from '@/lib/api';
+import { statusOf } from '@/hooks/use-plugins';
+import { getJson, sendJson } from '@/lib/api';
 import type { AccountList, AccountLists } from '@/lib/settings-accounts';
 
 export const CLAUDE_ACCOUNTS_ROUTE = '/settings/accounts/claude'; // #955: { names }
 export const GITHUB_ACCOUNTS_ROUTE = '/settings/github/accounts'; // #959: GithubLogins
+const HTTP_NOT_FOUND = 404;
+const HTTP_CONFLICT = 409;
 
-/** The lists the accounts card reads, which list failed, and a re-read (#965 calls it after an add or a remove). */
-export interface Accounts extends AccountLists { errors: Readonly<Record<AccountList, boolean>>; refetch(): void }
-type AccountsRead = Omit<Accounts, 'refetch'>;
+/** What a remove answers its row (#965): gone, refused because a saved selection names it, or failed for another reason. */
+export type RemoveOutcome = 'removed' | 'in-use' | 'failed';
+/** The lists the accounts card reads, which list failed, a re-read (#965 calls it after an add) and a remove. */
+export interface Accounts extends AccountLists {
+  errors: Readonly<Record<AccountList, boolean>>;
+  refetch(): void;
+  remove(list: AccountList, name: string): Promise<RemoveOutcome>;
+}
+type AccountsRead = Omit<Accounts, 'refetch' | 'remove'>;
 
 const NO_ERRORS: AccountsRead['errors'] = { claude: false, github: false };
 const NOTHING_READ: AccountsRead = { errors: NO_ERRORS };
+
+/** One stored name's remove route, the name encoded: Express decodes :name and :login. */
+export const removeRoute = (list: AccountList, name: string): string =>
+  `${list === 'claude' ? CLAUDE_ACCOUNTS_ROUTE : GITHUB_ACCOUNTS_ROUTE}/${encodeURIComponent(name)}`;
 
 // The answer crosses the network: anything but a list of names is a failed read, never an empty group
 function namesOf(answer: unknown, key: 'names' | 'logins'): string[] {
@@ -51,5 +64,21 @@ export function useAccounts(): Accounts {
     }).catch(failed('github'));
     return () => { live = false; };
   }, [attempt]);
-  return { ...read, refetch: () => setAttempt((n) => n + 1) };
+  const refetch = (): void => setAttempt((n) => n + 1);
+  // #965: a 404 is what the click asked for, already done elsewhere: re-read, no line. Any other failure is logged with the route's words and
+  // worded by the card; a 409's body is a config path, never copy
+  const remove = async (list: AccountList, name: string): Promise<RemoveOutcome> => {
+    try {
+      await sendJson<unknown>('DELETE', removeRoute(list, name));
+    } catch (err) {
+      const status = statusOf(err);
+      if (status !== HTTP_NOT_FOUND) {
+        console.error(`accounts: the ${list} account ${name} was not removed`, err);
+        return status === HTTP_CONFLICT ? 'in-use' : 'failed';
+      }
+    }
+    refetch();
+    return 'removed';
+  };
+  return { ...read, refetch, remove };
 }

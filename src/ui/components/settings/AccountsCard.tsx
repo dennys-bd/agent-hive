@@ -1,13 +1,16 @@
+import { XIcon } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
-import { type ReactNode, useId } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
 import { type AddSlots, ClaudeAccountAdd, FailedLine, GithubLoginAdd, TextButton } from '@/components/settings/AccountAdd';
 import { scrollToConnections } from '@/components/settings/ConnectionsGroup';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { type Accounts, useAccounts } from '@/hooks/use-accounts';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { type Accounts, type RemoveOutcome, useAccounts } from '@/hooks/use-accounts';
 import { t } from '@/i18n';
-import { type AccountRow, accountRows, listOf, shownValue } from '@/lib/settings-accounts';
+import { type AccountRow, accountRows, hasRemove, isRemovable, listOf, shownValue } from '@/lib/settings-accounts';
 import type { SettingsDraft } from '@/lib/settings-form';
 import { type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import { agentName } from '../../../agents';
@@ -15,12 +18,15 @@ import { ACCOUNT_PROVIDERS, type AccountProvider, type AccountsConfig } from '..
 
 // Settings › execution › accounts (#964, the handoff): one single choice per provider, saved with the form as accounts. Each group is a Radix
 // radio group, so it takes one tab stop and the arrows move between its rows. Claude's and Copilot's headers carry their mark in their own
-// colour; GitHub is no agent: no mark. #965: Claude's and GitHub's groups add an account at once, outside the draft; Copilot's group is only a
-// choice over GitHub's logins.
+// colour; GitHub is no agent: no mark. #965: Claude's and GitHub's groups add an account and each stored row removes its own, both at once,
+// outside the draft; Copilot's group is only a choice over GitHub's logins.
 
 type Patch = (patch: Partial<SettingsDraft>) => void;
 interface AccountsCardProps { draft: SettingsDraft; saved: AccountsConfig; onChange: Patch; onOpenFlow(): void }
 interface GroupProps extends AccountsCardProps { provider: AccountProvider; accounts: Accounts; slots?: AddSlots }
+/** A remove the route did not do, worded under the list. */
+interface RemoveRefusal { outcome: Exclude<RemoveOutcome, 'removed'>; name: string }
+type RemovePhase = 'closed' | 'confirming' | 'removing';
 
 const GH_SETUP_GIT = 'gh auth setup-git'; // the same in both languages' hint: shown in mono
 const groupName = (provider: AccountProvider): string => (provider === 'github' ? t('settings.accounts.github') : agentName(provider));
@@ -51,8 +57,9 @@ function GroupHeader({ provider, nameId, action, onOpenFlow }: { provider: Accou
   );
 }
 
-// A radio dot, its name and an optional muted note; selection shows as the dot's fill (shape, not colour), the ring muted-foreground for 3:1.
-function Row({ row }: { row: AccountRow }) {
+// A radio dot, its name, an optional muted note and, on a stored account, its remove at the end; selection shows as the dot's fill (shape,
+// not colour), the ring muted-foreground for 3:1.
+function Row({ row, end }: { row: AccountRow; end?: ReactNode }) {
   const id = useId();
   const label = row.value === '' ? (row.login ?? t('settings.accounts.machine')) : row.value;
   const note = row.value === '' && row.login !== undefined ? t('settings.accounts.machine') : undefined;
@@ -67,16 +74,98 @@ function Row({ row }: { row: AccountRow }) {
       <label id={`${id}-label`} htmlFor={id} className="cursor-pointer whitespace-nowrap text-sm">{label}</label>
       {note && <span id={`${id}-note`} className="truncate text-muted-foreground text-xs">{note}</span>}
       {row.isGone && <span id={`${id}-gone`} className="truncate text-destructive text-xs">{t('settings.accounts.gone')}</span>}
+      {end !== undefined && <span className="ml-auto flex shrink-0 items-center">{end}</span>}
     </div>
+  );
+}
+
+// The × of a stored row (the handoff): the first click puts the confirm in its place with focus on it, the second calls the route. Escape puts
+// focus back on the ×; a blur, a click elsewhere included, closes it where focus went. A removed row goes with the list's re-read
+function RemoveAction({ name, onRemove }: { name: string; onRemove(): Promise<boolean> }) {
+  const [phase, setPhase] = useState<RemovePhase>('closed');
+  const xRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const shouldRefocus = useRef(false);
+  useEffect(() => {
+    if (phase === 'confirming') confirmRef.current?.focus();
+    if (phase === 'closed' && shouldRefocus.current) xRef.current?.focus();
+    shouldRefocus.current = false;
+  }, [phase]);
+  const close = (isRefocused: boolean): void => { shouldRefocus.current = isRefocused; setPhase('closed'); };
+  const remove = (): void => {
+    setPhase('removing');
+    void onRemove().then((isRemoved) => { if (!isRemoved) setPhase('closed'); });
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault(); // Settings' own Escape, on document, skips a prevented key: the page stays
+    close(true);
+  };
+  if (phase === 'closed') {
+    return (
+      <Button ref={xRef} type="button" variant="ghost" size="icon-xs" aria-label={t('settings.accounts.remove.label', { name })} onClick={() => setPhase('confirming')}>
+        <XIcon aria-hidden="true" />
+      </Button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2">
+      <span className="text-muted-foreground text-xs">{t('settings.accounts.remove.confirmHint')}</span>
+      <Button
+        ref={confirmRef} type="button" variant="destructive" size="xs" disabled={phase === 'removing'} onClick={remove} onKeyDown={onKeyDown}
+        onBlur={() => { if (phase === 'confirming') close(false); }}
+      >
+        {t('settings.accounts.remove.confirm')}
+      </Button>
+    </span>
+  );
+}
+
+// The chosen account's ×: still focusable, so its tooltip opens on focus as on hover; the sr-only copy is its description, since Radix names
+// the tooltip's content only while it is open
+function LockedRemove({ name }: { name: string }) {
+  const hintId = useId();
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button type="button" variant="ghost" size="icon-xs" aria-disabled="true" aria-label={t('settings.accounts.remove.label', { name })} aria-describedby={hintId} className="opacity-50">
+            <XIcon aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left" className="max-w-[280px]">{t('settings.accounts.remove.locked')}</TooltipContent>
+      </Tooltip>
+      <span id={hintId} className="sr-only">{t('settings.accounts.remove.locked')}</span>
+    </TooltipProvider>
+  );
+}
+
+function RemoveLine({ refused, onRetry }: { refused: RemoveRefusal; onRetry(): void }) {
+  if (refused.outcome === 'in-use') return <FailedLine text={t('settings.accounts.remove.inUse', { name: refused.name })} />;
+  return (
+    <FailedLine text={t('settings.accounts.remove.failed', { name: refused.name })}>
+      <TextButton onClick={onRetry}>{t('settings.accounts.retry')}</TextButton>
+    </FailedLine>
   );
 }
 
 function AccountGroup({ provider, accounts, draft, saved, onChange, onOpenFlow, slots }: GroupProps) {
   const nameId = useId();
+  const [refused, setRefused] = useState<RemoveRefusal>();
   const list = listOf(provider);
   const isFailed = accounts.errors[list];
   const isLoading = !isFailed && accounts[list] === undefined;
   const pick = (value: string): void => onChange({ accounts: { ...draft.accounts, [provider]: value } });
+  const remove = async (name: string): Promise<boolean> => {
+    setRefused(undefined);
+    const outcome = await accounts.remove(list, name);
+    if (outcome !== 'removed') setRefused({ outcome, name });
+    return outcome === 'removed';
+  };
+  const endOf = (row: AccountRow): ReactNode => {
+    if (!hasRemove(provider, row)) return undefined;
+    return isRemovable(list, row.value, saved, draft.accounts) ? <RemoveAction name={row.value} onRemove={() => remove(row.value)} /> : <LockedRemove name={row.value} />;
+  };
   return (
     <div id={settingAnchor('settings.accounts', provider)} className="flex flex-col gap-3 border-t px-5 py-4 first:border-t-0">
       <GroupHeader provider={provider} nameId={nameId} action={slots?.action} onOpenFlow={onOpenFlow} />
@@ -87,8 +176,9 @@ function AccountGroup({ provider, accounts, draft, saved, onChange, onOpenFlow, 
         </FailedLine>
       )}
       <RadioGroup.Root aria-labelledby={nameId} value={shownValue(provider, accounts, draft.accounts[provider])} onValueChange={pick} className="-mx-2 flex flex-col gap-0.5">
-        {accountRows(provider, accounts, saved[provider]).map((row) => <Row key={row.value} row={row} />)}
+        {accountRows(provider, accounts, saved[provider]).map((row) => <Row key={row.value} row={row} end={endOf(row)} />)}
       </RadioGroup.Root>
+      {refused !== undefined && <RemoveLine refused={refused} onRetry={() => { void remove(refused.name); }} />}
       {slots?.foot}
     </div>
   );
