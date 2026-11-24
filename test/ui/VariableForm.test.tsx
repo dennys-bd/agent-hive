@@ -1,8 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { addVariable, type EditResult, updateVariable } from '../../src/template-edit';
-import { VariableForm } from '@/components/plugins/VariableForm';
+import { addVariable, updateVariable } from '../../src/template-edit';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
 import { CATALOGUE, json, readOf, type SaveBody, stubItems, VARS_ORIGINAL, VARS_TEXT } from './plugins-fixtures';
@@ -112,32 +111,4 @@ test('emptying a workspace in the edit form removes its entry, so the default ap
   const declaration = saves[0]?.text.split('\n')[3] ?? '';
   expect(declaration).toMatch(/^ {2}delivery: \{ values: .*default: single \}$/); // no workspaces: left behind, not even {}
   expect(declaration).not.toMatch(/hive-site/);
-});
-
-test('"da tarefa" hides the per-workspace fields and writes { from: task }; edited back to per workspace with a default, it writes { default: x } (#492)', async () => {
-  const user = userEvent.setup();
-  const onApply = vi.fn((_result: EditResult) => undefined);
-  const { unmount } = render(<VariableForm text={VARS_TEXT} workspaces={['agent-hive', 'hive-site']} onApply={onApply} onClose={() => undefined} />);
-  const form = screen.getByRole('form', { name: '+ variável' });
-  await user.type(within(form).getByRole('textbox', { name: 'nome' }), 'planPath');
-  await user.click(within(form).getByRole('button', { name: 'da tarefa' }));
-  expect(within(form).queryByText('default')).not.toBeInTheDocument();
-  expect(within(form).queryByText('valor por workspace')).not.toBeInTheDocument();
-  expect(within(form).queryByRole('group', { name: 'tipo' })).not.toBeInTheDocument();
-  await user.click(within(form).getByRole('button', { name: 'criar' }));
-  const created = onApply.mock.calls[0]?.[0];
-  if (created === undefined || !created.ok) throw new Error('nothing applied');
-  expect(created.text.split('\n')).toContain('  planPath: { from: task }');
-  unmount();
-
-  const variable = created.parsed.variables.find((v) => v.name === 'planPath');
-  render(<VariableForm text={created.text} workspaces={['agent-hive', 'hive-site']} variable={variable} onApply={onApply} onClose={() => undefined} />);
-  const edit = screen.getByRole('form', { name: 'editar planPath' });
-  expect(within(edit).getByRole('button', { name: 'da tarefa' })).toHaveAttribute('aria-pressed', 'true');
-  await user.click(within(edit).getByRole('button', { name: 'por workspace' }));
-  await user.type(within(edit).getByRole('textbox', { name: 'default' }), 'x');
-  await user.click(within(edit).getByRole('button', { name: 'salvar' }));
-  const edited = onApply.mock.calls[1]?.[0];
-  if (edited === undefined || !edited.ok) throw new Error('nothing applied');
-  expect(edited.text.split('\n')).toContain('  planPath: { default: x }');
 });

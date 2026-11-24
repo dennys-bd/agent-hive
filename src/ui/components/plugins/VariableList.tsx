@@ -37,8 +37,8 @@ interface WorkspaceRowProps {
 }
 
 const ORIGIN: Record<Origin, MessageKey> = { hive: 'plugins.variables.fromHive', yours: 'plugins.variables.yours' };
-// #621: where a workspace's value comes from; a task's variable has its own line (fromTask)
-const SOURCE: Record<Exclude<ValueSource, 'task'>, MessageKey> = { override: 'plugins.variables.source.override', workspace: 'plugins.variables.source.workspace', default: 'plugins.variables.default' };
+// #621: where a workspace's value comes from
+const SOURCE: Record<ValueSource, MessageKey> = { override: 'plugins.variables.source.override', workspace: 'plugins.variables.source.workspace', default: 'plugins.variables.default' };
 const NO_FINDINGS: readonly LintAnnotation[] = [];
 const NO_VALUES: WorkspaceVariables = {};
 const ICON_BUTTON = 'size-5 text-faint hover:text-foreground';
@@ -62,8 +62,6 @@ function shownValue(variable: TemplateVariable, target: RenderWorkspace): { text
 // Esc cancels, empty removes the entry)
 function ValueControl({ variable, target, own, onWrite }: ValueProps) {
   const [isEditing, setEditing] = useState(false);
-  // #492: the task's value exists only when the skill runs, so there is nothing to write here
-  if (variable.from === 'task') return <span className="truncate font-mono text-muted-foreground">{t('plugins.variables.fromTask')}</span>;
   const shown = shownValue(variable, target);
   const label = `${variable.name} · ${target.name}`;
   const raw = rawOf(own);
@@ -114,11 +112,11 @@ function WorkspaceRow({ variable, target, isDimmed, canShare, onOverride, onShar
     <div className={`flex min-w-0 items-center gap-1.5 ${isDimmed ? 'opacity-40' : ''}`}>
       <WorkspaceSquare name={target.name} title={target.name} />
       <ValueControl variable={variable} target={target} own={own} onWrite={isOverride ? onOverride : onShare} />
-      {canShare && source !== 'task' && <span className="shrink-0 text-muted-foreground">{t(SOURCE[source])}</span>}
+      {canShare && <span className="shrink-0 text-muted-foreground">{t(SOURCE[source])}</span>}
       {canShare && source === 'override' && (
         <Button type="button" size="xs" variant="ghost" aria-label={`${t('plugins.variables.removeOverride')} · ${target.name}`} onClick={() => onOverride(undefined)}>{t('plugins.variables.removeOverride')}</Button>
       )}
-      {canShare && source !== 'override' && source !== 'task' && (
+      {canShare && source !== 'override' && (
         <label className="flex shrink-0 items-center gap-1 text-muted-foreground">
           <input type="checkbox" checked={isOnlyHere} aria-label={`${t('plugins.variables.onlyThisTemplate')} · ${target.name}`} onChange={(event) => setOnlyHere(event.currentTarget.checked)} />
           {t('plugins.variables.onlyThisTemplate')}
@@ -132,7 +130,7 @@ function WorkspaceRow({ variable, target, isDimmed, canShare, onOverride, onShar
 // variable can go (decisions 7, 8)
 function RowHead({ variable, origin, findings, onEdit, onRemove }: Pick<RowProps, 'variable' | 'origin' | 'findings' | 'onEdit' | 'onRemove'>) {
   const { name } = variable;
-  const originText = variable.from === 'task' ? t('plugins.variables.fromTask') : origin && t(ORIGIN[origin]);
+  const originText = origin && t(ORIGIN[origin]);
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1.5">
       <span className="truncate font-mono font-semibold">{name}</span>

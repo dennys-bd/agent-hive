@@ -118,11 +118,11 @@ async function writeAtomic(path: string, text: string): Promise<void> {
 }
 
 // Decisions 8 and 8a for one template and its workspace: an entry equal to the moved value goes, a divergent one stays as the override, and
-// a declaration with no entry now renders the workspace's value, which the log names. A variable from the task reads no workspace value
+// a declaration with no entry now renders the workspace's value, which the log names
 function stripOne(text: string, t: Template, values: Values, log: VariablesMigrationDeps['log']): string {
   let next = text;
-  for (const { name, workspaces, from } of t.variables) {
-    if (from !== undefined || !Object.hasOwn(values, name)) continue;
+  for (const { name, workspaces } of t.variables) {
+    if (!Object.hasOwn(values, name)) continue;
     if (!Object.hasOwn(workspaces, t.workspace)) {
       log.info(`${label(t)} now renders the workspace's ${name} for ${t.workspace}`);
       continue;
