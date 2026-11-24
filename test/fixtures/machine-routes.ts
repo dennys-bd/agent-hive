@@ -63,7 +63,7 @@ export async function startMachineRoutes(t: TestContext, platform: NodeJS.Platfo
   const exec = fakeGit(root, gitCalls);
   const machine = fakeMachine({ exec, fs: recordingFs(root, paths, fsCalls), info: { platform } });
   const comb: CombConfig = {
-    prefix: 'HIVE', workspaces: [{ name: 'hive', path: root, machine: LOCAL_MACHINE, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }],
+    prefix: 'HIVE', workspaces: [{ name: 'hive', path: root, machine: LOCAL_MACHINE, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }],
     sources: [], flows: [], commands: [], hiveSource: true, createIn: 'hive',
   };
   const state: State = withWork({ ...initialState(0), tasks: [TASK] }, TASK.item.itemId, { local: true, worktree: root });

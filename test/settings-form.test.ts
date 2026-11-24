@@ -40,7 +40,7 @@ const CONFIG: Config = {
   auth: { github: 'api' },
   comb: {
     prefix: 'HIVE',
-    workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }],
+    workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }],
     commands: [FRONT], hiveSource: true, createIn: 'hive',
     sources: [GITHUB_SOURCE],
     flows: mainFlows(STAGES, TRANSITIONS),
@@ -531,7 +531,7 @@ test('a renamed source row (#278): savedName holds the loaded name, the body sen
 
 test('a workspace row carries its worktree setup as typed and its timeout per step as a timeout text; a blank field sends no key (#299, #511)', () => {
   const setup = 'COPY .env\nRUN pnpm install\n';
-  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup, setupTimeout: '5m' }] } }));
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup, setupTimeout: '5m' }] } }));
   assert.deepEqual(saved.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], setup, setupTimeout: '5m', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', nestedRepos: [], notNestedRepos: [] }]);
   assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setupTimeout: ' 10m ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup, setupTimeout: '10m' }], 'as typed: the line numbers the server names are the textarea\'s');
   assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setup: ' \n ', setupTimeout: '' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }]);
@@ -642,7 +642,7 @@ test('validateSettings refuses a wait whose queue limit the TIMEOUT grammar does
 
 test('a workspace row keeps its fork and its own base branch through the draft; an empty base branch sends no key; a new row starts undecided (#854)', () => {
   const fork = { remote: 'upstream', pr: 'fork' as const, sync: 'manual' as const };
-  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', baseBranch: 'devtest' }] } }));
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', baseBranch: 'devtest' }] } }));
   assert.deepEqual([saved.workspaces[0].fork, saved.workspaces[0].baseBranch], [fork, 'devtest']);
   assert.deepEqual(toSettingsBody(saved).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', baseBranch: 'devtest' }]);
   assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], fork: false, baseBranch: ' ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: false, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }]);
@@ -650,7 +650,7 @@ test('a workspace row keeps its fork and its own base branch through the draft; 
 });
 
 test('a workspace\'s nested repos load as rows and save trimmed, an empty row dropped; the dismissed paths go back as they came (#653)', () => {
-  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: ['docs'], notNestedRepos: ['vendor'], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }] } }));
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: ['docs'], notNestedRepos: ['vendor'], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }] } }));
   const [row] = saved.workspaces;
   assert.deepEqual([row.nestedRepos.map((r) => r.path), row.notNestedRepos], [['docs'], ['vendor']]);
   const rows = [...row.nestedRepos, { id: 'n2', path: ' ee ' }, { id: 'n3', path: ' ' }]; // `+ nested repo` leaves a blank row until it is typed in
@@ -674,7 +674,7 @@ test('a workspace row carries its machine as the config holds it and always send
 });
 
 test('a workspace row keeps its memory total limit as typed through the draft and sends it as a number; a new row starts at 4000 (#73)', () => {
-  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 6000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }] } }));
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 6000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }] } }));
   assert.equal(saved.workspaces[0].memoryCap, '6000');
   assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], memoryCap: ' 12000 ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 12000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }]);
   assert.equal(emptyWorkspace().memoryCap, '4000');
@@ -864,4 +864,10 @@ test('draftFrom fills accounts from the saved selection, a missing member as the
   assert.deepEqual(draft.accounts, { claude: 'work', copilot: '', github: 'alice' });
   assert.deepEqual(toSettingsBody(draft).accounts, { claude: 'work', github: 'alice' }, 'the card reopens on the saved choice');
   assert.deepEqual(toSettingsBody({ ...draft, accounts: { claude: '', copilot: '', github: '' } }).accounts, {}, 'the key still goes, empty');
+});
+
+test('a save never sends a workspace\'s variables: the server keeps the saved ones (#621, decision 11a)', () => {
+  const body = toSettingsBody(draftFrom(undefined));
+  assert.equal(body.workspaces.length, 1, 'the proposed row');
+  assert.equal(body.workspaces.some((w) => 'variables' in w), false);
 });

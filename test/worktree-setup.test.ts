@@ -38,7 +38,7 @@ async function harness(t: AfterHost, setup: string, run?: Machine['run'], extra:
   };
   const machine = fakeMachine({ exec, run: run ?? recorded });
   const deps: SetupDeps = { log: { info: (line) => lines.push(line) }, onStep: (step) => steps.push(step), output: (text) => output.push(text) };
-  return { workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup, ...extra }, worktree, gitDir, deps, machine, git, runs, steps, lines, output };
+  return { workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup, ...extra }, worktree, gitDir, deps, machine, git, runs, steps, lines, output };
 }
 
 const marked = (h: Harness): Promise<boolean> => access(join(h.gitDir, SETUP_MARKER)).then(() => true, () => false);

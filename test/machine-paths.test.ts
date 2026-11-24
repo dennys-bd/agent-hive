@@ -80,7 +80,7 @@ for (const side of STEP_SIDES) {
     };
     const run = async (p: RunProcess) => { seen(p.cwd); return runResult(0); };
     const machine = fakeMachine({ exec, fs, run, info: { platform: side.platform } });
-    const workspace: Workspace = { name: 'hive', path: side.main, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup: 'COPY .env config/\nRUN make' };
+    const workspace: Workspace = { name: 'hive', path: side.main, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)', setup: 'COPY .env config/\nRUN make' };
     assert.equal(await runSetup(machine, workspace, side.worktree, { log: { info: () => undefined }, onStep: () => undefined }), 2);
     assert.ok(touched.includes(side.copied), `the COPY wrote ${side.copied}`);
     assert.ok(touched.includes(side.worktree), 'the RUN ran in the worktree');

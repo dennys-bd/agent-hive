@@ -173,10 +173,11 @@ test('needsLiquid looks at the body only; deliveredName strips one .liquid (#310
   assert.equal(deliveredName('x.liquid.liquid'), 'x.liquid');
 });
 
-test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310)', () => {
+test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310); its one local import is types.ts\'s, type-only (#621)', () => {
   // Runs from dist/test: the TypeScript source is read as text.
   const source = readFileSync(fileURLToPath(new URL('../../src/template.ts', import.meta.url)), 'utf8');
-  assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml']);
+  assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml', './types.js']);
+  assert.match(source, /^import type \{[^}]*\} from '\.\/types\.js';$/m, 'erased: the bundle gets no types.ts');
   assert.doesNotMatch(source, /\bprocess\.|\brequire\(|import\(/);
 });
 

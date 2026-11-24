@@ -50,7 +50,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const work = { slug: SLUG, ...(setup.awaiting === false ? {} : { approval: { since: SINCE } }) };
   const state: State = withWork({ ...initialState(0), tasks: [task] }, task.item.itemId, work, { result: setup.result ?? PENDING });
   const comb: CombConfig = {
-    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources: setup.sources ?? [GITHUB_ENTRY], commands: [],
+    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources: setup.sources ?? [GITHUB_ENTRY], commands: [],
     flows: mainFlows([{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:new-spec {url}' }, { name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }]),
     hiveSource: false, createIn: 'hive', // #783: the GitHub target alone; the hive target is server-decomposition-hive.test.ts
   };

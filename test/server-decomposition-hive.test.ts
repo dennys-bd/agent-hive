@@ -49,7 +49,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const localCount = tasks.filter((c) => c.created === true).length; // the fixtures' local numbers are handed out already
   let state: State = withWork({ ...initialState(0), workspaces: ['hive'], flows, ...flatten(flows), tasks, localCount }, task.item.itemId, { slug: SLUG, approval: { since: SINCE } }, { result: setup.result ?? PENDING });
   const comb: CombConfig = {
-    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }],
+    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }],
     sources: [GITHUB_ENTRY], commands: [], flows, hiveSource: setup.hiveSource ?? true, createIn: 'hive',
   };
   const events: HiveEvent[] = [];

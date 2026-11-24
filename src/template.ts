@@ -3,9 +3,12 @@
 // liquidjs and yaml, which both ship browser builds.
 import { Liquid, LiquidError } from 'liquidjs';
 import { type Document, isMap, isNode, isScalar, LineCounter, type Pair, parseDocument, type YAMLError } from 'yaml';
+import type { VariableValue } from './types.js';
+
+// #621: the config holds it now; template-edit.ts and the editor still import it from here
+export type { VariableValue };
 
 export type VariableKind = 'text' | 'list' | 'boolean';
-export type VariableValue = string | boolean | null;
 
 export interface TemplateVariable {
   name: string;
@@ -81,6 +84,9 @@ const isValueList = (value: unknown): boolean =>
   Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string') && new Set(value).size === value.length;
 const firstLine = (text: string): string => text.split('\n')[0];
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** A name a template may declare (#310), which a workspace's variables take too (#621): VARIABLE_NAME, and never the built-in workspace. */
+export const isVariableName = (name: string): boolean => VARIABLE_NAME.test(name) && name !== BUILT_IN;
 
 // Claude Code's frontmatter rule: a header only when the first line is a fence, up to the next fence line. The body is a suffix of the
 // text, so a render can keep the header's bytes when it removes nothing.

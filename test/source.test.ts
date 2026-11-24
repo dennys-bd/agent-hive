@@ -626,7 +626,7 @@ test('entry comes from the first matching rule that sets it, null included, else
 
 test('rules ride the very same query (#245): workspaceHint comes only from a rule; autoOnEntry from the first matching rule that sets auto, else the default; '
   + 'a workspace-only rule never shadows an auto one (#293, #688)', async () => {
-  const workspaces = ['api', 'site', 'web', 'ops'].map((name) => ({ name, path: `/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }));
+  const workspaces = ['api', 'site', 'web', 'ops'].map((name) => ({ name, path: `/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }));
   const rules: TaskRule[] = [
     { field: 'labels', op: 'iequals', value: 'backend', set: { workspace: 'api' } },
     { field: 'Repo', op: 'equals', value: 'site', set: { workspace: 'site', auto: false } },

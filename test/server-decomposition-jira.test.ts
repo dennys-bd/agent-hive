@@ -56,7 +56,7 @@ async function routes(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY, J
   await writeFile(join(worktree, 'decomposition.md'), EXAMPLE);
   const state: State = withWork({ ...initialState(0), tasks: [GOAL] }, GOAL.item.itemId, { slug: SLUG, approval: { since: SINCE } }, { result: PENDING });
   const comb: CombConfig = {
-    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources, commands: [],
+    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], sources, commands: [],
     flows: mainFlows([{ name: 'spec', from: { tickets: ['To Do'] }, prompt: '/hive:new-spec {url}' }, { name: 'goal', from: { tickets: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }]),
     hiveSource: false, createIn: 'hive',
   };

@@ -45,7 +45,7 @@ async function start(t: TestContext, env: Record<string, string> = {}, extra: Pi
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, ...extra.workspaces], commands: [FRONT, ...(extra.commands ?? [])] })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, ...extra.workspaces], commands: [FRONT, ...(extra.commands ?? [])] })).status, 200);
   await server.poll();
   return { base, server, workers, home };
 }
@@ -174,7 +174,7 @@ async function startFork(t: TestContext, fork: WorkspaceFork | false | null, env
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env, fork, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], commands: [FRONT] })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env, fork, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }], commands: [FRONT] })).status, 200);
   await server.poll();
   return { base, workers };
 }

@@ -291,7 +291,7 @@ test('a hive.config.json without rateLimitWaitMinutes opens setup mode with the 
 
 test('a hive.config.json whose workspace has no nestedRepos opens setup mode with the parse error, prefilled with none (#653)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
+  const before = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #653
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());
@@ -304,7 +304,7 @@ test('a hive.config.json whose workspace has no nestedRepos opens setup mode wit
 
 test('a hive.config.json whose workspace has no benchmarkPrIn opens setup mode with the parse error, prefilled with a temporary worktree (#477)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, color: 'oklch(0.72 0.12 25)', machine: 'local' }; // a workspace from before #477
+  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, color: 'oklch(0.72 0.12 25)', machine: 'local' }; // a workspace from before #477
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());
@@ -316,7 +316,7 @@ test('a hive.config.json whose workspace has no benchmarkPrIn opens setup mode w
 
 test('a hive.config.json whose workspace has no machine opens setup mode with the parse error, prefilled with the local machine (#931)', async (t) => {
   const { home, repo } = await tempHive(t);
-  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #931
+  const before = { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', color: 'oklch(0.72 0.12 25)' }; // a workspace from before #931
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(combConfig({ stages: LOCAL_STAGES, path: repo, workspaces: [before] })));
   const { server, port } = await bootHive(home);
   t.after(() => server.close());

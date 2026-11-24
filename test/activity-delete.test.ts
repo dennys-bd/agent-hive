@@ -40,7 +40,7 @@ test('deleteActivityOnDisk also checks and deletes the own branches a Restart le
   };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: `${TASK_BRANCH}-r3`, stageStart: { stage: 'fila', commit: 'a1b2c3d' } }; // #629: the activity's
   const deps = { log: fakeLog().log, exec, machineFor: () => fakeMachine({ exec }), ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   const check = (b: string): string[][] => [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${b}`], ['merge-base', '--is-ancestor', `refs/heads/${b}`, 'HEAD']];
   assert.deepEqual(calls, [
     ['for-each-ref', '--format=%(refname:lstrip=2)', `refs/heads/${TASK_BRANCH}`, `refs/heads/${TASK_BRANCH}-r*`],
@@ -62,7 +62,7 @@ test('deleteActivityOnDisk drops the stage-start ref of an activity whose start 
   const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH }; // entered a stage: no stageStart
   const deps = { log: fakeLog().log, exec, machineFor: () => fakeMachine({ exec }), ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   assert.deepEqual(calls.slice(-3), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`]]);
 });
 
@@ -78,7 +78,7 @@ test('deleteActivityOnDisk hands the record\'s PRs to the clean: a branch its me
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH };
   const deps = { log: fakeLog().log, exec, machineFor: () => fakeMachine({ exec }), ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
   const pr = 'https://github.com/acme/r/pull/7';
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: pr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: pr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
   assert.deepEqual(calls.filter((c) => c[0] === 'gh'), [['gh', 'pr', 'view', pr, '--json', 'state,headRefOid']]);
   assert.ok(calls.some((c) => c.join(' ') === `git update-ref -d refs/heads/${TASK_BRANCH} c0ffee1`), calls.map((c) => c.join(' ')).join('\n'));
 });
@@ -96,7 +96,7 @@ test('deleteActivityOnDisk on a local task runs no git whatever the scope and de
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${SESSION}.jsonl`), '{}\n');
   const deps = { log: fakeLog().log, exec, machineFor: () => fakeMachine({ exec }), ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
-  await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], prs: [], branch: BRANCH, scope: ALL }, deps);
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], prs: [], branch: BRANCH, scope: ALL }, deps);
   assert.deepEqual(calls, [], 'no worktree, no branch -d, no left-behind branches, no stage-start ref');
   assert.deepEqual(await readdir(dir), []);
 });

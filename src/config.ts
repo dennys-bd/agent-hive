@@ -23,6 +23,7 @@ import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
 import { parseReviewer } from './reviewer-config.js';
 import { parseNestedRepos } from './config-nested.js';
+import { parseWorkspaceVariables } from './config-variables.js';
 import { parseBenchmarkPrIn } from './config-benchmark-pr.js';
 import { parseSignals } from './signals-config.js';
 import { parseMcp } from './mcp-settings.js';
@@ -342,7 +343,7 @@ function parseWorkspace(raw: unknown, field: string): Workspace {
   const machine = parseWorkspaceMachine(raw.machine, field); // #931: before the path, which is checked as its machine's
   const path = requireWorkspacePath(raw.path, machine, field);
   if (raw.format !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.format" moved to "editor" (#780): one config for every workspace`);
-  if (raw.conventions !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.conventions" moved to the plugins view (#318): set each value in its skill's variables`);
+  if (raw.conventions !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.conventions" moved to the workspace's variables in the plugins view (#621): set each value once in its variables panel`);
   const baseBranch = raw.baseBranch === undefined || raw.baseBranch === '' ? {} : { baseBranch: requireBranch(raw.baseBranch, `${field}.baseBranch`) }; // #854: '' from the form drops it
   return {
     name, path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), // env required (#348), fork required (#854); commands live in comb.commands (#511)
@@ -351,6 +352,7 @@ function parseWorkspace(raw: unknown, field: string): Workspace {
     ...parseNestedRepos(raw, field), // #653: required, read last, so an older key's problem keeps its own message
     benchmarkPrIn: parseBenchmarkPrIn(raw.benchmarkPrIn, field), // #477: required, read last, so an older key's problem keeps its own message
     machine, // #931: required
+    variables: parseWorkspaceVariables(raw.variables, field), // #621: required, read last, so an older key's problem keeps its own message
   };
 }
 
