@@ -56,6 +56,36 @@ export async function homeOf(machine: Machine): Promise<string> {
 
 export const hiveFolderOf = async (machine: Machine): Promise<string> => machine.paths.join(await homeOf(machine), ...WSL_FOLDER);
 
+const HELPER_PATTERN = '/.config/agent-hive/wsl/helper-'; // every helper's argv: node <folder>/helper-<hash>.mjs <folder>
+const REAP_MS = 5_000;
+const NONE_MATCHED = 1; // pgrep's and pkill's exit when no process matches
+
+// The helpers still running in the distro, one `pid argv` per line; none is '', which pgrep answers with its exit 1
+async function helpersLeft(): Promise<string> {
+  try {
+    return (await execFileBuffer('wsl.exe', ['-d', DISTRO, '--exec', 'pgrep', '-af', '--', HELPER_PATTERN])).stdout.trim();
+  } catch (err) {
+    if ((err as { code?: unknown }).code === NONE_MATCHED) return '';
+    throw err;
+  }
+}
+
+// A closed machine's helper ends when its stdin does. WSL 1 kept one running past close() once, still holding the relay port of the
+// next test file with its own Hive's port, so a leftover is named in the log and killed: each file starts from a distro with none
+async function reapHelpers(t: TestContext): Promise<void> {
+  const deadline = Date.now() + REAP_MS;
+  let left = await helpersLeft();
+  while (left !== '' && Date.now() < deadline) {
+    await sleep(POLL_MS);
+    left = await helpersLeft();
+  }
+  if (left === '') return;
+  t.diagnostic(`helper still running ${REAP_MS} ms after close():\n${left}`);
+  await execFileBuffer('wsl.exe', ['-d', DISTRO, '--exec', 'pkill', '-f', '--', HELPER_PATTERN]).catch((err: unknown) => {
+    if ((err as { code?: unknown }).code !== NONE_MATCHED) throw err;
+  });
+}
+
 /** The real machine of the lane's distro (#948 decision 9), closed after the test. */
 export function realWsl(t: TestContext, { hivePort = () => CLOSED_PORT }: { hivePort?: () => number } = {}): RealWsl {
   const machine = createWslMachine(DISTRO, laneDeps(t, hivePort));
@@ -65,6 +95,7 @@ export function realWsl(t: TestContext, { hivePort = () => CLOSED_PORT }: { hive
     t.after(async () => {
       for (const path of made) await machine.fs.rm(path, { recursive: true, force: true }).catch((err: unknown) => t.diagnostic(`rm ${path}: ${String(err)}`));
       machine.close();
+      await reapHelpers(t);
     });
   });
   return {
