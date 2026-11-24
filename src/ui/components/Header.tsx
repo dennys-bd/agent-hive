@@ -22,8 +22,8 @@ interface HeaderProps extends BrandProps { shell: HeaderShell }
 // The header drags the window: each of its own controls opts out to keep its clicks; the empty space and the bar's text keep dragging
 const NO_DRAG = '[-webkit-app-region:no-drag]';
 const ICON_BUTTON = `size-7 ${NO_DRAG}`; // the handoff's ghost 28×28 around a 16px icon
-// In order (#1036): arquivos, detalhes and busca always, a view that cannot show one disables it, never removes it, so the row does not
-// jump; variáveis (#313) belongs to plugins alone, so it renders only there, last, where it leaves the other three in place
+// Order per #1036. arquivos, detalhes and busca always render, disabled in a view that cannot show them, so the row does not jump.
+// variáveis (#313) belongs to plugins alone, so it renders only there, last, leaving the other three in place
 const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['details', ListIcon], ['search', SearchIcon], ['variables', BracesIcon]];
 const panesOf = (center: CenterMode): typeof PANES => (center === 'plugins' ? PANES : PANES.filter(([pane]) => pane !== 'variables'));
 
