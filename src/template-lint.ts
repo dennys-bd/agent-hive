@@ -181,7 +181,7 @@ function renderWithin(parsed: ParsedTemplate, workspaces: string[]): RenderError
   const errors: RenderError[] = [];
   for (const workspace of workspaces) {
     if (Date.now() > deadline) break;
-    const result = renderTemplate(parsed, workspace);
+    const result = renderTemplate(parsed, { name: workspace, variables: {} }); // temporary (#621 Task 2): Task 3 gives the lint each workspace's values
     if (!result.ok) errors.push(...result.errors.map((error) => ({ line: error.line, message: error.message, workspace })));
   }
   return errors;

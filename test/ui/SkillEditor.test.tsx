@@ -102,7 +102,7 @@ test('view as a workspace: read-only, the edit controls gone, the false branch d
   expect(within(nav()).getByText('senão').closest('.opacity-35')).not.toBeNull();
   const dimmed = new Set(view().decorations.filter((d) => d.options.inlineClassName === 'template-dim').map((d) => d.range.startLineNumber));
   const kept = view().model.getValue().split('\n').filter((_, i) => !dimmed.has(i + 1)).join('\n');
-  const rendered = renderTemplate(parseTemplate(BUILD_TEXT), 'hive-site');
+  const rendered = renderTemplate(parseTemplate(BUILD_TEXT), { name: 'hive-site', variables: {} });
   expect(rendered.ok && kept).toBe(rendered.ok && rendered.text);
 });
 

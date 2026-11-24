@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parseTemplate, renderTemplate } from '../src/template.js';
+import { parseTemplate, renderTemplate, type RenderWorkspace } from '../src/template.js';
 import { buildMap } from '../src/template-map.js';
 import type { Condition, ConditionTerm } from '../src/template-condition.js';
 import { chainReach, markerReach, type Preview, previewTemplate } from '../src/template-preview.js';
@@ -45,6 +45,7 @@ const CHAINS = [
 ].join('\n');
 const parsed = parseTemplate(CHAINS);
 const map = buildMap(parsed);
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
 
 function kept(preview: Preview): string {
   assert.ok(preview.ok);
@@ -57,32 +58,32 @@ function holding(preview: Preview, lines: number[]): boolean[] {
 
 test('for each workspace the lines that hold join to its render, and the branch Liquid takes is the one that holds, nested in a ## or not (#319)', () => {
   for (const workspace of ['agent-hive', 'hive-site']) {
-    const preview = previewTemplate(parsed, map, workspace);
-    const render = renderTemplate(parsed, workspace);
+    const preview = previewTemplate(parsed, map, at(workspace));
+    const render = renderTemplate(parsed, at(workspace));
     assert.ok(preview.ok && render.ok, workspace);
     assert.equal(preview.isExact, true, workspace);
     assert.equal(kept(preview), render.text, workspace);
   }
   // if / elsif / else on a list, unless on a boolean, if on a text with default null
-  assert.deepEqual(holding(previewTemplate(parsed, map, 'hive-site'), [14, 16, 18, 21, 26, 28]), [true, false, false, true, true, false]);
-  assert.deepEqual(holding(previewTemplate(parsed, map, 'agent-hive'), [14, 16, 18, 21, 26, 28]), [false, true, false, false, false, true]);
+  assert.deepEqual(holding(previewTemplate(parsed, map, at('hive-site')), [14, 16, 18, 21, 26, 28]), [true, false, false, true, true, false]);
+  assert.deepEqual(holding(previewTemplate(parsed, map, at('agent-hive')), [14, 16, 18, 21, 26, 28]), [false, true, false, false, false, true]);
 });
 
 test("each marker is flagged as the empty line Liquid leaves; the header is the delivered one; a line's variables resolve (#319)", () => {
-  const preview = previewTemplate(parsed, map, 'hive-site');
+  const preview = previewTemplate(parsed, map, at('hive-site'));
   assert.ok(preview.ok);
   assert.deepEqual(preview.lines.filter((l) => l.isMarker).map((l) => [l.line, l.text]), [[13, ''], [15, ''], [17, ''], [19, ''], [20, ''], [22, ''], [25, ''], [27, ''], [29, '']]);
   assert.equal(preview.header, '---\nname: chains\n---\n');
   assert.equal(preview.lines.find((l) => l.line === 10)?.text, 'Run pnpm test in hive-site.');
-  const other = previewTemplate(parsed, map, 'agent-hive');
+  const other = previewTemplate(parsed, map, at('agent-hive'));
   assert.ok(other.ok);
   assert.equal(other.lines.find((l) => l.line === 10)?.text, 'Run  in agent-hive.');
 });
 
 test('a shipped specialist, with no Liquid, previews as its render: every line holds, none is a marker, and the header is the delivered one (#319, #338)', () => {
   const shipped = parseTemplate(PLANNER);
-  const preview = previewTemplate(shipped, buildMap(shipped), 'agent-hive');
-  const render = renderTemplate(shipped, 'agent-hive');
+  const preview = previewTemplate(shipped, buildMap(shipped), at('agent-hive'));
+  const render = renderTemplate(shipped, at('agent-hive'));
   assert.ok(preview.ok && render.ok);
   assert.deepEqual([preview.isExact, preview.lines.every((l) => l.holds && !l.isMarker)], [true, true]);
   assert.equal(kept(preview), render.text, 'its basedOn is not delivered');
@@ -90,17 +91,17 @@ test('a shipped specialist, with no Liquid, previews as its render: every line h
 
 test('a required variable with no value for the workspace answers the render error at its line (#319)', () => {
   const p = parseTemplate('---\nvariables:\n  e2eCommand: { required: true, workspaces: { hive-site: pnpm e2e } }\n---\nRun {{ e2eCommand }}.\n');
-  assert.deepEqual(previewTemplate(p, buildMap(p), 'agent-hive'), {
+  assert.deepEqual(previewTemplate(p, buildMap(p), at('agent-hive')), {
     ok: false,
     errors: [{ line: 3, variable: 'e2eCommand', message: 'variable "e2eCommand" is required and has no value for workspace "agent-hive"' }],
   });
-  assert.equal(previewTemplate(p, buildMap(p), 'hive-site').ok, true);
+  assert.equal(previewTemplate(p, buildMap(p), at('hive-site')).ok, true);
 });
 
 test("a construct a line-by-line render cannot follow (a loop) answers isExact false with the render's text, nothing dimmed (#319)", () => {
   const p = parseTemplate('{% for i in (1..2) %}\nA{{ i }}\n{% endfor %}\n');
-  const preview = previewTemplate(p, buildMap(p), 'agent-hive');
-  const render = renderTemplate(p, 'agent-hive');
+  const preview = previewTemplate(p, buildMap(p), at('agent-hive'));
+  const render = renderTemplate(p, at('agent-hive'));
   assert.ok(preview.ok && render.ok);
   assert.equal(preview.isExact, false);
   assert.equal(kept(preview), render.text);
@@ -116,25 +117,34 @@ test('src/template-preview.ts imports nothing from node, so the editor can bundl
 const is = (variable: string, value: string): ConditionTerm => ({ variable, op: 'is', value });
 const when = (...terms: ConditionTerm[]): Condition => ({ connective: 'and', terms });
 const ALL = ['agent-hive', 'hive-site', 'other'];
+const TARGETS = ALL.map((name) => at(name));
 
 test('chainReach: each workspace under the first conditional block that holds, the rest under the else; a workspace term; first match wins (#322, decisions 15, 16)', () => {
-  assert.deepEqual(chainReach(parsed, { branches: [when(is('delivery', 'stacked')), when(is('workspace', 'agent-hive'))], else: true }, ALL), [['hive-site'], ['agent-hive'], ['other']]);
-  assert.deepEqual(chainReach(parsed, { branches: [when({ variable: 'delivery', op: 'isNot', value: 'none' }), when(is('workspace', 'agent-hive'))], else: false }, ALL), [ALL, []]);
-  assert.deepEqual(chainReach(parsed, { branches: [], else: false }, ALL), []);
+  assert.deepEqual(chainReach(parsed, { branches: [when(is('delivery', 'stacked')), when(is('workspace', 'agent-hive'))], else: true }, TARGETS), [['hive-site'], ['agent-hive'], ['other']]);
+  assert.deepEqual(chainReach(parsed, { branches: [when({ variable: 'delivery', op: 'isNot', value: 'none' }), when(is('workspace', 'agent-hive'))], else: false }, TARGETS), [ALL, []]);
+  assert.deepEqual(chainReach(parsed, { branches: [], else: false }, TARGETS), []);
 });
 
 test('chainReach: an "is no" first term is rendered as the unless chainMarkers writes (#322, decision 16)', () => {
-  assert.deepEqual(chainReach(parsed, { branches: [when({ variable: 'quick', op: 'isNo' })], else: true }, ALL), [['hive-site', 'other'], ['agent-hive']]);
+  assert.deepEqual(chainReach(parsed, { branches: [when({ variable: 'quick', op: 'isNo' })], else: true }, TARGETS), [['hive-site', 'other'], ['agent-hive']]);
 });
 
 test('chainReach: a workspace missing a required value, or whose evaluation Liquid refuses, is in no list (#322, decision 15)', () => {
   const required = parseTemplate('---\nvariables:\n  e2eCommand: { required: true, workspaces: { hive-site: pnpm e2e } }\n---\nRun {{ e2eCommand }}.\n');
-  assert.deepEqual(chainReach(required, { branches: [when({ variable: 'workspace', op: 'hasValue' })], else: true }, ['agent-hive', 'hive-site']), [['hive-site'], []]);
-  assert.deepEqual(chainReach(parsed, { branches: [when({ variable: 'ghost', op: 'hasValue' })], else: true }, ['agent-hive']), [[], []]);
+  assert.deepEqual(chainReach(required, { branches: [when({ variable: 'workspace', op: 'hasValue' })], else: true }, ['agent-hive', 'hive-site'].map((name) => at(name))), [['hive-site'], []]);
+  assert.deepEqual(chainReach(parsed, { branches: [when({ variable: 'ghost', op: 'hasValue' })], else: true }, [at('agent-hive')]), [[], []]);
 });
 
 test("markerReach reads a chain's own markers, one the form cannot hold too, as Liquid does (#322, decision 14)", () => {
   // no parentheses in Liquid: or binds the right-hand and first
   const markers = ['{% if delivery == "stacked" or workspace == "other" and quick %}', '{% else %}', '{% endif %}'];
-  assert.deepEqual(markerReach(parsed, markers, ALL), [['hive-site'], ['agent-hive', 'other']]);
+  assert.deepEqual(markerReach(parsed, markers, TARGETS), [['hive-site'], ['agent-hive', 'other']]);
+});
+
+test('the preview and a chain\'s reach read a workspace\'s value where the template has no entry; one whose value a declaration cannot take reaches no block (#621)', () => {
+  const preview = previewTemplate(parsed, map, at('agent-hive', { testCommand: 'pnpm ci' }));
+  assert.ok(preview.ok);
+  assert.equal(preview.lines.find((l) => l.line === 10)?.text, 'Run pnpm ci in agent-hive.');
+  const reach = chainReach(parsed, { branches: [when(is('delivery', 'stacked'))], else: true }, [at('agent-hive', { delivery: 'stacked' }), at('other', { delivery: 'trunk' }), at('third')]);
+  assert.deepEqual(reach, [['agent-hive'], ['third']]);
 });

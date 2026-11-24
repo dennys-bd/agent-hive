@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { ParsedTemplate, TemplateError } from '../../../template';
+import { useContext, useState } from 'react';
+import type { ParsedTemplate, RenderWorkspace, TemplateError } from '../../../template';
 import type { ChainSpec } from '../../../template-condition';
 import { type EditResult, isHeldText } from '../../../template-edit';
 import { type ChainBlock, chainReach, markerReach } from '../../../template-preview';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { type Draft, draftOf, type FormVariable, rawMarkers, specOf } from '@/lib/chain-draft';
 import { branchLabel } from '@/lib/template-view';
+import { renderFor, WorkspaceValuesContext } from '@/lib/workspace-values';
 
 export interface ConditionPopoverProps {
   chain: ChainBlock; parsed: ParsedTemplate; variables: readonly FormVariable[]; workspaces: readonly string[];
@@ -20,8 +21,8 @@ const refusalText = (error: TemplateError): string =>
   isHeldText(error) ? t('plugins.chain.heldText', { line: error.line }) : t('plugins.chain.failed');
 
 // Decision 14: a chain the form cannot show faithfully stays as its text, with each block's reach, and can only lose its markers
-function RawChain({ chain, parsed, workspaces }: Pick<ConditionPopoverProps, 'chain' | 'parsed' | 'workspaces'>) {
-  const reach = markerReach(parsed, rawMarkers(chain), workspaces);
+function RawChain({ chain, parsed, targets }: Pick<ConditionPopoverProps, 'chain' | 'parsed'> & { targets: readonly RenderWorkspace[] }) {
+  const reach = markerReach(parsed, rawMarkers(chain), targets);
   return (
     <>
       {chain.branches.map((branch, index) => (
@@ -38,6 +39,8 @@ export function ConditionPopover({ chain, parsed, variables, workspaces, onOk, o
   const [initial] = useState(() => draftOf(chain, variables));
   const [draft, setDraft] = useState<Draft | null>(initial);
   const [refusal, setRefusal] = useState<string>();
+  const values = useContext(WorkspaceValuesContext); // #621: each block's reach reads the workspaces' values
+  const targets = workspaces.map((name) => renderFor(values, name));
   const spec = draft === null ? null : specOf(draft, variables);
   const settle = (result: EditResult): void => { if (result.ok) onClose(); else setRefusal(refusalText(result.error)); };
   const ok = (): void => {
@@ -51,10 +54,10 @@ export function ConditionPopover({ chain, parsed, variables, workspaces, onOk, o
   const elseJump = elseLine === undefined ? undefined : { line: elseLine, onJump: () => { onReveal(elseLine); onClose(); } };
   return (
     <div className="flex flex-col gap-2 text-xs">
-      {draft === null ? <RawChain chain={chain} parsed={parsed} workspaces={workspaces} /> : (
+      {draft === null ? <RawChain chain={chain} parsed={parsed} targets={targets} /> : (
         <>
           <p className="text-muted-foreground">{t('plugins.chain.when')}</p>
-          <ChainForm draft={draft} variables={variables} onChange={change} reach={spec === null ? undefined : chainReach(parsed, spec, workspaces)} canAddTerm elseJump={elseJump} />
+          <ChainForm draft={draft} variables={variables} onChange={change} reach={spec === null ? undefined : chainReach(parsed, spec, targets)} canAddTerm elseJump={elseJump} />
         </>
       )}
       {refusal && <p role="alert" className="text-destructive">{refusal}</p>}

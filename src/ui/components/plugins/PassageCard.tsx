@@ -1,12 +1,13 @@
 import { PencilIcon } from 'lucide-react';
-import { type KeyboardEvent, useMemo } from 'react';
+import { type KeyboardEvent, useContext, useMemo } from 'react';
 import { renderPassages } from '../../../protocol-inserts';
-import { splitHeader, type TemplateError } from '../../../template';
+import { type RenderWorkspace, splitHeader, type TemplateError } from '../../../template';
 import { Confirm } from '@/components/Confirm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { newDraft, newKey, type Protocol, type ProtocolPassageView, type SaveError } from '@/hooks/use-protocol';
 import { t } from '@/i18n';
+import { renderFor, WorkspaceValuesContext } from '@/lib/workspace-values';
 
 export interface PassageCardProps { protocol: Protocol; after: string; saved?: ProtocolPassageView; workspaces: readonly string[] }
 interface ActionsProps { protocol: Protocol; passageKey: string; isNew: boolean; isUnchanged: boolean; onSave(): void }
@@ -14,14 +15,15 @@ interface ActionsProps { protocol: Protocol; passageKey: string; isNew: boolean;
 // The body is a suffix of the text (splitHeader), so swapping it keeps the header's bytes: `after:` cannot be broken from the card
 const withBody = (text: string, body: string): string => `${text.slice(0, text.length - splitHeader(text).body.length)}${body}`;
 
-// The render the runs use, once per workspace: in all, no label; in some, which; in none, say so. A workspace where it fails counts as not in
-function conditionOf(text: string, workspaces: readonly string[]): string | undefined {
-  const shownIn = workspaces.filter((workspace) => {
-    const [rendered] = renderPassages([{ id: '', text }], workspace);
+// The render the runs use, once per workspace, with its values (#621): in all, no label; in some, which; in none, say so. A workspace where it
+// fails counts as not in
+function conditionOf(text: string, targets: readonly RenderWorkspace[]): string | undefined {
+  const shownIn = targets.filter((target) => {
+    const [rendered] = renderPassages([{ id: '', text }], target);
     return rendered.text !== undefined && rendered.text !== '';
   });
-  if (shownIn.length === workspaces.length) return undefined;
-  return shownIn.length === 0 ? t('plugins.protocol.inNone') : t('plugins.protocol.onlyIn', { list: shownIn.join(', ') });
+  if (shownIn.length === targets.length) return undefined;
+  return shownIn.length === 0 ? t('plugins.protocol.inNone') : t('plugins.protocol.onlyIn', { list: shownIn.map((target) => target.name).join(', ') });
 }
 
 // The user sees only the body: a file line inside it is counted from the body's first line; one in the header shows without a line
@@ -64,7 +66,8 @@ export function PassageCard({ protocol, after, saved, workspaces }: PassageCardP
   const savedText = saved?.text ?? newDraft(after);
   const text = protocol.drafts[passageKey] ?? savedText;
   const { body, bodyLine } = useMemo(() => splitHeader(text), [text]);
-  const condition = useMemo(() => conditionOf(text, workspaces), [text, workspaces]);
+  const values = useContext(WorkspaceValuesContext);
+  const condition = useMemo(() => conditionOf(text, workspaces.map((name) => renderFor(values, name))), [text, workspaces, values]);
   const isUnchanged = text === savedText;
   const save = (): void => {
     if (!isUnchanged) void protocol.save(passageKey);

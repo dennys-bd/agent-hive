@@ -4,6 +4,8 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
 import { parseTemplate, renderTemplate } from '../src/template.js';
+import type { TemplateVariable, VariableValue } from '../src/template.js';
+import { type EditResult, setVariableValue } from '../src/template-edit.js';
 import { LAYOUT_PRESETS } from '../src/ui/lib/drawio-file.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
@@ -35,12 +37,20 @@ const NO_VALUE: Record<string, string> = {
   uiCheck: 'none: no automatic visual check', testCommand: 'the test gate the repository\'s agent instructions file names', decompositionLabel: '`decomposed`',
 };
 
-// A template rendered for `workspace`; a failure names its first error
-function renderedFor(text: string, workspace = 'a'): string {
-  const result = renderTemplate(parseTemplate(text), workspace);
+// A template rendered for `workspace`, with its values (#621); a failure names its first error
+function renderedFor(text: string, workspace = 'a', variables: Record<string, VariableValue> = {}): string {
+  const result = renderTemplate(parseTemplate(text), { name: workspace, variables });
   if (!result.ok) return assert.fail(`${result.errors[0]?.line}: ${result.errors[0]?.message}`);
   return result.text;
 }
+const edited = (result: EditResult): string => (result.ok ? result.text : assert.fail(result.error.message));
+// A value each declaration takes, other than its default: what a workspace would set (#621)
+function otherValue(variable: TemplateVariable): VariableValue {
+  if (variable.kind === 'boolean') return variable.default !== true;
+  if (variable.kind === 'list') return (variable.values ?? []).find((value) => value !== variable.default) ?? null;
+  return `set-${variable.name}`;
+}
+const TEMPLATES = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...TEMPLATE_AGENTS.map(agentPath)];
 
 // A version's header for workspace a, as the plugins view keeps it: each named declaration's own line gains a workspaces: entry
 function valued(text: string, values: Record<string, string>): string {
@@ -158,6 +168,22 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
 
 test('no skill reads reference/conventions.md: each carries its own rules (#430 to #434)', async () => {
   for (const skill of SKILLS) assert.doesNotMatch(await skillText(skill), /conventions\.md/, `skills/${skill} reads reference/conventions.md`);
+});
+
+test('every shipped template renders a workspace\'s value for each variable it declares as it renders its own entry, and its own entry over a workspace\'s value (#621, decision 3)', async () => {
+  for (const path of TEMPLATES) {
+    const text = await readFile(join(PLUGIN, path), 'utf8');
+    const declared = parseTemplate(text).variables.filter((v) => v.from === undefined);
+    assert.ok(declared.length > 0, `${path} declares variables`);
+    for (const variable of declared) {
+      const value = otherValue(variable);
+      const asWorkspace = renderedFor(text, 'a', { [variable.name]: value });
+      assert.equal(asWorkspace, renderedFor(edited(setVariableValue(text, variable.name, 'a', value))), `${path}: ${variable.name}`);
+      const own = edited(setVariableValue(text, variable.name, 'a', variable.default));
+      assert.equal(renderedFor(own, 'a', { [variable.name]: value }), renderedFor(text), `${path}: ${variable.name}: the template's own entry wins`);
+    }
+  }
+  assert.ok(renderedFor(await skillText('new-spec'), 'a', { specsDir: 'design/specs' }).includes('design/specs'), 'a text value reaches the text');
 });
 
 const DECOMPOSITION_VALUES: Record<string, string> = { specsDir: 'design/specs', docsLanguage: 'Spanish', chatLanguage: 'Portuguese', decompositionLabel: 'tree' };

@@ -10,6 +10,7 @@ import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { type Passage, passageErrors, renderPassages } from './protocol-inserts.js';
 import { replaceFile } from './replace-file.js';
 import type { TemplateError } from './template.js';
+import type { VariableValue } from './types.js';
 
 const PASSAGES_DIR = 'passages';
 const SUFFIX = '.md.liquid';
@@ -90,15 +91,16 @@ export function createPassageStore(home: string): PassageStore {
   return { list: () => readAll(dir), create, change, remove };
 }
 
-/** The memory store's protocolFor (#336): the passages rendered for the workspace into both protocols. One that fails there is left out and
- * logged, again on every rewrite, since each is a fresh render; a folder it cannot read costs the passages, never the protocol files. */
-export function protocolRenderer(store: Pick<PassageStore, 'list'>, log: Pick<Logger, 'error'>): ProtocolFor {
+/** The memory store's protocolFor (#336): the passages rendered for the workspace, with its values (#621), into both protocols. One that fails
+ * there is left out and logged, again on every rewrite, since each is a fresh render; a folder it cannot read costs the passages, never the
+ * protocol files. */
+export function protocolRenderer(store: Pick<PassageStore, 'list'>, log: Pick<Logger, 'error'>, valuesOf: (workspace: string) => Record<string, VariableValue> = () => ({})): ProtocolFor {
   return async (workspace, off) => {
     const passages = await store.list().catch((err: unknown) => {
       log.error(`protocol: passages unreadable (${errorName(err)})`);
       return [];
     });
-    const rendered = renderPassages(passages, workspace);
+    const rendered = renderPassages(passages, { name: workspace, variables: valuesOf(workspace) });
     for (const { id, errors } of rendered) for (const { line, message } of errors) log.error(`protocol ${workspace}: ${id}:${line} ${message}`);
     return protocolTexts(off, rendered);
   };

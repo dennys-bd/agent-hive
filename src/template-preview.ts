@@ -3,7 +3,7 @@
 // whenever the buffer or the "view as" workspace changes.
 import { type ChainSpec, chainMarkers } from './template-condition.js';
 import type { MapBlock, MapBranch, TemplateMap } from './template-map.js';
-import { deliveredHeader, type ParsedTemplate, renderFragment, renderTemplate, type TemplateError, valueFor } from './template.js';
+import { deliveredHeader, type ParsedTemplate, type RenderWorkspace, renderFragment, renderTemplate, type TemplateError, valueFor, workspaceValueProblem } from './template.js';
 
 export interface PreviewLine { text: string; holds: boolean; isMarker: boolean; line: number } // line: the source line, 1-based
 export type Preview = { ok: true; header: string; lines: PreviewLine[]; isExact: boolean } | { ok: false; errors: TemplateError[] };
@@ -23,14 +23,14 @@ export function chainsOf(blocks: readonly MapBlock[]): ChainBlock[] {
 }
 
 // Liquid itself says whether a condition holds: the render's engine, context and operators, so no second reading of a condition can drift
-function conditionHolds(parsed: ParsedTemplate, workspace: string, branch: MapBranch): boolean {
+function conditionHolds(parsed: ParsedTemplate, workspace: RenderWorkspace, branch: MapBranch): boolean {
   const tag = branch.marker === 'unless' ? 'unless' : 'if';
   return renderFragment(parsed, workspace, `{% ${tag} ${branch.conditionText} %}1{% end${tag} %}`) === '1';
 }
 
 // The first branch whose condition holds, else the else; -1 for none. A condition that fails alone does not hold: a reachable one failed the
 // whole render already
-const takenBranch = (parsed: ParsedTemplate, workspace: string, chain: ChainBlock): number =>
+const takenBranch = (parsed: ParsedTemplate, workspace: RenderWorkspace, chain: ChainBlock): number =>
   chain.branches.findIndex((branch) => branch.marker === 'else' || conditionHolds(parsed, workspace, branch));
 
 const spansOf = (chain: ChainBlock, taken: number): Span[] =>
@@ -39,7 +39,7 @@ const spansOf = (chain: ChainBlock, taken: number): Span[] =>
 // A marker renders to nothing; the line ending after it stays, so it is the empty line, its \r kept
 const markerText = (source: string): string => (source.endsWith('\r') ? '\r' : '');
 
-function previewLines(parsed: ParsedTemplate, map: TemplateMap, workspace: string): PreviewLine[] {
+function previewLines(parsed: ParsedTemplate, map: TemplateMap, workspace: RenderWorkspace): PreviewLine[] {
   const chains = chainsOf(map.blocks);
   const spans = chains.flatMap((chain) => spansOf(chain, takenBranch(parsed, workspace, chain)));
   const markers = new Set(chains.flatMap((chain) => [...chain.branches.map((branch) => branch.line), chain.endLine]));
@@ -54,7 +54,7 @@ function previewLines(parsed: ParsedTemplate, map: TemplateMap, workspace: strin
 
 /** The template as `workspace` gets it (decisions 23, 24): the delivered header and every body line resolved, the lines that hold joining to
  * exactly renderTemplate's text; the render's errors when it fails. */
-export function previewTemplate(parsed: ParsedTemplate, map: TemplateMap, workspace: string): Preview {
+export function previewTemplate(parsed: ParsedTemplate, map: TemplateMap, workspace: RenderWorkspace): Preview {
   const render = renderTemplate(parsed, workspace);
   if (!render.ok) return render;
   const header = deliveredHeader(parsed);
@@ -66,18 +66,19 @@ export function previewTemplate(parsed: ParsedTemplate, map: TemplateMap, worksp
   return { ok: true, header, lines: body.map((text, index) => ({ text, holds: true, isMarker: false, line: parsed.bodyLine + index })), isExact: false };
 }
 
-// renderTemplate refuses a workspace's whole render when a required variable has no value for it, so that workspace reaches no block
-const isRenderable = (parsed: ParsedTemplate, workspace: string): boolean =>
-  !parsed.variables.some((variable) => variable.required && valueFor(variable, workspace) === null);
+// renderTemplate refuses a workspace's whole render when a required variable has no value for it, or when its value is one a declaration
+// cannot take (#621), so that workspace reaches no block
+const isRenderable = (parsed: ParsedTemplate, workspace: RenderWorkspace): boolean =>
+  !parsed.variables.some((variable) => (variable.required && valueFor(variable, workspace) === null) || workspaceValueProblem(variable, workspace) !== undefined);
 
-/** The workspaces each block of a chain's markers reaches, first match wins (#322, decision 15): one list per marker but the end one. The
- * markers render with each block's index as its only text, so the render's own engine says which block holds, on the very markers. */
-export function markerReach(parsed: ParsedTemplate, markers: readonly string[], workspaces: readonly string[]): string[][] {
+/** The names of the workspaces each block of a chain's markers reaches, first match wins (#322, decision 15): one list per marker but the end
+ * one. The markers render with each block's index as its only text, so the render's own engine says which block holds, on the very markers. */
+export function markerReach(parsed: ParsedTemplate, markers: readonly string[], workspaces: readonly RenderWorkspace[]): string[][] {
   const probe = markers.map((marker, index) => (index < markers.length - 1 ? `${marker}${index}` : marker)).join('');
   const taken = workspaces.map((workspace) => (isRenderable(parsed, workspace) ? renderFragment(parsed, workspace, probe) : undefined));
-  return markers.slice(0, -1).map((_, index) => workspaces.filter((_, at) => taken[at] === String(index)));
+  return markers.slice(0, -1).map((_, index) => workspaces.filter((_, at) => taken[at] === String(index)).map((workspace) => workspace.name));
 }
 
 /** markerReach over the markers ok and insert write (decision 16): unless and == false as the buffer will hold them. */
-export const chainReach = (parsed: ParsedTemplate, chain: ChainSpec, workspaces: readonly string[]): string[][] =>
+export const chainReach = (parsed: ParsedTemplate, chain: ChainSpec, workspaces: readonly RenderWorkspace[]): string[][] =>
   markerReach(parsed, chainMarkers(chain), workspaces);

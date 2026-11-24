@@ -2347,6 +2347,8 @@ export interface CatalogueItem {
 export interface ItemFile { path: string; text: string; savedAt?: string } // savedAt: the file's mtime (ISO), #319; absent for the original's files
 export interface ItemRead { item: CatalogueItem; version: string | null; files: ItemFile[] } // version null: the original
 /** GET /api/lint-input (#327): what the editor's lint reads beside the open file, the catalogue's variables and the plugin's scripts. */
+/** Each workspace's variables by its name (#621): what GET /api/lint-input answers beside the catalogue, and what the editor renders with. */
+export type WorkspaceVariables = Record<string, Record<string, VariableValue>>;
 export interface LintInputRead { catalogue: LintItem[]; scripts: string[] }
 
 /** A conflict's two answers in a version's update (#324): keep the version's text, or take the shipped one. */

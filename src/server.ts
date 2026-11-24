@@ -152,7 +152,7 @@ import {
   CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, LOCAL_MACHINE, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
-  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange,
+  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State, type TreeChange, type VariableValue,
 } from './types.js';
 import { flatten } from './flows.js';
 
@@ -313,7 +313,14 @@ export function createServer(deps: ServerDeps): HiveServer {
   const ghToken = account.selected;
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
   const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
-  const protocolFor = protocolRenderer(passages, log);
+  // #621: a protocol render reads a workspace's values from the config activate is writing, which live holds only once activate returns,
+  // else from the live one
+  let activating: Config | undefined;
+  const valuesOf = (name: string): Record<string, VariableValue> => {
+    const config = activating ?? live?.runtime.config;
+    return (config && workspaceByName(config, name)?.variables) ?? {};
+  };
+  const protocolFor = protocolRenderer(passages, log, valuesOf);
   const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log, protocolFor);
   const workerLsp = createWorkerLsp({ home, log }); // #803: one language-server plugin per workspace, for every claude run in it
   // #459: a run home's daemon renders from its experiment's pinned plugin, the main Hive from its own shipped one
@@ -991,7 +998,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (boundPort === undefined) throw new Error('listen() precisa executar antes de configure()');
     const port = boundPort;
     const { hooksPath, promptsDir, protocol } = await prepareHome(home, port, Object.values(runners), config.mcp.off); // #924: every agent's own files, found or not, as hooks.json always was; #336: the global files drop a turned-off tool's block
-    await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
+    activating = config; // #621: the protocol render reads this config's values
+    try {
+      await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
+    } finally {
+      activating = undefined;
+    }
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
     for (const workspace of config.comb.workspaces) { // each workspace keeps its worktrees in <path>/.hive/ (#179)

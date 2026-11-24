@@ -3,7 +3,7 @@
 // liquidjs and yaml, which both ship browser builds.
 import { Liquid, LiquidError } from 'liquidjs';
 import { type Document, isMap, isNode, isScalar, LineCounter, type Pair, parseDocument, type YAMLError } from 'yaml';
-import type { VariableValue } from './types.js';
+import type { VariableValue, Workspace } from './types.js';
 
 // #621: the config holds it now; template-edit.ts and the editor still import it from here
 export type { VariableValue };
@@ -228,18 +228,50 @@ const hasLiquid = (body: string): boolean => LIQUID_MARK.test(body);
 export const hasDeclarations = (header: Record<string, unknown>): boolean =>
   Object.hasOwn(header, 'variables') || Object.hasOwn(header, 'basedOn');
 
-// An explicit null in workspaces: counts as the workspace's value.
-// #492: a variable from the task renders the {result.<name>} the skills read with hive_task, since the plugin renders per workspace and
-// never knows the task
-export const valueFor = (variable: TemplateVariable, workspace: string): VariableValue => {
-  if (variable.from === TASK_ORIGIN) return `{result.${variable.name}}`;
-  return Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : variable.default;
-};
+/** The workspace a render is for (#621): its name, which is the `workspace` built-in, and its values from the config. The config's Workspace
+ * satisfies it, so a caller passes the workspace as it is. */
+export type RenderWorkspace = Pick<Workspace, 'name' | 'variables'>;
+/** Where a variable's value comes from for a workspace (#621, decision 3). */
+export type ValueSource = 'task' | 'override' | 'workspace' | 'default';
 
-const contextFor = (variables: TemplateVariable[], workspace: string): Record<string, VariableValue> => ({
+// #492: a variable from the task renders the {result.<name>} the skills read with hive_task, since the plugin renders per workspace and
+// never knows the task. #621, decision 3: then first match wins, the template's own workspaces: entry, the workspace's value, the default;
+// an explicit null is a value at each step
+export function valueSource(variable: TemplateVariable, workspace: RenderWorkspace): ValueSource {
+  if (variable.from === TASK_ORIGIN) return 'task';
+  if (Object.hasOwn(variable.workspaces, workspace.name)) return 'override';
+  return Object.hasOwn(workspace.variables, variable.name) ? 'workspace' : 'default';
+}
+
+export function valueFor(variable: TemplateVariable, workspace: RenderWorkspace): VariableValue {
+  const source = valueSource(variable, workspace);
+  if (source === 'task') return `{result.${variable.name}}`;
+  if (source === 'override') return variable.workspaces[workspace.name];
+  return source === 'workspace' ? workspace.variables[variable.name] : variable.default;
+}
+
+/** Why the workspace's value does not hold for this declaration (#621, decision 6), or undefined. The parse already checked the default and
+ * the template's own entries, so only a value read from the workspace can be one the declaration cannot take. */
+export const workspaceValueProblem = (variable: TemplateVariable, workspace: RenderWorkspace): string | undefined =>
+  (valueSource(variable, workspace) === 'workspace' ? valueProblem(variable.kind, variable.values ?? [], workspace.variables[variable.name]) : undefined);
+
+const contextFor = (variables: TemplateVariable[], workspace: RenderWorkspace): Record<string, VariableValue> => ({
   ...Object.fromEntries(variables.map((variable) => [variable.name, valueFor(variable, workspace)])),
-  workspace,
+  workspace: workspace.name,
 });
+
+// What refuses a workspace's whole render before Liquid runs, each at its declaration's line: a required variable with no value, then a
+// workspace value the declaration cannot take (#621, decision 6), as the lint marks both red
+function valueErrors(parsed: ParsedTemplate, workspace: RenderWorkspace): TemplateError[] {
+  const missing = parsed.variables
+    .filter((variable) => variable.required && valueFor(variable, workspace) === null)
+    .map(({ name, line }) => ({ line, variable: name, message: `variable "${name}" is required and has no value for workspace "${workspace.name}"` }));
+  const invalid = parsed.variables.flatMap((variable) => {
+    const problem = workspaceValueProblem(variable, workspace);
+    return problem === undefined ? [] : [{ line: variable.line, variable: variable.name, message: `variable "${variable.name}": the value of workspace "${workspace.name}" ${problem}` }];
+  });
+  return [...missing, ...invalid];
+}
 
 // liquidjs counts lines in the body it rendered; the file line is bodyLine further down.
 /** A Liquid error at its file line, without liquidjs' body-relative position; the lint (#312) reports a parse error the same way. */
@@ -264,14 +296,11 @@ export function deliveredHeader(parsed: ParsedTemplate): string {
   return `${FENCE}\n${delivered.toString({ lineWidth: 0 })}${FENCE}\n`.replace(/\n/g, eol);
 }
 
-export function renderTemplate(parsed: ParsedTemplate, workspace: string): RenderResult {
+export function renderTemplate(parsed: ParsedTemplate, workspace: RenderWorkspace): RenderResult {
   if (parsed.errors.length > 0) return { ok: false, errors: parsed.errors };
   if (!hasDeclarations(parsed.header) && !hasLiquid(parsed.body)) return { ok: true, text: parsed[SOURCE].text };
-  const missing = parsed.variables.filter((variable) => variable.required && valueFor(variable, workspace) === null);
-  if (missing.length > 0) {
-    const message = (name: string): string => `variable "${name}" is required and has no value for workspace "${workspace}"`;
-    return { ok: false, errors: missing.map(({ name, line }) => ({ line, variable: name, message: message(name) })) };
-  }
+  const refused = valueErrors(parsed, workspace);
+  if (refused.length > 0) return { ok: false, errors: refused };
   try {
     const body: string = hasLiquid(parsed.body) ? engine.parseAndRenderSync(parsed.body, contextFor(parsed.variables, workspace)) : parsed.body;
     return { ok: true, text: `${deliveredHeader(parsed)}${body}` };
@@ -295,7 +324,7 @@ export function liquidSyntaxError(parsed: ParsedTemplate): TemplateError | undef
 /** A piece of a body rendered as renderTemplate renders the whole, in the workspace's context (#319): the preview renders line by line and
  * asks Liquid whether a condition holds through it. The piece itself when it holds no Liquid; undefined when Liquid refuses it alone (an
  * unclosed tag, an unknown variable). */
-export function renderFragment(parsed: ParsedTemplate, workspace: string, text: string): string | undefined {
+export function renderFragment(parsed: ParsedTemplate, workspace: RenderWorkspace, text: string): string | undefined {
   if (!hasLiquid(text)) return text;
   try {
     return engine.parseAndRenderSync(text, contextFor(parsed.variables, workspace)) as string;

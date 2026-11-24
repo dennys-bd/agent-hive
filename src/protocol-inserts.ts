@@ -1,6 +1,6 @@
 // The user's protocol passages (#336). No node imports, so the protocol screen's preview (#337) runs the same code.
 import { isProtocolBlockId, PROTOCOL_BLOCKS } from './protocol.js';
-import { liquidSyntaxError, type ParsedTemplate, parseTemplate, renderTemplate, splitHeader, type TemplateError } from './template.js';
+import { liquidSyntaxError, type ParsedTemplate, parseTemplate, renderTemplate, type RenderWorkspace, splitHeader, type TemplateError } from './template.js';
 
 export interface Passage { id: string; text: string } // text: the whole file, header included
 export interface RenderedPassage { id: string; after: string; orphan: boolean; text?: string; errors: TemplateError[] } // text absent on an error
@@ -38,10 +38,10 @@ export const passageAnchor = (text: string): { after: string; orphan: boolean } 
 
 const trimBlankLines = (text: string): string => text.replace(/^(?:[ \t]*\r?\n)+/, '').replace(/(?:\r?\n[ \t]*)+$/, '');
 
-/** Each passage rendered for `workspace` (#336), in the order given: the workspace built-in and its own variables through template.lang.
- * renderTemplate answers the delivered header (after:) with the body, or the whole source when there is nothing to render; only the body is
- * the user's text. A failure answers its errors and no text, for this workspace alone. */
-export function renderPassages(passages: readonly Passage[], workspace: string): RenderedPassage[] {
+/** Each passage rendered for `workspace` (#336), in the order given: the workspace built-in and its own variables through template.ts, its
+ * values from the config included (#621). renderTemplate answers the delivered header (after:) with the body, or the whole source when there
+ * is nothing to render; only the body is the user's text. A failure answers its errors and no text, for this workspace alone. */
+export function renderPassages(passages: readonly Passage[], workspace: RenderWorkspace): RenderedPassage[] {
   return passages.map(({ id, text }) => {
     const parsed = parseTemplate(text);
     const result = renderTemplate(parsed, workspace);
