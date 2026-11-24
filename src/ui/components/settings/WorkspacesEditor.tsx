@@ -23,7 +23,7 @@ import { workspaceNameFor } from '../../../tasks';
 
 interface WorkspacesEditorProps { workspaces: WorkspaceDraft[]; savedNames: readonly string[]; state?: State; onChange(workspaces: WorkspaceDraft[]): void; onCapSaved(workspace: string, cap: number): void }
 interface FieldsProps { row: WorkspaceDraft; n: number; onChange(patch: Partial<WorkspaceDraft>): void }
-interface WorkspaceCardProps extends FieldsProps { machines: readonly MachineStatus[]; canRemove: boolean; saved: boolean; state?: State; onPick(path: string): void; onRemove(): void; onCapSaved(cap: number): void }
+interface WorkspaceCardProps extends FieldsProps { machines: readonly MachineStatus[] | undefined; canRemove: boolean; saved: boolean; state?: State; onPick(path: string): void; onRemove(): void; onCapSaved(cap: number): void }
 
 const STEPS = ['copy', 'run', 'load', 'del'] as const;
 
@@ -110,7 +110,7 @@ function WorkspaceCard({ row, n, machines, canRemove, saved, state, onChange, on
         <WorkspaceRemoveButton name={row.name.trim()} label={remove} isSaved={saved} isDisabled={!canRemove} onRemove={onRemove} />
       </div>
       {/* #933: the machine the workspace runs on, shown only when a distro exists or the saved one is gone */}
-      {showsMachine(machines, row.machine) ? (
+      {machines !== undefined && showsMachine(machines, row.machine) ? (
         <CardGroup title={t('settings.workspaces.machine')} hint={t('settings.workspaces.machineHint')} anchor={settingAnchor('settings.workspaces.machine', row.id)}>
           <WorkspaceMachine row={row} saved={saved} machines={machines} onChange={onChange} />
         </CardGroup>

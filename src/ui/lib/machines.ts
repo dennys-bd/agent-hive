@@ -9,15 +9,21 @@ const AGENT = 'claude'; // the one agent a workspace's worker needs on a distro
 /** A copy line of a distro's problems: its i18n key and params. */
 export interface MachineProblem { key: MessageKey; vars: Record<string, string> }
 
-const isList = (answer: unknown): answer is { machines: MachineStatus[] } => typeof answer === 'object' && answer !== null && Array.isArray((answer as { machines?: unknown }).machines);
+const isStatus = (m: unknown): m is MachineStatus => typeof m === 'object' && m !== null && typeof (m as { id?: unknown }).id === 'string' && typeof (m as { status?: unknown }).status === 'string';
+// a row without a string id or status would throw in render, so any such row makes the whole answer malformed
+const isList = (answer: unknown): answer is { machines: MachineStatus[] } => {
+  const machines = typeof answer === 'object' && answer !== null ? (answer as { machines?: unknown }).machines : undefined;
+  return Array.isArray(machines) && machines.every(isStatus);
+};
 
 /** GET /machines, read once per mount (#933): Settings reads it when the workspaces open, never again until they reopen. A failed or malformed
- *  answer is the local machine alone, so the card shows no field. */
-export function useMachines(): readonly MachineStatus[] {
-  const [machines, setMachines] = useState<readonly MachineStatus[]>(LOCAL_ONLY);
+ *  answer is the local machine alone, so the card shows no field. Undefined until it answers: a saved distro would otherwise flash as not found. */
+export function useMachines(): readonly MachineStatus[] | undefined {
+  const [machines, setMachines] = useState<readonly MachineStatus[]>();
   useEffect(() => {
     let live = true;
-    getJson<unknown>('/machines').then((answer) => { if (live && isList(answer)) setMachines(answer.machines); }, () => undefined);
+    const settle = (list: readonly MachineStatus[]): void => { if (live) setMachines(list); };
+    getJson<unknown>('/machines').then((answer) => settle(isList(answer) ? answer.machines : LOCAL_ONLY), () => settle(LOCAL_ONLY));
     return () => { live = false; };
   }, []);
   return machines;
