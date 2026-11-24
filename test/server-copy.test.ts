@@ -22,6 +22,7 @@ import { tempDir } from './temp-dir.js';
 import { DAY, SESSION, sessionMeta, writeRollout } from './codex-rollouts.js';
 import { NO_PROCESS_LIST } from './process-list.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
+import { copilotOnMachine } from './fixtures/accounts.js';
 
 // Copy (#587) end to end: the routes, the reducer and the pool's launch. maxConcurrent 0: every run below is a session the test opened.
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -324,6 +325,7 @@ async function copilotLocalSource(t: TestContext, two: Two): Promise<string> {
 }
 
 test('a Copilot copy resumes its source and runs /fork behind -i, writes no prompt file, and its notice ends the run\'s instructions file, after the protocol (#875)', async (t) => {
+  copilotOnMachine(t); // #962: not about the account
   const two = await twoActivities(t, COPILOT_ON);
   const source = await copilotLocalSource(t, two);
   await two.server.dispatch({ type: 'copySession', from: { activityId: localActivityId(WORKSPACE), sessionId: source }, to: { activityId: workId(two.server.getState()!, 'local:2') }, name: 'no dois', notice: NOTICE });

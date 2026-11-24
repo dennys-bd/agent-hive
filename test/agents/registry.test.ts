@@ -3,12 +3,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AGENTS } from '../../src/agents.js';
+import type { AccountEnvDeps } from '../../src/account-env.js';
+import type { PlanLimitsDeps } from '../../src/agents/claude-limits.js';
 import { planLimitsReading, runners } from '../../src/agents/registry.js';
 import { transcriptDir } from '../../src/agents/claude-transcript.js';
 import { AGENT_IDS, type AgentId, type RateLimits } from '../../src/types.js';
 import { isTranscriptIn } from '../../src/usage.js';
 import { tempDir } from '../temp-dir.js';
 import { machineWith } from '../fake-machine.js';
+import { NO_ACCOUNTS } from '../fixtures/accounts.js';
 
 test('every agent of AGENT_IDS has a runner (#924)', () => {
   assert.deepEqual(Object.keys(runners).sort(), [...AGENT_IDS].sort());
@@ -31,15 +34,15 @@ test('shared code reads a run\'s transcripts and status line through its agent\'
 test('planLimitsReading reads every agent whose entry has plan limits and lists a failing one with its reason; no reading is no failure (#929)', async () => {
   const reading: RateLimits = { at: '2026-10-12T12:00:00.000Z', windows: { five_hour: { usedPercent: 5, resetsAt: '2026-10-12T15:00:00.000Z' } } };
   const table = (claude: () => Promise<RateLimits | undefined>) => ({ claude: { planLimits: claude }, codex: { planLimits: async () => undefined }, copilot: { planLimits: async () => undefined } });
-  assert.deepEqual(await planLimitsReading(undefined, table(async () => reading)), { readings: [{ agent: 'claude', rateLimits: reading }], failures: [] });
-  assert.deepEqual(await planLimitsReading(undefined, table(async () => { throw new Error('HTTP 401'); })), { readings: [], failures: [{ agent: 'claude', reason: 'HTTP 401' }] });
-  assert.deepEqual(await planLimitsReading(undefined, table(async () => undefined)), { readings: [], failures: [] });
+  assert.deepEqual(await planLimitsReading(undefined, NO_ACCOUNTS, table(async () => reading)), { readings: [{ agent: 'claude', rateLimits: reading }], failures: [] });
+  assert.deepEqual(await planLimitsReading(undefined, NO_ACCOUNTS, table(async () => { throw new Error('HTTP 401'); })), { readings: [], failures: [{ agent: 'claude', reason: 'HTTP 401' }] });
+  assert.deepEqual(await planLimitsReading(undefined, NO_ACCOUNTS, table(async () => undefined)), { readings: [], failures: [] });
 });
 
 test('Codex has plan limits too, and one agent\'s failure never costs another\'s reading (#929)', async () => {
   assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].planLimits), ['claude', 'codex', 'copilot']); // copilot: #879
   const codex: RateLimits = { at: '2026-10-12T12:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-11-01T00:00:00.000Z' } } };
-  const report = await planLimitsReading(undefined, { claude: { planLimits: async () => { throw new Error('no Claude Code OAuth token'); } }, codex: { planLimits: async () => codex }, copilot: { planLimits: async () => undefined } });
+  const report = await planLimitsReading(undefined, NO_ACCOUNTS, { claude: { planLimits: async () => { throw new Error('no Claude Code OAuth token'); } }, codex: { planLimits: async () => codex }, copilot: { planLimits: async () => undefined } });
   assert.deepEqual(report, { readings: [{ agent: 'codex', rateLimits: codex }], failures: [{ agent: 'claude', reason: 'no Claude Code OAuth token' }] });
 });
 
@@ -53,12 +56,12 @@ test('planLimitsReading reads only the listed agents, in AGENT_IDS order, never 
     codex: { planLimits: async () => { read.push('codex'); return codex; } },
     copilot: { planLimits: async () => undefined },
   };
-  assert.deepEqual(await planLimitsReading(['codex'], table), { readings: [{ agent: 'codex', rateLimits: codex }], failures: [] });
+  assert.deepEqual(await planLimitsReading(['codex'], NO_ACCOUNTS, table), { readings: [{ agent: 'codex', rateLimits: codex }], failures: [] });
   // no agent lacks planLimits today: an id outside AGENT_IDS takes the same filter
-  assert.deepEqual(await planLimitsReading(['nope' as AgentId], table), { readings: [], failures: [] });
+  assert.deepEqual(await planLimitsReading(['nope' as AgentId], NO_ACCOUNTS, table), { readings: [], failures: [] });
   const both = { readings: [{ agent: 'claude', rateLimits: claude }, { agent: 'codex', rateLimits: codex }], failures: [] };
-  assert.deepEqual(await planLimitsReading(['codex', 'claude'], table), both, 'AGENT_IDS order, not the list\'s');
-  assert.deepEqual(await planLimitsReading(undefined, table), both);
+  assert.deepEqual(await planLimitsReading(['codex', 'claude'], NO_ACCOUNTS, table), both, 'AGENT_IDS order, not the list\'s');
+  assert.deepEqual(await planLimitsReading(undefined, NO_ACCOUNTS, table), both);
   assert.deepEqual(read, ['codex', 'claude', 'codex', 'claude', 'codex']);
 });
 
@@ -69,4 +72,15 @@ test('Claude Code and Copilot take an MCP config in a headless run, Codex does n
 test('only Copilot takes a copy\'s notice as instructions, and only Claude\'s fork keeps the Hive\'s id (#875)', () => {
   assert.deepEqual(AGENT_IDS.map((id) => runners[id].copyNotice), ['prompt', 'prompt', 'instructions']);
   assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].forkKeepsHiveId), ['claude']);
+});
+
+test('planLimitsReading hands every runner the run seam\'s account deps, so Copilot reads the account its runs use (#962)', async () => {
+  const seen: (AccountEnvDeps | undefined)[] = [];
+  const planLimits = async (deps?: PlanLimitsDeps): Promise<undefined> => {
+    seen.push(deps?.accounts);
+    return undefined;
+  };
+  await planLimitsReading(undefined, NO_ACCOUNTS, { claude: { planLimits }, codex: { planLimits }, copilot: { planLimits } });
+  assert.equal(seen.length, 3);
+  assert.ok(seen.every((accounts) => accounts === NO_ACCOUNTS));
 });

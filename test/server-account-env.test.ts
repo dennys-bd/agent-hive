@@ -7,8 +7,10 @@ import type { AccountCtx } from '../src/agents/runner.js';
 import { runners } from '../src/agents/registry.js';
 import { writeCredentials } from '../src/credentials.js';
 import type { RecordInput } from '../src/facts.js';
+import { createGithubAccount } from '../src/github-account.js';
 import type { OpenResult } from '../src/types.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
+import { LOGGED_OUT } from './fixtures/accounts.js';
 import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt } from './fakes.js';
 import { settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -197,6 +199,28 @@ test('a refusal still answers when the exit it dispatches fails (#953)', async (
   const answer = await register(base, id);
   assert.deepEqual([answer.status, await answer.text()], [200, `refused\n${REFUSAL}`]);
   assert.ok(noToken(lines));
+});
+
+test('the seam hands the runner gh\'s machine login, the GitHub account\'s own, whatever accounts.github selects (#962)', async (t) => {
+  const seen: AccountCtx[] = [];
+  t.mock.method(runners.claude, 'accountEnv', async (ctx: AccountCtx) => {
+    seen.push(ctx);
+    return { env: {} };
+  });
+  const machine = { ...LOGGED_OUT, invalidate: () => {} };
+  const { base, workers } = await start(t, {}, { githubAccount: createGithubAccount({ machine }) });
+  await postJson(`${base}/tasks/${TASK}/open`, { kind: 'claude' });
+  await waitFor(() => workers.length === 1);
+  assert.equal(seen[0]?.machineGithub, machine);
+});
+
+const COPILOT_ON = { agentEnabled: { claude: true, codex: true, copilot: true } };
+
+test('a Copilot session whose account check refuses spawns nothing: gh logged out is copilot/missing, in the bar (#962)', async (t) => {
+  const { base, server, workers } = await start(t, {}, { githubAccount: createGithubAccount({ machine: { ...LOGGED_OUT, invalidate: () => {} } }) }, COPILOT_ON);
+  await postJson(`${base}/tasks/${TASK}/open`, { kind: 'copilot' });
+  await waitFor(() => server.getState()?.error === 'account copilot missing');
+  assert.equal(workers.length, 0);
 });
 
 test('with accounts.github selected, a terminal\'s launch and a captured session\'s reply both carry its GH_TOKEN (#961)', async (t) => {

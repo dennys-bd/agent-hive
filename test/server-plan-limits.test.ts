@@ -1,8 +1,11 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { AccountEnvDeps } from '../src/account-env.js';
+import { createGithubAccount } from '../src/github-account.js';
+import type { GhToken } from '../src/github-token.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { AgentId, PlanLimitsReport, RateLimits, SettingsBody } from '../src/types.js';
+import type { AgentId, PlanLimitsReader, PlanLimitsReport, RateLimits, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { bodyFlows, AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure, fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -208,4 +211,17 @@ test('a named Claude account: the save clears Claude\'s windows, neither the tim
   assert.deepEqual(asked.slice(before), [['codex'], ['codex']], 'the timer and ↻ todos ask the other agents only; the Claude ↻ asks no endpoint');
   assert.equal(server.getState()?.rateLimits?.claude, undefined);
   assert.deepEqual(lines.filter((l) => l.includes('plan limits claude')), [], 'no Claude reason logged');
+});
+
+test('the reader gets the run seam\'s deps: the credential store and gh\'s machine login of the GitHub account (#962)', async (t) => {
+  const machine: GhToken = { login: async () => 'octo', token: async () => 'not-a-real-token-962', invalidate: () => {} };
+  const seen: AccountEnvDeps[] = [];
+  const readPlanLimits: PlanLimitsReader = async (_agents, accounts) => {
+    seen.push(accounts);
+    return claudePlan(HIGH);
+  };
+  const { server } = await start(t, { readPlanLimits, githubAccount: createGithubAccount({ machine }) });
+  await waitFor(() => seen.length > 0);
+  await server.refreshPlanLimits(true);
+  assert.ok(seen.every((accounts) => accounts.machineGithub === machine && typeof accounts.credentials === 'function'));
 });

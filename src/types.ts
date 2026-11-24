@@ -1,3 +1,4 @@
+import type { AccountEnvDeps } from './account-env.js';
 import type { LogLevel } from './log.js';
 import type { PtyHost, PtyKeep } from './pty-host.js';
 import type { TerminalSize } from './terminal-wire.js';
@@ -167,7 +168,8 @@ export type PlanReadings = Partial<Record<AgentId, RateLimits>>;
 /** One read of every agent with plan limits (#929): the readings it got and each failing agent's reason. */
 export interface PlanLimitsReport { readings: { agent: AgentId; rateLimits: RateLimits }[]; failures: { agent: AgentId; reason: string }[] }
 /** `agents`: only these (#223, a chip's ↻); absent, every agent with plan limits. */
-export type PlanLimitsReader = (agents?: readonly AgentId[]) => Promise<PlanLimitsReport>;
+// #962: accounts: the run seam's deps, so a reading (Copilot's) is of the account the runs use
+export type PlanLimitsReader = (agents: readonly AgentId[] | undefined, accounts: AccountEnvDeps) => Promise<PlanLimitsReport>;
 
 /** GraphQL quota of the account the Hive polls with, as last read after a poll; `at` is when it was read. */
 export interface SourceQuota {

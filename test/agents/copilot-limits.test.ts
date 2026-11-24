@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { AccountEnvDeps } from '../../src/account-env.js';
+import { COPILOT_USER_URL } from '../../src/agents/copilot-account.js';
 import { parseCopilotUser, readCopilotPlanLimits } from '../../src/agents/copilot-limits.js';
-import type { Exec } from '../../src/types.js';
+import type { AccountsConfig, Credentials, RateLimits } from '../../src/types.js';
 
 const NOW = new Date('2026-11-18T12:00:00.000Z');
 const RESET = '2026-12-01T00:00:00.000Z';
@@ -41,22 +43,47 @@ test('parseCopilotUser has no reading for an empty object, a missing quota_snaps
   for (const body of cases) assert.equal(parseCopilotUser(body, NOW), undefined, JSON.stringify(body));
 });
 
-const answering = (stdout: string, calls: Parameters<Exec>[] = []): Exec => async (...args) => { calls.push(args); return { stdout }; };
+// #962: the reading takes the token the runs use, over the same GET as the spawn's check, with a fake fetch and a fake gh
+const STORED_TOKEN = 'not-a-real-token-962-stored';
+const MACHINE_TOKEN = 'not-a-real-token-962-machine';
+const STORE = async (): Promise<Credentials> => ({ github: { work: { token: STORED_TOKEN } } });
+const accountsOf = (accounts: AccountsConfig, login = 'octo'): AccountEnvDeps =>
+  ({ accounts, credentials: STORE, machineGithub: { login: async () => login, token: async () => MACHINE_TOKEN } });
 
-test('readCopilotPlanLimits runs gh api with an argv array as gh\'s own login, inherited tokens removed (#879, #180)', async () => {
-  const calls: Parameters<Exec>[] = [];
-  const reading = await readCopilotPlanLimits({ exec: answering(JSON.stringify(FREE), calls), env: { PATH: '/bin', GH_TOKEN: 'inherited' }, now: () => NOW });
-  assert.deepEqual(reading, month(2.4));
-  const [[file, args, opts]] = calls;
-  assert.deepEqual([file, args], ['gh', ['api', '/copilot_internal/user']]);
-  assert.equal(opts?.env?.PATH, '/bin');
-  assert.equal('GH_TOKEN' in (opts?.env ?? {}), false);
-  assert.equal(typeof opts?.timeout, 'number');
+interface FetchCall { url: string; init: RequestInit | undefined }
+function answering(status: number, body: string): { fetch: typeof fetch; calls: FetchCall[] } {
+  const calls: FetchCall[] = [];
+  const doFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    return new Response(body, { status });
+  }) as typeof fetch;
+  return { fetch: doFetch, calls };
+}
+const rejecting = (async () => { throw new TypeError('fetch failed'); }) as typeof fetch;
+const read = (accounts: AccountEnvDeps, doFetch: typeof fetch): Promise<RateLimits> => readCopilotPlanLimits({ accounts, fetch: doFetch, now: () => NOW });
+const bearer = (call: FetchCall | undefined): string | null => new Headers(call?.init?.headers).get('authorization');
+
+test('readCopilotPlanLimits reads /copilot_internal/user with the selected login\'s token, or gh\'s machine token with none; no login check (#962)', async () => {
+  const selected = answering(200, JSON.stringify({ ...FREE, login: 'someone-else' }));
+  assert.deepEqual(await read(accountsOf({ copilot: 'work', github: 'work' }), selected.fetch), month(2.4), 'a mismatch is the spawn\'s to refuse');
+  const machine = answering(200, JSON.stringify(FREE));
+  assert.deepEqual(await read(accountsOf({ github: 'work' }), machine.fetch), month(2.4), 'never accounts.github\'s token');
+  assert.deepEqual([selected.calls[0]?.url, bearer(selected.calls[0]), bearer(machine.calls[0])], [COPILOT_USER_URL, `Bearer ${STORED_TOKEN}`, `Bearer ${MACHINE_TOKEN}`]);
 });
 
-test('readCopilotPlanLimits throws a reason for a failing gh, a non-JSON answer and no usable quota, never gh\'s own words (#879, #557)', async () => {
-  const failing: Exec = async () => { throw new Error('HTTP 401 secret-ish stderr'); };
-  await assert.rejects(readCopilotPlanLimits({ exec: failing, env: {} }), (err: Error) => !err.message.includes('secret-ish'));
-  await assert.rejects(readCopilotPlanLimits({ exec: answering('<html>'), env: {} }), /no JSON/);
-  await assert.rejects(readCopilotPlanLimits({ exec: answering('{}'), env: {} }), /no Copilot quota/);
+test('readCopilotPlanLimits throws a fixed reason for each failure, never the token or the body (#962, #557)', async () => {
+  const cases: [string, Promise<RateLimits>][] = [
+    ['no Copilot token', read(accountsOf({ copilot: 'gone' }), answering(200, JSON.stringify(FREE)).fetch)],
+    ['no Copilot token', read(accountsOf({}, ''), answering(200, JSON.stringify(FREE)).fetch)],
+    ['no Copilot token', readCopilotPlanLimits({ fetch: answering(200, JSON.stringify(FREE)).fetch })],
+    ['Copilot quota read failed: HTTP 401', read(accountsOf({ copilot: 'work' }), answering(401, `{"token":"${STORED_TOKEN}"}`).fetch)],
+    ['Copilot quota read failed: HTTP 404', read(accountsOf({}), answering(404, '{}').fetch)],
+    ['Copilot quota read failed: HTTP 500', read(accountsOf({}), answering(500, '{}').fetch)],
+    ['Copilot quota unreachable', read(accountsOf({}), rejecting)],
+    ['Copilot quota unreachable', read(accountsOf({}), answering(200, '<html>').fetch)],
+    ['no Copilot quota with an entitlement', read(accountsOf({}), answering(200, '{}').fetch)],
+  ];
+  for (const [reason, reading] of cases) {
+    await assert.rejects(reading, (err: Error) => err.message === reason && !err.message.includes(STORED_TOKEN) && !err.message.includes(MACHINE_TOKEN), reason);
+  }
 });

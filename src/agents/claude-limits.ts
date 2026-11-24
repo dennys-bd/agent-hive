@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { collectWindows, isPercent, isRecord, PERCENT_MAX } from '../rate-limits.js';
 import type { Exec, RateLimits, RateLimitWindow } from '../types.js';
+import type { AccountEnvDeps } from '../account-env.js';
 
 // Claude Code's plan limits (#924, out of plan-limits.ts and rate-limits.ts): the OAuth usage endpoint and its token, and the two shapes the
 // Hive reads them in, the status line's JSON and the endpoint's.
@@ -61,6 +62,7 @@ export interface PlanLimitsDeps {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   now?: () => Date;
+  accounts?: AccountEnvDeps; // #962: the run seam's deps; Copilot reads the account its runs use, Claude and Codex ignore it
 }
 
 // The file and the Keychain item hold the same JSON: { claudeAiOauth: { accessToken, refreshToken, expiresAt, … } }. Claude Code

@@ -1,6 +1,7 @@
 // The contract every coding agent's runner meets (#924): a plain object of pure functions, one per agent in registry.ts. Shared code reads an
 // agent's flags, files and formats only through it; the agent's facts (label, command, subcommands, planLimits) stay in agents.ts, which the
 // page reads too.
+import type { GhToken } from '../github-token.js';
 import type { Machine } from '../machine.js';
 import type { Credentials, HookPayload, LaunchArg, RateLimits } from '../types.js';
 import type { TranscriptTurn } from '../usage.js';
@@ -8,9 +9,9 @@ import type { PlanLimitsDeps } from './claude-limits.js';
 
 export type { LaunchArg };
 
-/** What a runner's accountEnv is given (#953): the name Config.accounts selects for the agent's provider (absent: the machine's login) and a
- * reader of the credential store, called only by a runner that needs a token. */
-export interface AccountCtx { selected?: string; credentials(): Promise<Credentials> }
+/** What a runner's accountEnv is given (#953): the name Config.accounts selects for the agent's provider (absent: the machine's login), a
+ * reader of the credential store, called only by a runner that needs a token, and gh's login and token (#962), Copilot's with no selection. */
+export interface AccountCtx { selected?: string; credentials(): Promise<Credentials>; machineGithub: Pick<GhToken, 'login' | 'token'> }
 
 /** An external server as a run receives it (#333): in scope, switched on, its header value resolved from credentials.json. */
 export type RunMcpServer =

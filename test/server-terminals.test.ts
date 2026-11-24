@@ -17,6 +17,7 @@ import { bodyFlows, AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSou
 import { HOST_PATHS } from './fake-machine.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { isListing, listing, strayKill } from './stray-kill.js';
+import { copilotOnMachine } from './fixtures/accounts.js';
 
 // A workspace's kept terminals end to end (#696): the routes, the reducer and the pool's launches. No worker (maxConcurrent 0).
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -283,6 +284,7 @@ test('a codex resume of a conversation a task\'s worktree holds is refused in th
 });
 
 test('a bare copilot register answers Copilot\'s env before its launch argv: no update check, no resume cd, its instructions folder; a new session under the Hive\'s id (#876)', async (t) => {
+  copilotOnMachine(t); // #962: not about the account
   const { base, server } = await start(t);
   const id = await openShell(base);
   const { runId, env, argv } = await copilotReply(t, base, id);
@@ -302,6 +304,7 @@ test('a codex register\'s reply holds no HIVE_MCP_SECRET assignment and no secre
 });
 
 test('copilot --resume <uuid> of a held session registers under that id with no --session-id in the reply; --session-id <new uuid>, --continue and the picker register with none yet (#876)', async (t) => {
+  copilotOnMachine(t); // #962: not about the account
   const { base, server, repo } = await start(t);
   const id = await openShell(base);
   const { runId: first } = await copilotReply(t, base, id);
@@ -320,6 +323,7 @@ test('copilot --resume <uuid> of a held session registers under that id with no 
 });
 
 test('a copilot register writes its instructions under the run\'s own tmp dir; its exit report removes that dir, and so does its Stop (#876)', async (t) => {
+  copilotOnMachine(t); // #962: not about the account
   const { base } = await start(t);
   const id = await openShell(base);
   const exited = await copilotReply(t, base, id);

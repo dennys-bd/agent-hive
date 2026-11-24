@@ -375,7 +375,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
   const runAccounts = createRunAccounts();
-  const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv) });
+  // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's
+  const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv), machineGithub: account.machine });
   const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
   const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, home, facts: wiring.facts, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
@@ -901,7 +902,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const { agentEnabled: enabled, accounts } = live.runtime.config;
     const asked = planLimitAgents(agents).filter((agent) => enabled[agent] && !(agent === 'claude' && accounts.claude !== undefined));
     if (asked.length === 0) return undefined;
-    const { readings, failures } = await read(asked);
+    const { readings, failures } = await read(asked, accountDeps()); // #962: the live selection, the store and gh's login, as a run reads them
     for (const agent of asked) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
     for (const { agent, rateLimits } of readings) await dispatch({ type: 'rateLimits', agent, rateLimits, replace });
     if (readings.length > 0) return undefined;
