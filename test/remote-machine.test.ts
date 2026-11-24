@@ -278,6 +278,19 @@ test('run\'s chunks reach onOutput in order before it resolves with the machine\
   assert.deepEqual(asked, [['fmt', ['a.ts'], '/wt', { A: '1' }, 'x', true]]);
 });
 
+test('a run with no output cap crosses as one: maxBytes Infinity, which JSON writes as null, reaches the machine as Infinity (#948)', async () => {
+  const asked: unknown[] = [];
+  const run: Machine['run'] = async (p) => {
+    asked.push([p.maxBytes, p.tailOnly, p.timeoutMs]);
+    return { code: 0, stdout: Buffer.alloc(0), stderr: '', tail: '' };
+  };
+  const { client } = over(fakeMachine({ run }));
+  // a setup's RUN asks for no cap and only the tail (src/worktree-steps.ts)
+  const result = await client.run({ command: 'sh', args: ['-c', 'true'], cwd: '/wt', env: {}, maxBytes: Number.POSITIVE_INFINITY, tailOnly: true, timeoutMs: 5000 });
+  assert.equal(result.code, 0);
+  assert.deepEqual(asked, [[Number.POSITIVE_INFINITY, true, 5000]]);
+});
+
 test('a run its caller aborts resolves stopped at once with the tail of the chunks so far, and the abort reaches the machine\'s run (#937)', async () => {
   let signal: AbortSignal | undefined;
   const run: Machine['run'] = (p) => new Promise((resolve) => {

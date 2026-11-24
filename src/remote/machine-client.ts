@@ -4,7 +4,7 @@
 import { keepTail, type Machine, MachineError, type MachineFs, type MachineInfo, type MachinePty, pathsOf, type ReadOptions, type RunResult, tailOf } from '../machine.js';
 import { CHANNEL, isRecord, isString } from './frames.js';
 import {
-  asBuffer, asString, asStrings, badAnswer, type BigIntStats, type Dirent, direntsOf, type MachineMethod, machineErrorOf, splitLines, type Stats,
+  asBuffer, asString, asStrings, badAnswer, type BigIntStats, capToWire, type Dirent, direntsOf, type MachineMethod, machineErrorOf, splitLines, type Stats,
   statsOf,
 } from './machine-wire.js';
 import type { Mux } from './protocol.js';
@@ -107,7 +107,7 @@ const runOver = (ask: Ask): Machine['run'] => async (p) => {
     tail = keepTail(tail + data);
   };
   try {
-    return await ask('run', [rest], runResultOf, { signal, onEvent });
+    return await ask('run', [{ ...rest, maxBytes: capToWire(rest.maxBytes) }], runResultOf, { signal, onEvent });
   } catch (err) {
     if (signal?.aborted === true) return { code: STOPPED, stdout: Buffer.alloc(0), stderr: '', tail: tailOf(tail), failure: CANCELLED };
     throw err;
