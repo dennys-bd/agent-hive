@@ -235,6 +235,8 @@ export type JiraConnectError = (typeof JIRA_CONNECT_ERRORS)[number];
 
 /** #955: why a Claude account route refused; #965 maps each to copy. */
 export type ClaudeAccountError = 'name-empty' | 'name-too-long' | 'name-taken' | 'add-pending' | 'unknown' | 'selected';
+/** #955: the longest name a Claude account takes, in characters: nameRefusal refuses past it and #965's refusal copy says it. */
+export const CLAUDE_ACCOUNT_NAME_MAX = 40;
 
 /** #955: the add flow's state as GET /settings/accounts/claude/add answers it. Never the token. */
 export type ClaudeAddStatus =
