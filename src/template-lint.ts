@@ -2,12 +2,11 @@
 // Pure and node-free like src/template.ts: it reads the parse and what the caller gives, never the disk, so the UI runs the same code.
 import { Liquid, type StaticAnalysis } from 'liquidjs';
 import { liquidError, type ParsedTemplate, type RenderWorkspace, renderTemplate, type TemplateVariable, valueFor, workspaceValueProblem } from './template.js';
-import { buildMap, type MapBlock, type MapBranch } from './template-map.js';
 import { type TemplateRef, templateRefs } from './template-refs.js';
 import type { ItemKind } from './types.js';
 
 export type Severity = 'yellow' | 'red';
-export type LintCheck = 'parse' | 'render' | 'undeclared' | 'unused' | 'required' | 'reference' | 'callRequired' | 'heading' | 'taskCondition' | 'value';
+export type LintCheck = 'parse' | 'render' | 'undeclared' | 'unused' | 'required' | 'reference' | 'callRequired' | 'heading' | 'value';
 export interface LintAnnotation {
   line: number;
   severity: Severity;
@@ -95,31 +94,6 @@ export function variableUses(parsed: ParsedTemplate, name: string): number[] {
   if (!('globals' in analysis) || !Object.hasOwn(analysis.globals, name)) return [];
   const lines = analysis.globals[name].map((use) => parsed.bodyLine + use.location.row - 1);
   return [...new Set(lines)].sort((a, b) => a - b);
-}
-
-// A condition's names: the text with its strings taken out, each name's head before a property (branch.size reads branch)
-const QUOTED = /"[^"]*"|'[^']*'/g;
-const NAME_HEAD = /(?<![\w.])([A-Za-z_][\w-]*)/g;
-const namesIn = (text: string): Set<string> => new Set([...text.replace(QUOTED, '').matchAll(NAME_HEAD)].map((match) => match[1]));
-
-const conditionBranches = (blocks: readonly MapBlock[]): MapBranch[] => blocks.flatMap((block): MapBranch[] => {
-  if (block.kind === 'heading') return conditionBranches(block.children);
-  if (block.kind !== 'chain') return [];
-  return block.branches.flatMap((branch) => [...(branch.marker === 'else' ? [] : [branch]), ...conditionBranches(branch.children)]);
-});
-
-// #492: a task's variable renders as the non-empty {result.<name>}, so every preview takes the same branch and the editor cannot say which
-// one the run takes. ponytail: a marker alone on its line only, as the map reads them; an inline {% if %} on a task variable goes unflagged
-function taskConditionFindings(parsed: ParsedTemplate): LintAnnotation[] {
-  const tasked = parsed.variables.filter((variable) => variable.from === 'task').map((variable) => variable.name);
-  if (tasked.length === 0) return [];
-  return conditionBranches(buildMap(parsed).blocks).flatMap((branch) => {
-    const names = namesIn(branch.conditionText);
-    return tasked.filter((name) => names.has(name)).map((name) => finding(
-      branch.line, 'yellow', 'taskCondition', `condition on task variable ${name}`,
-      `"${name}" comes from the task: the preview cannot tell which branch the run takes.`, { variable: name },
-    ));
-  });
 }
 
 // One annotation per variable, naming every workspace that misses it: the editor keys annotations by line
@@ -260,5 +234,5 @@ export function lintTemplate(parsed: ParsedTemplate, input: LintInput): LintAnno
   // Every other check reads the header's variables, so a header that does not parse is answered alone
   if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byPosition);
   const statics = [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...valueFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)];
-  return [...statics, ...renderFindings(parsed, input.workspaces, statics), ...headingFindings(parsed), ...taskConditionFindings(parsed)].sort(byPosition);
+  return [...statics, ...renderFindings(parsed, input.workspaces, statics), ...headingFindings(parsed)].sort(byPosition);
 }

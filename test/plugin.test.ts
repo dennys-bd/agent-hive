@@ -167,7 +167,7 @@ test('no file under assets/plugin names conventions.md, and reference/convention
 test('every shipped template renders a workspace\'s value for each variable it declares as it renders its own entry, and its own entry over a workspace\'s value (#621, decision 3)', async () => {
   for (const path of TEMPLATES) {
     const text = await readFile(join(PLUGIN, path), 'utf8');
-    const declared = parseTemplate(text).variables.filter((v) => v.from === undefined);
+    const declared = parseTemplate(text).variables;
     assert.ok(declared.length > 0, `${path} declares variables`);
     for (const variable of declared) {
       const value = otherValue(variable);
@@ -183,7 +183,7 @@ test('every shipped template renders a workspace\'s value for each variable it d
 test('a shipped template comes back byte for byte once a workspace value is set and removed in its header: what lets the migration find a version equal to its base (#621, decision 9)', async () => {
   for (const path of TEMPLATES) {
     const text = await readFile(join(PLUGIN, path), 'utf8');
-    for (const variable of parseTemplate(text).variables.filter((v) => v.from === undefined)) {
+    for (const variable of parseTemplate(text).variables) {
       const set = edited(setVariableValue(text, variable.name, 'a', otherValue(variable)));
       assert.equal(edited(setVariableValue(set, variable.name, 'a', undefined)), text, `${path}: ${variable.name}`);
     }

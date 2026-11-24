@@ -10,7 +10,7 @@ import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { type MessageKey, t } from '@/i18n';
 
 /** The form's state as the controls hold it: raw strings, '' for none. */
-interface Draft { name: string; isFromTask: boolean; kind: VariableKind; values: string; fallback: string; required: boolean; perWorkspace: Readonly<Record<string, string>> }
+interface Draft { name: string; kind: VariableKind; values: string; fallback: string; required: boolean; perWorkspace: Readonly<Record<string, string>> }
 interface DeclarationProps { draft: Draft; isEditing: boolean; update(patch: Partial<Draft>): void }
 interface WorkspaceProps { draft: Draft; workspaces: readonly string[]; update(patch: Partial<Draft>): void }
 interface DraftValueProps { kind: VariableKind; values: readonly string[]; raw: string; label: string; emptyLabel: string; isDisabled?: boolean; onChange(raw: string): void }
@@ -20,7 +20,6 @@ export interface VariableFormProps {
 }
 
 const MONO_INPUT = 'h-7 px-2 font-mono text-xs';
-const ORIGINS: readonly [boolean, MessageKey][] = [[false, 'plugins.variables.form.byWorkspace'], [true, 'plugins.variables.fromTask']];
 const KINDS: readonly [VariableKind, MessageKey][] = [['text', 'plugins.variables.form.text'], ['list', 'plugins.variables.form.list'], ['boolean', 'plugins.variables.form.boolean']];
 
 const valuesOf = (draft: Draft): string[] => draft.values.split('\n').map((value) => value.trim()).filter((value) => value !== '');
@@ -32,14 +31,13 @@ const KIND_FIELDS: Record<VariableKind, (draft: Draft) => VariableFields> = {
 };
 
 function draftOf(variable: TemplateVariable | undefined, workspaces: readonly string[]): Draft {
-  if (variable === undefined) return { name: '', isFromTask: false, kind: 'text', values: '', fallback: '', required: false, perWorkspace: {} };
+  if (variable === undefined) return { name: '', kind: 'text', values: '', fallback: '', required: false, perWorkspace: {} };
   const perWorkspace = Object.fromEntries(workspaces.map((w) => [w, rawOf(Object.hasOwn(variable.workspaces, w) ? variable.workspaces[w] : undefined)]));
-  return { name: variable.name, isFromTask: variable.from === 'task', kind: variable.kind, values: (variable.values ?? []).join('\n'), fallback: rawOf(variable.default), required: variable.required, perWorkspace };
+  return { name: variable.name, kind: variable.kind, values: (variable.values ?? []).join('\n'), fallback: rawOf(variable.default), required: variable.required, perWorkspace };
 }
 
 // Decision 14: an empty default is null; required writes no default, as the parser refuses both; an empty workspace writes no entry
 function fieldsOf(draft: Draft, workspaces: readonly string[]): VariableFields {
-  if (draft.isFromTask) return { from: 'task' }; // #492: a text whose value is the task's, so the header holds nothing else
   const entries = workspaces.flatMap((w): [string, VariableValue][] => {
     const value = valueOfRaw(draft.kind, draft.perWorkspace[w] ?? '');
     return value === undefined ? [] : [[w, value]];
@@ -51,7 +49,7 @@ function fieldsOf(draft: Draft, workspaces: readonly string[]): VariableFields {
 // Decision 7: an edit rewrites the declaration in place. updateVariable keeps every entry the fields do not name, so a configured workspace
 // whose value was emptied loses its entry first; then a declaration left with none is written with no workspaces: key at all
 function editOf(text: string, draft: Draft, workspaces: readonly string[], variable: TemplateVariable | undefined): EditResult | MessageKey {
-  if (!draft.isFromTask && draft.kind === 'list' && valuesOf(draft).length === 0) return 'plugins.variables.form.noValues';
+  if (draft.kind === 'list' && valuesOf(draft).length === 0) return 'plugins.variables.form.noValues';
   const fields = fieldsOf(draft, workspaces);
   if (variable === undefined) return addVariable(text, { name: draft.name.trim(), ...fields });
   const given = fields.workspaces ?? {};
@@ -74,7 +72,7 @@ function DraftValue({ kind, values, raw, label, emptyLabel, isDisabled = false, 
   return <Input aria-label={label} value={raw} placeholder={emptyLabel} disabled={isDisabled} onChange={(event) => onChange(event.target.value)} className={MONO_INPUT} />;
 }
 
-// A segmented pick of one option: the type's, or the origin's (#492)
+// A segmented pick of one option: the type's
 function Segmented<T>({ label, options, value, onPick }: { label: MessageKey; options: readonly [T, MessageKey][]; value: T; onPick(value: T): void }) {
   return (
     <Field label={t(label)}>
@@ -87,15 +85,12 @@ function Segmented<T>({ label, options, value, onPick }: { label: MessageKey; op
   );
 }
 
-// Name (read-only when editing: a rename would leave the body's uses undeclared) and origin (#492); a variable from the task stops there
-function NameFields({ draft, isEditing, update }: DeclarationProps) {
+// Read-only when editing: a rename would leave the body's uses undeclared
+function NameField({ draft, isEditing, update }: DeclarationProps) {
   return (
-    <>
-      <Field label={t('plugins.variables.form.name')}>
-        <Input aria-label={t('plugins.variables.form.name')} value={draft.name} readOnly={isEditing} onChange={(event) => update({ name: event.target.value })} className={MONO_INPUT} />
-      </Field>
-      <Segmented label="plugins.variables.form.origin" options={ORIGINS} value={draft.isFromTask} onPick={(isFromTask) => update({ isFromTask })} />
-    </>
+    <Field label={t('plugins.variables.form.name')}>
+      <Input aria-label={t('plugins.variables.form.name')} value={draft.name} readOnly={isEditing} onChange={(event) => update({ name: event.target.value })} className={MONO_INPUT} />
+    </Field>
   );
 }
 
@@ -159,10 +154,10 @@ export function VariableForm({ text, workspaces, variable, onApply, onClose }: V
   const title = variable === undefined ? t('plugins.variables.add') : t('plugins.variables.form.editTitle', { name: variable.name });
   return (
     <form aria-label={title} onSubmit={submit} className="flex flex-col gap-2 rounded-md border border-dashed bg-card p-2.5">
-      <NameFields draft={draft} isEditing={variable !== undefined} update={update} />
-      {!draft.isFromTask && <DeclarationFields draft={draft} update={update} />}
-      {!draft.isFromTask && <WorkspaceFields draft={draft} update={update} workspaces={workspaces} />}
-      <p className="text-muted-foreground">{t(draft.isFromTask ? 'plugins.variables.form.taskNote' : 'plugins.variables.form.note')}</p>
+      <NameField draft={draft} isEditing={variable !== undefined} update={update} />
+      <DeclarationFields draft={draft} update={update} />
+      <WorkspaceFields draft={draft} update={update} workspaces={workspaces} />
+      <p className="text-muted-foreground">{t('plugins.variables.form.note')}</p>
       {error && <p role="alert" className="text-destructive">{t(error)}</p>}
       <div className="flex gap-1.5">
         <Button type="submit" size="xs">{t(variable === undefined ? 'plugins.variables.form.create' : 'plugins.variables.form.save')}</Button>

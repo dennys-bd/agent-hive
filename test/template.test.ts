@@ -210,20 +210,10 @@ test('splitHeader answers the header text, the body as a suffix of the text and 
   assert.deepEqual(splitHeader('# No header\n'), { header: '', body: '# No header\n', bodyLine: 1 });
 });
 
-const TASK = ['---', 'name: x', 'variables:', '  planPath: { from: task }', '---', 'Read {{ planPath }}.', ''].join('\n');
-
-test('a variable from the task parses with no value, renders {result.<name>} for every workspace, and refuses type, values, default, required and workspaces (#492)', () => {
-  const parsed = parseTemplate(TASK);
-  assert.deepEqual(parsed.errors, []);
-  assert.deepEqual(parsed.variables, [{ name: 'planPath', kind: 'text', default: null, required: false, workspaces: {}, line: 4, from: 'task' }]);
-  for (const workspace of ['hive', 'hive-site']) {
-    assert.deepEqual(renderTemplate(parsed, at(workspace)), { ok: true, text: '---\nname: x\n---\nRead {result.planPath}.\n' });
-  }
-  for (const [extra, key] of [['type: boolean', 'type'], ['values: [a, b]', 'values'], ['default: a', 'default'], ['required: true', 'required'], ['workspaces: { hive: a }', 'workspaces']] as const) {
-    const [error] = parseTemplate(TASK.replace('{ from: task }', `{ from: task, ${extra} }`)).errors;
-    assert.deepEqual([error?.line, error?.message], [4, `variable "planPath": a variable from the task has no ${key}`]);
-  }
-  assert.equal(parseTemplate(TASK.replace('from: task', 'from: run')).errors[0]?.message, 'variable "planPath": from may only be task');
+test('a declaration with from: is refused like any unknown key: the task origin is gone (#621)', () => {
+  const text = ['---', 'name: x', 'variables:', '  planPath: { from: task }', '---', 'Read {{ planPath }}.', ''].join('\n');
+  const [error] = parseTemplate(text).errors;
+  assert.deepEqual([error?.line, error?.message], [4, 'variable "planPath": unknown key "from" (known: type, values, default, required, workspaces)']);
 });
 
 test('a workspace value renders where the template has no entry of its own; the entry overrides it, the default stands last, and an explicit null counts at each step (#621, decision 3)', () => {
@@ -242,10 +232,10 @@ test('a workspace value renders where the template has no entry of its own; the 
   assert.deepEqual(renderTemplate(required, at('a', { team: 'core' })), { ok: true, text: 'core\n' }, 'a workspace value satisfies required');
 });
 
-test('valueSource names where the value comes from, and a variable from the task keeps {result.<name>} whatever the workspace holds (#621, #492)', () => {
-  const [dir, plan] = parseTemplate('---\nvariables:\n  dir: { default: d, workspaces: { a: o } }\n  plan: { from: task }\n---\n{{ dir }} {{ plan }}\n').variables;
+test('valueSource names where the value comes from: the override, the workspace value, the default (#621)', () => {
+  const [dir] = parseTemplate('---\nvariables:\n  dir: { default: d, workspaces: { a: o } }\n---\n{{ dir }}\n').variables;
   assert.deepEqual([valueSource(dir, at('a', { dir: 'w' })), valueSource(dir, at('b', { dir: 'w' })), valueSource(dir, at('b'))], ['override', 'workspace', 'default']);
-  assert.deepEqual([valueSource(plan, at('a', { plan: 'x' })), valueFor(plan, at('a', { plan: 'x' }))], ['task', '{result.plan}']);
+  assert.deepEqual([valueFor(dir, at('a', { dir: 'w' })), valueFor(dir, at('b', { dir: 'w' })), valueFor(dir, at('b'))], ['o', 'w', 'd']);
 });
 
 test('a workspace value a declaration cannot take fails that workspace\'s render at the declaration\'s line, and no other workspace\'s (#621, decision 6)', () => {
