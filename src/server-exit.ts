@@ -1,10 +1,9 @@
-import { realpath } from 'node:fs/promises';
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import { ranAgent } from './agents.js';
 import { taskWorkspace } from './config.js';
 import { isUuid } from './uuid.js';
 import { runSessionId } from './record-kit.js';
-import type { MachineFor } from './machine.js';
+import type { Machine, MachineFor } from './machine.js';
 import type { Runtime } from './server.js';
 import { findTranscript } from './transcript.js';
 import type { Activity, AgentId, Config, HiveEvent, State } from './types.js';
@@ -30,9 +29,9 @@ function runToCheck(state: State, config: Pick<Config, 'comb'>, ptyId: string, m
 }
 
 // The cwd as the Hive spelled it and as the agent may see it: a workspace reached through a symbolic link names another transcript dir once
-// resolved, and checking only one would forget a session whose transcript sits in the other
-export async function cwdsOf(cwd: string): Promise<string[]> {
-  const real = await realpath(cwd).catch(() => cwd); // a cwd gone from the disk: its own spelling is all there is
+// resolved, and checking only one would forget a session whose transcript sits in the other. Resolved on the run's machine (#882)
+export async function cwdsOf(machine: Pick<Machine, 'fs'>, cwd: string): Promise<string[]> {
+  const real = await machine.fs.realpath(cwd).catch(() => cwd); // a cwd gone from the disk: its own spelling is all there is
   return real === cwd ? [cwd] : [cwd, real];
 }
 
@@ -44,7 +43,8 @@ export async function exitEvent(live: Live | undefined, ptyId: string, machineFo
   try {
     const run = live && runToCheck(live.state, live.runtime.config, ptyId, machineFor);
     if (run === undefined) return plain;
-    const found = await findTranscript(machineFor(run.activity), await cwdsOf(run.cwd), run.id, run.agent);
+    const machine = machineFor(run.activity);
+    const found = await findTranscript(machine, await cwdsOf(machine, run.cwd), run.id, run.agent);
     return found === undefined ? { ...plain, noTranscript: true } : plain;
   } catch {
     return plain;

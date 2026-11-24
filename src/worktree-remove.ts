@@ -25,7 +25,7 @@ export async function removeWorktree(
   const path = worktreePath(machine.paths, repo, slugOfWork(activity));
   const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path, machine.paths);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
-  await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, machine.paths, exec); // #653: inside out, forced as the outer removal is
+  await removeNested(machine, { path: repo, nestedRepos: nested }, path, fallback ?? undefined, true); // #653: inside out, forced as the outer removal is
   // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
   if (await exists(machine, path)) await git('worktree', 'remove', '--force', '--force', '--', path);
   await git('worktree', 'prune');
@@ -78,14 +78,14 @@ export async function cleanWorktree(
   const found = named !== undefined && (await hasBranch(machine, repo, named)) ? named : undefined;
   if (present) {
     await refuseDirty(path, exec);
-    await refuseDirtyNested(nestedOf, path, machine.paths, exec); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
+    await refuseDirtyNested(machine, nestedOf, path); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
   }
   const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
   // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway
   const byPr = found !== undefined && check?.merged === false ? await mergedByPr(machine, repo, found, prs, log) : undefined;
   if (found !== undefined && check?.merged === false && byPr === undefined && unmerged === 'refuse') throw unmergedError(found, check.target);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
-  await removeNested(nestedOf, path, named, false, machine.paths, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
+  await removeNested(machine, nestedOf, path, named, false); // #653: inside out; a gone outer folder holds none, so this only prunes
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
   if (found === undefined) return;
   // #660: branch -d refuses a squashed branch whatever was checked; update-ref deletes only the tip mergedByPr verified, so a commit made since

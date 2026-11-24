@@ -160,7 +160,7 @@ export async function nestedRefusal(next: { comb: Pick<CombConfig, 'workspaces'>
   for (const workspace of reached) {
     const machine = machineFor(workspace);
     for (const path of workspace.nestedRepos) {
-      const problem = await nestedRepoProblem(workspace.path, path, machine.paths, machine.exec);
+      const problem = await nestedRepoProblem(machine, workspace.path, path);
       if (problem) return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: nested repo ${path}: ${nestedProblemText(path, problem)}` };
     }
   }

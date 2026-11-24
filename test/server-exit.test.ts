@@ -5,12 +5,12 @@ import { join } from 'node:path';
 import { activityOf, localActivityId } from '../src/activities.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { parseConfig } from '../src/config.js';
-import type { Machine } from '../src/machine.js';
+import { type Machine, MachineError } from '../src/machine.js';
 import { initialState } from '../src/orchestrator.js';
-import { exitEvent } from '../src/server-exit.js';
+import { cwdsOf, exitEvent } from '../src/server-exit.js';
 import type { Activity, Item, State, Worker } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { HOST_PATHS, machineWith } from './fake-machine.js';
+import { fakeMachine, HOST_PATHS, machineWith } from './fake-machine.js';
 import { combConfig, LOCAL_STAGES, WORKSPACE } from './fakes.js';
 import { withLocal, withWork } from './fixtures/work.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
@@ -76,4 +76,11 @@ test('exitEvent never flags a run whose transcript dir it cannot look into: a ch
   await chmod(projects, 0o000); // stat answers EACCES, never ENOENT
   t.after(() => chmod(projects, 0o700)); // registered after tempDir's removal, so it runs first
   assert.deepEqual(await exitEvent(live(withRun()), RUN, () => machineWith({ claudeConfigDir: root })), { type: 'exit', ptyId: RUN });
+});
+
+test('cwdsOf resolves the cwd with the machine\'s realpath: both spellings when it differs, the cwd alone when it is real or the realpath fails (#882)', async () => {
+  const linked = fakeMachine({ fs: { realpath: async () => '/real/wt' } });
+  const real = fakeMachine({ fs: { realpath: async (path: string) => path } });
+  const gone = fakeMachine({ fs: { realpath: async (path: string) => { throw new MachineError(`ENOENT: ${path}`, { code: 'ENOENT' }); } } });
+  assert.deepEqual([await cwdsOf(linked, '/wt'), await cwdsOf(real, '/wt'), await cwdsOf(gone, '/wt')], [['/wt', '/real/wt'], ['/wt'], ['/wt']]);
 });

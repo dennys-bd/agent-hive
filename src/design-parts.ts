@@ -1,12 +1,8 @@
 // Shared parts of design screens (#421): a screen includes markup fragments of its folder, and the design frame route assembles it before
 // serving, so the frame still gets one document and its policy stays as it is. assets/plugin/scripts/check-hv.mjs keeps a copy of these
 // rules, since the plugin is copied out of the repository; test/plugin-scripts.test.ts keeps the two in step.
-import { execFile } from 'node:child_process';
-import { constants } from 'node:fs';
-import { open, realpath } from 'node:fs/promises';
-import { promisify } from 'node:util';
 import { attrOf, enclosingStart, matchingEnds, scanTags, type Tag, topLevelStarts } from './design-markup.js';
-import { type Machine, pathsOf } from './machine.js';
+import { type Machine, MachineError, pathsOf } from './machine.js';
 
 // A part's src and git's paths are `/` on every machine, so these two work in POSIX space whatever the disk's flavour is.
 const GIT_PATHS = pathsOf('linux');
@@ -222,33 +218,27 @@ async function fillsOf(inner: string, at: At, run: Run): Promise<Map<string, str
   return new Map(entries);
 }
 
+const ELOOP = 'ELOOP';
+// A read's refusal as the notice words it (#882): a link at the open, a part past the cap; anything else (a FIFO, a folder, a file gone) is not found
+const READ_REFUSALS = new Map<MachineError['code'], PartReason>([[ELOOP, PART_REASONS.symlink], [MachineError.TOO_LARGE, PART_REASONS.tooLarge]]);
+
 /** The route's reader: a regular file whose realpath is its own path under `folder`, itself a real path, so a symbolic link anywhere on the
- *  way is refused, one to a file inside included, as check-hv refuses every link. The file is opened with O_NOFOLLOW and sized through the
- *  handle, so a link swapped in after the realpath check is refused as well, and a part over PART_BYTES_MAX is not read (#421). */
-export function readPartFrom(folder: string, paths: Machine['paths']): ReadPart {
+ *  way is refused, one to a file inside included, as check-hv refuses every link. The machine reads it with noFollow and sizes it on the
+ *  handle (#882), so a link swapped in after the realpath check is refused as well, and a part over PART_BYTES_MAX is not read (#421). */
+export function readPartFrom(machine: Pick<Machine, 'fs' | 'paths'>, folder: string): ReadPart {
   return async (path) => {
-    const asked = paths.resolve(folder, path);
-    const real = await realpath(asked).catch(() => undefined);
+    const asked = machine.paths.resolve(folder, path);
+    const real = await machine.fs.realpath(asked).catch(() => undefined);
     if (real === undefined) return { refused: PART_REASONS.missing };
     if (real !== asked) return { refused: PART_REASONS.symlink };
-    const handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch((err: NodeJS.ErrnoException) => err);
-    if (handle instanceof Error) return { refused: handle.code === 'ELOOP' ? PART_REASONS.symlink : PART_REASONS.missing };
     try {
-      const info = await handle.stat();
-      if (!info.isFile()) return { refused: PART_REASONS.missing }; // a FIFO or a device is no part
-      if (info.size > PART_BYTES_MAX) return { refused: PART_REASONS.tooLarge };
-      const bytes = await handle.readFile();
-      return bytes.length > PART_BYTES_MAX ? { refused: PART_REASONS.tooLarge } : { text: bytes.toString('utf8') };
-    } catch {
-      return { refused: PART_REASONS.missing };
-    } finally {
-      await handle.close();
+      return { text: (await machine.fs.readFile(real, { maxBytes: PART_BYTES_MAX, noFollow: true })).toString('utf8') };
+    } catch (err) {
+      return { refused: (err instanceof MachineError ? READ_REFUSALS.get(err.code) : undefined) ?? PART_REASONS.missing };
     }
   };
 }
 
-// ponytail: node's execFile, not the injected Exec, which answers strings only; a design's images need the bytes. Argv only, as every git call
-const gitRun = promisify(execFile);
 const LS_TREE_ROW = /^(\d{6}) (\S+) ([0-9a-f]+) +(\d+|-)\t(.*)$/s;
 const REGULAR_MODES = new Set(['100644', '100755']);
 const SYMLINK_MODE = '120000';
@@ -256,10 +246,10 @@ const SYMLINK_MODE = '120000';
 /** One path's entry in a commit's tree (#675): its mode, type, blob id and size, from one `ls-tree -l`. */
 export interface GitEntry { mode: string; type: string; oid: string; size: number }
 
-export async function gitEntry(top: string, commit: string, path: string): Promise<GitEntry | undefined> {
+export async function gitEntry(machine: Pick<Machine, 'exec'>, top: string, commit: string, path: string): Promise<GitEntry | undefined> {
   try {
     // literal pathspecs: a * or a :(magic) in a design's path names that path alone; -z: a path is never quoted
-    const { stdout } = await gitRun('git', ['-C', top, '--literal-pathspecs', 'ls-tree', '-l', '-z', commit, '--', path], { encoding: 'utf8' });
+    const { stdout } = await machine.exec('git', ['-C', top, '--literal-pathspecs', 'ls-tree', '-l', '-z', commit, '--', path]);
     const rows = stdout.split('\0').filter((row) => row !== '');
     const row = rows.length === 1 ? LS_TREE_ROW.exec(rows[0]) : null;
     if (row === null || row[5] !== path) return undefined;
@@ -272,19 +262,26 @@ export async function gitEntry(top: string, commit: string, path: string): Promi
 /** A blob of mode 100644 or 100755: never a link (120000), a tree or a submodule. */
 export const isRegularBlob = (entry: GitEntry): boolean => entry.type === 'blob' && REGULAR_MODES.has(entry.mode);
 
-export async function gitBlob(top: string, oid: string, max: number): Promise<Buffer> {
-  return (await gitRun('git', ['-C', top, 'cat-file', 'blob', oid], { encoding: 'buffer', maxBuffer: max + 1 })).stdout;
+/** A blob's bytes (#675), through machine.run, which answers bytes where exec answers text (#882). Rejects as execFile did, on an exit that is
+ *  not 0, a failure or output past max + 1 bytes, so a caller's catch still reads it as not found. env names only what git needs: on a
+ *  remote machine it is the whole environment. */
+export async function gitBlob(machine: Pick<Machine, 'run' | 'info'>, top: string, oid: string, max: number): Promise<Buffer> {
+  const { path, homedir } = machine.info();
+  const result = await machine.run({ command: 'git', args: ['-C', top, 'cat-file', 'blob', oid], cwd: top, env: { PATH: path, HOME: homedir }, maxBytes: max + 1 });
+  if (result.code !== 0 || result.failure !== undefined) throw new MachineError(`git cat-file: ${result.failure ?? result.code}`, { code: result.code, stderr: result.stderr });
+  return result.stdout;
 }
 
-/** The before frame's reader (#675): a part as `commit` holds it under `folder` (git's path space), refused as readPartFrom refuses one: a
- *  link (mode 120000) as a symbolic link, anything but a regular blob as not found, one past PART_BYTES_MAX as too large, before it is read. */
-export function readPartFromGit(top: string, commit: string, folder: string): ReadPart {
+/** The before frame's reader (#675): a part as `commit` holds it under `folder` (git's path space), on the machine of the token (#882), refused
+ *  as readPartFrom refuses one: a link (mode 120000) as a symbolic link, anything but a regular blob as not found, one past PART_BYTES_MAX as
+ *  too large, before it is read. */
+export function readPartFromGit(machine: Pick<Machine, 'exec' | 'run' | 'info'>, top: string, commit: string, folder: string): ReadPart {
   return async (path) => {
-    const entry = await gitEntry(top, commit, GIT_PATHS.join(folder, path));
+    const entry = await gitEntry(machine, top, commit, GIT_PATHS.join(folder, path));
     if (entry?.mode === SYMLINK_MODE) return { refused: PART_REASONS.symlink };
     if (entry === undefined || !isRegularBlob(entry)) return { refused: PART_REASONS.missing };
     if (entry.size > PART_BYTES_MAX) return { refused: PART_REASONS.tooLarge };
-    const bytes = await gitBlob(top, entry.oid, PART_BYTES_MAX).catch(() => undefined);
+    const bytes = await gitBlob(machine, top, entry.oid, PART_BYTES_MAX).catch(() => undefined);
     return bytes === undefined ? { refused: PART_REASONS.missing } : { text: bytes.toString('utf8') };
   };
 }

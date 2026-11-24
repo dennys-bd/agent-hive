@@ -167,7 +167,7 @@ async function openTaskSession(deps: OpenDeps, current: LiveView, record: Activi
   }
   // #586: a worktree session with no transcript would open an empty conversation under its id too; an agent with no dir per cwd (Codex,
   // #931) finds its own, as openLocal skips it
-  if (!session.repo && runners[session.agent].transcriptDir(machine, dir) !== undefined && (await findTranscript(machine, await cwdsOf(dir), resume, session.agent)) === undefined) {
+  if (!session.repo && runners[session.agent].transcriptDir(machine, dir) !== undefined && (await findTranscript(machine, await cwdsOf(machine, dir), resume, session.agent)) === undefined) {
     return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
   }
   await answerOpen(deps, await deps.dispatch({ type: 'openSession', activityId: record.id, continueId: resume }, size), res);

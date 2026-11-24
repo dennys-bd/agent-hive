@@ -1,31 +1,59 @@
-// The local machine's disk (#158, split out by #161): node:fs/promises as MachineFs, with readFile's cap, writeAtomic and readLines, and the watch (#935). A file
+// The local machine's disk (#158, split out by #161): node:fs/promises as MachineFs, with readFile's cap and noFollow (#882), writeAtomic and readLines, and the watch (#935). A file
 // of its own so a host-only reader (codex-limits.ts: the account's plan limits) takes the host's disk without importing machine-local.ts,
 // whose pty half reaches agents/registry.ts and back: that cycle would read localFs before it is defined.
 import { randomBytes } from 'node:crypto';
-import { createReadStream, type FSWatcher, watch as fsWatch } from 'node:fs';
-import { access, appendFile, chmod, copyFile, cp, link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { constants, createReadStream, type FSWatcher, watch as fsWatch } from 'node:fs';
+import { access, appendFile, chmod, copyFile, cp, link, lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { type Machine, MachineError, type MachineFs, toMachineError } from './machine.js';
+import { type Machine, MachineError, type MachineFs, type ReadOptions, toMachineError } from './machine.js';
 import { replaceFile } from './replace-file.js';
 
 const MODE_BITS = 0o7777;
 
+const ELOOP = 'ELOOP';
+// win32 has neither O_NOFOLLOW nor O_NONBLOCK: both are undefined there, so | leaves O_RDONLY, and the lstat before the open is the guard
+const NO_FOLLOW = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+
 const tooLarge = (maxBytes: number): MachineError => new MachineError(`file over ${maxBytes} bytes`, { code: MachineError.TOO_LARGE });
+const notFile = (path: string): MachineError => new MachineError(`not a regular file: ${path}`, { code: MachineError.NOT_FILE });
+const symbolicLink = (path: string): MachineError => new MachineError(`a symbolic link: ${path}`, { code: ELOOP });
 
 // Only a regular file's size means anything (a FIFO or a device would hold the read forever), so it is checked before the cap
 async function checkFile(path: string, maxBytes: number): Promise<void> {
   const info = await stat(path);
-  if (!info.isFile()) throw new MachineError(`not a regular file: ${path}`, { code: MachineError.NOT_FILE });
+  if (!info.isFile()) throw notFile(path);
   if (info.size > maxBytes) throw tooLarge(maxBytes);
 }
 
-// The cap is checked on the stat, so an oversized file is never read; and again on the bytes, for a file that grew in between
-function readCapped(path: string, options: { maxBytes: number; encoding: BufferEncoding }): Promise<string>;
-function readCapped(path: string, options: { maxBytes: number }): Promise<Buffer>;
-async function readCapped(path: string, { maxBytes, encoding }: { maxBytes: number; encoding?: BufferEncoding }): Promise<string | Buffer> {
+async function readChecked(path: string, maxBytes: number): Promise<Buffer> {
   await checkFile(path, maxBytes);
-  const bytes = await readFile(path);
+  return readFile(path);
+}
+
+// noFollow (#882): a link as the last component is refused, by lstat on every OS and again by O_NOFOLLOW at the open where the OS has it, so
+// one swapped in between is refused too. The handle is stat'ed and read, so the file checked is the file read; O_NONBLOCK opens a FIFO
+// without waiting for a writer, and its stat then refuses it
+async function readNoFollow(path: string, maxBytes: number): Promise<Buffer> {
+  if ((await lstat(path)).isSymbolicLink()) throw symbolicLink(path);
+  const handle = await open(path, NO_FOLLOW).catch((err: NodeJS.ErrnoException) => {
+    throw err.code === ELOOP ? symbolicLink(path) : err;
+  });
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw notFile(path);
+    if (info.size > maxBytes) throw tooLarge(maxBytes);
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+
+// The cap is checked on the stat, so an oversized file is never read; and again on the bytes, for a file that grew in between
+function readCapped(path: string, options: ReadOptions & { encoding: BufferEncoding }): Promise<string>;
+function readCapped(path: string, options: ReadOptions): Promise<Buffer>;
+async function readCapped(path: string, { maxBytes, encoding, noFollow }: ReadOptions & { encoding?: BufferEncoding }): Promise<string | Buffer> {
+  const bytes = noFollow === true ? await readNoFollow(path, maxBytes) : await readChecked(path, maxBytes);
   if (bytes.length > maxBytes) throw tooLarge(maxBytes);
   return encoding === undefined ? bytes : bytes.toString(encoding);
 }

@@ -10,7 +10,7 @@ import { isStranded, strandedRepo, strandedRows, worktreeRepo } from '../src/wor
 import { withWork } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
 import { pathsOf } from '../src/machine.js';
-import { HOST_PATHS } from './fake-machine.js';
+import { fakeMachine, HOST_PATHS, statsOf } from './fake-machine.js';
 
 // #746: the repo a removed workspace's worktree belongs to, read from the path and confirmed by one git listing.
 
@@ -27,6 +27,8 @@ const fakeExec = (stdout: string | Error): { exec: Exec; calls: string[][] } => 
   };
   return { exec, calls };
 };
+const linux = { paths: pathsOf('linux') };
+const win32 = { paths: pathsOf('win32') };
 
 test('isStranded is true when the activity\'s workspace names none in the Comb', () => {
   const config = { comb: { workspaces: [{ name: 'live' }] } } as Parameters<typeof isStranded>[0];
@@ -35,10 +37,10 @@ test('isStranded is true when the activity\'s workspace names none in the Comb',
 });
 
 test('worktreeRepo cuts the repo off a path that ends exactly at .hive/worktrees/<slug>, whichever the platform', () => {
-  assert.equal(worktreeRepo(activityAt(`/work/repo/.hive/worktrees/${SLUG}`), task, pathsOf('linux')), '/work/repo');
-  assert.equal(worktreeRepo(activityAt(`C:\\work\\repo\\.hive\\worktrees\\${SLUG}`), task, pathsOf('win32')), 'C:\\work\\repo');
-  assert.equal(worktreeRepo(activityAt(`C:/work/repo/.hive/worktrees/${SLUG}`), task, pathsOf('win32')), 'C:\\work\\repo');
-  assert.equal(worktreeRepo({ ...activityAt(`/r/.hive/worktrees/hive-1-other`), slug: undefined }, { ...task, item: { ...task.item, title: 'other' } }, pathsOf('linux')), '/r', 'the slug falls back to the task title\'s');
+  assert.equal(worktreeRepo(linux, activityAt(`/work/repo/.hive/worktrees/${SLUG}`), task), '/work/repo');
+  assert.equal(worktreeRepo(win32, activityAt(`C:\\work\\repo\\.hive\\worktrees\\${SLUG}`), task), 'C:\\work\\repo');
+  assert.equal(worktreeRepo(win32, activityAt(`C:/work/repo/.hive/worktrees/${SLUG}`), task), 'C:\\work\\repo');
+  assert.equal(worktreeRepo(linux, { ...activityAt(`/r/.hive/worktrees/hive-1-other`), slug: undefined }, { ...task, item: { ...task.item, title: 'other' } }), '/r', 'the slug falls back to the task title\'s');
 });
 
 test('worktreeRepo answers undefined for any other shape', () => {
@@ -46,9 +48,9 @@ test('worktreeRepo answers undefined for any other shape', () => {
     `/work/repo/.hive/worktrees/${SLUG}/`, `/work/repo/.hive/worktrees/${SLUG}/sub`, `/work/repo/.hive/worktrees/${SLUG}x`, `/work/repo/.hive/worktrees/hive-9-else`,
     `/work/repo/worktrees/${SLUG}`, `/work/repo/.hive/${SLUG}`, `/work/a/.hive/worktrees/b/../../../repo/.hive/worktrees/${SLUG}`, `/work/repo/./.hive/worktrees/${SLUG}`, `.hive/worktrees/${SLUG}`, `relative/.hive/worktrees/${SLUG}`, `/.hive/worktrees/${SLUG}`, '',
   ];
-  for (const shape of shapes) assert.equal(worktreeRepo(activityAt(shape), task, pathsOf('linux')), undefined, shape);
-  assert.equal(worktreeRepo(activityAt(undefined), task, pathsOf('linux')), undefined);
-  assert.equal(worktreeRepo(activityAt(`/work/repo/.hive/worktrees/${SLUG}`, { local: true }), task, pathsOf('linux')), undefined);
+  for (const shape of shapes) assert.equal(worktreeRepo(linux, activityAt(shape), task), undefined, shape);
+  assert.equal(worktreeRepo(linux, activityAt(undefined), task), undefined);
+  assert.equal(worktreeRepo(linux, activityAt(`/work/repo/.hive/worktrees/${SLUG}`, { local: true }), task), undefined);
 });
 
 test('strandedRepo confirms the repo when git lists the slug\'s worktree', async (t) => {
@@ -57,7 +59,7 @@ test('strandedRepo confirms the repo when git lists the slug\'s worktree', async
   const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(worktree, { recursive: true });
   const { exec, calls } = fakeExec(listing(repo, [SLUG]));
-  assert.deepEqual(await strandedRepo(activityAt(worktree), task, exec, HOST_PATHS), { repo });
+  assert.deepEqual(await strandedRepo(fakeMachine({ exec }), activityAt(worktree), task), { repo });
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], ['-C', repo, '-c', 'core.fsmonitor=false', 'worktree', 'list', '--porcelain']);
 });
@@ -67,49 +69,62 @@ test('strandedRepo does not confirm a folder git does not list while the folder 
   await mkdir(join(repo, '.git'));
   const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(worktree, { recursive: true });
-  assert.equal(await strandedRepo(activityAt(worktree), task, fakeExec(listing(repo, [])).exec, HOST_PATHS), undefined);
+  assert.equal(await strandedRepo(fakeMachine({ exec: fakeExec(listing(repo, [])).exec }), activityAt(worktree), task), undefined);
 });
 
 test('strandedRepo confirms a worktree folder already gone from disk when git answers in the repo', async (t) => {
   const repo = await tempDir(t, 'stranded-');
   await mkdir(join(repo, '.git'));
   await mkdir(join(repo, '.hive', 'worktrees'), { recursive: true });
-  assert.deepEqual(await strandedRepo(activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task, fakeExec(listing(repo, [])).exec, HOST_PATHS), { repo });
+  assert.deepEqual(await strandedRepo(fakeMachine({ exec: fakeExec(listing(repo, [])).exec }), activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task), { repo });
 });
 
 test('strandedRepo answers undefined on a git failure', async (t) => {
   const repo = await tempDir(t, 'stranded-');
   await mkdir(join(repo, '.git'));
   const { exec } = fakeExec(new Error('fatal: not a git repository'));
-  assert.equal(await strandedRepo(activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task, exec, HOST_PATHS), undefined);
+  assert.equal(await strandedRepo(fakeMachine({ exec }), activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task), undefined);
 });
 
 test('strandedRepo runs no git for a repo folder that is gone or a path of another shape', async (t) => {
   const repo = await tempDir(t, 'stranded-');
   await mkdir(join(repo, '.git'));
   const { exec, calls } = fakeExec(listing(repo, [SLUG]));
-  assert.equal(await strandedRepo(activityAt(worktreePath(HOST_PATHS, join(repo, 'missing'), SLUG)), task, exec, HOST_PATHS), undefined);
-  assert.equal(await strandedRepo(activityAt(join(repo, 'elsewhere')), task, exec, HOST_PATHS), undefined);
+  assert.equal(await strandedRepo(fakeMachine({ exec }), activityAt(worktreePath(HOST_PATHS, join(repo, 'missing'), SLUG)), task), undefined);
+  assert.equal(await strandedRepo(fakeMachine({ exec }), activityAt(join(repo, 'elsewhere')), task), undefined);
   assert.deepEqual(calls, []);
 });
 
 test('strandedRepo runs no git in a repo folder with no .git of its own, which a parent repository would answer for', async (t) => {
   const repo = await tempDir(t, 'stranded-');
   const { exec, calls } = fakeExec(listing(repo, []));
-  assert.equal(await strandedRepo(activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task, exec, HOST_PATHS), undefined);
+  assert.equal(await strandedRepo(fakeMachine({ exec }), activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task), undefined);
   assert.equal(calls.length, 0);
 });
 
 test('worktreeRepo refuses a . or .. slug and a UNC path on Windows', () => {
-  for (const slug of ['.', '..']) assert.equal(worktreeRepo(activityAt(`/work/repo/.hive/worktrees/${slug}`, { slug }), task, pathsOf('linux')), undefined, slug);
-  assert.equal(worktreeRepo(activityAt(`\\\\host\\share\\.hive\\worktrees\\${SLUG}`), task, pathsOf('win32')), undefined);
-  assert.equal(worktreeRepo(activityAt(`C:\\work\\repo\\.hive\\worktrees\\${SLUG}`), task, pathsOf('win32')), 'C:\\work\\repo');
+  for (const slug of ['.', '..']) assert.equal(worktreeRepo(linux, activityAt(`/work/repo/.hive/worktrees/${slug}`, { slug }), task), undefined, slug);
+  assert.equal(worktreeRepo(win32, activityAt(`\\\\host\\share\\.hive\\worktrees\\${SLUG}`), task), undefined);
+  assert.equal(worktreeRepo(win32, activityAt(`C:\\work\\repo\\.hive\\worktrees\\${SLUG}`), task), 'C:\\work\\repo');
 });
 
 test('strandedRepo does not confirm a gone worktree in a repo the Hive never made worktrees in', async (t) => {
   const repo = await tempDir(t, 'stranded-');
   await mkdir(join(repo, '.git'));
-  assert.equal(await strandedRepo(activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task, fakeExec(listing(repo, [])).exec, HOST_PATHS), undefined);
+  assert.equal(await strandedRepo(fakeMachine({ exec: fakeExec(listing(repo, [])).exec }), activityAt(worktreePath(HOST_PATHS, repo, SLUG)), task), undefined);
+});
+
+test('strandedRepo reads the disk through its machine: a repo its stat and realpath answer for is confirmed, joined with its paths, on any host (#882)', async () => {
+  const stats: string[] = [];
+  const stat = async (path: string) => {
+    stats.push(path);
+    return statsOf('folder');
+  };
+  const worktree = `/work/repo/.hive/worktrees/${SLUG}`;
+  const { exec } = fakeExec(`worktree /work/repo\nHEAD 1\n\nworktree ${worktree}\nHEAD 2\n`);
+  const machine = fakeMachine({ exec, fs: { stat, realpath: async (path: string) => path }, info: { platform: 'linux' } });
+  assert.deepEqual(await strandedRepo(machine, activityAt(worktree), task), { repo: '/work/repo' });
+  assert.deepEqual(stats, ['/work/repo/.git', worktree]);
 });
 
 // #747: GET /worktrees' rows of stranded task activities. `live` is the only workspace in the Comb. Git answers each repo's listing from
@@ -149,7 +164,7 @@ test('strandedRows answers a stranded task activity\'s own worktree under its re
     [second, { workspace: 'live', slug: slugFor(second.item), worktree: worktreePath(HOST_PATHS, repo, slugFor(second.item)) }],
   ]);
   const { exec } = rowsExec({ [repo]: listing(repo, [SLUG, 'hive-9-other']) }, { ignored: 'docs/\0' });
-  const rows = await strandedRows(state, CONFIG, exec, HOST_PATHS);
+  const rows = await strandedRows(fakeMachine({ exec }), state, CONFIG);
   assert.deepEqual(rows.map((r) => [r.workspace, r.slug, r.path, r.task?.id, r.task?.activityId, r.orphan, r.nested, r.workspaceGone]), [
     ['gone', SLUG, worktreePath(HOST_PATHS, repo, SLUG), 'board:I1', 'a-board:I1', undefined, [{ path: 'docs', uncommitted: 1 }], true],
   ]);
@@ -160,7 +175,7 @@ test('strandedRows answers nothing and runs no git for a local stranded activity
   const local = strandedState([[task, { workspace: 'gone', slug: SLUG, worktree: worktreePath(HOST_PATHS, repo, SLUG), local: true }]]);
   const state = withWork(local, 'board:I9', { workspace: 'gone', slug: 'hive-9-kept', worktree: worktreePath(HOST_PATHS, repo, 'hive-9-kept') }); // its task left (#861)
   const { exec, calls } = rowsExec({ [repo]: listing(repo, [SLUG, 'hive-9-kept']) });
-  assert.deepEqual(await strandedRows(state, CONFIG, exec, HOST_PATHS), []);
+  assert.deepEqual(await strandedRows(fakeMachine({ exec }), state, CONFIG), []);
   assert.deepEqual(calls, []);
 });
 
@@ -175,5 +190,5 @@ test('strandedRows drops only the rows of a stranded activity whose repo git doe
     [third, { workspace: 'older', slug: slugFor(third.item), worktree: worktreePath(HOST_PATHS, bare, slugFor(third.item)) }],
   ]);
   const { exec } = rowsExec({ [kept]: listing(kept, [SLUG]), [broken]: listing(broken, [slugFor(second.item)]) }, { failing: broken });
-  assert.deepEqual((await strandedRows(state, CONFIG, exec, HOST_PATHS)).map((r) => [r.workspace, r.slug]), [['gone', SLUG]]);
+  assert.deepEqual((await strandedRows(fakeMachine({ exec }), state, CONFIG)).map((r) => [r.workspace, r.slug]), [['gone', SLUG]]);
 });

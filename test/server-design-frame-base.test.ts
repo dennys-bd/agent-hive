@@ -21,7 +21,7 @@ import { HOST_PATHS } from './fake-machine.js';
 // GET /activities/:id/design-frame-base (#675) and the frame route under its tokens, over a real repository: the first commit is the task's
 // base (BASE_REF), the second changes the screen and its part, and the disk changes both again. Only the routes' git runs for real
 const run: Exec = promisify(execFile);
-const ROUTE_GIT = ['rev-parse', 'cat-file', 'merge-base'];
+const ROUTE_GIT = ['rev-parse', 'cat-file', 'merge-base', 'ls-tree']; // #882: ls-tree runs through the machine's exec now
 const exec: Exec = (file, args, opts) => (file === 'git' && ROUTE_GIT.some((command) => args.includes(command)) ? run(file, args, opts) : Promise.resolve({ stdout: '' }));
 const SLUG = 'hive-1-design';
 const BASE_REF = 'hive-675-base';
