@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fitValue, parseTweaks, sameState, settle, type TweakSchema } from '../src/design-tweaks.js';
+import { fitValue, parseTweaks, sameState, settle, shownTweaks, type TweakSchema } from '../src/design-tweaks.js';
+import type { DesignTweakValue } from '../src/types.js';
 
 const BLOCK = {
   layout: { options: ['board', 'list', 'grid'], default: 'board', group: 'look' },
@@ -81,4 +82,65 @@ test('parseTweaks refuses a viewports that is not a non-empty list of strings, n
   assert.equal(reasonOf(['desktop', 'natural']), 'viewports: unknown viewport "natural"'); // natural is always offered, never declared
   assert.equal(reasonOf(['watch']), 'viewports: unknown viewport "watch"');
   assert.equal(reasonOf(['mobile', 'mobile']), 'viewports must be unique');
+});
+
+// #1034: a when on each type, a list, and a chain (icons names density, itself conditional)
+const CONDITIONAL = {
+  layout: { options: ['board', 'list', 'grid'], default: 'board' },
+  auto: { type: 'boolean', default: true },
+  title: { type: 'text', default: 'Fluxo' },
+  gap: { type: 'number', default: 8, min: 0, max: 24 },
+  density: { options: ['comfortable', 'compact'], default: 'comfortable', when: { layout: 'list' } },
+  dense: { type: 'boolean', default: false, when: { layout: ['list', 'grid'], auto: false, title: 'Fluxo', gap: 8 } },
+  icons: { type: 'boolean', default: true, when: { density: 'compact' } },
+};
+
+test('parseTweaks keeps a when naming any type, a single value as a list of one, and a chain; a tweak without one has no when key (#1034)', () => {
+  const schema = schemaOf(CONDITIONAL);
+  assert.deepEqual(schema.map((tweak) => tweak.when), [
+    undefined, undefined, undefined, undefined,
+    { layout: ['list'] }, { layout: ['list', 'grid'], auto: [false], title: ['Fluxo'], gap: [8] }, { density: ['compact'] },
+  ]);
+  assert.equal(Object.hasOwn(schema[0], 'when'), false);
+});
+
+test('parseTweaks refuses a when that is not a non-empty object, names a tweak not declared above it, lists no, repeated or too many values, or a value its tweak does not take, each with its reason (#1034)', () => {
+  const reasonOf = (when: unknown): string | undefined => {
+    const parsed = parseTweaks({ layout: CONDITIONAL.layout, gap: CONDITIONAL.gap, density: { ...CONDITIONAL.density, when } });
+    return parsed.ok ? undefined : parsed.reason;
+  };
+  const SHAPE = 'density: when must be a non-empty object of tweak name to value';
+  assert.deepEqual([reasonOf(null), reasonOf('list'), reasonOf(['list']), reasonOf({})], [SHAPE, SHAPE, SHAPE, SHAPE]);
+  for (const other of ['density', 'nope', 'viewports']) { // itself, unknown, the reserved key
+    assert.equal(reasonOf({ [other]: true }), `density: when names "${other}", not a tweak declared above it`);
+  }
+  assert.deepEqual(
+    parseTweaks({ first: { type: 'boolean', default: true, when: { later: true } }, later: { type: 'boolean', default: true } }),
+    { ok: false, reason: 'first: when names "later", not a tweak declared above it' },
+  );
+  const LIST = 'density: when: layout\'s values must be a non-empty list of unique values, at most 64';
+  const many = Array.from({ length: 65 }, (_, i) => `o${i}`);
+  assert.deepEqual([reasonOf({ layout: [] }), reasonOf({ layout: ['list', 'list'] }), reasonOf({ layout: many })], [LIST, LIST, LIST]);
+  assert.equal(reasonOf({ layout: 'tiles' }), 'density: when: "tiles" does not fit layout');
+  assert.equal(reasonOf({ layout: ['list', 'tiles'] }), 'density: when: "tiles" does not fit layout');
+  assert.equal(reasonOf({ gap: 30 }), 'density: when: 30 does not fit gap');
+  assert.equal(reasonOf({ gap: '8' }), 'density: when: "8" does not fit gap');
+  assert.equal(reasonOf({ layout: 'list', gap: 8 }), undefined);
+});
+
+test('shownTweaks shows a tweak whose when holds on the settled values: every key (AND), any value of a key\'s list (OR), text and number exactly, never under a tweak not shown (#1034)', () => {
+  const schema = schemaOf(CONDITIONAL);
+  const shown = (values: Record<string, DesignTweakValue>): string[] => [...shownTweaks(schema, values)];
+  const ALWAYS = ['layout', 'auto', 'title', 'gap'];
+  assert.deepEqual(shown({}), ALWAYS);
+  assert.deepEqual(shown({ layout: 'list' }), [...ALWAYS, 'density']);
+  assert.deepEqual(shown({ layout: 'list', density: 'compact' }), [...ALWAYS, 'density', 'icons']);
+  assert.deepEqual(shown({ layout: 'board', density: 'compact' }), ALWAYS); // icons' parent is not shown
+  assert.deepEqual(shown({ layout: 'grid', auto: false }), [...ALWAYS, 'dense']); // grid is in dense's list
+  assert.deepEqual(shown({ layout: 'list', auto: false }), [...ALWAYS, 'density', 'dense']);
+  assert.deepEqual(shown({ layout: 'grid', auto: true }), ALWAYS); // every key must hold
+  assert.deepEqual(shown({ layout: 'grid', auto: false, title: 'fluxo' }), ALWAYS); // text exactly
+  assert.deepEqual(shown({ layout: 'grid', auto: false, gap: 12 }), ALWAYS); // number exactly
+  assert.deepEqual(shown({ layout: 'grid', auto: false, gap: 99 }), [...ALWAYS, 'dense']); // 99 settles to the default 8
+  assert.equal(shownTweaks([], {}).size, 0);
 });
