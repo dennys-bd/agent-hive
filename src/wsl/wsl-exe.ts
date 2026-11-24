@@ -47,9 +47,11 @@ export function wslEnv(vars: Record<string, string>, hostEnv: NodeJS.ProcessEnv)
 
 const utf16 = (b: Buffer): string => b.toString('utf16le');
 
-/** The names `wsl.exe -l -q` lists. [] when wsl.exe is missing or fails, which is how no distro installed shows. */
-export async function listDistros(deps: WslDeps): Promise<string[]> {
-  const { file, args } = { file: deps.command[0] ?? '', args: [...deps.command.slice(1), '-l', '-q'] };
+/** The names `wsl.exe -l -q` lists, or with `running` the ones `wsl.exe -l --running -q` lists (#946): both print bare names, so no
+ *  localized `-l -v` table is parsed. [] when wsl.exe is missing or fails, which is how no distro installed shows. */
+export async function listDistros(deps: WslDeps, { running = false }: { running?: boolean } = {}): Promise<string[]> {
+  const list = running ? ['-l', '--running', '-q'] : ['-l', '-q'];
+  const { file, args } = { file: deps.command[0] ?? '', args: [...deps.command.slice(1), ...list] };
   try {
     const { stdout } = await deps.run(file, args, { encoding: 'buffer', env: wslEnv({}, deps.env), timeout: LIST_TIMEOUT_MS, windowsHide: true });
     return utf16(stdout).replace(/[\0\r]/g, '').split('\n').map((l) => l.trim()).filter(Boolean);
