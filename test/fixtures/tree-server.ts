@@ -47,7 +47,7 @@ export async function startTree(t: TestContext, tasks: (repo: string) => WithWor
     if (args.includes('ls-files')) return { stdout: LISTED };
     return { stdout: args.includes('status') ? STATUS : '' };
   };
-  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec), ...extra });
+  const server = createServer({ secret: SECRET, home, ...extra, exec: withToplevel(extra.exec ?? exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

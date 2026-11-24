@@ -1302,9 +1302,9 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, current)) ?? (await nestedRefusal(config)) ?? setupRefusal(config) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964)
+    const refusal = (await workspacesRefusal(config, machineFor, current)) ?? (await nestedRefusal(config, machineFor, current?.config)) ?? setupRefusal(config, machineFor) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964); #932: each workspace on its machine
     if (refusal) {
-      res.status(refusal.status).json({ error: refusal.message });
+      res.status(refusal.status).json({ error: refusal.message, code: refusal.code, machine: refusal.machine, reason: refusal.reason }); // #932: an unavailable machine's id and why; absent fields drop out
       return;
     }
     // An entry whose baked-in parts match the live runtime's keeps its instance, so a write already in flight keeps its chain (#180: per source).

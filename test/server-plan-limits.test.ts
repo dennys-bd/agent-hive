@@ -33,7 +33,7 @@ async function waitFor(check: () => boolean): Promise<void> {
 
 async function start(t: TestContext, extra: Partial<ServerDeps>, configure = true): Promise<{ base: string; server: HiveServer }> {
   const { home, repo } = await tempHive(t);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: withToplevel(async () => ({ stdout: '' })), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, ...extra, exec: withToplevel(extra.exec ?? (async () => ({ stdout: '' }))) });
   const base = `http://127.0.0.1:${await server.listen(0)}`;
   t.after(() => server.close());
   if (configure) assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...BODY })).status, 200);

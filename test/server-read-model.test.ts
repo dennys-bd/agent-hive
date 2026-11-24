@@ -24,7 +24,10 @@ const postJson = (url: string, body: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body) });
 
 // gh's login is bia (its hosts.yml, #503) and every workspace's origin is acme/hive
-const exec: Exec = async (file) => ({ stdout: file === 'gh' ? 'bia\n' : `git@github.com:${REPO}.git\n` });
+const exec: Exec = async (file, args) => {
+  if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
+  return { stdout: file === 'gh' ? 'bia\n' : `git@github.com:${REPO}.git\n` };
+};
 const ghToken: GhToken = { login: async () => 'bia', token: async () => { throw new Error('no token in this test'); }, invalidate: () => undefined };
 const githubAccount = () => createGithubAccount({ machine: ghToken }); // one per server: use() is that server's
 

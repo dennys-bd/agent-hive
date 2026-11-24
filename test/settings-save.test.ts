@@ -4,10 +4,14 @@ import { execFile } from 'node:child_process';
 import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedMessage, strandedTasks } from '../src/settings-save.js';
-import type { AccountsConfig, Flow, SourceConfig, Stage, Task } from '../src/types.js';
-import { CONFIG_FILE } from '../src/config.js';
+import { movedStages, nestedRefusal, renamedRules, renamedSwitchAt, configFrom, stageRenamesOf, strandedMessage, strandedTasks, workspacesRefusal } from '../src/settings-save.js';
+import type { AccountsConfig, Flow, SourceConfig, Stage, Task, Workspace } from '../src/types.js';
+import { CONFIG_FILE, parseConfig } from '../src/config.js';
+import type { MachineFor } from '../src/machine.js';
+import { NOT_SUPPORTED, unavailableMachine } from '../src/machines.js';
+import { initialState } from '../src/orchestrator.js';
 import { combConfig, GITHUB_ENTRY, workspacesAt } from './fakes.js';
+import { fakeMachine, fakeWsl } from './fake-machine.js';
 import { tempDir } from './temp-dir.js';
 
 const SAVED: Stage[] = [{ name: 'spec', from: {} }, { name: 'dev', from: {} }, { name: 'qa', from: {} }];
@@ -38,10 +42,42 @@ test('nestedRefusal names the workspace, the nested path and the cause with its 
   await run('git', ['-C', repo, 'init', '--quiet', 'docs']);
   await mkdir(join(repo, 'docs', 'agent'));
   const config = (nestedRepos: string[]) => ({ comb: { workspaces: [{ ...workspacesAt(repo)[0], nestedRepos }] } });
-  assert.equal(await nestedRefusal(config(['docs'])), undefined);
-  assert.deepEqual(await nestedRefusal(config(['docs', 'docs/agent'])), {
+  const onHost = (): ReturnType<MachineFor> => fakeMachine({ exec: run });
+  assert.equal(await nestedRefusal(config(['docs']), onHost), undefined);
+  assert.deepEqual(await nestedRefusal(config(['docs', 'docs/agent']), onHost), {
     status: 400, message: "hive: nested repo docs/agent: docs/agent is not a git repository's top level · the top level is docs · use docs",
   });
+});
+
+// #932: workspaces on a fake host and a fake distro; no folder exists, so each realpath answers the path as given, less a trailing slash
+const at = (name: string, path: string, machine: string): Workspace => ({ ...workspacesAt(path)[0], name, machine });
+const configOf = (workspaces: Workspace[]) => parseConfig(combConfig({ workspaces, stages: [{ name: 'dev', from: {} }] }));
+const slashless = async (path: string): Promise<string> => path.replace(/\/$/, '');
+const host = fakeMachine({ fs: { realpath: slashless } });
+
+test('workspacesRefusal checks each folder on its own machine: one folder on two machines is no pair, and the distro\'s git names its problem (#932)', async () => {
+  const distro = fakeWsl('X', { fs: { realpath: slashless } });
+  const machineFor: MachineFor = (w) => (w.machine === 'wsl:X' ? distro : host);
+  assert.equal(await workspacesRefusal(configOf([at('hive', '/home/u/r', 'local'), at('site', '/home/u/r/', 'wsl:X')]), machineFor), undefined);
+  assert.deepEqual(await workspacesRefusal(configOf([at('hive', '/home/u/r', 'local'), at('site', '/home/u/r/', 'local')]), machineFor),
+    { status: 400, message: 'workspaces hive and site point at the same folder' }, 'the same two paths on one machine are the pair');
+  const broken = fakeWsl('X', { exec: async () => { throw Object.assign(new Error('Command failed: git'), { stderr: 'fatal: not a git repository\n' }); } });
+  const refused = await workspacesRefusal(configOf([at('site', '/home/u/r', 'wsl:X')]), () => broken);
+  assert.equal(refused?.status, 400);
+  assert.match(refused?.message ?? '', /^\/home\/u\/r is not a git repository/);
+});
+
+test('a workspace on an unavailable machine is skipped when the save keeps it unchanged, and is the 409 when the save adds or changes it (#932)', async () => {
+  const down = unavailableMachine('wsl:Y', NOT_SUPPORTED);
+  const machineFor: MachineFor = (w) => (w.machine === 'wsl:Y' ? down : host);
+  const kept = configOf([at('hive', '/home/u/r', 'local'), at('docs', '/home/u/docs', 'wsl:Y')]);
+  const live = { config: kept, state: initialState(0) };
+  assert.equal(await workspacesRefusal(kept, machineFor, live), undefined, 'same name, path and machine: unchecked');
+  assert.equal(await nestedRefusal(kept, machineFor, kept), undefined);
+  const unavailable = { status: 409, message: 'machine wsl:Y is unavailable: not_supported', code: 'machine_unavailable', machine: 'wsl:Y', reason: 'not_supported' };
+  assert.deepEqual(await workspacesRefusal(kept, machineFor), unavailable, 'a first setup: new');
+  const moved = configOf([at('hive', '/home/u/r', 'local'), at('docs', '/home/u/elsewhere', 'wsl:Y')]);
+  assert.deepEqual(await workspacesRefusal(moved, machineFor, live), unavailable, 're-pathed: changed');
 });
 
 const TWO: Flow[] = [

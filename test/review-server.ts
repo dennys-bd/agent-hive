@@ -51,7 +51,7 @@ export async function startReviews(t: TestContext, extra: Partial<ServerDeps> = 
     if (args.includes('merge-base')) return { stdout: `${'a'.repeat(40)}\n` };
     return { stdout: args.includes('diff') ? DIFF_TEXT : '' };
   };
-  const server = createServer({ secret: SECRET, home, exec: withToplevel(exec), ...extra });
+  const server = createServer({ secret: SECRET, home, ...extra, exec: withToplevel(extra.exec ?? exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

@@ -77,6 +77,7 @@ async function start(t: TestContext, setup: string, gitHeld?: Promise<void>, mac
   await mkdir(gitDir, { recursive: true });
   const { log, lines } = fakeLog();
   const exec: Exec = async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932), never held: withToplevel answers the folder
     lines.push(`GIT ${args.join(' ')}`);
     await gitHeld; // a test holds the spawn in its git
     if (args.includes('worktree') && args.includes('add')) await mkdir(args[args.indexOf('--') + 1], { recursive: true });

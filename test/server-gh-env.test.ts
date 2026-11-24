@@ -27,7 +27,7 @@ async function pollEnvs(t: TestContext, accounts: Record<string, string>): Promi
   const envs: (NodeJS.ProcessEnv | undefined)[] = [];
   const exec: Exec = async (file, _args, opts) => {
     if (file === 'gh') envs.push(opts?.env);
-    return { stdout: JSON.stringify({ data: {} }) };
+    return { stdout: file === 'gh' ? JSON.stringify({ data: {} }) : '' }; // #932: git's answer stays empty, so the save's top level is the folder
   };
   const server = createServer({ secret: SECRET, home, exec: withToplevel(exec), credentialsEnv, githubLogin: { env: credentialsEnv } });
   const port = await server.listen(0);

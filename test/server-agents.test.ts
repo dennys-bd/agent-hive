@@ -49,7 +49,7 @@ async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BO
     calls.push([file, ...args]);
     return { stdout: '' };
   };
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, exec: withToplevel(exec), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, ...extra, exec: withToplevel(extra.exec ?? exec) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

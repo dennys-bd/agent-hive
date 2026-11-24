@@ -226,7 +226,8 @@ test('POST /activities/:id/evaluate/stop ends the evaluation, stopped, with no v
   const { home, repo } = await tempHive(t);
   const local: Task = { ...TASK, auto: false, created: true };
   await saveState(home, { ...initialState(1), localCount: 1, tasks: [local] });
-  const exec: Exec = (file) => (file === 'git' ? new Promise(() => undefined) : Promise.resolve({ stdout: '' })); // the evaluation stays in its worktree step
+  // the evaluation stays in its worktree step; the save's workspace check (#932) answers, and withToplevel names the folder
+  const exec: Exec = (file, args) => (file === 'git' && !args.includes('--show-toplevel') ? new Promise(() => undefined) : Promise.resolve({ stdout: '' }));
   const server = createServer({ secret: SECRET, home, exec: withToplevel(exec) });
   const port = await server.listen(0);
   t.after(() => server.close());

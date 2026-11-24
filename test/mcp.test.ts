@@ -54,7 +54,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
   const { facts, records } = fakeFacts();
-  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, exec: withToplevel(async () => ({ stdout: '' })), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: factory, launchPty: fakeSpawn().spawn, log, facts, ...extra, exec: withToplevel(extra.exec ?? (async () => ({ stdout: '' }))) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;

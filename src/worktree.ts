@@ -46,7 +46,7 @@ export const exists = (machine: Pick<Machine, 'fs'>, path: string): Promise<bool
 /**
  * Why `path` cannot be the Comb's workspace, undefined when it can (#202). It must be absolute and the top level of a git work tree: every
  * worktree command runs `git -C <workspace>`. git answers the top level by its real path (/private/var on macOS), so both sides go
- * through realpath. Its callers without a machine hand LOCAL_DISK, the real git and disk: the settings save and the boot's proposal each run it once.
+ * through realpath. On the workspace's machine (#932); the boot's proposal, before any workspace exists, runs it on the host's own disk.
  */
 export async function workspacePathProblem(machine: Pick<Machine, 'exec' | 'fs' | 'paths'>, path: string): Promise<string | undefined> {
   if (!machine.paths.isAbsolute(path)) return `${path}: the workspace folder must be an absolute path`;

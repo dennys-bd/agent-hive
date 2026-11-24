@@ -95,7 +95,7 @@ const idle = (body: Omit<SettingsBody, 'workspaces'> = BODY): Omit<SettingsBody,
 async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BODY, log?: Logger, spawnOptions: FakeSpawnOptions = {}, extra: Partial<ServerDeps> = {}): Promise<Started> {
   const { home, repo } = await tempHive(t, NO_WORKER.has(body) ? 0 : 1);
   const { spawn, workers } = fakeSpawn(spawnOptions);
-  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, exec: withToplevel(noGit), ...extra });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: spawn, log, ...extra, exec: withToplevel(extra.exec ?? noGit) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -182,6 +182,7 @@ function fakeGit(failing?: string): { exec: Exec; calls: string[][]; clear(): vo
 function refsGit(answers: { listing?: string; heads?: string[]; remotes?: string[]; refs?: string[] } = {}): { exec: Exec; calls: string[][]; answers: typeof answers } {
   const calls: string[][] = [];
   const exec: Exec = async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     const command = args.slice(2);
     calls.push(command);
     if (command[0] === 'worktree' && command[1] === 'list') return { stdout: answers.listing ?? '' };
@@ -351,6 +352,7 @@ test('a spawn creates the task worktree before the worker exists and launches it
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     calls.push([file, ...args]);
     if (args.includes('rev-parse')) throw new Error('not a ref'); // the branch does not exist yet: the add creates it
     return { stdout: '' };
@@ -366,6 +368,7 @@ test('a spawn creates the task worktree before the worker exists and launches it
 test('git refusing to create the worktree is a spawnFailed: the worker frees, the task keeps git\'s own words and no worker starts', async (t) => {
   const stderr = "fatal: 'hive/1-from-ready' is already checked out at '/repo/.claude/worktrees/hive-1-from-ready'\n";
   const exec: Exec = async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     if (args.includes('add')) throw Object.assign(new Error('Command failed: git …'), { stderr });
     if (args.includes('rev-parse')) throw new Error('not a ref');
     return { stdout: '' };
@@ -377,7 +380,10 @@ test('git refusing to create the worktree is a spawnFailed: the worker frees, th
   assert.equal(work0(server)?.error, SPAWN_FAILED + stderr.trim(), 'git\'s words, not execFile\'s command line');
   // A git that answers nothing at all (no repository, no git on PATH) fails at the very first command: the base step tolerates
   // its own failures, but without a listing there is no worktree to hand the worker, so the task stops here too.
-  const broken = await start(t, BODY, undefined, {}, { exec: async () => { throw new Error('fatal: not a git repository'); } });
+  const broken = await start(t, BODY, undefined, {}, { exec: async (_file, args) => {
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's check passes (#932): the spawn is what this git fails
+    throw new Error('fatal: not a git repository');
+  } });
   await waitFor(() => work0(broken.server)?.error !== undefined);
   assert.equal(broken.workers.length, 0);
   assert.equal(work0(broken.server)?.error, `${SPAWN_FAILED}fatal: not a git repository`);
@@ -1250,6 +1256,7 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   let refuse = true; // the listing itself is refused: the first git call, so the failure carries its stderr and nothing else runs
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     listings.push([file, ...args]);
     if (refuse) throw Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { stderr: `${message}\n` });
     return { stdout: '' }; // nothing listed, no branch on the task: nothing to remove, the delete activity is done
@@ -1407,6 +1414,7 @@ test('the first spawn refreshes the base and creates the worktree through deps.e
   const spawned: number[] = []; // how many workers had started when each git command ran
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     calls.push([file, ...args]);
     spawned.push(workers.length);
     return { stdout: '' }; // nothing resolves origin/main here: the start falls back to the local base
@@ -1443,6 +1451,7 @@ test('a worktree git already lists on the task\'s branch is adopted: no fetch, n
   const calls: string[][] = [];
   const exec: Exec = async (file, args) => {
     if (file === 'codex') return { stdout: '' }; // #694: the cache's boot read is not a git call
+    if (args.includes('--show-toplevel')) return { stdout: '' }; // the save's workspace check (#932): withToplevel answers the folder
     calls.push([file, ...args]);
     return { stdout: args.includes('list') ? listing : '' };
   };

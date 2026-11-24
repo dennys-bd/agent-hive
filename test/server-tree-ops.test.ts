@@ -132,8 +132,9 @@ test('tree/file writes an untitled buffer to the dialog\'s absolute path and ans
 
 test('tree/trash runs its trash command with the activity\'s machine\'s exec and platform, never the host\'s exec (#160)', async (t) => {
   const ran: [string, string[]][] = [];
-  // the worktree is the host's real temp folder, so its paths stay the host's; only the trash command's platform is the machine's (#929)
-  const machine = { ...fakeMachine({ exec: async (file, args) => { ran.push([file, [...args]]); return { stdout: '' }; }, info: { platform: 'linux' } }), paths: HOST_PATHS };
+  // the worktree is the host's real temp folder, so its paths stay the host's; only the trash command's platform is the machine's (#929).
+  // The save's workspace check (#932) runs on this machine too, so its top-level read is left out
+  const machine = { ...fakeMachine({ exec: async (file, args) => { if (!args.includes('--show-toplevel')) ran.push([file, [...args]]); return { stdout: '' }; }, info: { platform: 'linux' } }), paths: HOST_PATHS };
   const f = await startOps(t, machine);
   assert.deepEqual(await post(f, 'trash', { paths: ['README.md'] }), [204, undefined]);
   assert.deepEqual([ran, f.calls], [[trashCommand('linux', [join(await realpath(f.wt), 'README.md')])], []]);
