@@ -26,6 +26,8 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
 // Then it stays up, as a session does, until the server's close kills the run
 const FAKE_CLAUDE = [
   '#!/bin/sh',
+  // the Hive asks a distro's claude for its login before a run (src/wsl/distro-status.ts): this one answers as a logged-in one does
+  'if [ "$1" = auth ] && [ "$2" = status ]; then printf \'%s\\n\' \'{"loggedIn":true}\'; exit 0; fi',
   'settings=',
   'while [ "$#" -gt 0 ]; do',
   '  if [ "$1" = --settings ]; then settings=$2; fi',
