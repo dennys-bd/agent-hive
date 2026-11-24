@@ -9,7 +9,7 @@ import type { Machine } from '../../src/machine.js';
 import type { Activity, Worker } from '../../src/types.js';
 import { worktreePath } from '../../src/worktree.js';
 import { bootHive, distroWorkspace, type LaneHive, SETUP_FILE } from './hive-rig.js';
-import { CLOSED_PORT, hiveFolderOf, realWsl, stdoutOf, within } from './real-wsl.js';
+import { hiveFolderOf, realWsl, stdoutOf, within } from './real-wsl.js';
 
 const START_MS = 150_000; // the plugin's copy into the distro, the worktree and the setup, over WSL 1's slower disk
 const STEP_MS = 60_000;
@@ -49,14 +49,13 @@ async function mcpPost(machine: Machine, entry: McpEntry, message: unknown): Pro
 }
 
 test('a workspace on the distro: its task starts, gets a worktree on the distro\'s disk, runs its setup and its agent reaches the Hive (#948)', async (t) => {
-  // WSL 1 lets the server's helper bind the relay port this machine's helper already holds, both kept in one relay-port file, so a hook
-  // or an MCP call may reach either helper: this one repeats it to the same Hive too
-  let hivePort: number | undefined;
-  const rig = realWsl(t, { hivePort: () => hivePort ?? CLOSED_PORT });
-  const { machine } = rig;
+  const rig = realWsl(t);
   const repo = await distroWorkspace(rig);
   const hive = await bootHive(t, repo);
-  hivePort = Number(new URL(hive.base).port);
+  // WSL 1 lets the server's helper bind the relay port the lane's own helper already holds (one relay-port file), and a call then reaches
+  // the lane's helper, which repeats it to the port it read at its start: a new one, started now, repeats it to the Hive under test
+  const hivePort = Number(new URL(hive.base).port);
+  const machine = rig.reopen(() => hivePort);
   const explain = (): string => hive.lines.slice(-LOG_TAIL).join('\n');
 
   await t.test('starting the task gives a worktree on the distro\'s disk, which git worktree list inside it names', async () => {

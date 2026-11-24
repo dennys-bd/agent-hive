@@ -32,6 +32,9 @@ export interface RealWsl {
   machine: WslMachine;
   freshDir(): Promise<string>; // a new folder under the distro user's home, removed after the test
   removeAfter(path: string): void; // a path the test made elsewhere in the distro, removed after it
+  // a new machine in place of `machine`, its helper started by its first call: a helper repeats relayed calls to the Hive port it read at
+  // its start, so one that started before the Hive under test listened would answer them against a closed port
+  reopen(hivePort: () => number): WslMachine;
 }
 
 // The process dependencies are the server's own (src/server.ts); the rest is what a machine that runs no agent needs. The host only reads
@@ -56,50 +59,24 @@ export async function homeOf(machine: Machine): Promise<string> {
 
 export const hiveFolderOf = async (machine: Machine): Promise<string> => machine.paths.join(await homeOf(machine), ...WSL_FOLDER);
 
-const HELPER_PATTERN = '/.config/agent-hive/wsl/helper-'; // every helper's argv: node <folder>/helper-<hash>.mjs <folder>
-const REAP_MS = 5_000;
-const NONE_MATCHED = 1; // pgrep's and pkill's exit when no process matches
-
-// The helpers still running in the distro, one `pid argv` per line; none is '', which pgrep answers with its exit 1
-async function helpersLeft(): Promise<string> {
-  try {
-    return (await execFileBuffer('wsl.exe', ['-d', DISTRO, '--exec', 'pgrep', '-af', '--', HELPER_PATTERN])).stdout.trim();
-  } catch (err) {
-    if ((err as { code?: unknown }).code === NONE_MATCHED) return '';
-    throw err;
-  }
-}
-
-// A closed machine's helper ends when its stdin does. WSL 1 kept one running past close() once, still holding the relay port of the
-// next test file with its own Hive's port, so a leftover is named in the log and killed: each file starts from a distro with none
-async function reapHelpers(t: TestContext): Promise<void> {
-  const deadline = Date.now() + REAP_MS;
-  let left = await helpersLeft();
-  while (left !== '' && Date.now() < deadline) {
-    await sleep(POLL_MS);
-    left = await helpersLeft();
-  }
-  if (left === '') return;
-  t.diagnostic(`helper still running ${REAP_MS} ms after close():\n${left}`);
-  await execFileBuffer('wsl.exe', ['-d', DISTRO, '--exec', 'pkill', '-f', '--', HELPER_PATTERN]).catch((err: unknown) => {
-    if ((err as { code?: unknown }).code !== NONE_MATCHED) throw err;
-  });
-}
-
 /** The real machine of the lane's distro (#948 decision 9), closed after the test. */
 export function realWsl(t: TestContext, { hivePort = () => CLOSED_PORT }: { hivePort?: () => number } = {}): RealWsl {
-  const machine = createWslMachine(DISTRO, laneDeps(t, hivePort));
+  let machine = createWslMachine(DISTRO, laneDeps(t, hivePort));
   const made: string[] = [];
   // queued behind every hook the test registers later (a server's close above all), as tempDir's removal is: the machine goes last
   t.after(async () => {
     t.after(async () => {
       for (const path of made) await machine.fs.rm(path, { recursive: true, force: true }).catch((err: unknown) => t.diagnostic(`rm ${path}: ${String(err)}`));
       machine.close();
-      await reapHelpers(t);
     });
   });
   return {
-    machine,
+    get machine() { return machine; },
+    reopen: (port) => {
+      machine.close();
+      machine = createWslMachine(DISTRO, laneDeps(t, port));
+      return machine;
+    },
     freshDir: async () => {
       const dir = (await stdoutOf(machine, 'mktemp', ['-d', machine.paths.join(await homeOf(machine), 'hive-948-XXXXXX')])).trim();
       made.push(dir);
