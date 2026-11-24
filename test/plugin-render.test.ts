@@ -222,3 +222,13 @@ test('each workspace renders with its built-ins from the config: its fork, its b
   assert.ok((await text(r, 'a', 'skills/x/SKILL.md')).endsWith('\n---\nupstream ask devtest docs\n'));
   assert.ok((await text(r, 'b', 'skills/x/SKILL.md')).endsWith('\n---\nnone main \n'), 'no fork, the config\'s base, no nested repo');
 });
+
+test('a fork workspace\'s rendered /hive:new-pr reads its original\'s remote; a plain one has no fork rule (#742)', async (t) => {
+  const r = await rig(t);
+  await r.create(pluginSource()).write({ comb: { workspaces: [
+    { name: 'a', path: r.repo, variables: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [] },
+    { name: 'b', path: r.repo, variables: {}, fork: null, nestedRepos: [] },
+  ] } });
+  assert.ok((await text(r, 'a', 'skills/new-pr/SKILL.md')).includes('`git remote get-url upstream`'));
+  assert.ok(!(await text(r, 'b', 'skills/new-pr/SKILL.md')).includes('this workspace is a fork'));
+});
