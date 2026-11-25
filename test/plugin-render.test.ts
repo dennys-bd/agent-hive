@@ -99,6 +99,20 @@ test('a plain .md agent with basedOn is delivered under its own name without it 
   assert.ok(r.logs.some((line) => line.startsWith('plugin render a: agents/broken.md:4 ')), r.logs.join('\n'));
 });
 
+test('a plain .md agent with can: is delivered with Claude\'s tools line; one with its own tools: and a skill with can: stay byte for byte; an unknown capability is left out (#665)', async (t) => {
+  const reviewer = '---\nname: reviewer\ndescription: R\ncan: [read, shell]\n---\nReview.\n';
+  const written = '---\nname: writer\ndescription: W\ncan: [read]\ntools: Read, mcp__graphify\n---\nWrite.\n';
+  const skill = '---\nname: z\ndescription: Z\ncan: [read]\n---\nZ.\n';
+  const typo = '---\nname: typo\ndescription: T\ncan: [read, fly]\n---\nT.\n';
+  const r = await rig(t, { ...SHIPPED, 'agents/reviewer.md': reviewer, 'agents/writer.md': written, 'agents/typo.md': typo, 'skills/z/SKILL.md': skill });
+  await r.create().write(config(r.repo, 'a'));
+  assert.equal(await text(r, 'a', 'agents/reviewer.md'), '---\nname: reviewer\ndescription: R\ncan: [read, shell]\ntools: Read, Grep, Glob, Bash\n---\nReview.\n');
+  assert.equal(await text(r, 'a', 'agents/writer.md'), written, 'a written tools: wins and nothing is rewritten');
+  assert.equal(await text(r, 'a', 'skills/z/SKILL.md'), skill, 'can: means nothing in a skill');
+  assert.equal(await isThere(join(pluginRenderPath(r.home, 'a'), 'agents', 'typo.md')), false, 'a typo never reaches Claude with a tool missing');
+  assert.ok(r.logs.some((line) => line.startsWith('plugin render a: agents/typo.md:4 unknown capability "fly"')), r.logs.join('\n'));
+});
+
 test('a user-created skill is delivered to the workspace its version lists, and to no other (#316)', async (t) => {
   const r = await rig(t);
   await version(r.home, 'mine', 'v1', ['a'], { 'SKILL.md': '---\nname: mine\ndescription: Mine\n---\nMine.\n' }, null);

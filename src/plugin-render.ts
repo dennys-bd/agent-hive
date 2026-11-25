@@ -11,7 +11,7 @@ import { renderWorkspaceOf } from './fork.js';
 import { HIVE_ORIGIN, listFiles, versionFiles } from './item-sources.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { deliveredHeader, deliveredName, hasDeclarations, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace } from './template.js';
+import { deliveredHeader, deliveredName, hasCapabilities, hasDeclarations, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace } from './template.js';
 import { PLUGIN_ROOT } from './template-refs.js';
 import type { CatalogueItem, Workspace } from './types.js';
 
@@ -111,20 +111,28 @@ function itemPath(path: string): string {
   return parts[0] === 'skills' && parts.length > 2 ? `skills/${parts[1]}` : path;
 }
 
-// A plain .md is not Liquid: only its header loses variables and basedOn, so a body that shows `{{ x }}` is delivered as written
+// A plain .md is not Liquid: only its header changes (variables and basedOn out, an agent's tools line in), so a body that shows `{{ x }}` is
+// delivered as written
 const stripHeader = (parsed: ParsedTemplate): RenderResult =>
   parsed.errors.length > 0 ? { ok: false, errors: parsed.errors } : { ok: true, text: `${deliveredHeader(parsed)}${parsed.body}` };
 
 // The placeholder for the folder the text is delivered in (#446): split/join, since a replace string would read a `$` in the path as a pattern
 const rooted = (text: string, dir: string): string => text.split(PLUGIN_ROOT).join(dir);
 
-// A .liquid file through Liquid, a .md with declarations without its header's, any other .md as it is
+const AGENTS_PREFIX = 'agents/';
+// #338: declarations must not reach Claude Code; #665: an agent's can: must reach it as a tools line, or Claude gives it every tool. can: means
+// nothing in a skill, so only an agents/ file counts
+const needsDelivery = (path: string, parsed: ParsedTemplate): boolean =>
+  hasDeclarations(parsed.header) || (path.startsWith(AGENTS_PREFIX) && hasCapabilities(parsed.header));
+
+// A .liquid file through Liquid, a .md that needs delivery through its header, any other .md as it is
 function deliver(path: string, raw: string, parsed: ParsedTemplate, workspace: RenderWorkspace): RenderResult {
   if (path.endsWith(LIQUID_SUFFIX)) return renderTemplate(parsed, workspace);
-  return hasDeclarations(parsed.header) ? stripHeader(parsed) : { ok: true, text: raw };
+  return needsDelivery(path, parsed) ? stripHeader(parsed) : { ok: true, text: raw };
 }
 
-// Every .liquid file, and every .md whose header has declarations (#338, decision 10: its basedOn must not reach Claude Code), rendered for
+// Every .liquid file, and every .md whose header has declarations (#338, decision 10: its basedOn must not reach Claude Code) or is an agent's
+// with can: (#665), rendered for
 // `target` with its values (#621) under its delivered name; any other .md is copied untouched but for ${HIVE_PLUGIN_ROOT}, which every delivered
 // .md gets as `dir` (#446), so Claude and Codex's copy alike read a real path. Answers the items whose template failed, each error logged once.
 // The template module's messages hold no path, and the path logged is relative to the folder
@@ -133,7 +141,7 @@ async function renderTemplates(tmp: string, dir: string, target: RenderWorkspace
   for (const path of (await listFiles(tmp)).filter((p) => p.endsWith(LIQUID_SUFFIX) || p.endsWith(MD_SUFFIX))) {
     const raw = await readFile(join(tmp, path), 'utf8');
     const parsed = parseTemplate(raw);
-    if (!path.endsWith(LIQUID_SUFFIX) && !hasDeclarations(parsed.header) && !raw.includes(PLUGIN_ROOT)) continue; // left byte for byte
+    if (!path.endsWith(LIQUID_SUFFIX) && !needsDelivery(path, parsed) && !raw.includes(PLUGIN_ROOT)) continue; // left byte for byte
     const result = deliver(path, raw, parsed, target);
     if (!result.ok) {
       for (const error of result.errors) log.error(`plugin render ${target.name}: ${path}:${error.line} ${error.message}`);
