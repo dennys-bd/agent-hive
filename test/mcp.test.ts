@@ -129,6 +129,7 @@ test('each invalid input gets a tool error with its reason and dispatches nothin
   await refused('hive_pr', { url: 'http://github.com/acme/r/pull/9' }, /https/);
   await refused('hive_pr', { url: 'not a url' }, /https/);
   await refused('hive_pr', { url: 'https://evil.example/acme/r/pull/9' }, /pull request URL/);
+  await refused('hive_pr', { url: 'https://gitlab.com/acme/r/-/merge_requests/9' }, /pull request URL/); // #1044: GitHub only until the host check lands
   await refused('hive_ask', { question: '   ' }, /1 to 2000/);
   await refused('hive_ask', { question: 'x'.repeat(2001) }, /1 to 2000/);
   await refused('hive_create_task', { title: ' ' }, /título obrigatório/);

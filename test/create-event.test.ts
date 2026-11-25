@@ -171,7 +171,7 @@ test('createTask with pr refuses a source, a link that is no GitHub PR and a PR 
   assert.deepEqual(await createTask(again.deps, { title: 'x', stage: 'fila', pr: PR }), { status: 409, message: PR_TAKEN_MESSAGE });
   const sourced = reducingDeps();
   assert.deepEqual(await createTask(sourced.deps, { title: 'x', stage: 'fila', pr: PR, source: 'roadmap' }), { status: 400, message: PR_HIVE_ONLY_MESSAGE });
-  for (const pr of ['https://github.com/acme/app/issues/7', 'http://github.com/acme/app/pull/7', 'https://github.com/acme/app/pull/7/files', 'https://x.dev/pull/7', '', 7, null]) {
+  for (const pr of ['https://github.com/acme/app/issues/7', 'http://github.com/acme/app/pull/7', 'https://github.com/acme/app/pull/7/files', 'https://x.dev/pull/7', 'https://gitlab.com/acme/app/-/merge_requests/7', '', 7, null]) {
     assert.deepEqual(await createTask(reducingDeps().deps, { title: 'x', stage: 'fila', pr }), { status: 400, message: PR_URL_MESSAGE }, String(pr));
   }
   const off = reducingDeps({ ...COMB, hiveSource: false });

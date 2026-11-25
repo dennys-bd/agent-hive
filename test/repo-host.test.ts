@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrLink, hostKind, isPrUrl, type PrLink, parsePrLink, remoteRepository } from '../src/repo-host.js';
+import { buildPrLink, hostKind, isGithubPrUrl, isPrUrl, type PrLink, parsePrLink, remoteRepository } from '../src/repo-host.js';
 import { githubRepository } from '../src/task-refs.js';
 import { isPrUrl as orchestratorIsPrUrl } from '../src/orchestrator.js';
 import { prLink, prNumber, prRepo } from '../src/pull-requests.js';
@@ -45,6 +45,18 @@ test('remoteRepository answers none off a known host, with a port, a query or a 
   ]) assert.equal(remoteRepository(remote, LISTED), undefined, remote);
 });
 
+test('a userinfo with ? # \\ or a space never hides the host git would reach (#1044, security review)', () => {
+  for (const remote of ['https://evil.example#@gitlab.com/acme/app', 'https://evil.example?@gitlab.com/acme/app', 'https://evil.example\\@github.com/acme/app', 'https://a b@github.com/acme/app']) {
+    assert.equal(remoteRepository(remote, []), undefined, remote);
+  }
+});
+
+test('isGithubPrUrl takes a GitHub PR link only: an MR link waits for the host check (#1044, security review)', () => {
+  assert.equal(isGithubPrUrl('https://github.com/acme/app/pull/12'), true);
+  assert.equal(isGithubPrUrl('https://gitlab.com/acme/app/-/merge_requests/7'), false);
+  assert.equal(isGithubPrUrl('https://github.com/acme/app/pull/12/files'), false);
+});
+
 test('parsePrLink reads a GitHub PR link and an MR link on any host name, and buildPrLink gives each back (#1044, decision 5)', () => {
   const cases: [string, PrLink][] = [
     ['https://github.com/acme/app/pull/12', { host: 'github.com', repository: 'acme/app', number: 12 }],
@@ -57,12 +69,13 @@ test('parsePrLink reads a GitHub PR link and an MR link on any host name, and bu
   }
 });
 
-test('parsePrLink refuses a query, a fragment, a trailing slash or path, a port, userinfo, a one-segment path, an MR path on github.com and a leading zero (#1044, decision 5)', () => {
+test('parsePrLink refuses a query, a fragment, a trailing slash or path, a port, userinfo, a one-segment path, an MR path on github.com, a `-` segment and a leading zero (#1044, decision 5)', () => {
   for (const url of [
     'https://github.com/acme/app/pull/12?x=1', 'https://github.com/acme/app/pull/12#top', 'https://github.com/acme/app/pull/12/', 'https://github.com/acme/app/pull/12/files',
     'https://gitlab.com/acme/app/-/merge_requests/7?x=1', 'https://gitlab.com/acme/app/-/merge_requests/7#note_1', 'https://gitlab.com/acme/app/-/merge_requests/7/', 'https://gitlab.com/acme/app/-/merge_requests/7/diffs',
     'https://git.example.com:8443/acme/app/-/merge_requests/7', 'https://user@git.example.com/acme/app/-/merge_requests/7', 'http://gitlab.com/acme/app/-/merge_requests/7',
     'https://gitlab.com/app/-/merge_requests/7', 'https://github.com/acme/app/-/merge_requests/7', 'https://gitlab.com/acme/app/pull/7', 'https://github.com/acme/app/pull/007', '',
+    'https://gitlab.com/acme/app/-/merge_requests/1/-/merge_requests/2', 'https://gitlab.com/-/app/-/merge_requests/1',
   ]) assert.equal(parsePrLink(url), undefined, url);
 });
 

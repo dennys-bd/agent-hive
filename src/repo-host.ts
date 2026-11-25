@@ -19,21 +19,22 @@ export function hostKind(host: string, gitlabHosts: readonly string[]): HostKind
 }
 
 const HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?';
-// https (a token in it included), git@ or ssh://git@, then the path: a port, a query or a fragment never gets past the host and path classes
-const REMOTE = new RegExp(`^(?:https://(?:[^@/]+@)?(${HOST})/|git@(${HOST}):|ssh://git@(${HOST})/)([\\w./-]+)$`);
+// https (a token in it included; userinfo never takes ? # \\ or a space, where git would end the authority and reach another host), git@ or ssh://git@, then the path: a port, a query or a fragment never gets past the host and path classes
+const REMOTE = new RegExp(`^(?:https://(?:[^@/?#\\\\\\s]+@)?(${HOST})/|git@(${HOST}):|ssh://git@(${HOST})/)([\\w./-]+)$`);
 // GitHub's owner/name under the rules from before #1044: neither part made only of dots, .git and a trailing / dropped
 const GITHUB_PATH = /^((?!\.+\/)[\w.-]+\/(?!\.+(?:\.git)?\/?$)[\w.-]+?)(?:\.git)?\/?$/;
 // GitLab's full path: two or more segments (nested groups), .git and a trailing / dropped from the last
 const GITLAB_PATH = /^((?:[\w.-]+\/)+[\w.-]+?)(?:\.git)?\/?$/;
-const DOTS = /^\.+$/;
+// A segment of only dots, or GitLab's own - separator, which no project path holds
+const NOT_A_SEGMENT = /^(?:\.+|-)$/;
 // The GitHub link as isPrUrl took it before #1044; a leading zero is refused so buildPrLink gives every accepted link back
 const GITHUB_PR = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/([1-9]\d*)$/;
 const GITLAB_MR = /^https:\/\/([^/]+)\/([\w./-]+?)\/-\/merge_requests\/([1-9]\d*)$/;
 
-// A GitLab path none of whose segments is only dots
+// A GitLab path none of whose segments is only dots or the - separator
 function gitlabPath(path: string): string | undefined {
   const repository = GITLAB_PATH.exec(path)?.[1];
-  return repository === undefined || repository.split('/').some((segment) => DOTS.test(segment)) ? undefined : repository;
+  return repository === undefined || repository.split('/').some((segment) => NOT_A_SEGMENT.test(segment)) ? undefined : repository;
 }
 
 const repositoryOn = (kind: HostKind, path: string): string | undefined => (kind === 'github' ? GITHUB_PATH.exec(path)?.[1] : gitlabPath(path));
@@ -72,3 +73,7 @@ export const buildPrLink = ({ host, repository, number }: PrLink): string =>
 
 /** hive_pr's url and a stored PR's (decision 6): a link parsePrLink reads, a GitHub PR or an MR on any host name. */
 export const isPrUrl = (url: string): boolean => parsePrLink(url) !== undefined;
+
+/** What hive_pr and a task made from a PR take until the host check against gitlabHosts reaches them (#1051 to #1053): a GitHub PR link
+ * only, since every reader of a stored link still calls GitHub with its path. */
+export const isGithubPrUrl = (url: string): boolean => parsePrLink(url)?.host === GITHUB_HOST;

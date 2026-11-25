@@ -11,7 +11,7 @@ import { isBlocked, stageOf, taskId } from './tasks.js';
 import { refsOf } from './server-blockers.js';
 import { verdictProblem, withVerdict } from './transit.js';
 import { MCP_ROUTE } from './hooks-settings.js';
-import { isPrUrl } from './orchestrator.js';
+import { isGithubPrUrl } from './repo-host.js';
 import { appendMessage, markAgentResolved } from './review-store.js';
 import { workerReview } from './mcp-review.js';
 import { type Answer, livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
@@ -127,7 +127,7 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
   }, async ({ url, slice }) => recorded(deps, header, 'hive_pr', async () => {
     const ptyId = livePtyId(deps, header);
     if (!ptyId) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
-    if (!isPrUrl(url)) return refuse('bad_url', URL_MESSAGE);
+    if (!isGithubPrUrl(url)) return refuse('bad_url', URL_MESSAGE);
     await deps.dispatch({ type: 'pr', ptyId, url, ...(slice ? { slice } : {}) });
     // #497: the PR's changes read and stored before its page opens. Never awaited, so the answer never waits on GitHub. The preload logs its own
     // failures; this catch only keeps a rejection off the process
