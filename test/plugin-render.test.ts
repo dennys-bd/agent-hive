@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { marketplaceName, pluginCacheDir, rolesDir } from '../src/agents/codex-home.js';
 import { listFiles } from '../src/item-sources.js';
 import { pluginSource } from '../src/hooks-settings.js';
-import { deliveredName, hasDeclarations, NO_BUILT_INS, parseTemplate, renderTemplate } from '../src/template.js';
+import { deliveredName, hasCapabilities, hasDeclarations, NO_BUILT_INS, parseTemplate, renderTemplate, toolsLine } from '../src/template.js';
 import { createPluginRender, NoPluginFolderError, PLUGINS_DIR, pluginRenderPath, type PluginRender, type RenderConfig } from '../src/plugin-render.js';
 import { put, snapshot } from './custom-fixture.js';
 import { PLUGIN_ROOT } from '../src/template-refs.js';
@@ -49,8 +49,11 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   const shipped = await snapshot(pluginSource());
   assert.ok(Object.keys(shipped).some((path) => path.endsWith('.liquid')), 'the shipped plugin has templates');
   const decode = (bytes: string | undefined): string => Buffer.from(bytes ?? '', 'base64').toString('utf8');
-  // #338: a .md whose header has declarations is rendered too, under its own name
-  const isTemplate = (path: string, raw: string): boolean => path.endsWith('.liquid') || (path.endsWith('.md') && hasDeclarations(parseTemplate(raw).header));
+  // #338: a .md whose header has declarations is rendered too, under its own name; #665: so is an agent's with can:
+  const isTemplate = (path: string, raw: string): boolean => {
+    const { header } = parseTemplate(raw);
+    return path.endsWith('.liquid') || (path.endsWith('.md') && (hasDeclarations(header) || (path.startsWith('agents/') && hasCapabilities(header))));
+  };
   // #446: every delivered .md names the workspace's folder where its source says ${HIVE_PLUGIN_ROOT}
   const rooted = (path: string, raw: string): string => (deliveredName(path).endsWith('.md') ? raw.split(PLUGIN_ROOT).join(pluginRenderPath(r.home, 'a')) : raw);
   const expected = Object.fromEntries(Object.entries(shipped).map(([path, bytes]) => {
@@ -62,10 +65,15 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   const delivered = await snapshot(pluginRenderPath(r.home, 'a'));
   assert.deepEqual(delivered, expected);
   for (const [path, bytes] of Object.entries(delivered)) assert.doesNotMatch(decode(bytes), /^basedOn:/m, `${path} is delivered with its basedOn`);
-  // Codex's role reader parses an agent's header line by line: the delivery only takes the basedOn lines out
+  // Codex's role reader parses an agent's header line by line: the delivery only takes the basedOn lines out and writes Claude's tools line from
+  // can: (#665) last, can: itself as written
   const BASED_ON_LINES = /^basedOn:\n(?: {2}- .*\n)+/m;
+  const withTools = (raw: string): string => {
+    const { can } = parseTemplate(raw).header;
+    return Array.isArray(can) ? raw.replace(/\n---\n/, `\ntools: ${toolsLine(can)}\n---\n`) : raw; // the first \n---\n closes the header
+  };
   for (const path of Object.keys(shipped).filter((p) => p.startsWith('agents/') && p.endsWith('.md'))) {
-    assert.equal(decode(delivered[path]), rooted(path, decode(shipped[path]).replace(BASED_ON_LINES, '')), path);
+    assert.equal(decode(delivered[path]), rooted(path, withTools(decode(shipped[path]).replace(BASED_ON_LINES, ''))), path);
   }
 });
 

@@ -1,7 +1,7 @@
 ---
 name: spec-reviewer
 description: Reviews a written spec before planning starts. Dispatched by /hive:new-spec once the spec file is written, with the spec's path and `featureFlags`. Verifies it is complete, consistent and ready to plan from.
-tools: Read, Grep, Glob
+can: [read]
 basedOn:
   - { name: "superpowers:brainstorming", repo: obra/superpowers, ref: v6.4.1, license: MIT, url: https://github.com/obra/superpowers/blob/v6.4.1/skills/brainstorming/spec-document-reviewer-prompt.md }
 ---

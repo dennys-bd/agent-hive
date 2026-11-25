@@ -1,7 +1,7 @@
 ---
 name: build-fixer
 description: Gets a broken build green again with the smallest possible diff. Dispatched by /hive:new-build with the failing output, at most 3 times per failure, when the build or the tests break and the fix is not obvious from the plan. No architectural edits, no new features, no commit.
-tools: Read, Write, Edit, Bash, Grep, Glob
+can: [read, write, shell]
 basedOn:
   - { name: "ecc:build-error-resolver", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/build-error-resolver.md }
 ---
