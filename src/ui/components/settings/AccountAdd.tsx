@@ -29,9 +29,10 @@ export function TextButton({ onClick, children }: { onClick(): void; children: R
   return <button type="button" className="text-review" onClick={onClick}>{children}</button>;
 }
 
-// Hidden in place while its flow is open, so the header's hint never reflows
-function HeaderAdd({ label, isHidden, onClick }: { label: MessageKey; isHidden: boolean; onClick(): void }) {
-  return <Button type="button" variant="ghost" size="sm" className={isHidden ? 'invisible ml-auto' : 'ml-auto'} onClick={onClick}>{t(label)}</Button>;
+// Hidden in place while its flow is open, so the header's hint never reflows. name: an accessible name of its own, for an add whose words
+// another group's add reads too (#1048: GitLab's + account beside Claude's)
+export function HeaderAdd({ label, name, isHidden, onClick }: { label: MessageKey; name?: string; isHidden: boolean; onClick(): void }) {
+  return <Button type="button" variant="ghost" size="sm" aria-label={name} className={isHidden ? 'invisible ml-auto' : 'ml-auto'} onClick={onClick}>{t(label)}</Button>;
 }
 
 function SignInLink({ url, label }: { url: string; label: MessageKey }) {
@@ -55,7 +56,7 @@ function PendingRow({ label, hint, onCancel }: { label: string; hint: ReactNode;
 }
 
 // The eye sees the new row; a screen reader hears it (the handoff: no visible note)
-function Done({ name }: { name?: string }) {
+export function Done({ name }: { name?: string }) {
   // Always mounted: a screen reader may skip a live region that arrives already filled
   return <span role="status" className="sr-only">{name === undefined ? '' : t('settings.accounts.add.done', { name })}</span>;
 }

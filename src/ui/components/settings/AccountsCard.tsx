@@ -1,9 +1,11 @@
 import { XIcon } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
 import { type AddSlots, ClaudeAccountAdd, FailedLine, GithubLoginAdd, TextButton } from '@/components/settings/AccountAdd';
 import { scrollToConnections } from '@/components/settings/ConnectionsGroup';
+import { GitlabAccountsGroup } from '@/components/settings/GitlabAccountsGroup';
+import { RemoveAction } from '@/components/settings/RemoveAction';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -20,13 +22,14 @@ import { ACCOUNT_PROVIDERS, type AccountProvider, type AccountsConfig } from '..
 // radio group, so it takes one tab stop and the arrows move between its rows. Claude's and Copilot's headers carry their mark in their own
 // colour; GitHub is no agent: no mark. #965: Claude's and GitHub's groups add an account and each stored row removes its own, both at once,
 // outside the draft; Copilot's group is only a choice over GitHub's logins.
+// #1048: GitLab's group follows GitHub's, outside ACCOUNT_PROVIDERS: rows and their removes only, no choice.
 
 type Patch = (patch: Partial<SettingsDraft>) => void;
-interface AccountsCardProps { draft: SettingsDraft; saved: AccountsConfig; onChange: Patch; onOpenFlow(): void }
+// gitlabHosts (#1048): the saved config's, the GitLab connect form's choices after gitlab.com; none before a first save
+interface AccountsCardProps { draft: SettingsDraft; saved: AccountsConfig; gitlabHosts?: readonly string[]; onChange: Patch; onOpenFlow(): void }
 interface GroupProps extends AccountsCardProps { provider: AccountProvider; accounts: Accounts; slots?: AddSlots }
 /** A remove the route did not do, worded under the list. */
 interface RemoveRefusal { outcome: Exclude<RemoveOutcome, 'removed'>; name: string }
-type RemovePhase = 'closed' | 'confirming' | 'removing';
 
 const GH_SETUP_GIT = 'gh auth setup-git'; // the same in both languages' hint: shown in mono
 const groupName = (provider: AccountProvider): string => (provider === 'github' ? t('settings.accounts.github') : agentName(provider));
@@ -76,48 +79,6 @@ function Row({ row, end }: { row: AccountRow; end?: ReactNode }) {
       {row.isGone && <span id={`${id}-gone`} className="truncate text-destructive text-xs">{t('settings.accounts.gone')}</span>}
       {end !== undefined && <span className="ml-auto flex shrink-0 items-center">{end}</span>}
     </div>
-  );
-}
-
-// The × of a stored row (the handoff): the first click puts the confirm in its place with focus on it, the second calls the route. Escape puts
-// focus back on the ×; a blur, a click elsewhere included, closes it where focus went. A removed row goes with the list's re-read
-function RemoveAction({ name, onRemove }: { name: string; onRemove(): Promise<boolean> }) {
-  const [phase, setPhase] = useState<RemovePhase>('closed');
-  const xRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const shouldRefocus = useRef(false);
-  useEffect(() => {
-    if (phase === 'confirming') confirmRef.current?.focus();
-    if (phase === 'closed' && shouldRefocus.current) xRef.current?.focus();
-    shouldRefocus.current = false;
-  }, [phase]);
-  const close = (isRefocused: boolean): void => { shouldRefocus.current = isRefocused; setPhase('closed'); };
-  const remove = (): void => {
-    setPhase('removing');
-    void onRemove().then((isRemoved) => { if (!isRemoved) setPhase('closed'); });
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
-    if (e.key !== 'Escape') return;
-    e.preventDefault(); // Settings' own Escape, on document, skips a prevented key: the page stays
-    close(true);
-  };
-  if (phase === 'closed') {
-    return (
-      <Button ref={xRef} type="button" variant="ghost" size="icon-xs" aria-label={t('settings.accounts.remove.label', { name })} onClick={() => setPhase('confirming')}>
-        <XIcon aria-hidden="true" />
-      </Button>
-    );
-  }
-  return (
-    <span className="flex items-center gap-2">
-      <span className="text-muted-foreground text-xs">{t('settings.accounts.remove.confirmHint')}</span>
-      <Button
-        ref={confirmRef} type="button" variant="destructive" size="xs" disabled={phase === 'removing'} onClick={remove} onKeyDown={onKeyDown}
-        onBlur={() => { if (phase === 'confirming') close(false); }}
-      >
-        {t('settings.accounts.remove.confirm')}
-      </Button>
-    </span>
   );
 }
 
@@ -184,7 +145,7 @@ function AccountGroup({ provider, accounts, draft, saved, onChange, onOpenFlow, 
   );
 }
 
-export function AccountsCard({ draft, saved, onChange, onOpenFlow }: AccountsCardProps) {
+export function AccountsCard({ draft, saved, gitlabHosts = [], onChange, onOpenFlow }: AccountsCardProps) {
   const accounts = useAccounts();
   // A provider's group, which an add wraps to hand it the header's action and the foot; the order is ACCOUNT_PROVIDERS'
   const group = (provider: AccountProvider) => (slots?: AddSlots): ReactNode => (
@@ -195,14 +156,19 @@ export function AccountsCard({ draft, saved, onChange, onOpenFlow }: AccountsCar
       <ClaudeAccountAdd onConnected={accounts.refetch} render={group('claude')} />
       {group('copilot')()}
       <GithubLoginAdd onConnected={accounts.refetch} render={group('github')} />
+      <GitlabAccountsGroup hosts={gitlabHosts} />
     </SettingsGroup>
   );
 }
 
 /** The card's entries of the Settings search (#964): one per group, landing on it; the agents' by their own name, as the card shows it. */
 export function accountsEntries(): SettingEntry[] {
-  return ACCOUNT_PROVIDERS.map((provider): SettingEntry => ({
-    label: provider === 'github' ? 'settings.accounts.github' : { raw: agentName(provider) },
-    path: ['settings.section.execution', 'settings.accounts'], view: { section: 'execution' }, anchor: settingAnchor('settings.accounts', provider),
-  }));
+  return [
+    ...ACCOUNT_PROVIDERS.map((provider): SettingEntry => ({
+      label: provider === 'github' ? 'settings.accounts.github' : { raw: agentName(provider) },
+      path: ['settings.section.execution', 'settings.accounts'], view: { section: 'execution' }, anchor: settingAnchor('settings.accounts', provider),
+    })),
+    // #1048: GitLab's group, outside ACCOUNT_PROVIDERS since nothing selects it
+    { label: 'settings.accounts.gitlab', path: ['settings.section.execution', 'settings.accounts'], view: { section: 'execution' }, anchor: settingAnchor('settings.accounts', 'gitlab') },
+  ];
 }

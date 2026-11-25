@@ -209,7 +209,16 @@ export interface Credentials {
   jira?: Record<string, { email: string; token: string; accountId: string; displayName?: string }>; // displayName: #820, what @me resolves to with no call
   /** A `claude setup-token` token by account name (#952): the token carries no identity, so the user names it. */
   claude?: Record<string, { token: string }>;
+  /** A GitLab account by bare host (#1048). expiresAt: GitLab's expires_at (YYYY-MM-DD), absent when the token never expires. */
+  gitlab?: Record<string, { token: string; username: string; expiresAt?: string }>;
 }
+
+/** What GET /settings/accounts/gitlab answers per host (#1048): never the token. */
+export interface GitlabAccountRow { host: string; username: string; expiresAt?: string }
+
+/** #1048: a refused GitLab connect or remove, as `{ error }`; the accounts card words each in both languages. */
+export const GITLAB_ACCOUNT_ERRORS = ['host', 'token', 'refused', 'scope', 'unverifiable', 'unreachable', 'unknown'] as const;
+export type GitlabAccountError = (typeof GITLAB_ACCOUNT_ERRORS)[number];
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */
 export interface GithubAuthStatus {

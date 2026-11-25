@@ -18,7 +18,7 @@ interface JiraConnectFormProps {
 
 interface FieldProps { id: string; label: string; hint: ReactNode; children: ReactNode }
 
-function Field({ id, label, hint, children }: FieldProps) {
+export function Field({ id, label, hint, children }: FieldProps) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id} className="text-[13px]">{label}</Label>
