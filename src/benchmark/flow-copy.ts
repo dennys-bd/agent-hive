@@ -101,7 +101,7 @@ function wiringRefusal(wiring: Wiring, skipped: readonly string[]): string | und
   const resumes = wiring.transitions.find((t) => skipped.includes(continued(t) ?? ''));
   if (resumes !== undefined) return `${resumes.from} → ${resumes.to} continues the session of ${continued(resumes) ?? ''}, which a run skips`;
   const twice = wiring.transitions.find((t, i) => wiring.transitions.findIndex((o) => sameTrigger(o, t)) !== i);
-  return twice === undefined ? undefined : `stage ${twice.from} has two exits on ${twice.verdict ?? twice.when} once its wait for CI is skipped`;
+  return twice === undefined ? undefined : `stage ${twice.from} has two exits on ${twice.verdict ?? twice.when} in the run's copy, which keeps no sources`;
 }
 
 /** The flow without its waits for CI (#672): a run's local origin has no CI, and Dev's /hive:new-build already gates on the test command.
