@@ -2683,7 +2683,7 @@ const en = {
   // #321: the variables pane
   'plugins.variables.error.undeclared': 'that variable is no longer declared',
   'plugins.variables.error.taken': 'that name is already declared',
-  'plugins.variables.error.badName': 'a name is a letter or _ followed by letters, digits or _, and not workspace',
+  'plugins.variables.error.badName': 'a name is a letter or _ followed by letters, digits or _, and not a built-in (workspace, fork, baseBranch, nestedRepos)',
   'plugins.variables.error.invalid': 'the header does not accept that declaration',
   'plugins.builtIns.title': 'built-in',
   'plugins.builtIns.hint': "they come from each workspace's Settings. a template reads them, never declares them.",
@@ -6327,7 +6327,7 @@ const pt: Record<MessageKey, string> = {
   // #321: the variables pane
   'plugins.variables.error.undeclared': 'essa variável não está mais declarada',
   'plugins.variables.error.taken': 'esse nome já está declarado',
-  'plugins.variables.error.badName': 'um nome é uma letra ou _ seguida de letras, dígitos ou _, e não workspace',
+  'plugins.variables.error.badName': 'um nome é uma letra ou _ seguida de letras, dígitos ou _, e não uma embutida (workspace, fork, baseBranch, nestedRepos)',
   'plugins.variables.error.invalid': 'o cabeçalho não aceita essa declaração',
   'plugins.builtIns.title': 'embutidas',
   'plugins.builtIns.hint': 'vêm das configurações de cada workspace. um template as lê, nunca as declara.',
