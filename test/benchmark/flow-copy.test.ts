@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFlow, flowIssues, overrideIssues } from '../../src/benchmark/flow-copy.js';
+import { copyFlow, entryIssues, flowIssues, overrideIssues } from '../../src/benchmark/flow-copy.js';
 import type { BenchFlow, BenchStage, Stage, Transition } from '../../src/types.js';
 import { mainFlows } from '../fixtures/main-flow.js';
 import { BENCH_STAGES, benchComb, NOW } from './fixtures.js';
@@ -135,4 +135,12 @@ test("a copy drops every gate but a decomposition skill stage's: its approved ex
   assert.equal('approval' in flow.stages[2], false);
   assert.deepEqual(flow.transitions.slice(2), [{ from: 'decompose', to: 'Spec', when: 'approved' }, { from: 'Spec', to: 'end', when: 'done' }]);
   assert.deepEqual(flow.dropped, ['Spec.approval', 'Spec → Spec.feedback']);
+});
+
+test('entry: a draft may set it to a stage of the copy; a stage the copy lacks or Delivered gives its message (#672)', () => {
+  const flow = flowOf(copyFlow(benchComb(), 'bench', NOW));
+  assert.deepEqual(entryIssues(flow), [], 'absent is the first stage');
+  assert.deepEqual(flowIssues(flow, { ...flow, entry: 'Plan' }), []);
+  assert.deepEqual(flowIssues(flow, { ...flow, entry: 'Nope' }), ['base.flow.entry: no such stage in the flow']);
+  assert.deepEqual(flowIssues(flow, { ...flow, entry: 'Delivered' }), ['base.flow.entry: Delivered is where a run holds its finished tasks']);
 });

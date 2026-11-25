@@ -139,9 +139,18 @@ export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
   };
 }
 
-// The flow with every editable field taken out: what must stay as the copy made it
-const frame = (flow: BenchFlow): string =>
-  canonicalJson({ ...flow, stages: flow.stages.map((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !(STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)))) });
+// The flow with every editable field taken out: what must stay as the copy made it. entry is the experiment's own choice (#672)
+function frame(flow: BenchFlow): string {
+  const { entry: _entry, ...framed } = flow;
+  return canonicalJson({ ...framed, stages: framed.stages.map((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !(STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)))) });
+}
+
+/** Where a run's tasks start (#672): a stage of the copy; DONE_STAGE holds the finished ones and runs nothing. */
+export function entryIssues(flow: BenchFlow): string[] {
+  if (flow.entry === undefined) return [];
+  if (flow.entry === DONE_STAGE) return [`base.flow.entry: ${DONE_STAGE} is where a run holds its finished tasks`];
+  return flow.stages.some((s) => s.name === flow.entry) ? [] : ['base.flow.entry: no such stage in the flow'];
+}
 
 // Which stages a field means something on: the agent's fields on a stage that runs an agent, the rest on their own action
 const FITS: Record<keyof StageOverride, (stage: BenchStage) => boolean> = {
@@ -176,5 +185,5 @@ export function overrideIssues(flow: BenchFlow, stages: Record<string, StageOver
  *  transitions, the commands, copiedAt, dropped), give an editable field a bad value, or name a command the copy has no line for. */
 export function flowIssues(copy: BenchFlow, next: BenchFlow): string[] {
   if (frame(copy) !== frame(next)) return ['base.flow: the flow is the copy the experiment was created with; change its structure in Settings and create another experiment'];
-  return next.stages.flatMap((s) => fieldIssues(s, next.commands));
+  return [...entryIssues(next), ...next.stages.flatMap((s) => fieldIssues(s, next.commands))];
 }

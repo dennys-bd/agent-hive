@@ -195,7 +195,7 @@ async function writeRunHome(inputs: RunInputs, deps: RunDeps): Promise<void> {
     allowedDomains: resolveRow(experiment.isolation.network, arm.id),
   });
   const marker: RunMarker = { experiment: { id: experiment.id, name: experiment.name }, arm: { letter: arm.letter, name: arm.name }, round: inputs.round, pairs: experiment.pace.pairs, token, frozen: false };
-  await writeHome(home, runConfig(deps.config, experiment, arm, token, { clone, home, rules }), runState(setup.tasks, token, experiment.seed.workspace, experiment.pace.workersPerArm, setup.flow.stages[0].name));
+  await writeHome(home, runConfig(deps.config, experiment, arm, token, { clone, home, rules }), runState(setup.tasks, token, experiment.seed.workspace, experiment.pace.workersPerArm, setup.flow.entry ?? setup.flow.stages[0].name));
   await copyVersions(home, versions, experiment.seed.workspace);
   await writeFile(join(home, RUN_SANDBOX_FILE), json(sandbox), { mode: 0o600 });
   await writeFile(join(home, MARKER_FILE), json(marker), { mode: 0o600 });

@@ -915,7 +915,10 @@ export type BenchStage = Omit<Stage, 'from' | 'onStart'>;
 export type BenchTransition = Omit<Transition, 'sources'>;
 /** The Hive's flow as the experiment copied it (#536); the run's comb is built from it. commands: each named command's line for the seed's
  *  workspace. dropped: what the copy took out (`Spec.from`, `Done.after`, `Review → Done.sources`), for the dialog's note. */
-export interface BenchFlow { copiedAt: string; stages: BenchStage[]; transitions: BenchTransition[]; commands: { name: string; line: string }[]; dropped: string[] }
+export interface BenchFlow {
+  copiedAt: string; stages: BenchStage[]; transitions: BenchTransition[]; commands: { name: string; line: string }[]; dropped: string[];
+  entry?: string; // #672: the stage every task of a run starts in; absent = the first stage
+}
 /** What an arm changes of one stage, by field; model null = the agent's own default over a base model. */
 export type StageOverride = Partial<Pick<BenchStage, 'agent' | 'prompt' | 'skill' | 'commands' | 'judge' | 'threshold'>> & { model?: string | null };
 export interface BenchTask { key: string; title: string; body: string; blockedBy: string[] }
