@@ -197,7 +197,7 @@ test('a malformed token throws before any call and never quotes it; so does a ho
     assert.equal(err.message, 'gitlab: malformed token');
   }
   assert.equal(calls.length, 0);
-  for (const host of ['', 'a/b', 'https://gitlab.example.test', 'u@host', 'a b']) {
+  for (const host of ['', 'a/b', 'https://gitlab.example.test', 'u@host', 'a b', 'GitLab.example.test', 'gitlab.example.test:443']) {
     assert.throws(() => gitlabApi({ host, token: async () => TOKEN, fetch: doFetch }), /gitlab: invalid host/, host);
   }
 });
@@ -208,4 +208,28 @@ test('no error message holds the token, whatever the failure', async () => {
   const api = apiOver(doFetch);
   // one at a time: the fake answers in call order. refusing asserts each message is clean
   for (const run of [() => api.get('a'), () => api.get('a'), () => api.get('a'), () => api.get('a'), () => api.graphql('q', {})]) await refusing(run());
+});
+
+test('listAll throws past its page ceiling rather than loop on a Link that points back at itself', async () => {
+  const api = { get: async () => ({ body: [1], next: 'projects?page=1' }) };
+  await assert.rejects(listAll(api, 'projects?page=1'), /gitlab api: more than \d+ pages/);
+});
+
+test('an empty RateLimit-* header counts as absent, not as a spent quota', async () => {
+  const { doFetch } = fakeFetch(respond(200, { ...QUOTA_HEADERS, 'RateLimit-Remaining': '' }, '[]'));
+  assert.equal((await apiOver(doFetch).get('projects')).quota, undefined);
+});
+
+test('a huge Retry-After is capped at a day instead of escaping as a RangeError', async () => {
+  const { doFetch } = fakeFetch(respond(429, { 'Retry-After': '99999999999' }));
+  const err = await refusing(apiOver(doFetch).get('projects'));
+  assert.ok(err instanceof SourceRateLimitError);
+  assert.equal(err.retryAt, new Date(NOW + 24 * 60 * 60 * 1000).toISOString());
+});
+
+test('a next page outside the API reads the 2xx body before it throws, freeing the connection', async () => {
+  const answer = respond(200, { Link: next('https://elsewhere.test/api/v4/projects?page=2') }, '[]');
+  const { doFetch } = fakeFetch(answer);
+  await refusing(apiOver(doFetch).get('projects'));
+  assert.equal(answer.bodyUsed, true);
 });
