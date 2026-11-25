@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { deliveredName, parseTemplate } from '../../../template';
 import type { LintAnnotation } from '../../../template-lint';
+import { BuiltInList } from '@/components/plugins/BuiltInList';
 import { type Origin, VariableList } from '@/components/plugins/VariableList';
 import { type Annotations, type EditorAnnotation, isAgent } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
@@ -40,6 +41,7 @@ function PaneBody({ editor, annotations, workspaces, path }: BodyProps) {
       text={editor.textOf(path)} workspaces={workspaces} onApply={editor.applyEdit} originOf={originOf} viewAs={editor.viewAs}
       findings={(name) => findingsOf(annotations.list, name)} onFinding={annotations.openAt}
       values={annotations.values} onWorkspaceValue={annotations.writeValue}
+      footer={<BuiltInList workspaces={workspaces} values={annotations.values} viewAs={editor.viewAs} />}
     />
   );
 }

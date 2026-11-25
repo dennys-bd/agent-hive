@@ -256,3 +256,13 @@ test('a workspace value the route refuses keeps the form open with its error and
   await user.click(within(form).getByRole('button', { name: 'cancelar' }));
   expect(value('testCommand', 'agent-hive')).toHaveTextContent('null');
 });
+test('the pane ends with the read-only built-ins of each workspace, after the variables (#742)', async () => {
+  const builtIns = { 'agent-hive': { fork: null, baseBranch: 'develop', nestedRepos: ['docs'] } };
+  stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: {}, builtIns } }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  const region = screen.getByRole('region', { name: 'embutidas' });
+  expect(pane().compareDocumentPosition(region) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await waitFor(() => expect(within(region).getByTitle('baseBranch · agent-hive')).toHaveTextContent('develop'));
+  expect(within(region).getByTitle('nestedRepos · agent-hive')).toHaveTextContent('docs');
+});

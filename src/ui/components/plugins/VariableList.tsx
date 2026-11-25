@@ -1,5 +1,5 @@
 import { PencilIcon, Trash2Icon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { parseTemplate, type RenderWorkspace, type TemplateVariable, type ValueSource, valueFor, valueSource, type VariableValue, workspaceValueProblem } from '../../../template';
 import { type EditResult, removeVariable } from '../../../template-edit';
 import { type LintAnnotation, variableUses } from '../../../template-lint';
@@ -19,6 +19,7 @@ export interface VariableListProps {
   findings?(name: string): readonly LintAnnotation[]; onFinding?(finding: LintAnnotation): void; // omitted: no lint lines
   viewAs?: string; // a workspace's preview: the other workspaces' values are dimmed
   values?: WorkspaceRenders; // #621, #742: each workspace's values and built-ins; omitted (a passage), a line reads only the text's own entries
+  footer?: ReactNode; // #742: last in the scroll column, the pane's built-ins; a protocol passage passes none
   onWorkspaceValue?(workspace: string, name: string, value: VariableValue | undefined): Promise<MessageKey | undefined>; // #621: omitted, every write is the text's own entry
 }
 interface Removal { name: string; lines: number[] }
@@ -152,7 +153,7 @@ function PaneHead({ isDisabled, onAdd }: { isDisabled: boolean; onAdd(): void })
  * or a protocol passage's draft) and the workspace route (#621). The parse is memoised on the text: the list re-renders on every keystroke
  * (decision 23). A header that does not parse replaces the list with its line and hides the form (decision 22). "+ variable" opens the form
  * at the top; the pencil opens it in its card's place, so a card and its form never show together. */
-export function VariableList({ text, workspaces, onApply, originOf, findings, onFinding, viewAs, values = NO_VALUES, onWorkspaceValue }: VariableListProps) {
+export function VariableList({ text, workspaces, onApply, originOf, findings, onFinding, viewAs, values = NO_VALUES, onWorkspaceValue, footer }: VariableListProps) {
   const parsed = useMemo(() => parseTemplate(text), [text]);
   const [error, setError] = useState<MessageKey>();
   const [removal, setRemoval] = useState<Removal>();
@@ -188,6 +189,7 @@ export function VariableList({ text, workspaces, onApply, originOf, findings, on
           )))}
         </ul>
       )}
+      {footer}
       {removal && <RemoveDialog removal={removal} onConfirm={() => write(removeVariable(text, removal.name))} onClose={() => setRemoval(undefined)} />}
     </div>
   );
