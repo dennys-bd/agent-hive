@@ -101,8 +101,38 @@ function failure(watch: WatchState, snapshot: Snapshot): string | undefined {
   return undefined;
 }
 
-/** One read of the State: its entries and runs, its progress, every task it frees (all blockers in Done), or the end it calls for. */
-export function observe(watch: WatchState, snapshot: Snapshot, now: Date): Step {
+// #672: the topmost watched task up a task's parent chain, its seed (a seed itself has no parent); a cycle ends the walk
+function seedOf(snapshot: Snapshot, watched: ReadonlySet<string>, task: Task): string | undefined {
+  const seen = new Set<string>([task.item.itemId]);
+  let found: string | undefined;
+  for (let id = task.item.parent; id !== undefined && !seen.has(id); id = taskOf(snapshot, id)?.item.parent) {
+    seen.add(id);
+    if (watched.has(id)) found = id;
+  }
+  return found;
+}
+
+// #672: what a decomposition makes under a seed joins the run, so its tokens and its failures are the run's. An epic runs nothing and is
+// never adopted. A child is born auto and the Hive's own blockers order it, so it is released at once, with no setAuto
+function adopt(watch: WatchState, snapshot: Snapshot): WatchState {
+  const tasks = [...watch.tasks];
+  for (const task of snapshot.tasks) {
+    const watched = new Set(tasks.map((t) => t.itemId));
+    if (watched.has(task.item.itemId) || task.item.epic !== undefined) continue;
+    const seed = tasks.find((t) => t.itemId === seedOf(snapshot, watched, task));
+    if (seed === undefined) continue;
+    // ponytail: counted by key prefix, which assumes no seed key is another's `<key>.<n>`; count by seedOf if seeds ever look like that
+    const n = tasks.filter((t) => t.key.startsWith(`${seed.key}.`)).length + 1;
+    tasks.push({ itemId: task.item.itemId, key: `${seed.key}.${n}`, title: task.item.title, blockedBy: [] });
+  }
+  const adopted = tasks.slice(watch.tasks.length).map((t) => t.itemId);
+  return adopted.length === 0 ? watch : { ...watch, tasks, released: [...watch.released, ...adopted] };
+}
+
+/** One read of the State: the tasks it adopts (#672), its entries and runs, its progress, every task it frees (all blockers in Done), or the
+ *  end it calls for. */
+export function observe(seen: WatchState, snapshot: Snapshot, now: Date): Step {
+  const watch = adopt(seen, snapshot); // first, so a child's first read already counts its entry, its failure and the total
   const sleptRuns = [...new Set([...watch.sleptRuns, ...sleptAll(snapshot)])]; // before the stage runs, so a slept record and its wake in one read still pair
   const next = { ...watch, sleptRuns, entries: withEntries(watch, snapshot, now), stageRuns: withStageRuns({ ...watch, sleptRuns }, snapshot) };
   const progress = progressOf(watch, snapshot);

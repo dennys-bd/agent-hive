@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseShortstat, readInterventions, runMetrics, stageSpans } from '../../src/benchmark/metrics.js';
 import { costOf } from '../../src/benchmark/prices.js';
-import { DONE_STAGE, type WatchState, type WatchTask } from '../../src/benchmark/watcher.js';
+import { DONE_STAGE, observe, startWatch, type WatchState, type WatchTask } from '../../src/benchmark/watcher.js';
 import type { ActivityRecord, Intervention, TaskUsage } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 import { snap, task, watchTask } from './fixtures.js';
@@ -103,4 +103,13 @@ test('readInterventions keeps only the four fields of each intervention (#473)',
   const home = await tempDir(t, 'bench-');
   await writeFile(join(home, 'interventions.json'), JSON.stringify([{ ...DONE, extra: 'x' }]));
   assert.deepEqual(await readInterventions(home, () => undefined), [DONE]);
+});
+
+test("a child the watcher adopted counts in the run: its row under <seed key>.<n> and its tokens in the total (#672)", () => {
+  const seed = task(1, DONE_STAGE);
+  const child = { ...task(2, DONE_STAGE), item: { ...task(2, DONE_STAGE).item, parent: 'local:1' } };
+  const state = withRecord(withRecord(snap([seed, child]), 1, { usage: usage(100, 1) }), 2, { usage: usage(400, 2) });
+  const { watch } = observe(startWatch([watchTask(1)]), state, new Date(T0));
+  const { metrics } = runMetrics({ ...FACTS, watch, state });
+  assert.deepEqual([metrics.tokens, metrics.tasks.map((t) => t.key)], [500, ['T1', 'T1.1']]);
 });

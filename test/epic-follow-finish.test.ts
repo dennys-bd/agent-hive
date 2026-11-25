@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
+import { runStages } from '../src/benchmark/arm-config.js';
+import { DONE_STAGE } from '../src/benchmark/watcher.js';
 import { followEpics } from '../src/epic-follow.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { END, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
+import { type BenchFlow, END, HIVE_EPIC, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { move } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 import { flowed, mainFlows } from './fixtures/main-flow.js';
@@ -149,4 +151,19 @@ test('an epic whose last stage runs commands never runs them, its stamp on or of
   assert.deepEqual(effects.filter((e) => e.type === 'spawn'), []);
   assert.equal(activityOf(state, 'board:E')?.commands, undefined);
   assert.deepEqual([deletes(effects).length, archives(effects)], [0, [ARCHIVE]]);
+});
+
+// #672: a benchmark run's comb is runStages' copy, whose last stage is Delivered; the watcher ends the run once every task it watches is there
+test("in a run's flow, a hive epic whose children are all in Delivered follows into Delivered (#672)", () => {
+  const flow: BenchFlow = {
+    copiedAt: '2026-11-25T00:00:00.000Z', commands: [], dropped: [],
+    stages: [{ name: 'Spec', prompt: '/hive:new-spec {id}' }, { name: 'Build', prompt: '/hive:new-build {id}' }],
+    transitions: [{ from: 'Spec', to: 'Build', when: 'done' }, { from: 'Build', to: END, when: 'done' }],
+  };
+  const { stages, transitions } = runStages(flow, 'claude');
+  const local = (n: number, stage: string, extra: Partial<Item> = {}): Task =>
+    ({ item: { itemId: `local:${n}`, id: `RUN-${n}`, title: `t${n}`, body: '', url: '', ...extra }, stage, boardColumn: '', auto: true, created: true });
+  const tasks = [local(1, 'Spec', { children: ['local:2', 'local:3'], epic: HIVE_EPIC }), local(2, DONE_STAGE, { parent: 'local:1' }), local(3, DONE_STAGE, { parent: 'local:1' })];
+  const { state } = followEpics({ ...initialState(0), workspaces: ['hive'], ...flowed(stages, transitions), tasks });
+  assert.equal(state.tasks.find((t) => t.item.itemId === 'local:1')?.stage, DONE_STAGE);
 });
