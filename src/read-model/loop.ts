@@ -1,6 +1,6 @@
 import { jiraCredential } from '../credentials.js';
 import type { Logger } from '../log.js';
-import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../polling.js';
+import { POLL_INTERVAL_MS, QUOTA_RESERVE_RATIO } from '../polling.js';
 import type { RepoRef } from '../repos/repositories.js';
 import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
@@ -144,7 +144,7 @@ function coreOf(deps: ReadModelLoopDeps): LoopCore {
       return { db: deps.db, rest: keeping(access.rest), gql: access.gql, source: access.source, now };
     },
     // As the GraphQL backoff (polling.ts): what is left goes to the workers' own gh calls; the routes answer from the database meanwhile
-    inBackoff: () => quota !== undefined && quota.remaining < QUOTA_RESERVE && Date.parse(quota.resetsAt) > now().getTime(),
+    inBackoff: () => quota !== undefined && quota.remaining < quota.limit * QUOTA_RESERVE_RATIO && Date.parse(quota.resetsAt) > now().getTime(),
   };
 }
 

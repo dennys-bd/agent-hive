@@ -92,6 +92,8 @@ test('inBackoff is true only when remaining is below the reserve and the reset i
   assert.equal(inBackoff({ limit: 5_000, remaining: 4_000, resetsAt: at(-60), at: at(0) }, NOW), false);
   assert.equal(inBackoff({ limit: 5_000, remaining: 100, resetsAt: at(10), at: at(0) }, NOW), false);
   assert.equal(inBackoff({ limit: 5_000, remaining: 100, resetsAt: at(-10), at: at(0) }, NOW), true);
+  assert.equal(inBackoff({ limit: 300, remaining: 100, resetsAt: at(-10), at: at(0) }, NOW), false, 'the reserve is a tenth of the limit');
+  assert.equal(inBackoff({ limit: 300, remaining: 20, resetsAt: at(-10), at: at(0) }, NOW), true);
 });
 
 test('pauseUntil: reset as it is; 15 min, 1 h and 4 h from now; até amanhã the next local 07:00, today before 07:00 (redesign 02)', () => {

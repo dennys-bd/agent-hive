@@ -3,12 +3,13 @@ import type { SourceQuota, SourceSync, State } from './types.js';
 
 export const POLL_INTERVAL_MS = 30_000;
 export const IDLE_POLL_INTERVAL_MS = 5 * 60_000;
-export const QUOTA_RESERVE = 500; // ponytail: fixed 10 % of the 5 000/h GraphQL quota, config it if a source ever needs another
+// A share of the limit, not a count: a self-hosted GitLab's limit can be a few hundred, where a fixed 500 would always be backoff
+export const QUOTA_RESERVE_RATIO = 0.1; // ponytail: fixed 10 %, config it if a source ever needs another
 
 // Below the reserve and before the reset: what is left goes to the workers' own gh calls (gh pr create…). The native view's read obeys it too (#756).
 export function inBackoff(status: SourceSync | undefined, now: number): boolean {
   const quota = status?.quota;
-  return quota !== undefined && quota.remaining < QUOTA_RESERVE && Date.parse(quota.resetsAt) > now;
+  return quota !== undefined && quota.remaining < quota.limit * QUOTA_RESERVE_RATIO && Date.parse(quota.resetsAt) > now;
 }
 
 // #812 decision 5: a call the source rate limited asked it to wait until backoffUntil. An unparsable time is no wait: NaN fails the >.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
-import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../../src/polling.js';
+import { POLL_INTERVAL_MS } from '../../src/polling.js';
 import { openReadModel, READ_MODEL_FILE, type ReadModel, type SyncKind } from '../../src/read-model/db.js';
 import {
   createReadModelLoop, readModelEvent, RECONCILE_EVERY_MS, REFETCH_COOLDOWN_MS, syncRepository, type ReadModelLoop, type ReadModelLoopDeps,
@@ -193,7 +193,7 @@ test('start() runs a round now and one every POLL_INTERVAL_MS; stop() clears the
 test('below the REST reserve and before its reset, runOnce and refetch make no request; after the reset they do (#180)', async (t) => {
   const db = await tempModel(t);
   let clock = NOW().getTime();
-  const low = { limit: 5000, remaining: QUOTA_RESERVE - 1, used: 4501, resetsAt: new Date(clock + 60_000).toISOString() };
+  const low = { limit: 5000, remaining: 499, used: 4501, resetsAt: new Date(clock + 60_000).toISOString() };
   const paths: string[] = [];
   const rest: RestGet = async (path) => {
     paths.push(path);
@@ -470,7 +470,7 @@ const jiraOn = (call: (site: string) => JiraCall): Partial<ReadModelLoopDeps> =>
 
 test('with the REST quota in backoff the Jira groups still sync while the repositories make no request (#824)', async (t) => {
   const db = await tempModel(t);
-  const low = { limit: 5000, remaining: QUOTA_RESERVE - 1, used: 4501, resetsAt: new Date(NOW().getTime() + 60_000).toISOString() };
+  const low = { limit: 5000, remaining: 499, used: 4501, resetsAt: new Date(NOW().getTime() + 60_000).toISOString() };
   const paths: string[] = [];
   const page = jiraPage([jiraIssue('ABC', 1)]);
   const jira = fakeJira({ [JIRA_ABC]: [page, page] });

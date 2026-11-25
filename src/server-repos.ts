@@ -199,7 +199,7 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
   });
 }
 
-// The writes' GraphQL backoff (#757): under QUOTA_RESERVE before its reset a write is refused; the reads make no GraphQL call (#181)
+// The writes' GraphQL backoff (#757): under QUOTA_RESERVE_RATIO of the limit before its reset a write is refused; the reads make no GraphQL call (#181)
 function inQuotaBackoff(ctx: RepoContext, res: Response): boolean {
   const quota = ctx.quota();
   if (!inBackoff({ quota }, Date.now())) return false;

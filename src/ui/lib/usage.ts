@@ -14,7 +14,7 @@ export const PERCENT_MAX = 100;
 export const YELLOW_AT = 70;
 export const RED_AT = 90;
 // Mirrors src/polling.ts (pulls the orchestrator into the browser).
-export const QUOTA_RESERVE = 500;
+export const QUOTA_RESERVE_RATIO = 0.1;
 // Mirrors src/rate-limits.ts; the text comes from the dictionary.
 const WINDOW_LABEL: Record<string, MessageKey> = { five_hour: 'window.session', seven_day: 'window.week', thirty_day: 'window.thirtyDay' };
 const WEEKLY_PREFIX = 'seven_day_';
@@ -115,7 +115,7 @@ export const ruleTarget = (rule: Pick<UsageRule, 'source' | 'percent' | 'agent'>
 
 // Mirrors inBackoff in src/polling.ts
 export const inBackoff = (quota: SourceQuota | undefined, now: number): boolean =>
-  quota !== undefined && quota.remaining < QUOTA_RESERVE && Date.parse(quota.resetsAt) > now;
+  quota !== undefined && quota.remaining < quota.limit * QUOTA_RESERVE_RATIO && Date.parse(quota.resetsAt) > now;
 
 /** The pausar regra popover's fixed horizons (#297, redesign 02), in the menu's order; personalizado… posts its own time. */
 export type PauseChoice = 'reset' | 'quarter' | 'hour' | 'fourHours' | 'tomorrow';
