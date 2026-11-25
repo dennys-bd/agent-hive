@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BUILT_INS, type BuiltIns, deliveredName, isVariableName, needsLiquid, NO_BUILT_INS, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace, splitHeader, type TemplateError, valueFor, valueSource } from '../src/template.js';
+import { BUILT_INS, type BuiltIns, deliveredHeader, deliveredName, isVariableName, needsLiquid, NO_BUILT_INS, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace, splitHeader, type TemplateError, toolsLine, valueFor, valueSource } from '../src/template.js';
 import { PR_TARGETS } from '../src/types.js';
 
 // The Liquid render pipeline (#310): a skill or agent template's header, its variables, the render for one workspace, the .liquid name.
@@ -280,4 +280,47 @@ test('declaring a built-in is refused at its line, and no workspace value takes 
     assert.equal(isVariableName(name), false, name);
   }
   assert.equal(isVariableName('forked'), true, 'only the names themselves');
+});
+
+// #665: an agent's neutral can: and the tools line the delivery writes from it for Claude Code. Its can: is file line 4.
+const agentHeader = (...lines: string[]): string => ['---', 'name: reviewer', 'description: Reviews.', ...lines, '---', 'Body.', ''].join('\n');
+const KNOWN_CAPABILITIES = 'read, write, shell, dispatch';
+
+test('toolsLine gives each capability its Claude tools, in read, write, shell, dispatch order whatever the list\'s (#665)', () => {
+  assert.equal(toolsLine(['read']), 'Read, Grep, Glob');
+  assert.equal(toolsLine(['shell', 'read']), 'Read, Grep, Glob, Bash');
+  assert.equal(toolsLine(['read', 'write']), 'Read, Grep, Glob, Write, Edit');
+  assert.equal(toolsLine(['dispatch', 'shell', 'write', 'read']), 'Read, Grep, Glob, Write, Edit, Bash, Agent');
+});
+
+test('the delivered header gains tools: from can: and keeps can:; a written tools: stays untouched; a header with neither is delivered as written (#665)', () => {
+  assert.equal(
+    deliveredHeader(parseTemplate(agentHeader('can: [read, shell]'))),
+    '---\nname: reviewer\ndescription: Reviews.\ncan: [read, shell]\ntools: Read, Grep, Glob, Bash\n---\n',
+  );
+  const both = agentHeader('can: [read]', 'tools: Read, mcp__graphify');
+  assert.equal(deliveredHeader(parseTemplate(both)), both.slice(0, both.indexOf('Body.')), 'a written tools: wins, byte for byte');
+  const neither = agentHeader('tools: Read');
+  assert.equal(deliveredHeader(parseTemplate(neither)), neither.slice(0, neither.indexOf('Body.')), 'no can:, no declaration: as today');
+  const credited = agentHeader('can: [read, write]', 'basedOn: { name: a, repo: b, ref: c, license: d, url: e }');
+  assert.equal(
+    deliveredHeader(parseTemplate(credited)),
+    '---\nname: reviewer\ndescription: Reviews.\ncan: [read, write]\ntools: Read, Grep, Glob, Write, Edit\n---\n',
+    'basedOn goes and the tools line comes last',
+  );
+});
+
+test('renderTemplate delivers a plain agent with can: through its header, not byte for byte (#665)', () => {
+  assert.deepEqual(renderTemplate(parseTemplate(agentHeader('can: [read]')), at('hive')), {
+    ok: true,
+    text: '---\nname: reviewer\ndescription: Reviews.\ncan: [read]\ntools: Read, Grep, Glob\n---\nBody.\n',
+  });
+});
+
+test('a can: that is not a non-empty list of known capabilities is one error at its line, naming the four (#665)', () => {
+  assert.deepEqual(headerErrors('name: x', 'can: [read, fly]'), [{ line: 3, message: `unknown capability "fly" in can (known: ${KNOWN_CAPABILITIES})` }]);
+  assert.deepEqual(headerErrors('name: x', 'can: read'), [{ line: 3, message: `can must be a non-empty list out of ${KNOWN_CAPABILITIES}` }]);
+  assert.deepEqual(headerErrors('can: []'), [{ line: 2, message: `can must be a non-empty list out of ${KNOWN_CAPABILITIES}` }]);
+  assert.deepEqual(headerErrors('can: [read, write, shell, dispatch]'), []);
+  assert.deepEqual(failure(renderTemplate(parseTemplate(agentHeader('can: [fly]')), at('hive'))).map((error) => error.line), [4], 'a typo never silently drops a tool');
 });
