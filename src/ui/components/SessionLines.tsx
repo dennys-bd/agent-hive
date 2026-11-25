@@ -134,13 +134,22 @@ interface LocalSessionLinesProps {
   except?: ReadonlySet<string>; // #347: the runs drawn in their terminal's place
 }
 
+type LocalLinesInput = Pick<LocalSessionLinesProps, 'workspace' | 'sessions' | 'workers' | 'runs' | 'except'>;
+
+/** The local session lines LocalSessionLines draws: its kept sessions with their workers, then its live runs not kept yet. Shared with the
+ * local entry's collapse (#1033), whose marker counts what expanding draws. */
+export function localLines({ workspace, sessions, workers, runs, except }: LocalLinesInput): { listed: { session: Session; worker?: Worker }[]; unkept: ActivitySession[] } {
+  const isHere = (runId: string | undefined): boolean => runId === undefined || except?.has(runId) !== true;
+  const listed = sessions.map((session) => ({ session, worker: localWorker(workers, workspace, session.id) })).filter(({ worker }) => isHere(worker?.runId));
+  const unkept = runs.filter((r) => !sessions.some((s) => s.id === r.sessionId) && isHere(r.run.ptyId));
+  return { listed, unkept };
+}
+
 /** A workspace's local sessions under its local activity (#587, #590), oldest first: the name or the short id, and the status while the run
  * lives; then its live runs not kept yet, marked iniciando (#308). `shown`, the run the center shows while the local activity is the selected
  * one, is marked. A run in `except` is left out: its terminal's line draws it (#347). */
 export function LocalSessionLines({ workspace, sessions, workers, runs, shown, onOpenRun, except }: LocalSessionLinesProps) {
-  const isHere = (runId: string | undefined): boolean => runId === undefined || except?.has(runId) !== true;
-  const listed = sessions.map((session) => ({ session, worker: localWorker(workers, workspace, session.id) })).filter(({ worker }) => isHere(worker?.runId));
-  const unkept = runs.filter((r) => !sessions.some((s) => s.id === r.sessionId) && isHere(r.run.ptyId));
+  const { listed, unkept } = localLines({ workspace, sessions, workers, runs, except });
   return (
     <>
       {listed.map(({ session, worker }) => <LocalLine key={session.id} workspace={workspace} session={session} worker={worker} shown={shown} />)}

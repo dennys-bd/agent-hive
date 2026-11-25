@@ -2,11 +2,12 @@ import { ChevronDownIcon, GitBranchIcon, PlusIcon } from 'lucide-react';
 import { type ReactNode, type Ref, type RefObject, useEffect, useRef, useState } from 'react';
 import { taskTotals } from '../../record-kit';
 import { taskLabel, resolveWorkspace } from '../../tasks';
+import { localWorker } from '../../local-sessions.js';
 import { displayBinding } from '../../shortcuts';
 import type { Task, Session, Worker, Flow, Status } from '../../types';
 import { ActivityGroupList } from '@/components/ActivityGroups';
 import { useBranches } from '@/components/QuickDialogs';
-import { LocalRunLine, LocalSessionLines, TaskSessionLine } from '@/components/SessionLines';
+import { LocalRunLine, LocalSessionLines, localLines, TaskSessionLine } from '@/components/SessionLines';
 import { StatusWord } from '@/components/StatusWord';
 import { TerminalLines } from '@/components/TerminalLines';
 import { WorkspaceMenu } from '@/components/WorkspaceMenu';
@@ -38,7 +39,6 @@ export interface ActivitiesPanelProps {
   isShown?: boolean; // the tab is on screen: the checkouts' branches and the worktree states are read then, and again each time it shows
 }
 
-const ENTRY = 'flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md py-1.5 pr-2 pl-5 text-left text-[13px]';
 // The guide line the session lines hang on, under an activity's row and under a workspace's local entry alike
 const GUIDE = 'flex flex-col gap-px border-empty border-l pl-[9px]';
 
@@ -240,31 +240,51 @@ function WorkspaceHeader({ name, isOpen, summary, onToggle, nav, view, onView, o
   );
 }
 
-type LocalProps = Omit<RowsProps, 'worktrees'> & { name: string; branch?: string | null; local?: LocalActivity; sessions: Session[] };
+type LocalProps = Omit<RowsProps, 'worktrees'> & {
+  name: string; branch?: string | null; local?: LocalActivity; sessions: Session[]; lines: LocalLineState; isCollapsed: boolean; onToggle(): void;
+};
+type LocalLinesArgs = Pick<LocalProps, 'name' | 'local' | 'sessions' | 'workers'>;
+interface LocalLineState { count: number; isWaiting: boolean }
+
+// What the local entry's collapse needs (#1033): the lines expanding draws, as LocalSessionLines and TerminalLines draw them, and whether
+// one of its sessions waits on the user, a kept one by its worker or a live one not kept yet by its run
+function localLineState({ name, local, sessions, workers }: LocalLinesArgs): LocalLineState {
+  const terminals = local?.terminals ?? [];
+  const { listed, unkept } = localLines({ workspace: name, sessions, workers, runs: local?.sessions ?? [], except: mergedRuns(terminals) });
+  const isWaiting = sessions.some((s) => localWorker(workers, name, s.id)?.status === 'waiting') || (local?.sessions ?? []).some((r) => r.status === 'waiting');
+  return { count: listed.length + unkept.length + terminals.length, isWaiting };
+}
 
 // A workspace's local activity (#590): its row, selectable like any activity, with its checkout's branch, and under it its local sessions
-// (#587), a live one opening its run and a stopped one continued. No time, no worker badge, no delete: it holds no task and never goes
-function LocalEntry({ name, branch, local, sessions, workers, selected, shown, onSelect, onOpenRun, nav }: LocalProps) {
+// (#587), a live one opening its run and a stopped one continued. No time, no worker badge, no delete: it holds no task and never goes. A
+// block like a task's (#1033): its chevron hides its lines, and the row's marker says how many it hid
+function LocalEntry({ name, branch, local, sessions, workers, selected, shown, onSelect, onOpenRun, nav, lines, isCollapsed, onToggle }: LocalProps) {
   const key = localKey(name);
   const isSelected = key === selected;
+  const { count, isWaiting } = lines;
+  const isHidden = isCollapsed && count > 0;
   const lineProps = { workspace: name, sessions, workers, runs: local?.sessions ?? [], shown: isSelected ? shown : undefined, onOpenRun: (ptyId: string) => onOpenRun(key, ptyId) };
   const row = (
     <button
       type="button" aria-current={isSelected ? 'true' : undefined} onClick={() => onSelect(key)}
-      className={`${ENTRY} ${isSelected ? 'bg-muted' : 'hover:bg-accent/50'}`}
+      className="flex w-full min-w-0 cursor-pointer items-center gap-2 text-left text-[13px]"
     >
       <span className="shrink-0">{t('activities.local')}</span>
-      {branch && <span className="min-w-0 truncate font-mono text-muted-foreground text-xs">{branch}</span>}
+      {branch && <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground text-xs">{branch}</span>}
+      {isHidden && <HiddenMarker count={count} isWaiting={isWaiting} />}
     </button>
   );
   return (
-    <>
+    <div className={`relative flex flex-col rounded-md py-1.5 pr-2 pl-5 ${isSelected ? 'bg-muted' : 'hover:bg-accent/50'}`}>
+      {count > 0 && <TaskChevron isCollapsed={isCollapsed} onToggle={onToggle} />}
       {local && nav.localMenu ? nav.localMenu(local, row) : row}
-      <div className={`mr-2 ml-[22px] empty:hidden ${GUIDE}`}>
-        <LocalSessionLines {...lineProps} except={mergedRuns(local?.terminals)} />
-        <TerminalLines terminals={local?.terminals ?? []} shown={lineProps.shown} onOpen={lineProps.onOpenRun} sessionLine={(runId) => <LocalRunLine {...lineProps} runId={runId} />} />
-      </div>
-    </>
+      {count > 0 && !isHidden && (
+        <div className={`mt-1 ml-[2px] ${GUIDE}`}>
+          <LocalSessionLines {...lineProps} except={mergedRuns(local?.terminals)} />
+          <TerminalLines terminals={local?.terminals ?? []} shown={lineProps.shown} onOpen={lineProps.onOpenRun} sessionLine={(runId) => <LocalRunLine {...lineProps} runId={runId} />} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -304,8 +324,12 @@ function WorkspaceGroup({ name, branch, activities, flows, localSessions, local,
   const toggle = (key: string): void => setView({ collapsed: toggled(view.collapsed, key) });
   // a task's collapse is part of the saved view too (#913), under its item id
   const toggleTask = (id: string): void => setView({ collapsedTasks: toggled(view.collapsedTasks, id) });
-  // every task with lines to hide (#913): one with none has no chevron to show it collapsed
-  const collapseTasks = (): void => setView({ collapsedTasks: activities.filter((a) => lineCount(a) > 0).map((a) => a.task.item.itemId) });
+  // every block with lines to hide (#913), the local entry's under its local key (#1033): one with none has no chevron to show it collapsed
+  const localState = localLineState({ name, local, sessions: localSessions, workers: rows.workers });
+  const hasLocalLines = localState.count > 0;
+  const collapseTasks = (): void => setView({
+    collapsedTasks: [...(hasLocalLines ? [localKey(name)] : []), ...activities.filter((a) => lineCount(a) > 0).map((a) => a.task.item.itemId)],
+  });
   return (
     <section aria-label={name} className="flex flex-col gap-0.5">
       {/* open or closed is part of the workspace's saved view, so a restart or a remount keeps it (#779) */}
@@ -315,7 +339,10 @@ function WorkspaceGroup({ name, branch, activities, flows, localSessions, local,
       />
       {view.isOpen && (
         <>
-          <LocalEntry name={name} branch={branch} local={local} sessions={localSessions} {...rows} />
+          <LocalEntry
+            name={name} branch={branch} local={local} sessions={localSessions} lines={localState} isCollapsed={view.collapsedTasks.includes(localKey(name))}
+            onToggle={() => toggleTask(localKey(name))} {...rows}
+          />
           <ActivityGroupList
             groups={groupActivities(activities, view.mode, flows)} isFlat={view.mode === 'none'} collapsed={view.collapsed}
             onToggle={toggle} entry={entryOf(rows, { showWorktree: view.showWorktree, collapsedTasks: view.collapsedTasks, onToggleTask: toggleTask, selectedRef })}

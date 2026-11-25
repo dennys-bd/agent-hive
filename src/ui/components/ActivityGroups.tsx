@@ -9,7 +9,7 @@ interface GroupHeaderProps { group: ActivityGroup; isOpen: boolean; onToggle(): 
 // A group's header (#586): chevron, its name in foreground, its count, a 1px rule to the edge, and done's excluir todas… on the right
 function GroupHeader({ group, isOpen, onToggle }: GroupHeaderProps) {
   return (
-    <div className="flex items-center gap-1.5 py-[3px] pr-2 pl-2.5 text-muted-foreground text-xs">
+    <div className="flex items-center gap-1.5 py-[3px] pr-2 pl-1.5 text-muted-foreground text-xs">
       <button type="button" aria-expanded={isOpen} onClick={onToggle} className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left">
         <ChevronDownIcon className={`size-3 shrink-0 ${isOpen ? '' : '-rotate-90'}`} />
         <span className="truncate text-foreground">{group.name}</span>
