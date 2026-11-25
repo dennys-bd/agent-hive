@@ -19,7 +19,8 @@ const AGENTS_DIR = 'agents';
 const AGENT_SUFFIX = '.md';
 const FENCE = '---';
 const AGENT_NAME = /^[a-z0-9-]+$/; // it names a file under the home and a -c key, where '.', '/' or '=' would escape or split it
-const WRITING_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'Bash']); // what Codex's workspace sandbox allows and read-only refuses
+const WRITING_CAPABILITIES: ReadonlySet<string> = new Set(['write', 'shell']); // #665: what Codex's workspace sandbox allows and read-only refuses
+const FLOW_BRACKETS = /^\[|\]$/g; // can: [read, write] is a YAML flow list on its one line
 
 /** One agent of assets/plugin/agents. Codex's role uses name, description, readOnly and the body; tools and model are Claude's (#758), which
  * runs an agent with a tools line as a copy of it, and Codex's renderRole ignores both (a Claude alias has no Codex name). */
@@ -64,8 +65,12 @@ function frontmatter(lines: readonly string[]): Map<string, string> {
   }));
 }
 
-/** One agent file's role. Codex reads name, description and whether the tools write (a tool it has no equivalent for, Agent, only ever counts
- * as not writing); tools and model are kept for Claude's launch (#758). The body after the second --- is kept verbatim, a later --- line included. */
+// A comma list as one frontmatter line writes it: an empty entry is no entry
+const entries = (value: string): string[] => value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+
+/** One agent file's role. Codex reads name, description and whether its can: writes (#665: write or shell; dispatch, which Codex has no
+ * equivalent for, never does); tools and model are kept for Claude's launch (#758). The body after the second --- is kept verbatim, a later
+ * --- line included. */
 export function readAgent(file: string, text: string): AgentRole {
   const lines = text.split(/\r?\n/); // a CRLF checkout too
   const end = lines[0] === FENCE ? lines.indexOf(FENCE, 1) : -1;
@@ -75,10 +80,12 @@ export function readAgent(file: string, text: string): AgentRole {
   const description = fields.get('description');
   if (!name || !description) throw new Error(`${file}: its frontmatter has no name or no description`);
   if (!AGENT_NAME.test(name)) throw new Error(`${file}: its name "${name}" is not lowercase letters, digits and hyphens`);
-  // #758: an empty entry is no tool, and a line with none is no list, so Claude's launch never limits a session to nothing by mistake
-  const listed = fields.get('tools')?.split(',').map((tool) => tool.trim()).filter((tool) => tool !== '');
-  const tools = listed === undefined || listed.length === 0 ? undefined : listed;
-  const readOnly = tools !== undefined && !tools.some((tool) => WRITING_TOOLS.has(tool)); // no list: Claude gives every tool
+  // #758: a line with no tool is no list, so Claude's launch never limits a session to nothing by mistake
+  const listed = fields.get('tools');
+  const tools = listed === undefined || entries(listed).length === 0 ? undefined : entries(listed);
+  const can = fields.get('can');
+  // #665: no can: says nothing, and a header that says nothing gives every tool, for every runner
+  const readOnly = can !== undefined && !entries(can.replace(FLOW_BRACKETS, '')).some((capability) => WRITING_CAPABILITIES.has(capability));
   const model = fields.get('model');
   return {
     name, description, readOnly, instructions: lines.slice(end + 1).join('\n'),
