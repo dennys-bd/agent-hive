@@ -8,6 +8,8 @@ import { type Format, HASH_SHOWN, millions, plain, usd, duration } from './forma
 import { aggregate, type BenchReport, type DiffCell, type RatioCell, type ReportRow, type SpreadCell } from './report.js';
 
 const NO_VALUE = '-';
+const NO_STAGE = '(no stage)'; // #672: the tokens of a usage part that names no stage
+const stageLabel = (stage: string): string => `tokens · ${stage === '' ? NO_STAGE : stage}`;
 
 // A name, a criterion or a reason is the user's (or an MCP agent's) text: a newline in it would forge a line of the one file
 // that maps tokens to arms, and a pipe (or a backslash before one) would split a table's cell
@@ -39,7 +41,9 @@ function tables(report: BenchReport): string[] {
   const scenarios = first === undefined || last === undefined ? 'scenarios' : `${first} · ${last}`;
   return [
     ...head(report, 'execution'),
-    line(report, 'tokens', x.tokens, (cell) => spreadText(cell, millions)), line(report, 'cost', x.cost, (cell) => spreadText(cell, usd)),
+    line(report, 'tokens', x.tokens, (cell) => spreadText(cell, millions)),
+    ...x.stageTokens.map((row) => line(report, stageLabel(row.key), row, (cell) => spreadText(cell, millions))),
+    line(report, 'cost', x.cost, (cell) => spreadText(cell, usd)),
     line(report, 'time', x.time, (cell) => spreadText(cell, duration)), line(report, 'waiting', x.waiting, (cell) => spreadText(cell, duration)),
     line(report, 'build restarts', x.restarts, (cell) => spreadText(cell, plain)), line(report, 'diff', x.diff, diffText),
     line(report, 'tests green', x.tests, ratioText),
