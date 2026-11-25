@@ -966,7 +966,10 @@ export interface BenchRun {
   metrics?: BenchMetrics; evaluation?: BenchRunEvaluation; interventions: Intervention[]; inMedian?: boolean;
   unpriced?: string[]; // #473: models off the price table, costed 0
 }
-export interface BenchTaskMetrics { key: string; title: string; tokens: number; ms: number; waitingMs: number; stages: { stage: string; ms: number }[]; restarts: number }
+export interface BenchTaskMetrics {
+  key: string; title: string; tokens: number; ms: number; waitingMs: number; stages: { stage: string; ms: number }[]; restarts: number;
+  stageTokens: { stage: string; tokens: number }[]; // #672: one per stage name of the task's usage parts, '' for a part with no stage
+}
 export interface BenchMetrics { tokens: number; costUsd: number; ms: number; waitingMs: number; restarts: { count: number; where: string[] }; diff: { files: number; insertions: number; deletions: number }; tests: { green: number; total: number }; tasks: BenchTaskMetrics[] }
 export interface CollectorResult { name: string; status: 'ok' | 'warn' | 'error'; summary: string; findings: ReviewFinding[] }
 export interface ScenarioResult { id: string; passed: number; total: number; screenshots: string[] }

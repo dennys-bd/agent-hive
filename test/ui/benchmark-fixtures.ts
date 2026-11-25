@@ -126,7 +126,7 @@ export function stubDownload(): Download[] {
 // One task per entry, with that many stages: a task with none has not started
 export const metricsOf = (...stages: number[]): BenchMetrics => ({
   tokens: 0, costUsd: 0, ms: 0, waitingMs: 0, restarts: { count: 0, where: [] }, diff: { files: 0, insertions: 0, deletions: 0 }, tests: { green: 0, total: 0 },
-  tasks: stages.map((count, i) => ({ key: `T${i + 1}`, title: `task ${i + 1}`, tokens: 0, ms: 0, waitingMs: 0, restarts: 0, stages: Array.from({ length: count }, (_, s) => ({ stage: `s${s}`, ms: 1 })) })),
+  tasks: stages.map((count, i) => ({ key: `T${i + 1}`, title: `task ${i + 1}`, tokens: 0, ms: 0, waitingMs: 0, restarts: 0, stageTokens: [], stages: Array.from({ length: count }, (_, s) => ({ stage: `s${s}`, ms: 1 })) })),
 });
 
 /** benchmark.hv.html's dlg-sleep: RUNNING in round 2 with A and B running and C waiting (7 tasks in progress: 2 + 3 + 2), round 1's run done. */

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { resultOf, usageOf } from '../activities.js';
 import type { Tokens } from '../facts.js';
 import { isJsonObject } from '../state-guards.js';
-import type { BenchMetrics, BenchTaskMetrics, Intervention, State, TaskUsage } from '../types.js';
+import type { BenchMetrics, BenchTaskMetrics, Intervention, State, TaskUsage, UsagePart } from '../types.js';
 import { costOf } from './prices.js';
 import { DONE_STAGE, type StageEntry, type WatchState, type WatchTask } from './watcher.js';
 
@@ -32,10 +32,19 @@ export function parseShortstat(text: string): BenchMetrics['diff'] {
 const restartsIn = (runs: Record<string, string[]> = {}): [string, number][] =>
   Object.entries(runs).flatMap(([stage, ids]): [string, number][] => (ids.length > 1 ? [[stage, ids.length - 1]] : []));
 
+// #672: usage parts are per (stage, agent), so one stage's agents add up; `stages` stays per span, a stage entered twice shows twice there
+function tokensByStage(parts: readonly UsagePart[]): BenchTaskMetrics['stageTokens'] {
+  const stages = [...new Set(parts.map((p) => p.stage ?? ''))];
+  return stages.map((stage) => ({ stage, tokens: sum(parts.filter((p) => (p.stage ?? '') === stage).map((p) => p.tokens)) }));
+}
+
 function taskMetrics(task: WatchTask, usage: TaskUsage | undefined, watch: WatchState, endedAt: string): BenchTaskMetrics {
-  const { tokens, ms, waitingMs } = usage ?? NO_USAGE;
+  const { tokens, ms, waitingMs, parts } = usage ?? NO_USAGE;
   const restarts = sum(restartsIn(watch.stageRuns[task.itemId]).map(([, n]) => n));
-  return { key: task.key, title: task.title, tokens, ms, waitingMs, stages: stageSpans(watch.entries[task.itemId] ?? [], endedAt), restarts };
+  return {
+    key: task.key, title: task.title, tokens, ms, waitingMs, stages: stageSpans(watch.entries[task.itemId] ?? [], endedAt), restarts,
+    stageTokens: tokensByStage(parts),
+  };
 }
 
 // One `<stage> · <key>` per stage and task that restarted, tasks in seed order: the result screen's "build · HIV-415"

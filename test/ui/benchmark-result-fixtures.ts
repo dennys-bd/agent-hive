@@ -11,7 +11,7 @@ const TASKS: [string, string, number][] = [
   ['HIV-417', 'agrupar por status', 41], ['HIV-418', 'exportar relatório em markdown', 28],
 ];
 const taskMetrics = ([key, title, minutes]: [string, string, number]): BenchTaskMetrics => ({
-  key, title, tokens: 0, ms: minutes * MINUTE, waitingMs: key === 'HIV-415' ? 18 * MINUTE : 0, stages: [], restarts: key === 'HIV-415' ? 1 : 0,
+  key, title, tokens: 0, ms: minutes * MINUTE, waitingMs: key === 'HIV-415' ? 18 * MINUTE : 0, stages: [], restarts: key === 'HIV-415' ? 1 : 0, stageTokens: [],
 });
 export const SCENARIOS = [
   ['S1', 'filtrar por source'], ['S2', 'buscar tarefa'], ['S3', 'agrupar por status'],

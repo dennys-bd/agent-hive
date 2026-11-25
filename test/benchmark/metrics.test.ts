@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseShortstat, readInterventions, runMetrics, stageSpans } from '../../src/benchmark/metrics.js';
 import { costOf } from '../../src/benchmark/prices.js';
 import { DONE_STAGE, observe, startWatch, type WatchState, type WatchTask } from '../../src/benchmark/watcher.js';
-import type { ActivityRecord, Intervention, TaskUsage } from '../../src/types.js';
+import type { ActivityRecord, Intervention, TaskUsage, UsagePart } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 import { snap, task, watchTask } from './fixtures.js';
 
@@ -112,4 +112,15 @@ test("a child the watcher adopted counts in the run: its row under <seed key>.<n
   const { watch } = observe(startWatch([watchTask(1)]), state, new Date(T0));
   const { metrics } = runMetrics({ ...FACTS, watch, state });
   assert.deepEqual([metrics.tokens, metrics.tasks.map((t) => t.key)], [500, ['T1', 'T1.1']]);
+});
+
+test("stageTokens merges one stage's parts across agents in first-appearance order, keeps a part with no stage under '', and sums to the task's tokens (#672)", () => {
+  const part = (stage: string | undefined, agent: UsagePart['agent'], tokens: number): UsagePart => ({ ...(stage === undefined ? {} : { stage }), agent, tokens, ms: 0, waitingMs: 0 });
+  const parts = [part('Spec', 'claude', 100), part('Build', 'claude', 300), part('Spec', 'codex', 50), part(undefined, 'claude', 25)];
+  const state = withRecord(snap([task(1, DONE_STAGE)]), 1, { usage: { tokens: 475, ms: 0, waitingMs: 0, parts } });
+  const [row] = runMetrics({ ...FACTS, watch: watchOf([watchTask(1)], {}), state }).metrics.tasks;
+  assert.deepEqual(row.stageTokens, [{ stage: 'Spec', tokens: 150 }, { stage: 'Build', tokens: 300 }, { stage: '', tokens: 25 }]);
+  assert.equal(row.stageTokens.reduce((total, s) => total + s.tokens, 0), row.tokens);
+  const [bare] = runMetrics({ ...FACTS, watch: watchOf([watchTask(1)], {}), state: snap([task(1, 'Spec')]) }).metrics.tasks;
+  assert.deepEqual(bare.stageTokens, [], 'no usage, no stage');
 });
