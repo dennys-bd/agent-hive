@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { claudeCredential, credentialsPath, githubLoginsStored, jiraCredential, readCredentials, removeClaudeCredential, removeGithubCredential, removeJiraCredential, renewJiraName, saveClaudeCredential, saveGithubCredential, saveJiraCredential, writeCredentials } from '../src/credentials.js';
+import { claudeCredential, credentialsPath, githubLoginsStored, gitlabCredential, jiraCredential, readCredentials, removeClaudeCredential, removeGithubCredential, removeGitlabCredential, removeJiraCredential, renewJiraName, saveClaudeCredential, saveGithubCredential, saveGitlabCredential, saveJiraCredential, writeCredentials } from '../src/credentials.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { assertMode } from './posix-only.js';
 
@@ -215,4 +215,49 @@ test('removeGithubCredential keeps the other logins and every other key and answ
   assert.equal(await removeGithubCredential('carol', env), false);
   assert.equal(await removeGithubCredential('toString', env), false, 'own entries only');
   assert.equal(await readFile(credentialsPath(env), 'utf8'), before, 'nothing written');
+});
+
+const GL = { token: 'fake-gitlab-token-1', username: 'ana', expiresAt: '2027-01-31' };
+const GL_SELF = { token: 'fake-gitlab-token-2', username: 'bob' };
+
+test('a stored gitlab map keeps each well-formed host, drops an entry whose token or username is no string, and a non-string expiresAt alone; a map that is no object is dropped whole (#1048)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({}, env);
+  const path = credentialsPath(env);
+  await writeFile(path, JSON.stringify({
+    github: GH,
+    gitlab: { 'gitlab.com': GL, 'git.example.com': { ...GL_SELF, expiresAt: 7 }, bad1: { ...GL, token: 7 }, bad2: { token: 'x' }, bad3: { ...GL, username: { evil: true } }, bad4: 'x' },
+  }));
+  assert.deepEqual(await readCredentials(env), { github: GH, gitlab: { 'gitlab.com': GL, 'git.example.com': GL_SELF } }, 'a non-string token must never reach the Authorization header');
+  await writeFile(path, JSON.stringify({ github: GH, gitlab: ['x'] }));
+  assert.deepEqual(await readCredentials(env), { github: GH });
+  await writeFile(path, JSON.stringify({ gitlab: 'x' }));
+  assert.deepEqual(await readCredentials(env), {});
+});
+
+test('saveGitlabCredential keys by host, a second save replaces the whole entry, gitlabCredential reads own entries only, and every sibling is kept (#1048)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({ github: GH, claude: { work: WORK } }, env);
+  assert.equal(await gitlabCredential('gitlab.com', env), undefined);
+  await saveGitlabCredential('gitlab.com', GL, env);
+  await saveGitlabCredential('gitlab.com', GL_SELF, env);
+  await saveGitlabCredential('git.example.com', GL, env);
+  assert.deepEqual(await gitlabCredential('gitlab.com', env), GL_SELF, 'no expiresAt left over from the first save');
+  assert.equal(await gitlabCredential('toString', env), undefined, 'an inherited name is no account');
+  assert.deepEqual(await readCredentials(env), { github: GH, claude: { work: WORK }, gitlab: { 'gitlab.com': GL_SELF, 'git.example.com': GL } });
+  await assertMode(t, credentialsPath(env), OWNER_ONLY_FILE); // win32: no POSIX mode bits
+});
+
+test('removeGitlabCredential keeps the other hosts and every other key and answers true; an unknown host answers false and writes nothing (#1048)', async (t) => {
+  const env = await configHome(t);
+  await writeCredentials({ github: GH, claude: { work: WORK }, gitlab: { 'gitlab.com': GL, 'git.example.com': GL_SELF } }, env);
+  assert.equal(await removeGitlabCredential('gitlab.com', env), true);
+  assert.deepEqual(await readCredentials(env), { github: GH, claude: { work: WORK }, gitlab: { 'git.example.com': GL_SELF } });
+  const before = await readFile(credentialsPath(env), 'utf8');
+  assert.equal(await removeGitlabCredential('code.example.org', env), false);
+  assert.equal(await removeGitlabCredential('toString', env), false, 'own entries only');
+  assert.equal(await readFile(credentialsPath(env), 'utf8'), before, 'nothing written');
+  await writeFile(credentialsPath(env), 'not json');
+  assert.equal(await removeGitlabCredential('git.example.com', env), false);
+  assert.equal(await readFile(credentialsPath(env), 'utf8'), 'not json', 'an unreadable file is never rewritten without its other logins');
 });

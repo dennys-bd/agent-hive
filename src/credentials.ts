@@ -48,6 +48,21 @@ function tokenEntries(raw: unknown): Record<string, ClaudeCredential> | undefine
   return Object.fromEntries(Object.entries(raw).flatMap(([name, e]) => (isRecord(e) && typeof e.token === 'string' ? [[name, { token: e.token }]] : [])));
 }
 
+export type GitlabCredential = NonNullable<Credentials['gitlab']>[string];
+
+// #1048: an account by bare host; an entry whose token or username is no string is dropped, as a malformed github is: it would reach the
+// Authorization header or the card as [object Object]. An expiresAt that is no string is dropped with the account kept: only the row reads it.
+function gitlabEntries(raw: unknown): Record<string, GitlabCredential> | undefined {
+  if (!isRecord(raw)) return undefined;
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([host, e]) =>
+      isRecord(e) && typeof e.token === 'string' && typeof e.username === 'string'
+        ? [[host, { token: e.token, username: e.username, ...(typeof e.expiresAt === 'string' ? { expiresAt: e.expiresAt } : {}) }]]
+        : [],
+    ),
+  );
+}
+
 /**
  * What is stored, `{}` when nothing is. A missing, unreadable or corrupt file reads as "not logged in", never as a
  * boot failure. A `github` or `claude` map keeps each well-formed entry (as `mcp` and `jira` do), and: every other
@@ -60,13 +75,15 @@ export async function readCredentials(env?: NodeJS.ProcessEnv): Promise<Credenti
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const { github, mcp, jira, claude, ...rest } = parsed as { github?: unknown; mcp?: unknown; jira?: unknown; claude?: unknown } & Record<string, unknown>;
+    const { github, mcp, jira, claude, gitlab, ...rest } = parsed as { github?: unknown; mcp?: unknown; jira?: unknown; claude?: unknown; gitlab?: unknown } & Record<string, unknown>;
     const values = mcpValues(mcp);
     const sites = jiraEntries(jira);
     const logins = tokenEntries(github);
     const accounts = tokenEntries(claude);
+    const hosts = gitlabEntries(gitlab);
     return {
       ...rest, ...(logins ? { github: logins } : {}), ...(values ? { mcp: values } : {}), ...(sites ? { jira: sites } : {}), ...(accounts ? { claude: accounts } : {}),
+      ...(hosts ? { gitlab: hosts } : {}),
     } as Credentials;
   } catch {
     return {};
@@ -171,6 +188,28 @@ export async function removeGithubCredential(login: string, env?: NodeJS.Process
     removed = true;
     const { [login]: _gone, ...left } = current.github;
     return { ...current, github: left };
+  }, env);
+  return removed;
+}
+
+export async function gitlabCredential(host: string, env?: NodeJS.ProcessEnv): Promise<GitlabCredential | undefined> {
+  const { gitlab } = await readCredentials(env);
+  return gitlab !== undefined && Object.hasOwn(gitlab, host) ? gitlab[host] : undefined;
+}
+
+/** #1048: a second save of a host replaces its whole entry (token, username, expiry): the reconnect after a token expires or is rotated. */
+export async function saveGitlabCredential(host: string, cred: GitlabCredential, env?: NodeJS.ProcessEnv): Promise<void> {
+  await updateCredentials((current) => ({ ...current, gitlab: { ...current.gitlab, [host]: cred } }), env);
+}
+
+/** #1048: false, with nothing written, when the host has no account (own entries only); an unreadable file is never rewritten. */
+export async function removeGitlabCredential(host: string, env?: NodeJS.ProcessEnv): Promise<boolean> {
+  let removed = false;
+  await updateCredentials((current) => {
+    if (current.gitlab === undefined || !Object.hasOwn(current.gitlab, host)) return undefined;
+    removed = true;
+    const { [host]: _gone, ...left } = current.gitlab;
+    return { ...current, gitlab: left };
   }, env);
   return removed;
 }
