@@ -118,7 +118,7 @@ export interface RepoIssueTableProps { state: State; summary: RepoSummary; onTab
  * on opening, on a state change and on atualizar, which reads the sidebar's list again too; never polled. */
 export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository, back }: RepoIssueTableProps) {
   const [issueState, setIssueState] = useState<IssueState>('open');
-  const { issues, isLoading, reload } = useRepoIssues(summary.repository, issueState);
+  const { issues, isLoading, reload } = useRepoIssues(summary.host, summary.repository, issueState);
   // #585 decision 4: the unfolded parents belong to one repository's one state tab and fold again when either changes; React's
   // reset-on-change during render, no effect
   const list = `${summary.repository}#${issueState}`;

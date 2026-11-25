@@ -208,7 +208,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const { config } = runtime;
     const workspace = requireWorkspace(config, task); // the task's workspace, frozen by the reducer (#179); gone = spawnFailed with the reason
     const branch = taskBranch(activity, branchFor(config, task.item)); // a Restart's -r<n> (#283)
-    const base = workspaceBase(config, workspace); // #854: the base remote, the workspace's base branch over the general one, its fork
+    const base = { ...workspaceBase(config, workspace), gitlabHosts: config.gitlabHosts }; // #854: the base remote, the workspace's base branch over the general one, its fork; #1045: the fork sync's GitLab hosts
     let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
     const machine = machineFor(activity);
     const ensure = async (on: Machine, run?: PrepareHooks): Promise<string> => {

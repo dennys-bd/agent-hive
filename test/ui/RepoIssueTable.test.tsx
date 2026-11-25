@@ -12,7 +12,7 @@ import { flowed } from '../fixtures/main-flow.js';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z' };
+const SITE: RepoSummary = { host: 'github.com', repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z' };
 const issue = (n: number, extra: Partial<RepoIssue> = {}): RepoIssue => ({
   number: n, title: `Issue ${n}`, url: `https://github.com/acme/site/issues/${n}`, labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z', pullRequests: [], ...extra,
 });
@@ -35,10 +35,10 @@ const state: State = {
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
   const url = String(input);
-  if (url === '/repositories/acme/site/issues?state=open') return jsonRes(OPEN);
-  if (url === '/repositories/acme/site/issues?state=closed') return jsonRes(CLOSED);
-  if (url === '/repositories/acme/other/issues?state=open') return jsonRes(EMPTY);
-  if (url === '/repositories/acme/new/issues?state=open') return jsonRes(UNSYNCED);
+  if (url === '/repositories/github.com/acme%2Fsite/issues?state=open') return jsonRes(OPEN);
+  if (url === '/repositories/github.com/acme%2Fsite/issues?state=closed') return jsonRes(CLOSED);
+  if (url === '/repositories/github.com/acme%2Fother/issues?state=open') return jsonRes(EMPTY);
+  if (url === '/repositories/github.com/acme%2Fnew/issues?state=open') return jsonRes(UNSYNCED);
   return jsonRes(url === '/repositories' ? [SITE] : { ok: true });
 };
 const fetchMock = vi.fn(answer);
@@ -59,7 +59,7 @@ const numbers = (): (string | null)[] => screen.getAllByRole('row').slice(1).map
 test('the list reads the open issues: GitHub\'s counts, each column, a task\'s {flow} · {stage}, no flow cell with no task, a draft PR, the footer (#757, #585)', async () => {
   renderTable();
   expect(await screen.findByText('Issue 12')).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/issues?state=open');
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/issues?state=open');
   expect(screen.getByRole('radio', { name: 'abertas 2' })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByRole('radio', { name: 'fechadas 1' })).toHaveAttribute('aria-checked', 'false');
   expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['issue', 'labels', 'resp.', 'fluxo', 'PR', 'atualizado']);
@@ -86,7 +86,7 @@ test('fechadas reads the closed issues; the search matches the title or #number,
   await user.clear(search);
   await user.click(screen.getByRole('radio', { name: 'fechadas 1' }));
   expect(await screen.findByText('Issue 4')).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/issues?state=closed');
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/issues?state=closed');
 });
 
 test('lendo… shows only while nothing is cached: a list read before shows at once while it reads again (#757)', async () => {
@@ -211,7 +211,7 @@ test('the header\'s GitHub opens the repository\'s issues; a fork\'s opens the f
 // #585: #40 holds #41; #50 names #99, which is not in the list
 const NESTED: RepoIssues = { ...OPEN, total: 3, issues: [issue(40), issue(41, { parent: 40 }), issue(50, { parent: 99 })] };
 const answerNested = async (input: RequestInfo | URL): Promise<Response> =>
-  (String(input) === '/repositories/acme/site/issues?state=open' ? jsonRes(NESTED) : answer(input));
+  (String(input) === '/repositories/github.com/acme%2Fsite/issues?state=open' ? jsonRes(NESTED) : answer(input));
 const childMark = (text: string): Element | null => rowOf(text).querySelector('svg.lucide-corner-down-right');
 
 async function openNested(onOpen?: (issue: RepoIssue) => void): Promise<void> {

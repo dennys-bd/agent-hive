@@ -12,7 +12,7 @@ import { flowed } from '../fixtures/main-flow.js';
 export const PR = 'https://github.com/acme/app/pull/7';
 export const PR2 = 'https://github.com/acme/app/pull/9';
 /** acme/app#7's route on the page (#758): the PR under its repository, by its number. */
-export const ROUTE = '/repositories/acme/app/pulls/7';
+export const ROUTE = '/repositories/github.com/acme%2Fapp/pulls/7';
 export const HEAD = 'f'.repeat(40);
 export const AT = '2026-09-30T10:00:00.000Z';
 export const FILE: FileDiff = { path: 'src/a.ts', status: 'modified', hash: 'a'.repeat(64), hunks: [{ header: '@@ -1,2 +1,2 @@ intro', lines: [
@@ -71,7 +71,7 @@ export const WITH_TASK: State = {
  * slot (#64), where its properties render. */
 export function renderPage(state: State = STATE, extra: Partial<PrPageProps> = {}, options: { slotted?: boolean } = {}) {
   const props: PrPageProps = {
-    state, pr: { repository: 'acme/app', number: 7 }, header: () => null, onGoTo: vi.fn(), onOpenIssue: vi.fn(), onOpenPr: vi.fn(), ...extra,
+    state, pr: { host: 'github.com', repository: 'acme/app', number: 7 }, header: () => null, onGoTo: vi.fn(), onOpenIssue: vi.fn(), onOpenPr: vi.fn(), ...extra,
   };
   return { ...render(<PrPage {...props} />, options.slotted ? { wrapper: WithSlot } : {}), props };
 }

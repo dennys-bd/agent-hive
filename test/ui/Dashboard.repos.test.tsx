@@ -18,7 +18,7 @@ vi.mock('@/hooks/use-task-files', () => ({ useTaskFiles: () => [] }));
 
 const SOURCE: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
 const NAV: SourcesNav = { sources: [SOURCE], auth: 'cli' };
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
+const SITE: RepoSummary = { host: 'github.com', repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
 const OPEN: RepoIssues = {
   state: 'open', total: 1, truncated: false, syncedAt: '2026-10-05T09:00:00Z',
   issues: [{ number: 12, title: 'Issue 12', url: 'https://github.com/acme/site/issues/12', labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z', pullRequests: [] }],
@@ -50,9 +50,9 @@ const state: State = {
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 // What each GET answers, by its path; anything else { ok: true }. Later tasks add entries
 const ANSWERS: Record<string, unknown> = {
-  '/repositories': [SITE], '/repositories/acme/site/issues?state=open': OPEN, '/repositories/acme/site/pulls?state=open': PRS, '/repositories/acme/site/issues/12': PAGE, '/sources/roadmap/project': VIEW,
-  '/repositories/acme/site/pulls/7': PR_PAGE, '/repositories/acme/site/pulls/7/changes': PR_CHANGES, '/repositories/acme/site/pulls/7/review': { reviewed: [], drafts: [] },
-  '/repositories/acme/site/pulls/8': PR_8, '/repositories/acme/site/pulls/8/changes': PR_CHANGES, '/repositories/acme/site/pulls/8/review': { reviewed: [], drafts: [] },
+  '/repositories': [SITE], '/repositories/github.com/acme%2Fsite/issues?state=open': OPEN, '/repositories/github.com/acme%2Fsite/pulls?state=open': PRS, '/repositories/github.com/acme%2Fsite/issues/12': PAGE, '/sources/roadmap/project': VIEW,
+  '/repositories/github.com/acme%2Fsite/pulls/7': PR_PAGE, '/repositories/github.com/acme%2Fsite/pulls/7/changes': PR_CHANGES, '/repositories/github.com/acme%2Fsite/pulls/7/review': { reviewed: [], drafts: [] },
+  '/repositories/github.com/acme%2Fsite/pulls/8': PR_8, '/repositories/github.com/acme%2Fsite/pulls/8/changes': PR_CHANGES, '/repositories/github.com/acme%2Fsite/pulls/8/review': { reviewed: [], drafts: [] },
 };
 const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true }));
 

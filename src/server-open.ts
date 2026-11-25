@@ -90,7 +90,7 @@ async function confirmPlan(deps: TaskRouteDeps, machine: Machine, task: Task, { 
 // with tellWorker false: a session gets no stage prompt to tell.
 async function makeWorktree(deps: TaskRouteDeps, machine: Machine, current: LiveView, plan: WorktreePlan, activityId: string, run?: Pick<WorktreeRun, 'prepared' | 'nested' | 'setUp'>): Promise<void> {
   const { workspace, slug, branch, place } = plan;
-  const base = workspaceBase(current.runtime.config, workspace); // #854
+  const base = { ...workspaceBase(current.runtime.config, workspace), gitlabHosts: current.runtime.config.gitlabHosts }; // #854; #1045: the fork sync's GitLab hosts
   const prepared = place.local
     ? await ensureCheckout(machine, workspace.path, branch, base, place.base?.ref, workspace.nestedRepos)
     : await ensureWorktree(machine, workspace.path, slug, branch, base, place.base?.ref);

@@ -1,9 +1,10 @@
 // The repositories of the flow sidebar (#757): one list for the page, read when the sidebar mounts and on the repository header's refresh,
 // never polled and never in the State; the sidebar, the Dashboard's pick and the header read the same answer. The pins live in the view
-// state (#484) under `repositories`.
+// state (#484) under `repositories`, as repoKeys (#1045).
 import { useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import type { RepoSummary } from '../../types';
+import { repoKey } from '../../repo-host';
 import { readQuotaJson } from '@/hooks/use-project';
 import { onReadModelEvent } from '@/lib/review-events';
 import { readView, writeView } from '@/lib/view-state';
@@ -54,11 +55,11 @@ function readPinned(): string[] {
   return isNames(pinned) ? pinned : [];
 }
 
-/** The pinned repositories in pin order, and how to pin or unpin one: a pin goes last; each change is saved at once. */
-export function usePinned(): [string[], (repository: string, isPinned: boolean) => void] {
+/** The pinned repositories by repoKey (#1045) in pin order, and how to pin or unpin one: a pin goes last; each change is saved at once. A pin stored before #1045, a bare path, matches nothing and drops out. */
+export function usePinned(): [string[], (key: string, isPinned: boolean) => void] {
   const [pinned, setPinned] = useState(readPinned);
-  const pin = (repository: string, isPinned: boolean): void => {
-    const next = [...pinned.filter((name) => name !== repository), ...(isPinned ? [repository] : [])];
+  const pin = (key: string, isPinned: boolean): void => {
+    const next = [...pinned.filter((name) => name !== key), ...(isPinned ? [key] : [])];
     setPinned(next);
     writeView('repositories', { pinned: next });
   };
@@ -72,19 +73,20 @@ const withoutRole = ({ role: _role, ...rest }: RepoSummary): RepoSummary => rest
 const isChild = (repo: RepoSummary | undefined): boolean => repo?.role === 'fork' || repo?.role === 'nested';
 
 // #854, #886, #653: a repository with the fork whose `pair` names it and every nested repo whose `pair` names it, as one unit, in that order.
-// Matched by name only, since the repository may be listed by another workspace with no role. A fork or a nested repo with no repository listed
-// before it is alone, without its role. Each row is placed once, so a fork whose original is itself another pair's fork, or two forks
-// naming each other, still show
+// Matched by repoKey (#1045), since the repository may be listed by another workspace with no role, and one path may be on two hosts. A fork
+// or a nested repo with no repository listed before it is alone, without its role. Each row is placed once, so a fork whose original is
+// itself another pair's fork, or two forks naming each other, still show
 function unitsOf(list: RepoSummary[]): RepoSummary[][] {
   const placed = new Set<string>();
   return list.flatMap((repo) => {
-    if (placed.has(repo.repository)) return [];
-    placed.add(repo.repository);
+    const key = repoKey(repo);
+    if (placed.has(key)) return [];
+    placed.add(key);
     if (repo.role === 'nested') return [[withoutRole(repo)]];
-    const fork = list.find((r) => r.role === 'fork' && r.pair === repo.repository && !placed.has(r.repository));
-    const nested = list.filter((r) => r.role === 'nested' && r.pair === repo.repository && !placed.has(r.repository));
+    const fork = list.find((r) => r.role === 'fork' && r.pair === key && !placed.has(repoKey(r)));
+    const nested = list.filter((r) => r.role === 'nested' && r.pair === key && !placed.has(repoKey(r)));
     const children = [...(fork === undefined ? [] : [fork]), ...nested];
-    for (const child of children) placed.add(child.repository);
+    for (const child of children) placed.add(repoKey(child));
     return [[fork === undefined && repo.role === 'fork' ? withoutRole(repo) : repo, ...children]];
   });
 }
@@ -101,7 +103,7 @@ const newest = (unit: RepoSummary[]): string => unit.reduce((best, r) => ((r.las
  * fork with no original listed comes out without its role. */
 export function repoGroups(list: RepoSummary[], pinned: string[]): { pinned: RepoSummary[]; recent: RepoSummary[] } {
   const units = unitsOf(list);
-  const pinOf = (unit: RepoSummary[]): number => Math.min(...unit.map((r) => (pinned.includes(r.repository) ? pinned.indexOf(r.repository) : Number.POSITIVE_INFINITY)));
+  const pinOf = (unit: RepoSummary[]): number => Math.min(...unit.map((r) => (pinned.includes(repoKey(r)) ? pinned.indexOf(repoKey(r)) : Number.POSITIVE_INFINITY)));
   const isPinned = (unit: RepoSummary[]): boolean => pinOf(unit) !== Number.POSITIVE_INFINITY;
   return {
     pinned: units.filter(isPinned).sort((a, b) => pinOf(a) - pinOf(b)).flat(),
@@ -109,5 +111,5 @@ export function repoGroups(list: RepoSummary[], pinned: string[]): { pinned: Rep
   };
 }
 
-/** A repository's routes (#757): /repositories/<owner>/<name>, each segment encoded. */
-export const repoPath = (repository: string): string => `/repositories/${repository.split('/').map(encodeURIComponent).join('/')}`;
+/** A repository's routes (#757, #1045): /repositories/<host>/<path>, the path in one encoded segment (owner%2Fname, group%2Fsub%2Fproject). */
+export const repoPath = (host: string, repository: string): string => `/repositories/${encodeURIComponent(host)}/${encodeURIComponent(repository)}`;

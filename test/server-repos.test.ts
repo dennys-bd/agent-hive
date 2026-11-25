@@ -20,7 +20,7 @@ function routes(t: TestContext, answer: Answer, extra: Partial<State> = {}, poll
   app.use(express.json());
   const state: State = { ...initialState(0), ...extra };
   const deps: RepoRouteDeps = {
-    requireLive: () => ({ state, runtime: { config: { comb: COMB } } }), machineFor: () => fakeMachine({ exec }), gql: fakeGqlJson(answer).gql,
+    requireLive: () => ({ state, runtime: { config: { comb: COMB, gitlabHosts: [] } } }), machineFor: () => fakeMachine({ exec }), gql: fakeGqlJson(answer).gql,
     poll: poll ?? (async (names) => { polls.push(names); }), log: { error: (message: string) => { errors.push(message); } },
   };
   registerRepoRoutes(app, deps);
@@ -40,8 +40,8 @@ test('a reading under the reserve refuses the writes with 429 and its reset; wit
     if (query !== ADD_COMMENT) reads += 1;
     return { rateLimit: low, repository: { issue: { id: 'I_12', updatedAt: U1 } } };
   });
-  assert.equal((await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'one' })).status, 200, 'no reading yet: it writes, and keeps the low one');
-  const refused = await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'two' });
+  assert.equal((await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/comments`, { body: 'one' })).status, 200, 'no reading yet: it writes, and keeps the low one');
+  const refused = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/comments`, { body: 'two' });
   assert.deepEqual([refused.status, await refused.json()], [429, { error: 'GitHub quota is low', resetsAt: low.resetAt }]);
   assert.equal(reads, 1, 'refused before the read');
 });
@@ -50,7 +50,7 @@ test('POST …/issues/:number refuses no title nor body, an empty or long title,
   let calls = 0;
   const base = routes(t, () => { calls += 1; return {}; });
   const bodies = [{ updatedAt: U1 }, { title: '  ', updatedAt: U1 }, { title: 'x'.repeat(257), updatedAt: U1 }, { body: 'x'.repeat(65_537), updatedAt: U1 }, { title: 'ok' }];
-  for (const body of bodies) assert.equal((await post(`${base}/repositories/acme/hive/issues/12`, body)).status, 400, JSON.stringify(body).slice(0, 40));
+  for (const body of bodies) assert.equal((await post(`${base}/repositories/github.com/acme%2Fhive/issues/12`, body)).status, 400, JSON.stringify(body).slice(0, 40));
   assert.equal(calls, 0);
 });
 
@@ -64,14 +64,14 @@ test('POST …/issues/:number is a 409 that writes nothing on a newer issue; a m
   };
   const task: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'T', body: '', url: 'https://github.com/acme/hive/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   const base = routes(t, answer, { tasks: [task] }, polls);
-  const stale = await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: U1 });
+  const stale = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12`, { title: 'New', updatedAt: U1 });
   assert.equal(stale.status, 409);
   assert.deepEqual([writes, polls], [[], []]);
-  const fresh = await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: U2 });
+  const fresh = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12`, { title: 'New', updatedAt: U2 });
   assert.deepEqual([fresh.status, await fresh.json()], [200, { ok: true }]);
   assert.deepEqual(writes, [{ id: 'I_12', title: 'New' }]);
   assert.deepEqual(polls, [['roadmap']]);
-  assert.equal((await post(`${base}/repositories/acme/hive/issues/13`, { body: 'b', updatedAt: U2 })).status, 200);
+  assert.equal((await post(`${base}/repositories/github.com/acme%2Fhive/issues/13`, { body: 'b', updatedAt: U2 })).status, 200);
   assert.deepEqual(polls, [['roadmap']], 'an issue no task is: nothing polled');
 });
 
@@ -85,11 +85,11 @@ test('labels: POST refuses a malformed body or an unknown label, and a valid one
   };
   const task: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'T', body: '', url: 'https://github.com/acme/hive/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   const base = routes(t, answer, { tasks: [task] }, polls);
-  assert.equal((await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: 'bug', remove: [] })).status, 400);
-  const unknown = await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: ['wontfix'], remove: [] });
+  assert.equal((await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/labels`, { add: 'bug', remove: [] })).status, 400);
+  const unknown = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/labels`, { add: ['wontfix'], remove: [] });
   assert.deepEqual([unknown.status, await unknown.json()], [400, { error: 'label not in the repository: wontfix' }]);
   assert.deepEqual([writes, polls], [[], []]);
-  const ok = await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: ['bug'], remove: [] });
+  const ok = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/labels`, { add: ['bug'], remove: [] });
   assert.deepEqual([ok.status, writes, polls], [200, ['add'], [['roadmap']]]);
 });
 
@@ -101,8 +101,8 @@ test('comments: an empty or overlong body is a 400; a body posts to the issue an
     return { rateLimit: RATE, repository: { issue: { id: 'I_12', updatedAt: U1 } } };
   };
   const base = routes(t, answer, {}, polls);
-  for (const body of ['  ', 'x'.repeat(65_537), 3]) assert.equal((await post(`${base}/repositories/acme/hive/issues/12/comments`, { body })).status, 400);
-  const ok = await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'Looks good' });
+  for (const body of ['  ', 'x'.repeat(65_537), 3]) assert.equal((await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/comments`, { body })).status, 400);
+  const ok = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/comments`, { body: 'Looks good' });
   assert.deepEqual([ok.status, bodies, polls], [200, ['Looks good'], []]);
 });
 
@@ -111,7 +111,7 @@ test('a poll that throws after a write still answers ok, and the failure is logg
   const answer = (query: string) => (query === ADD_COMMENT || query === ADD_LABELS ? {} : { rateLimit: RATE, repository: { issue: { id: 'I_12', updatedAt: U1 }, labels: { nodes: [{ id: 'L_bug', name: 'bug' }] } } });
   const task: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'T', body: '', url: 'https://github.com/acme/hive/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   const base = routes(t, answer, { tasks: [task] }, [], async () => { throw new Error('poll down'); }, errors);
-  const ok = await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: ['bug'], remove: [] });
+  const ok = await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/labels`, { add: ['bug'], remove: [] });
   assert.deepEqual([ok.status, await ok.json()], [200, { ok: true }]);
   await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(errors.length, 1);
@@ -120,5 +120,5 @@ test('a poll that throws after a write still answers ok, and the failure is logg
 
 test('an issue number is digits only, no leading zero, at most ten: 1e2, 0x10 and 01 are 400 (#757)', async (t) => {
   const base = routes(t, () => ({ rateLimit: RATE, repository: { issue: { id: 'I_1', updatedAt: U1 } } }));
-  for (const bad of ['1e2', '0x10', '01', '12345678901']) assert.equal((await fetch(`${base}/repositories/acme/hive/issues/${bad}`)).status, 400, bad);
+  for (const bad of ['1e2', '0x10', '01', '12345678901']) assert.equal((await fetch(`${base}/repositories/github.com/acme%2Fhive/issues/${bad}`)).status, 400, bad);
 });

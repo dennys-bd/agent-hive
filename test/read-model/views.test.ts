@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { IssueDetails } from '../../src/read-model/rows.js';
-import { issuePageOf, issuesOf } from '../../src/read-model/views.js';
-import { issueRow, REPO, SOURCE, T1, T2, tempModel } from './fixtures.js';
+import { issuePageOf, issuesOf, summaryOf } from '../../src/read-model/views.js';
+import { issueRow, REF, REPO, REPO_ROW, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
 
 // What a Project read stores beside an issue's REST columns: here only the parent matters
 const DETAILS: IssueDetails = {
@@ -21,4 +21,17 @@ test('the issue list and the issue page carry parent from the issues row\'s pare
   assert.equal(issuePageOf(db, SOURCE, REPO, 1)?.parent, 7);
   const page2 = issuePageOf(db, SOURCE, REPO, 2);
   assert.ok(page2 !== undefined && !('parent' in page2));
+});
+
+test('a GitHub ref\'s summary reads its row; a GitLab ref of the same path is the fallback with its own link and never that row (#1045, decisions 8, 9)', async (t) => {
+  const db = await tempModel(t);
+  db.setRepo(REPO_ROW);
+  db.upsertIssue(issueRow(1, T1, { state: 'open' }), 'sync');
+  db.setScope(SOURCE, REPO, 'repo', { cursor: null, etag: null, syncedAt: SYNCED });
+  const github = summaryOf(db, SOURCE, REF);
+  assert.deepEqual([github.host, github.url, github.openIssues, github.canPush, github.issuesEnabled, github.syncedAt], ['github.com', 'https://github.com/acme/hive', 1, true, true, SYNCED]);
+  assert.deepEqual(summaryOf(db, SOURCE, { host: 'gitlab.com', repository: REPO, workspace: 'lab' }), {
+    host: 'gitlab.com', repository: REPO, url: 'https://gitlab.com/acme/hive', workspace: 'lab', openPrs: 0, openIssues: 0, closedIssues: 0, canPush: false, issuesEnabled: false, syncedAt: null,
+  });
+  assert.equal(summaryOf(db, SOURCE, { ...REF, repository: 'acme/new' }).url, 'https://github.com/acme/new', 'a GitHub ref with no row: its host\'s link, as before');
 });

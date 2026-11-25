@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { prNumber, prRepo } from '../../pull-requests';
+import { GITHUB_HOST, parsePrLink } from '../../repo-host';
 import type { PrChanges, PrChecksRead, PrData, PrReviewFile } from '../../types';
 import { useReadModelReload } from '@/hooks/use-repo-issues';
 import { repoPath } from '@/hooks/use-repositories';
@@ -13,8 +14,12 @@ export type PrLoad = { status: 'loading' } | { status: 'error'; message: string 
 /** GitHub computes mergeability lazily (#592): an UNKNOWN answer is read once more after this. */
 export const UNKNOWN_RETRY_MS = 3000;
 
-/** A PR's routes (#758): under its repository, by the number its link holds. */
-export const prPath = (url: string, rest = ''): string => `${repoPath(prRepo(url))}/pulls/${prNumber(url)}${rest}`;
+/** A PR's routes (#758): under its repository's host and path, by the number its link holds (#1045, decision 11). A link parsePrLink does
+ * not read (a GitHub one with a tail) keeps the GitHub reading of before. */
+export function prPath(url: string, rest = ''): string {
+  const { host, repository, number } = parsePrLink(url) ?? { host: GITHUB_HOST, repository: prRepo(url), number: prNumber(url) };
+  return `${repoPath(host, repository)}/pulls/${number}${rest}`;
+}
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 // Checked at the boundary (#592): anything else never reaches the view

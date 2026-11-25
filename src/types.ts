@@ -1269,7 +1269,7 @@ export interface PrRow {
   url: string; number: number; title: string; state: PrState; isDraft: boolean; checks?: PrChecks['state'] | 'awaiting'; decision?: PrReviewDecision;
   mergeState: PrMergeState; updatedAt: string;
 }
-/** GET /repositories/:owner/:name/pulls?state= (#758): one state's rows, newest update first, the three counts; truncated: more than the first 100;
+/** GET /repositories/:host/:repository/pulls?state= (#758): one state's rows, newest update first, the three counts; truncated: more than the first 100;
  * canPush: the login may merge there (#854). syncedAt: the repository's last complete issues round (#186), null while never synced. */
 export interface RepoPrs { rows: PrRow[]; counts: { open: number; merged: number; closed: number }; truncated: boolean; canPush: boolean; syncedAt: string | null }
 /** A comment added to the PR review (#592), published with enviar revisão. */
@@ -2155,7 +2155,8 @@ export interface RelationWrite { relations: Relation[]; entry?: SourceItem }
 
 /** A repository the flow sidebar lists (#757): a workspace's origin or an open PR's repository. */
 export interface RepoSummary {
-  repository: string; // owner/name
+  host: string; // #1045: github.com, gitlab.com or a gitlabHosts entry, lowercased: where `repository` is
+  repository: string; // the path on its host: owner/name on GitHub, the full path on GitLab (#1045)
   url: string;
   workspace: string; // the workspace whose colour it takes
   openPrs: number;
@@ -2165,7 +2166,7 @@ export interface RepoSummary {
   role?: 'original' | 'fork' | 'nested'; // #854: a fork workspace's pair; #653: a workspace's nested repo, paired with its repository
   pr?: PrTarget; // #854: the pair's workspace's PR target, what the fork's empty states read
   fork?: { parent: string }; // #854: GitHub says it is a fork of `parent` (owner/name)
-  pair?: string; // #886: the other repository of a fork workspace's pair (owner/name as listed), what the sidebar pairs by
+  pair?: string; // #886: the other repository of a fork workspace's pair, or a nested repo's workspace repository (#653), as its repoKey (#1045), what the sidebar pairs by
   canPush: boolean; // #854: the login's viewerPermission is ADMIN, MAINTAIN or WRITE
   issuesEnabled: boolean; // #854: GitHub's hasIssuesEnabled
   syncedAt: string | null; // #181: ISO, the repo scope's last complete round; null: never synced

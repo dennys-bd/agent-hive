@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrLink, hostKind, isGithubPrUrl, isPrUrl, type PrLink, parsePrLink, remoteRepository } from '../src/repo-host.js';
+import { buildPrLink, hostKind, isGithubPrUrl, isPrUrl, type PrLink, parsePrLink, remoteRepository, repoKey } from '../src/repo-host.js';
 import { githubRepository } from '../src/task-refs.js';
 import { isPrUrl as orchestratorIsPrUrl } from '../src/orchestrator.js';
 import { prLink, prNumber, prRepo } from '../src/pull-requests.js';
@@ -93,4 +93,10 @@ test("the GitHub helpers read the module: githubRepository takes a host in any c
   assert.deepEqual([prNumber(mr), prRepo(mr)], ['7', 'acme/platform/app']);
   assert.deepEqual([prNumber('https://github.com/o/r/pull/42/files'), prRepo('https://github.com/o/r/pull/42')], ['42', 'o/r'], 'a GitHub link reads as before');
   assert.equal(prLink('o/r', 42), 'https://github.com/o/r/pull/42');
+});
+
+test('repoKey is the host, then the path: one path on two hosts is two keys (#1045, decision 2)', () => {
+  assert.equal(repoKey({ host: 'github.com', repository: 'acme/app' }), 'github.com/acme/app');
+  assert.equal(repoKey({ host: 'git.example.com', repository: 'acme/platform/app' }), 'git.example.com/acme/platform/app');
+  assert.notEqual(repoKey({ host: 'github.com', repository: 'acme/app' }), repoKey({ host: 'gitlab.com', repository: 'acme/app' }));
 });

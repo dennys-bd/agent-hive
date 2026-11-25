@@ -8,8 +8,8 @@ import { repoPath } from '@/hooks/use-repositories';
 /** What the issue page shows (#757): its first read in flight, its failure with nothing shown, or the issue. */
 export type IssueLoad = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'issue'; issue: IssuePage };
 
-/** An issue's route (#757). */
-export const issuePath = (repository: string, number: number): string => `${repoPath(repository)}/issues/${number}`;
+/** An issue's route (#757), under its repository's host (#1045). */
+export const issuePath = (host: string, repository: string, number: number): string => `${repoPath(host, repository)}/issues/${number}`;
 
 // The event names only the repository, never the issue: any issue or comment change of it reads the page again, a local read (#182)
 const PAGE_KINDS: readonly string[] = ['issues', 'comments'];
@@ -23,7 +23,7 @@ export type Optimistic = (patch: IssuePatch) => () => void;
 /** One issue's page (#757): read on opening and on each reload (atualizar, after a write); never polled. A reload keeps the issue shown until
  * its answer replaces it, so a draft beside it survives; a failure toasts and, with nothing shown yet, is the error state. Never rejects.
  * Read again on its repository's issue or comment changes (#182). A write's optimistic patch shows over it until the write settles (#183). */
-export function useIssue(repository: string, number: number): { load: IssueLoad; reload(): Promise<void>; optimistic: Optimistic } {
+export function useIssue(host: string, repository: string, number: number): { load: IssueLoad; reload(): Promise<void>; optimistic: Optimistic } {
   const [load, setLoad] = useState<IssueLoad>({ kind: 'loading' });
   const [pending, setPending] = useState<readonly { patch: IssuePatch }[]>([]);
   const latest = useRef(0);
@@ -31,7 +31,7 @@ export function useIssue(repository: string, number: number): { load: IssueLoad;
     latest.current += 1;
     const read = latest.current;
     try {
-      const issue = await readQuotaJson<IssuePage>(issuePath(repository, number));
+      const issue = await readQuotaJson<IssuePage>(issuePath(host, repository, number));
       if (read === latest.current) setLoad({ kind: 'issue', issue });
     } catch (err) {
       if (read !== latest.current) return;
@@ -39,7 +39,7 @@ export function useIssue(repository: string, number: number): { load: IssueLoad;
       setLoad((current) => (current.kind === 'issue' ? current : { kind: 'error', message }));
       toast.error(message);
     }
-  }, [repository, number]);
+  }, [host, repository, number]);
   useEffect(() => { void reload(); }, [reload]);
   useReadModelReload(repository, PAGE_KINDS, reload);
   // An entry of its own: the same patch sent twice is two writes, each settled once

@@ -23,7 +23,7 @@ vi.mock('@/hooks/use-task-tree', () => ({ useTaskTree: () => ({ status: 'loading
 // "ver nas tarefas" (#229): the task of roadmap must show in the flow whatever the center held before
 const source = (name: string): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' });
 const NAV: SourcesNav = { sources: [source('roadmap'), source('other')], auth: 'cli' };
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
+const SITE: RepoSummary = { host: 'github.com', repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
 const state: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], ...flowed([{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], []), tasks: [], sourceOrder: [], localCount: 0, benchmark: { experiments: [] }, semaphores: {},
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {},
@@ -36,7 +36,7 @@ const working: State = withPointedWork({ ...state, workers: [WORKER], tasks: [TA
 const jsonRes = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const PRS = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z', rows: [] };
 const EMPTY_VIEW = { statuses: [], fields: [], builtins: {}, truncated: false, items: [] }; // the source tables open directly now (#571)
-const ANSWERS: Record<string, unknown> = { '/repositories': [SITE], '/repositories/acme/site/pulls?state=open': PRS, '/sources/roadmap/project': EMPTY_VIEW, '/sources/other/project': EMPTY_VIEW };
+const ANSWERS: Record<string, unknown> = { '/repositories': [SITE], '/repositories/github.com/acme%2Fsite/pulls?state=open': PRS, '/sources/roadmap/project': EMPTY_VIEW, '/sources/other/project': EMPTY_VIEW };
 const answer = async (input: RequestInfo | URL): Promise<Response> => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true });
 
 beforeEach(() => {

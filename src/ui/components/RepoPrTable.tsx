@@ -94,7 +94,7 @@ export interface RepoPrTableProps { state: State; summary: RepoSummary; onTab(ta
  * (#186); never polled. */
 export function RepoPrTable({ state, summary, onTab, onOpen, onRepository, back }: RepoPrTableProps) {
   const [prState, setPrState] = useState<PrState>('open');
-  const { data, isLoading, reload } = useRepoRead<RepoPrs>(`${repoPath(summary.repository)}/pulls?state=${prState}`);
+  const { data, isLoading, reload } = useRepoRead<RepoPrs>(`${repoPath(summary.host, summary.repository)}/pulls?state=${prState}`);
   useReadModelReload(summary.repository, LIST_KINDS, reload);
   const isShown = useIsFlowShown();
   const refresh = async (): Promise<void> => {

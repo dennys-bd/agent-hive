@@ -2,6 +2,7 @@ import { PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { IssuePage } from '../../types';
+import { GITHUB_HOST } from '../../repo-host';
 import { act } from '@/components/actions';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -19,7 +20,8 @@ const labelPatch = (add: string[], remove: string[]): IssuePatch => (issue) => (
  * shown change dropped, so the label never flickers. A refusal drops it at once and is act's toast. */
 export async function writeLabels(issue: IssuePage, add: string[], remove: string[], onChanged: () => Promise<void>, optimistic: Optimistic): Promise<void> {
   const settle = optimistic(labelPatch(add, remove));
-  const answer = await act<unknown>(`${issuePath(issue.repository, issue.number)}/labels`, { add, remove });
+  // an issue page is only read on GitHub until #792 (#1045, decision 8)
+  const answer = await act<unknown>(`${issuePath(GITHUB_HOST, issue.repository, issue.number)}/labels`, { add, remove });
   if (answer !== undefined) await onChanged();
   settle();
 }
@@ -33,7 +35,7 @@ export function IssueLabelsPopover({ issue, onChanged, optimistic }: { issue: Is
     setIsOpen(next);
     if (!next) return;
     setHasFailed(false);
-    readQuotaJson<string[]>(`${repoPath(issue.repository)}/labels`).then(setLabels, (err: unknown) => {
+    readQuotaJson<string[]>(`${repoPath(GITHUB_HOST, issue.repository)}/labels`).then(setLabels, (err: unknown) => {
       setHasFailed(true);
       toast.error(err instanceof Error ? err.message : String(err));
     });

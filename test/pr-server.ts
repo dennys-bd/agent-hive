@@ -163,7 +163,7 @@ export async function until(check: () => Promise<boolean>): Promise<void> {
 
 /** GET …/pulls/:number/review's answer (#592, #758). */
 export const reviewFileOf = async (base: string, url = PR): Promise<PrReviewFile> =>
-  (await hiveFetch(`${base}/repositories/${prRepo(url)}/pulls/${prNumber(url)}/review`)).json() as Promise<PrReviewFile>;
+  (await hiveFetch(`${base}/repositories/github.com/${encodeURIComponent(prRepo(url))}/pulls/${prNumber(url)}/review`)).json() as Promise<PrReviewFile>;
 
 /** PR 7 as PR_ROW_FIELDS answers it (#187): the seeded row; `extra` overrides any field. */
 export const GQL_PR_7 = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({

@@ -79,7 +79,7 @@ import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
 import { blockingTypesOf, canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
-import { renderWorkspaceOf } from './fork.js';
+import { renderWorkspaceOf, warnGitlabForks } from './fork.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerCopilotTrustRoute } from './server-copilot-trust.js';
 import { registerNestedRoute } from './server-nested.js';
@@ -92,7 +92,7 @@ import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { jiraRoundSources } from './read-model/jira-round.js';
 import { createReadModelLoop, readModelEvent, type ReadModelLoop, type RefetchOutcome } from './read-model/loop.js';
-import { listRepositories } from './repos/repositories.js';
+import { githubRefs, listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
@@ -133,7 +133,7 @@ import { registerGithubAccountRoutes } from './server-github-accounts.js';
 import { createGithubAdd, type GithubAdd } from './github-login-gh.js';
 import { accountsRefusal } from './accounts-config.js';
 import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
-import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
+import { configFrom, forkRefusal, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
 import { helperBundle } from './wsl/helper-install.js';
@@ -1329,7 +1329,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, machineFor, current)) ?? (await nestedRefusal(config, machineFor, current?.config)) ?? setupRefusal(config, machineFor) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964); #932: each workspace on its machine
+    const refusal = (await workspacesRefusal(config, machineFor, current)) ?? (await nestedRefusal(config, machineFor, current?.config)) ?? (await forkRefusal(config, machineFor, current?.config)) ?? setupRefusal(config, machineFor) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #1045, #565, #952, #964); #932: each workspace on its machine
     if (refusal) {
       res.status(refusal.status).json({ error: refusal.message, code: refusal.code, machine: refusal.machine, reason: refusal.reason }); // #932: an unavailable machine's id and why; absent fields drop out
       return;
@@ -1496,7 +1496,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readLoop ?? (deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
-    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machineFor) : []),
+    repositories: async () => (live ? githubRefs(await listRepositories(live.runtime.config, live.state, machineFor)) : []), // #1045: GitHub's only until GitLab is read (#1055)
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
   }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1518,7 +1518,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
   preloadPr ??= preloaderOf({
     ...repoModel, log,
-    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, machineFor)).some((r) => r.repository === repository),
+    isListed: async (repository) => live !== undefined && githubRefs(await listRepositories(live.runtime.config, live.state, machineFor)).some((r) => r.repository === repository), // #1045: hive_pr takes GitHub links only until #1051
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
@@ -1643,6 +1643,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (deps.runtime && deps.state) {
       live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
       await startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
+      await warnGitlabForks(deps.runtime.config, machineFor, log); // #1045, decision 16: a GitLab fork already in the file loads, its workspace named once in hive.log
     }
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep

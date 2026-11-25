@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { taskOfPr } from '../../activities';
-import { prLink, prRepo, repoName } from '../../pull-requests';
+import { prRepo, repoName } from '../../pull-requests';
+import { buildPrLink } from '../../repo-host';
 import { issueOfLink } from '../../repos/issue-task';
 import type { State, Task } from '../../types';
 import { DetailSlot } from '@/components/DetailSlot';
@@ -19,8 +20,8 @@ import { t } from '@/i18n';
 import { timelineItems } from '@/lib/pr-timeline';
 import { type PrView, prViewOf } from '@/lib/pr-view';
 
-/** The PR a page shows (#758): its repository and number. */
-export interface PrRef { repository: string; number: number }
+/** The PR a page shows (#758): its repository's host (#1045), its path and its number. */
+export interface PrRef { host: string; repository: string; number: number }
 type PageTab = 'conversation' | 'files';
 
 export interface PrPageProps {
@@ -101,7 +102,7 @@ function FilesTab({ pr, changes, view, onRefresh }: { pr: PrView; changes: Chang
  * the details panel's slot on both tabs (#64), the this PR box on a task's PR (#66), the PR without activity on a PR no task holds, whose tab bar
  * names the issues it closes (#68); before the PR is read, the read line. */
 export function PrPage({ state, pr: ref, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
-  const url = prLink(ref.repository, ref.number);
+  const url = buildPrLink(ref);
   const isShown = useIsFlowShown();
   const { load, changes, refresh, review, reread } = usePr(url, isShown);
   const [tab, setTab] = useState<PageTab>('conversation');

@@ -23,7 +23,7 @@ vi.mock('@/hooks/use-task-tree', () => ({ useTaskTree: () => ({ status: 'loading
 // The repository and the project of Dashboard.repos.test.tsx: acme/site with PR #7 and issue #12, whose page links PR #7
 const SOURCE: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true, entry: { flow: 'main' } }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', epicDeleteActivity: false, switchAt: 'fila' };
 const NAV: SourcesNav = { sources: [SOURCE], auth: 'cli' };
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
+const SITE: RepoSummary = { host: 'github.com', repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
 const OPEN: RepoIssues = {
   state: 'open', total: 1, truncated: false, syncedAt: '2026-10-05T09:00:00Z',
   issues: [{ number: 12, title: 'Issue 12', url: 'https://github.com/acme/site/issues/12', labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z', pullRequests: [] }],
@@ -60,8 +60,8 @@ const withPr: State = { ...working, activityRecords: working.activityRecords.map
 
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const ANSWERS: Record<string, unknown> = {
-  '/repositories': [SITE], '/repositories/acme/site/issues?state=open': OPEN, '/repositories/acme/site/pulls?state=open': PRS, '/repositories/acme/site/issues/12': PAGE,
-  '/sources/roadmap/project': VIEW, '/repositories/acme/site/pulls/7': PR_PAGE, '/repositories/acme/site/pulls/7/changes': PR_CHANGES, '/repositories/acme/site/pulls/7/review': { reviewed: [], drafts: [] },
+  '/repositories': [SITE], '/repositories/github.com/acme%2Fsite/issues?state=open': OPEN, '/repositories/github.com/acme%2Fsite/pulls?state=open': PRS, '/repositories/github.com/acme%2Fsite/issues/12': PAGE,
+  '/sources/roadmap/project': VIEW, '/repositories/github.com/acme%2Fsite/pulls/7': PR_PAGE, '/repositories/github.com/acme%2Fsite/pulls/7/changes': PR_CHANGES, '/repositories/github.com/acme%2Fsite/pulls/7/review': { reviewed: [], drafts: [] },
 };
 const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true });
 const fetchMock = vi.fn(answer); // a POST …/pulls/7/merge answers { ok: true }: GitHub accepted the merge
@@ -259,7 +259,7 @@ test('a merge that lands after the user opened another page leaves that page (#9
 
 test('a merge that lands after the user went to another repository leaves that repository (#921)', async () => {
   const user = userEvent.setup();
-  const land = deferMerge({ '/repositories': [SITE, DOCS], '/repositories/acme/docs/pulls?state=open': NO_PRS });
+  const land = deferMerge({ '/repositories': [SITE, DOCS], '/repositories/github.com/acme%2Fdocs/pulls?state=open': NO_PRS });
   render(<Home />);
   showFlow();
   await openPr(user);
@@ -298,7 +298,7 @@ test('a PR opened from the GitHub Project (the task details\' PR link) and merge
   expect(await bar().findByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByText('Elsewhere')).not.toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/pulls/7/merge', expect.objectContaining({ method: 'POST' }));
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/pulls/7/merge', expect.objectContaining({ method: 'POST' }));
 });
 
 test('a PR opened from the repository\'s PR list and merged goes back to the list (#69, #380, #571)', async () => {
@@ -340,7 +340,7 @@ test('a merge GitHub refuses keeps the PR page, with its message and the way bac
   expect(await within(main().getByRole('region', { name: 'mergear' })).findByRole('alert')).toHaveTextContent('Pull request is in a merge queue');
   expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
   expect(bar().getByRole('button', { name: 'voltar' })).toBeInTheDocument();
-  fetchMock.mockImplementation(async (input, init) => (String(input) === '/repositories/acme/site/pulls/7' ? jsonRes({ ...PR_PAGE, state: 'merged' }) : answer(input, init)));
+  fetchMock.mockImplementation(async (input, init) => (String(input) === '/repositories/github.com/acme%2Fsite/pulls/7' ? jsonRes({ ...PR_PAGE, state: 'merged' }) : answer(input, init)));
   await user.click(bar().getByRole('button', { name: 'atualizar' }));
   expect(await main().findByText('mergeado: só leitura')).toBeInTheDocument();
   expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();

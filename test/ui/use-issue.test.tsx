@@ -10,7 +10,7 @@ const ISSUE: IssuePage = {
   repository: 'acme/site', number: 12, title: 'Pager breaks', url: 'https://github.com/acme/site/issues/12', labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z',
   pullRequests: [], body: '', author: 'bia', createdAt: '2026-10-01T09:00:00Z', comments: [], commentCount: 0,
 };
-const PATH = '/repositories/acme/site/issues/12';
+const PATH = '/repositories/github.com/acme%2Fsite/issues/12';
 const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify(ISSUE), { status: 200, headers: { 'content-type': 'application/json' } }));
 beforeEach(() => {
   fetchMock.mockClear();
@@ -19,7 +19,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const opened = async () => {
-  const hook = renderHook(() => useIssue('acme/site', 12));
+  const hook = renderHook(() => useIssue('github.com', 'acme/site', 12));
   await waitFor(() => expect(hook.result.current.load.kind).toBe('issue'));
   fetchMock.mockClear();
   return hook;

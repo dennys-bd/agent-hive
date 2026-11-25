@@ -9,8 +9,9 @@ import { TaskPrList } from '@/components/TaskPrList';
 import { useIssue } from '@/hooks/use-issue';
 import { t } from '@/i18n';
 
-/** The issue a page shows (#757): its repository and number; from a native view, the item it came from, whose fields the page edits (#686). */
-export interface IssueRef { repository: string; number: number; itemId?: string }
+/** The issue a page shows (#757): its repository's host (#1045), its path and number; from a native view, the item it came from, whose fields
+ * the page edits (#686). */
+export interface IssueRef { host: string; repository: string; number: number; itemId?: string }
 
 export interface IssuePageProps {
   state: State; issue: IssueRef;
@@ -27,7 +28,7 @@ export interface IssuePageProps {
  * state, so the PRs list stays mounted when the read lands and its checks are read once. */
 export function IssuePage(props: IssuePageProps) {
   const { state, issue: ref, meta, workspace, header, onOpenPr } = props;
-  const { load, reload, optimistic } = useIssue(ref.repository, ref.number);
+  const { load, reload, optimistic } = useIssue(ref.host, ref.repository, ref.number);
   const issue = load.kind === 'issue' ? load.issue : undefined;
   // Before the read answers, the URL from the ref (#64): the task as the dashboard finds it, whose PRs the details grid leaves to this slot
   // (#65), and the header's GitHub ↗ from the first frame (#352)

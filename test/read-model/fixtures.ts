@@ -17,7 +17,7 @@ import { tempDir } from '../temp-dir.js';
 export const SOURCE = 'github:github.com:bia';
 export const OTHER_SOURCE = 'github:ghe.example.com:bia';
 export const REPO = 'acme/hive';
-export const REF: RepoRef = { repository: REPO, workspace: 'hive' };
+export const REF: RepoRef = { host: 'github.com', repository: REPO, workspace: 'hive' };
 export const T1 = '2026-10-05T09:00:00Z';
 export const T2 = '2026-10-05T10:00:00Z';
 export const T3 = '2026-10-05T11:00:00Z';

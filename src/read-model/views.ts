@@ -1,8 +1,9 @@
 import { prLink } from '../pull-requests.js';
 import { issueUrl } from '../repos/issue-task.js';
 import type { RepoRef } from '../repos/repositories.js';
+import { GITHUB_HOST } from '../repo-host.js';
 import type { IssuePage, PrCheck, PrChecks, PrData, PrReviewEvent, PrState, RepoIssue, RepoIssues, RepoPrs, RepoSummary, TaskComment } from '../types.js';
-import type { ReadModel } from './db.js';
+import type { ReadModel, RepoCounts } from './db.js';
 import { worstOf } from './normalize.js';
 import { type CheckRow, type CommentRow, type IssueView, type PrPage, type PullRow, type ReviewRow, sourceLogin } from './rows.js';
 
@@ -12,7 +13,7 @@ export const REPO_ISSUE_LIMIT = 1000;
 export const PR_LIST_LIMIT = 100;
 const COMMENT_LIMIT = 100; // the page's first comments, oldest first; commentCount says how many there are
 const GHOST = 'ghost'; // what GitHub itself shows for a deleted account
-const GITHUB = 'https://github.com';
+const NO_COUNTS: RepoCounts = { openIssues: 0, closedIssues: 0, openPrs: 0 }; // a GitLab ref's until #1055 (#1045)
 
 // ISO strings in GitHub's one format sort as the instants they name
 const latest = (dates: (string | null | undefined)[]): string | undefined =>
@@ -27,16 +28,20 @@ const repoIssueOf = (issue: IssueView): RepoIssue => ({
 const commentOf = (comment: CommentRow): TaskComment => ({ author: comment.author ?? GHOST, createdAt: comment.createdAt, body: comment.body, url: comment.url });
 
 /** One sidebar summary (#181): the repos row and the rows' counts. With no repos row, what the Hive already knows, so the sidebar never
- * loses a repository it lists: the ref's fields, its github.com url, no push rights, issues on, syncedAt null. */
+ * loses a repository it lists: the ref's fields, its https://<host>/<path> url, no push rights, issues on, syncedAt null. A GitLab ref is
+ * never read until #1055 (#1045, decision 8): the rows are keyed by the GitHub source, so its path there would be a GitHub repository's; it
+ * is that fallback with issues off, as 4.1 stores for GitLab. */
 export function summaryOf(db: ReadModel, source: string, ref: RepoRef): RepoSummary {
-  const row = db.repo(source, ref.repository);
-  const counts = db.counts(source, ref.repository);
+  const isRead = ref.host === GITHUB_HOST;
+  const row = isRead ? db.repo(source, ref.repository) : undefined;
+  const counts = isRead ? db.counts(source, ref.repository) : NO_COUNTS;
   const lastActivity = latest([row?.pushedAt, counts.lastUpdatedAt]);
   const parent = row?.forkParent ?? null;
+  const syncedAt = isRead ? (db.scope(source, ref.repository, 'repo')?.syncedAt ?? null) : null;
   return {
-    repository: ref.repository, url: row?.url ?? `${GITHUB}/${ref.repository}`, workspace: ref.workspace,
+    host: ref.host, repository: ref.repository, url: row?.url ?? `https://${ref.host}/${ref.repository}`, workspace: ref.workspace,
     openPrs: counts.openPrs, openIssues: counts.openIssues, closedIssues: counts.closedIssues,
-    canPush: row?.canPush ?? false, issuesEnabled: row?.issuesEnabled ?? true, syncedAt: db.scope(source, ref.repository, 'repo')?.syncedAt ?? null,
+    canPush: row?.canPush ?? false, issuesEnabled: row?.issuesEnabled ?? isRead, syncedAt,
     ...(lastActivity === undefined ? {} : { lastActivity }), ...(parent === null ? {} : { fork: { parent } }),
     ...(ref.role === undefined ? {} : { role: ref.role }), ...(ref.pr === undefined ? {} : { pr: ref.pr }), ...(ref.pair === undefined ? {} : { pair: ref.pair }),
   };

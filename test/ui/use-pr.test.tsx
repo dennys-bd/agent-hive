@@ -16,7 +16,7 @@ const gets = (url: string): number => hive.calls.filter((c) => c.method === 'GET
 
 test('prPath names a PR\'s routes under its repository, by the number its link holds (#758)', () => {
   expect(prPath(PR)).toBe(ROUTE);
-  expect(prPath(PR2, '/review')).toBe('/repositories/acme/app/pulls/9/review');
+  expect(prPath(PR2, '/review')).toBe('/repositories/github.com/acme%2Fapp/pulls/9/review');
 });
 
 test('usePr reads the PR and its file; a refresh keeps the PR shown until its answer; a prReview event of the link reads the file again (#592, #758)', async () => {
@@ -65,7 +65,7 @@ test('the unknown-mergeability retry is armed again for another PR: a new url is
   await waitFor(() => expect(gets(ROUTE)).toBe(1));
   await run(async () => { await vi.advanceTimersByTimeAsync(UNKNOWN_RETRY_MS); });
   await waitFor(() => expect(gets(ROUTE)).toBe(2));
-  const other = '/repositories/acme/app/pulls/9';
+  const other = '/repositories/github.com/acme%2Fapp/pulls/9';
   hive.pr = prData({ url: PR2, mergeState: 'unknown' });
   rerender({ url: PR2 });
   await waitFor(() => expect(gets(other)).toBe(1));
@@ -154,4 +154,9 @@ test('a failed re-read of the changes keeps the diff shown and toasts the human 
   await run(async () => { await result.current.refresh(); });
   expect(result.current.changes).toEqual({ status: 'ready', changes: hive.changes });
   expect(vi.mocked(toast.error).mock.calls).toEqual([[GITHUB]]);
+});
+
+test('prPath builds the route under the link\'s host, a GitLab MR\'s full path in one segment (#1045, decision 11)', () => {
+  expect(prPath('https://gitlab.com/acme/platform/app/-/merge_requests/3', '/checks')).toBe('/repositories/gitlab.com/acme%2Fplatform%2Fapp/pulls/3/checks');
+  expect(prPath('https://github.com/acme/app/pull/9')).toBe('/repositories/github.com/acme%2Fapp/pulls/9');
 });

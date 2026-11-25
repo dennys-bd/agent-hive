@@ -6,7 +6,7 @@ import type { RepoIssues } from '../../src/types';
 
 const answerOf = (state: RepoIssues['state']): RepoIssues => ({ state, total: 0, truncated: false, syncedAt: null, issues: [] });
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(answerOf(String(input).endsWith('closed') ? 'closed' : 'open')), { status: 200, headers: { 'content-type': 'application/json' } }));
-const OPEN_PATH = '/repositories/acme/site/issues?state=open';
+const OPEN_PATH = '/repositories/github.com/acme%2Fsite/issues?state=open';
 
 beforeEach(() => {
   resetRepoIssues();
@@ -18,7 +18,7 @@ afterEach(() => vi.unstubAllGlobals());
 test('switching the state never shows the previous state\'s issues, not even for one render (#757)', async () => {
   const seen: (RepoIssues['state'] | undefined)[] = [];
   const { result, rerender } = renderHook(({ state }: { state: RepoIssues['state'] }) => {
-    const out = useRepoIssues('acme/site', state);
+    const out = useRepoIssues('github.com', 'acme/site', state);
     seen.push(out.issues?.state);
     return out;
   }, { initialProps: { state: 'open' as RepoIssues['state'] } });
@@ -30,7 +30,7 @@ test('switching the state never shows the previous state\'s issues, not even for
 });
 
 test('a readModel event of its repository with issues reads the list again; another repository, or only other kinds, does not (#182)', async () => {
-  const { result } = renderHook(() => useRepoIssues('acme/site', 'open'));
+  const { result } = renderHook(() => useRepoIssues('github.com', 'acme/site', 'open'));
   await waitFor(() => expect(result.current.issues?.state).toBe('open'));
   fetchMock.mockClear();
   await act(async () => {

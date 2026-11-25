@@ -13,14 +13,14 @@ import { hiveFetch } from './secret-client.js';
 
 const H1 = 'b'.repeat(64);
 // task 1 holds #7 (PR), task 2 #9 (PR2), no task #8 (OTHER_PR)
-const route = (n = 7, repository = 'acme/app'): string => `/repositories/${repository}/pulls/${n}`;
+const route = (n = 7, repository = 'acme/app'): string => `/repositories/github.com/${encodeURIComponent(repository)}/pulls/${n}`;
 const prOf = (base: string, n = 7, repository = 'acme/app'): Promise<Response> => hiveFetch(`${base}${route(n, repository)}`);
 const queryOf = (call: { args: string[] }): string => call.args.find((arg) => arg.startsWith('query=')) ?? '';
 // The source poll's PR states (#207) also reach gh on their own clock: the page's own calls are the ones that are not it
 const PAGE_CALLS = (gh: { calls: { args: string[] }[] }, from = 0): { args: string[] }[] => gh.calls.slice(from).filter((c) => !queryOf(c).includes('p0: resource'));
 const PAGE = { body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main', commits: 1, additions: 1, deletions: 1, approvals: 0, canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviews: [], comments: [], reviewRequests: [], closes: [] };
 
-test('GET /repositories/:owner/:name/pulls/:number answers the PR\'s fields from the model with no diff, threads, compare or timeline call; an unlisted repository is 404, a malformed number 400 (#592, #758, #497)', async (t) => {
+test('GET /repositories/:host/:repository/pulls/:number answers the PR\'s fields from the model with no diff, threads, compare or timeline call; an unlisted repository is 404, a malformed number 400 (#592, #758, #497)', async (t) => {
   const gh = fakeGh();
   const { base } = await startPrs(t, gh);
   const before = gh.calls.length;
@@ -32,7 +32,7 @@ test('GET /repositories/:owner/:name/pulls/:number answers the PR\'s fields from
   assert.deepEqual(PAGE_CALLS(gh, before), [], 'no gh call: the page is the model\'s');
   const unlisted = await prOf(base, 7, 'acme/other');
   assert.deepEqual([unlisted.status, await unlisted.json()], [404, { error: 'repository is not one the Hive lists' }]);
-  for (const n of ['07', '1e2', 'x']) assert.equal((await hiveFetch(`${base}/repositories/acme/app/pulls/${n}`)).status, 400, n);
+  for (const n of ['07', '1e2', 'x']) assert.equal((await hiveFetch(`${base}/repositories/github.com/acme%2Fapp/pulls/${n}`)).status, 400, n);
 });
 
 test('GET …/pulls/:number of a stored PR answers without awaiting its refetch (#497)', async (t) => {

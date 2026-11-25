@@ -1,5 +1,6 @@
 import { prsOf } from '../../activities';
 import { nextPr } from '../../pull-requests';
+import { GITHUB_HOST } from '../../repo-host';
 import type { IssuePage, State, Task, TaskComment } from '../../types';
 import { Editable, fieldSaver } from '@/components/Editable';
 import { IssueCommentBox } from '@/components/IssueCommentBox';
@@ -77,7 +78,8 @@ function Comments({ issue }: { issue: IssuePage }) {
 /** The issue page's center (#757, handoff 01): the title and the meta line, then the PR line, the description and the comments. The title
  * and the description edit in place; the box under the comments posts one. */
 export function IssueBody({ issue, task, state, meta, onChanged, optimistic }: IssueBodyProps) {
-  const save = fieldSaver(issuePath(issue.repository, issue.number), t('issue.changed'), onChanged);
+  // an issue page is only read on GitHub until #792: a GitLab one is the 409 (#1045, decision 8)
+  const save = fieldSaver(issuePath(GITHUB_HOST, issue.repository, issue.number), t('issue.changed'), onChanged);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       <div className="flex flex-col gap-3 px-6 pt-4">
@@ -99,7 +101,7 @@ export function IssueBody({ issue, task, state, meta, onChanged, optimistic }: I
         </section>
         <hr />
         <Comments issue={issue} />
-        <IssueCommentBox path={`${issuePath(issue.repository, issue.number)}/comments`} repository={issue.repository} onPosted={onChanged} onPending={(body) => optimistic(pendingComment(body))} />
+        <IssueCommentBox path={`${issuePath(GITHUB_HOST, issue.repository, issue.number)}/comments`} repository={issue.repository} onPosted={onChanged} onPending={(body) => optimistic(pendingComment(body))} />
       </div>
     </div>
   );

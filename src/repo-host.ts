@@ -77,3 +77,7 @@ export const isPrUrl = (url: string): boolean => parsePrLink(url) !== undefined;
 /** What hive_pr and a task made from a PR take until the host check against gitlabHosts reaches them (#1051 to #1053): a GitHub PR link
  * only, since every reader of a stored link still calls GitHub with its path. */
 export const isGithubPrUrl = (url: string): boolean => parsePrLink(url)?.host === GITHUB_HOST;
+
+/** A repository's one identity outside a route (#1045, decision 2): its host, then its path. The list deduplicates by it and the UI selects,
+ * pins, pairs and keys rows by it, so one path on two hosts is two repositories. */
+export const repoKey = ({ host, repository }: { host: string; repository: string }): string => `${host}/${repository}`;

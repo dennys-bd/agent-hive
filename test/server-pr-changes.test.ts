@@ -13,7 +13,7 @@ import { send } from './review-server.js';
 import { hiveFetch } from './secret-client.js';
 
 const H1 = 'b'.repeat(64);
-const changesOf = (base: string, n = 7, query = ''): Promise<Response> => hiveFetch(`${base}/repositories/acme/app/pulls/${n}/changes${query}`);
+const changesOf = (base: string, n = 7, query = ''): Promise<Response> => hiveFetch(`${base}/repositories/github.com/acme%2Fapp/pulls/${n}/changes${query}`);
 const queryOf = (call: { args: string[] }): string => call.args.find((arg) => arg.startsWith('query=')) ?? '';
 // The page's four reads by kind; the poll's PR states (#207) and the writes are none of them
 function kindOf(call: { args: string[] }): string | undefined {
@@ -146,7 +146,7 @@ test('a merged PR asks no REST compare: a PR that is not open has no behindBy (#
 test('GET …/changes drops the marks whose file changed or left the diff; the matching mark stays (#592, #497)', async (t) => {
   const { base } = await startPrs(t, fakeGh());
   const hash = fileHash(parseDiff(DIFF)[0]);
-  const path = '/repositories/acme/app/pulls/7';
+  const path = '/repositories/github.com/acme%2Fapp/pulls/7';
   for (const [file, value] of [['a.txt', H1], ['gone.txt', hash]]) await send(base, 'POST', `${path}/reviewed`, { path: file, hash: value, reviewed: true });
   assert.equal((await changesOf(base)).status, 200);
   await until(async () => (await reviewFileOf(base)).reviewed.length === 0);

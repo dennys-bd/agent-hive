@@ -43,7 +43,7 @@ test('the row of the shown center is selected (the first flow\'s for a flow cent
   expect(show.mock.calls).toEqual([[{ kind: 'tasks', view: 'list' }], [{ kind: 'tasks', view: 'flow', flow: 'ship' }], [{ kind: 'tasks', view: 'outside' }]]);
 });
 
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
+const SITE: RepoSummary = { host: 'github.com', repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 2, openIssues: 3, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z', syncedAt: '2026-10-05T09:00:00Z' };
 let listed: RepoSummary[] = [];
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 beforeEach(() => {
@@ -174,7 +174,7 @@ test('a repository row shows its square, its name and PR count over its context;
   expect(within(site).getByText('2')).toHaveClass('tabular-nums');
   expect(within(section('repositórios')).getByText('PRs')).not.toHaveAttribute('role', 'button');
   await userEvent.setup().click(within(site).getByText('site'));
-  expect(props.nav.show).toHaveBeenCalledWith({ kind: 'repo', repository: 'acme/site', tab: 'prs' });
+  expect(props.nav.show).toHaveBeenCalledWith({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' });
 });
 
 test('with no repository listed the repositories section still shows, empty (#572)', async () => {

@@ -28,7 +28,7 @@ const state = (tasks: Task[] = [], extra: Partial<State> = {}): State => ({
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => jsonRes(String(input) === '/repositories/acme/site/issues/12' ? ISSUE : { ok: true });
+const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => jsonRes(String(input) === '/repositories/github.com/acme%2Fsite/issues/12' ? ISSUE : { ok: true });
 const fetchMock = vi.fn(answer);
 beforeEach(() => {
   setLanguage('pt');
@@ -43,7 +43,7 @@ const onOpenPr = vi.fn();
 
 // With `slotted`, beside the details panel's slot, as the dock mounts it (#64)
 const renderPage = (tasks: Task[] = [], extra: Partial<State> = {}, slotted = false) => render(
-  <IssuePage state={state(tasks, extra)} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onOpenPr={onOpenPr} />,
+  <IssuePage state={state(tasks, extra)} issue={{ host: 'github.com', repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onOpenPr={onOpenPr} />,
   slotted ? { wrapper: WithSlot } : {},
 );
 const TASK12: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
@@ -51,7 +51,7 @@ const TASK12: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Page
 test('the page reads its issue: the header it came from, the title, the meta, the PR line, the description and the comments, the rest on GitHub (#757)', async () => {
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/issues/12');
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/issues/12');
   expect(screen.getByText('HEADER')).toBeInTheDocument();
   expect(screen.getByText('acme/site · site')).toBeInTheDocument();
   expect(screen.getByText('⇅ 1/2 mergeados')).toBeInTheDocument(); // two closing PRs: the short summary
@@ -135,8 +135,8 @@ test('an issue out of the flow lists no PRs in the slot (#65)', async () => {
 
 test('the header gets the issue\'s GitHub URL: from its ref before the read, then the URL GitHub answers (#352)', async () => {
   const MOVED = 'https://github.com/acme/web/issues/12'; // a renamed repository: GitHub answers the new URL
-  fetchMock.mockImplementation(async (input) => jsonRes(String(input) === '/repositories/acme/site/issues/12' ? { ...ISSUE, url: MOVED } : { ok: true }));
-  render(<IssuePage state={state()} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" header={(_reload, github) => <p>{`github ${github}`}</p>} onOpenPr={onOpenPr} />);
+  fetchMock.mockImplementation(async (input) => jsonRes(String(input) === '/repositories/github.com/acme%2Fsite/issues/12' ? { ...ISSUE, url: MOVED } : { ok: true }));
+  render(<IssuePage state={state()} issue={{ host: 'github.com', repository: 'acme/site', number: 12 }} meta="acme/site" header={(_reload, github) => <p>{`github ${github}`}</p>} onOpenPr={onOpenPr} />);
   expect(screen.getByText(`github ${URL12}`)).toBeInTheDocument();
   expect(await screen.findByText(`github ${MOVED}`)).toBeInTheDocument();
 });

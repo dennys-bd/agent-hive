@@ -172,7 +172,7 @@ test('a PR the full listing or the refetch reads gets its draft and merged_at, a
 
 const OTHER_HEAD = 'b'.repeat(40);
 const CHECK_PARTS = ['runs', 'status', 'suites'] as const;
-const ORIGINAL: RepoRef = { ...REF, role: 'original', pair: 'bia/hive' };
+const ORIGINAL: RepoRef = { ...REF, role: 'original', pair: 'github.com/bia/hive' };
 const gqlPull = (id: string): Record<string, unknown> => ({
   id, reviewDecision: 'APPROVED', mergeStateStatus: 'BLOCKED', headCommit: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] },
 });

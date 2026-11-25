@@ -2,6 +2,7 @@ import { CornerDownRightIcon, GitForkIcon, MoreHorizontalIcon } from 'lucide-rea
 import { useEffect, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import type { RepoSummary } from '../../types';
+import { repoKey } from '../../repo-host';
 import { Button } from '@/components/ui/button';
 import { Syncing } from '@/components/ui/spinner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -13,7 +14,9 @@ import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 const ROW = 'group flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent/50 data-[selected]:bg-muted';
 const GROUP = 'px-2 py-0.5 text-[11px] text-muted-foreground';
 
-interface RepoRowProps { repo: RepoSummary; isSelected: boolean; isPinned: boolean; onPick(repository: string): void; onPin(repository: string, isPinned: boolean): void }
+/** What a pick names (#1045): the repository's host and path, the center's own identity. */
+type RepoIdentity = Pick<RepoSummary, 'host' | 'repository'>;
+interface RepoRowProps { repo: RepoSummary; isSelected: boolean; isPinned: boolean; onPick(repo: RepoIdentity): void; onPin(key: string, isPinned: boolean): void }
 
 // fixar / desafixar and abrir no github (handoff 02): shown on the picked row and on hover, always reachable by Tab
 function RepoMenu({ repo, isPinned, onPin }: Pick<RepoRowProps, 'repo' | 'isPinned' | 'onPin'>) {
@@ -28,7 +31,7 @@ function RepoMenu({ repo, isPinned, onPin }: Pick<RepoRowProps, 'repo' | 'isPinn
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[200px]">
-        <DropdownMenuItem onSelect={() => onPin(repo.repository, !isPinned)}>{t(isPinned ? 'repos.menu.unpin' : 'repos.menu.pin')}</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onPin(repoKey(repo), !isPinned)}>{t(isPinned ? 'repos.menu.unpin' : 'repos.menu.pin')}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => window.open(repo.url, '_blank', 'noreferrer')}>{t('repos.menu.open')}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -52,8 +55,8 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
     // biome-ignore lint/a11y/useSemanticElements: see above
     <div
       role="button" tabIndex={0} title={repo.repository} className={`${ROW} ${isChild ? '-mt-1.5' : ''}`} data-selected={isSelected ? '' : undefined} aria-pressed={isSelected}
-      onClick={(e) => { if (e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest('button')) onPick(repo.repository); }}
-      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPick(repo.repository); } }}
+      onClick={(e) => { if (e.currentTarget.contains(e.target as Node) && !(e.target as Element).closest('button')) onPick(repo); }}
+      onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPick(repo); } }}
     >
       <span className="flex items-center gap-2">
         {isChild && <ChildMark isFork={repo.role === 'fork'} />}
@@ -68,8 +71,9 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
 }
 
 /** The repositories of the flow sidebar (#757, handoff 02), below the sources: the pinned ones in pin order, then the rest by last activity,
- * RECENT_SHOWN of them and +N for the others. Its header is the tasks sidebar's section (#572); with none listed it renders nothing inside it. Read when it mounts. */
-export function FlowRepositories({ selected, onPick }: { selected?: string; onPick(repository: string): void }) {
+ * RECENT_SHOWN of them and +N for the others. Its header is the tasks sidebar's section (#572); with none listed it renders nothing inside it. Read when it mounts.
+ * `selected` is a repoKey and every row is keyed, picked and pinned by its host and path (#1045), so one path on two hosts is two rows. */
+export function FlowRepositories({ selected, onPick }: { selected?: string; onPick(repo: RepoIdentity): void }) {
   const repositories = useRepositories();
   const [pinned, pin] = usePinned();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -80,7 +84,7 @@ export function FlowRepositories({ selected, onPick }: { selected?: string; onPi
   const recent = isExpanded ? groups.recent : groups.recent.slice(0, cut);
   const hidden = groups.recent.length - recent.length;
   const row = (repo: RepoSummary) => (
-    <RepoRow key={repo.repository} repo={repo} isSelected={selected === repo.repository} isPinned={pinned.includes(repo.repository)} onPick={onPick} onPin={pin} />
+    <RepoRow key={repoKey(repo)} repo={repo} isSelected={selected === repoKey(repo)} isPinned={pinned.includes(repoKey(repo))} onPick={onPick} onPin={pin} />
   );
   return (
     <div className="flex flex-col gap-0.5">

@@ -2,14 +2,14 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowRepositories } from '@/components/FlowRepositories';
-import { resetRepositories } from '@/hooks/use-repositories';
+import { repoPath, resetRepositories } from '@/hooks/use-repositories';
 import { setLanguage } from '@/i18n';
 import { emitReadModelEvent } from '@/lib/review-events';
 import { readView, resetViewState } from '@/lib/view-state';
 import type { RepoSummary } from '../../src/types';
 
 const repo = (name: string, day: number): RepoSummary => ({
-  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z', lastActivity: `2026-10-0${day}T09:00:00Z`,
+  host: 'github.com', repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z', lastActivity: `2026-10-0${day}T09:00:00Z`,
 });
 // newest first by last activity: g f e d c b a
 const LIST = [repo('a', 1), repo('b', 2), repo('c', 3), repo('d', 4), repo('e', 5), repo('f', 6), repo('g', 7)];
@@ -32,7 +32,7 @@ const mark = (title: string): string | null => screen.getByTitle(title).querySel
 
 test('pinned first in pin order, then the five most recent, the rest behind +N, which expands the list (#757)', async () => {
   const user = userEvent.setup();
-  resetViewState({ repositories: { pinned: ['acme/b'] } });
+  resetViewState({ repositories: { pinned: ['github.com/acme/b'] } });
   render(<FlowRepositories onPick={vi.fn()} />);
   expect(await screen.findByText('fixados')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith('/repositories');
@@ -56,7 +56,7 @@ test('pin and unpin in the ⋯ move a row and save the pins; abrir no github ope
   };
   await menu('acme/c', 'fixar');
   expect(rowNames()[0]).toBe('acme/c');
-  expect(readView('repositories')).toEqual({ pinned: ['acme/c'] });
+  expect(readView('repositories')).toEqual({ pinned: ['github.com/acme/c'] });
   await menu('acme/c', 'desafixar');
   expect(readView('repositories')).toEqual({ pinned: [] });
   expect(screen.queryByText('fixados')).not.toBeInTheDocument();
@@ -67,11 +67,11 @@ test('pin and unpin in the ⋯ move a row and save the pins; abrir no github ope
 test('a row\'s click picks its repository and the picked row is pressed; with nothing listed no row shows (#757, #572)', async () => {
   const user = userEvent.setup();
   const onPick = vi.fn();
-  const { unmount } = render(<FlowRepositories selected="acme/c" onPick={onPick} />);
+  const { unmount } = render(<FlowRepositories selected="github.com/acme/c" onPick={onPick} />);
   await screen.findByTitle('acme/g');
   expect(screen.getByTitle('acme/c')).toHaveAttribute('aria-pressed', 'true');
   await user.click(within(screen.getByTitle('acme/g')).getByText('g'));
-  expect(onPick).toHaveBeenCalledWith('acme/g');
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ host: 'github.com', repository: 'acme/g' }));
   unmount();
   listed = [];
   render(<FlowRepositories onPick={onPick} />);
@@ -83,8 +83,8 @@ test('a row\'s click picks its repository and the picked row is pressed; with no
 test('a fork workspace\'s original and fork stay together, the original first, named in full, the fork under ⑂; the pair sorts by its newest activity and a pin on one pins both (#854)', async () => {
   const user = userEvent.setup();
   listed = [
-    repo('a', 1), { ...repo('b', 9), repository: 'ex/excalidraw', role: 'original', pr: 'original', pair: 'me/excalidraw', workspace: 'excalidraw' },
-    repo('c', 5), { ...repo('d', 2), repository: 'me/excalidraw', role: 'fork', pr: 'original', pair: 'ex/excalidraw', workspace: 'excalidraw' },
+    repo('a', 1), { ...repo('b', 9), repository: 'ex/excalidraw', role: 'original', pr: 'original', pair: 'github.com/me/excalidraw', workspace: 'excalidraw' },
+    repo('c', 5), { ...repo('d', 2), repository: 'me/excalidraw', role: 'fork', pr: 'original', pair: 'github.com/ex/excalidraw', workspace: 'excalidraw' },
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('ex/excalidraw');
@@ -103,9 +103,9 @@ test('a fork workspace\'s original and fork stay together, the original first, n
 
 test('a fork pairs with the repository its pair names, not the one GitHub calls its parent: the upstream remote\'s old name still finds it (#886)', async () => {
   listed = [
-    { ...repo('b', 9), repository: 'up/old-name', role: 'original', pr: 'original', pair: 'me/new-name', workspace: 'meet' },
+    { ...repo('b', 9), repository: 'up/old-name', role: 'original', pr: 'original', pair: 'github.com/me/new-name', workspace: 'meet' },
     repo('c', 5),
-    { ...repo('d', 2), repository: 'me/new-name', role: 'fork', pr: 'original', pair: 'up/old-name', fork: { parent: 'up/new-name' }, workspace: 'meet' },
+    { ...repo('d', 2), repository: 'me/new-name', role: 'fork', pr: 'original', pair: 'github.com/up/old-name', fork: { parent: 'up/new-name' }, workspace: 'meet' },
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/old-name');
@@ -117,7 +117,7 @@ test('an original listed first by another workspace, with no role, still has its
   listed = [
     { ...repo('b', 9), repository: 'up/x', workspace: 'other' },
     repo('c', 5),
-    { ...repo('d', 2), repository: 'me/x', role: 'fork', pr: 'original', pair: 'up/x', workspace: 'x' },
+    { ...repo('d', 2), repository: 'me/x', role: 'fork', pr: 'original', pair: 'github.com/up/x', workspace: 'x' },
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/x');
@@ -128,7 +128,7 @@ test('an original listed first by another workspace, with no role, still has its
 test('a fork whose original is not listed is an ordinary row: no mark, no fork label, its workspace and short name, sorted by its own activity (#886)', async () => {
   listed = [
     repo('a', 1), repo('c', 5),
-    { ...repo('d', 2), repository: 'me/lone', role: 'fork', pr: 'original', pair: 'up/gone', fork: { parent: 'up/gone' }, workspace: 'lone' },
+    { ...repo('d', 2), repository: 'me/lone', role: 'fork', pr: 'original', pair: 'github.com/up/gone', fork: { parent: 'up/gone' }, workspace: 'lone' },
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('me/lone');
@@ -142,9 +142,9 @@ test('a fork whose original is not listed is an ordinary row: no mark, no fork l
 
 test('a fork whose original is another pair\'s fork still shows: each row is placed once (#886)', async () => {
   listed = [
-    { ...repo('p', 9), repository: 'up/p', role: 'original', pr: 'original', pair: 'me/b', workspace: 'ws2' },
-    { ...repo('b', 8), repository: 'me/b', role: 'fork', pr: 'original', pair: 'up/p', workspace: 'ws2' },
-    { ...repo('c', 7), repository: 'me/c', role: 'fork', pr: 'original', pair: 'me/b', workspace: 'ws3' },
+    { ...repo('p', 9), repository: 'up/p', role: 'original', pr: 'original', pair: 'github.com/me/b', workspace: 'ws2' },
+    { ...repo('b', 8), repository: 'me/b', role: 'fork', pr: 'original', pair: 'github.com/up/p', workspace: 'ws2' },
+    { ...repo('c', 7), repository: 'me/c', role: 'fork', pr: 'original', pair: 'github.com/me/b', workspace: 'ws3' },
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/p');
@@ -187,11 +187,11 @@ test('a read overtaken by a newer one is dropped, so a burst of events never lan
 test('a nested repo hangs under its workspace\'s repository, after its fork, with ↳ and repo aninhado; a pin on it pins the whole unit; one whose pair is not listed is an ordinary row (#653)', async () => {
   const user = userEvent.setup();
   listed = [
-    { ...repo('b', 9), repository: 'ex/excalidraw', role: 'original', pr: 'original', pair: 'me/excalidraw', workspace: 'excalidraw' },
+    { ...repo('b', 9), repository: 'ex/excalidraw', role: 'original', pr: 'original', pair: 'github.com/me/excalidraw', workspace: 'excalidraw' },
     repo('c', 5),
-    { ...repo('d', 2), repository: 'me/excalidraw', role: 'fork', pr: 'original', pair: 'ex/excalidraw', workspace: 'excalidraw' },
-    { ...repo('e', 1), repository: 'acme/docs', role: 'nested', pair: 'ex/excalidraw', workspace: 'excalidraw' },
-    { ...repo('f', 3), repository: 'acme/lone', role: 'nested', pair: 'acme/gone' },
+    { ...repo('d', 2), repository: 'me/excalidraw', role: 'fork', pr: 'original', pair: 'github.com/ex/excalidraw', workspace: 'excalidraw' },
+    { ...repo('e', 1), repository: 'acme/docs', role: 'nested', pair: 'github.com/ex/excalidraw', workspace: 'excalidraw' },
+    { ...repo('f', 3), repository: 'acme/lone', role: 'nested', pair: 'github.com/acme/gone' },
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('acme/docs');
@@ -209,11 +209,35 @@ test('a nested repo hangs under its workspace\'s repository, after its fork, wit
 test('the recent cut never splits a unit: a fork and a nested repo past the fifth row still show with their repository (#653)', async () => {
   listed = [
     repo('a', 9), repo('b', 8), repo('c', 7), repo('d', 6),
-    { ...repo('e', 5), role: 'original', pair: 'me/e' }, { ...repo('f', 4), repository: 'me/e', role: 'fork', pair: 'acme/e' },
-    { ...repo('g', 3), repository: 'acme/e-docs', role: 'nested', pair: 'acme/e' }, repo('h', 2),
+    { ...repo('e', 5), role: 'original', pair: 'github.com/me/e' }, { ...repo('f', 4), repository: 'me/e', role: 'fork', pair: 'github.com/acme/e' },
+    { ...repo('g', 3), repository: 'acme/e-docs', role: 'nested', pair: 'github.com/acme/e' }, repo('h', 2),
   ];
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('acme/a');
   expect(rowNames()).toEqual(['acme/a', 'acme/b', 'acme/c', 'acme/d', 'acme/e', 'me/e', 'acme/e-docs']);
   expect(screen.getByRole('button', { name: '+1 repositórios' })).toBeInTheDocument();
+});
+
+test('repoPath is the host, then the path in one encoded segment (#1045, decision 12)', () => {
+  expect(repoPath('github.com', 'acme/site')).toBe('/repositories/github.com/acme%2Fsite');
+  expect(repoPath('git.example.com', 'acme/platform/site')).toBe('/repositories/git.example.com/acme%2Fplatform%2Fsite');
+});
+
+test('one path on two hosts is two rows, each picked and pinned on its own; a pin stored as a bare path pins nothing (#1045, decisions 2, 13)', async () => {
+  const user = userEvent.setup();
+  resetViewState({ repositories: { pinned: ['acme/a'] } });
+  listed = [repo('a', 1), { ...repo('a', 2), host: 'gitlab.com', url: 'https://gitlab.com/acme/a', workspace: 'lab' }];
+  const onPick = vi.fn();
+  render(<FlowRepositories selected="gitlab.com/acme/a" onPick={onPick} />);
+  await vi.waitFor(() => expect(rowNames()).toEqual(['acme/a', 'acme/a']));
+  expect(screen.queryByText('fixados')).not.toBeInTheDocument();
+  const rows = screen.getAllByTitle('acme/a'); // newest first: the gitlab.com row, then the github.com one
+  expect(rows.map((row) => row.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+  await user.click(within(rows[1]).getByText('a'));
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ host: 'github.com', repository: 'acme/a' }));
+  screen.getAllByRole('button', { name: 'ações de acme/a' })[0].focus(); // Radix's menu opens on a key under jsdom
+  await user.keyboard('{Enter}');
+  await user.click(screen.getByRole('menuitem', { name: 'fixar' }));
+  // the bare pin is never converted nor cleaned up (decision 13): it stays stored, matching no row
+  expect(readView('repositories')).toEqual({ pinned: ['acme/a', 'gitlab.com/acme/a'] });
 });
