@@ -114,6 +114,7 @@ import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
 import { createClaudeAdd, setupTokenEnv } from './claude-account.js';
 import { registerClaudeAccountRoutes } from './server-claude-accounts.js';
+import { registerGitlabAccountRoutes } from './server-gitlab-accounts.js';
 import { type JiraRouteDeps, registerJiraRoutes } from './server-jira.js';
 import { jiraColumns, jiraFilterOptions, registerJiraSettingsRoutes } from './server-jira-settings.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
@@ -1306,6 +1307,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerJiraSettingsRoutes(app, jiraDeps); // #821: the same, for what the form reads before the source is saved
   // #955: outside requireLive, next to Jira's: Settings shows the card in setup mode too. A remove waits on the save chain
   registerClaudeAccountRoutes(app, { add: claudeAdd, credentialsEnv: deps.credentialsEnv, savedAccounts: () => live?.runtime.config.accounts, queueSave, log });
+  // #1048: beside Claude's, outside requireLive for the same reason; the GitLab hosts are the saved config's, none before the first save
+  registerGitlabAccountRoutes(app, { gitlabHosts: () => live?.runtime.config.gitlabHosts ?? [], credentialsEnv: deps.credentialsEnv, log });
 
   // Serializes saves: two concurrent POST /settings would race on hive.config.json.tmp and
   // into configure()/reconfigure(). Chaining queues them in arrival order; each request
