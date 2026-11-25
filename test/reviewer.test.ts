@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
 import { readCatalogue } from '../src/items-catalogue.js';
-import { deliveredHeader, parseTemplate, renderTemplate } from '../src/template.js';
+import { deliveredHeader, NO_BUILT_INS, parseTemplate, renderTemplate } from '../src/template.js';
 import { tempDir } from './temp-dir.js';
 
 import type { TemplateVariable } from '../src/template.js';
@@ -94,7 +94,7 @@ test('the catalogue lists hive:template-reviewer as a specialist of the plugin, 
   const item = catalogue.find((i) => i.id === REVIEWER_ID);
   assert.deepEqual([item?.origin, item?.kind, item?.name], ['hive', 'specialist', REVIEWER_NAME]);
   const parsed = parseTemplate(await readFile(join(pluginSource(), 'agents', `${REVIEWER_NAME}.md`), 'utf8'));
-  const rendered = renderTemplate(parsed, { name: '', variables: {} });
+  const rendered = renderTemplate(parsed, { name: '', variables: {}, builtIns: NO_BUILT_INS });
   assert.ok(rendered.ok, JSON.stringify(parsed.errors));
   const body = rendered.text.slice(deliveredHeader(parsed).length);
   for (const part of ['"annotations"', '`red`', '`yellow`', 'only the JSON', '"kind": "fix"', '"kind": "advice"', '"span"', '"replacement"', '`span` and `replacement` null']) {

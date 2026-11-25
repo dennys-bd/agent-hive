@@ -4,22 +4,20 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ASK_REPLY, canCloseTask, mountMcp, NO_SESSION_MESSAGE, NOT_PARTICIPANT_MESSAGE, REPLY_TEXT_MESSAGE, THREAD_RESOLVED_MESSAGE, UNKNOWN_THREAD_MESSAGE, UNKNOWN_WORKER_MESSAGE } from '../src/mcp.js';
-import { conventionsAnswer, forkConventions, nestedConventions } from '../src/mcp-conventions.js';
 import { noCreateMessage, NO_ISSUE_TYPES_MESSAGE } from '../src/create-task.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { BODY_MESSAGE, DESCRIPTION_MESSAGE, MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, memoryPath, memoryUsed, NO_FIELD_MESSAGE, WHY_MESSAGE } from '../src/memory.js';
 import { worktreePath } from '../src/worktree.js';
 import { localReviewPath, reviewPath } from '../src/review-store.js';
 import { activityOf, localActivityId, prsOf, recordOf, resultOf } from '../src/activities.js';
-import { systemLanguage } from '../src/language.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { Activity, Config, Exec, Source, SourceConfig, SourceSpec, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
+import type { Activity, Config, Source, SourceConfig, SourceSpec, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import type { LegacyStage } from '../src/config-migrate.js';
@@ -28,8 +26,7 @@ import type { RecordInput } from '../src/facts.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { reviewEventDuring, send } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
-import { flowed } from './fixtures/main-flow.js';
-import { fakeMachine, HOST_PATHS } from './fake-machine.js';
+import { HOST_PATHS } from './fake-machine.js';
 
 // One worker: the fake source's task runs in it, so its worker is the live one. `later` is a second Comb stage without a prompt.
 const MCP_STAGES = [...STAGES, { name: 'later', from: {} }];
@@ -80,10 +77,10 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return { text: first?.type === 'text' ? first.text : '', isError: result.isError === true };
 }
 
-test('the fifteen tools are listed; hive_done with a live worker marks the worker and merges its result into the task (#99)', async (t) => {
+test('the fourteen tools are listed; hive_done with a live worker marks the worker and merges its result into the task (#99)', async (t) => {
   const { base, server, lines, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_forget', 'hive_pr', 'hive_recall', 'hive_remember', 'hive_reply', 'hive_revise', 'hive_stop', 'hive_task']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_create_task', 'hive_done', 'hive_forget', 'hive_pr', 'hive_recall', 'hive_remember', 'hive_reply', 'hive_revise', 'hive_stop', 'hive_task']);
   assert.deepEqual(await call(client, 'hive_done', { result: { spec: 'docs/a.md', n: 1 } }), { text: 'ok', isError: false });
   assert.equal(worker0(server).done, true);
   await call(client, 'hive_done', { result: { n: 2 } });
@@ -106,7 +103,7 @@ test('an unknown or missing worker id gets a tool error from every tool and disp
   const before = JSON.stringify(server.getState());
   const calls: [string, Record<string, unknown>][] = [
     ['hive_done', {}], ['hive_pr', { url: 'https://github.com/acme/r/pull/9' }], ['hive_ask', { question: 'q?' }], ['hive_create_task', { title: 'x' }],
-    ['hive_stop', { reason: 'wontDo' }], ['hive_reply', { thread: 'T1', text: 'x' }], ['hive_conventions', {}],
+    ['hive_stop', { reason: 'wontDo' }], ['hive_reply', { thread: 'T1', text: 'x' }],
     ['hive_remember', { kind: 'fact', description: 'x', body: 'y' }], ['hive_recall', { id: 'm-1' }], ['hive_task', {}],
     ['hive_revise', { id: 'm-1', body: 'x', why: 'w' }], ['hive_forget', { id: 'm-1', why: 'w' }],
   ];
@@ -308,43 +305,6 @@ test('hive_pr takes a slice: a valid one reaches the record; a k of 0, a fractio
   ]);
 });
 
-test('hive_conventions answers the Hive\'s language, the stage\'s approval and its name, and no conventions key; its description names only those (#692, #318)', async (t) => {
-  const { base, ptyId } = await start(t);
-  const client = await connect(t, base, ptyId);
-  const description = (await client.listTools()).tools.find((tool) => tool.name === 'hive_conventions')?.description ?? '';
-  assert.match(description, /approval/);
-  assert.doesNotMatch(description, /conventions set|docs folders|delivery|slice size|feature flags|UI check|test command|decomposition label/);
-  const answer = await call(client, 'hive_conventions');
-  assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { hiveLanguage: systemLanguage(), approval: false, stage: 'fila', nestedRepos: [] }]);
-});
-
-test('hive_conventions through the MCP client answers base for a workspace with a baseBranch, and none for one without (#433)', async (t) => {
-  const set = await start(t, [GITHUB_ENTRY], { baseBranch: 'devtest' });
-  const withBase = await call(await connect(t, set.base, set.ptyId), 'hive_conventions');
-  assert.equal(JSON.parse(withBase.text).base, 'devtest');
-  const unset = await start(t);
-  const without = await call(await connect(t, unset.base, unset.ptyId), 'hive_conventions');
-  assert.equal('base' in JSON.parse(without.text), false);
-});
-
-test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
-  const config = {
-    language: 'pt' as const,
-    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }] },
-  };
-  const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
-  const state = {
-    ...initialState(0), ...flowed([{ name: 'spec', from: {}, prompt: '/x', approval: true as const }]), tasks: [task],
-    activities: [{ id: 'a1', kind: 'task' as const, workspace: 'site' }, { id: 'local:hive', kind: 'local' as const, workspace: 'hive' }],
-    activityRecords: [{ id: 'a1', taskIds: ['local:1'], sessions: [] }],
-  };
-  const run: Worker = { id: 'w1', runId: 'r1', activityId: 'a1', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, run), { hiveLanguage: 'pt', approval: true, stage: 'spec', nestedRepos: [] });
-  assert.deepEqual(conventionsAnswer(state, config, { ...run, freeSession: true }), { hiveLanguage: 'pt', approval: false, nestedRepos: [] });
-  const local: Worker = { id: 'w2', runId: 'r2', activityId: 'local:hive', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, { ...config, language: undefined }, local), { hiveLanguage: systemLanguage(), approval: false, nestedRepos: [] });
-});
-
 // Each mcp.call without its latency, which only has to be a number
 const mcpCalls = (records: RecordInput[]): Record<string, unknown>[] => records.filter((r) => r.event === 'mcp.call').map((r) => {
   const { latency_ms: latency, ...rest } = r as unknown as Record<string, unknown>;
@@ -406,7 +366,6 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   mountMcp(app, {
     exec: async () => ({ stdout: '' }),
-    machineFor: () => fakeMachine(),
     live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
     relate: unused, canRelate: () => false,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, facts, memory: { read: unused, update: unused }, benchmark: { draft: unused },
@@ -536,42 +495,6 @@ test('hive_revise and hive_forget refuse an unknown id, a why that is not one li
   assert.ok(!JSON.stringify(records).includes('Zx9'), 'no field reaches a record');
 });
 
-test('forkConventions answers a fork\'s PR target, both repositories, the base remote and the effective base; nothing for a workspace that is not a fork or whose remotes are off GitHub; conventionsAnswer carries it only when given (#854)', async () => {
-  const urls: Record<string, string> = { upstream: 'https://github.com/acme/app.git\n', origin: 'git@github.com:me/app.git\n' };
-  const exec: Exec = async (_file, args) => {
-    if (args.includes('get-url')) return { stdout: urls[args.at(-1) ?? ''] ?? '' };
-    return { stdout: args.includes('symbolic-ref') ? 'upstream/master\n' : '' };
-  };
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
-  const original = { pr: 'original', original: 'acme/app', fork: 'me/app', baseRemote: 'upstream', base: 'master' };
-  assert.deepEqual(await forkConventions({ exec, paths: HOST_PATHS }, app, {}), original);
-  assert.deepEqual(await forkConventions({ exec, paths: HOST_PATHS }, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });
-  assert.deepEqual(await forkConventions({ exec, paths: HOST_PATHS }, { ...app, fork: { remote: 'upstream', pr: 'fork', sync: 'github' } }, { baseBranch: 'main' }), { ...original, pr: 'fork', baseRemote: 'origin', base: 'main' });
-  assert.equal(await forkConventions({ exec, paths: HOST_PATHS }, { ...app, fork: null }, {}), undefined);
-  assert.equal(await forkConventions({ exec: async () => ({ stdout: 'https://gitlab.com/a/b.git\n' }), paths: HOST_PATHS }, app, {}), undefined);
-  assert.equal(await forkConventions({ exec, paths: HOST_PATHS }, undefined, {}), undefined);
-  const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
-  const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
-  const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, local, { ...original, pr: 'original' }), { hiveLanguage: 'pt', approval: false, fork: original, nestedRepos: [] });
-  assert.equal('fork' in conventionsAnswer(state, config, local), false);
-});
-
-test('conventionsAnswer answers the workspace\'s base when the workspace or the config sets one, nothing otherwise, and fork.base in a fork (#433)', async () => {
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
-  const plain: Workspace = { ...app, fork: null };
-  const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
-  const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
-  const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
-  assert.equal('base' in conventionsAnswer(state, config, local, undefined, [], plain), false);
-  assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local, undefined, [], plain).base, 'main');
-  assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local, undefined, [], { ...plain, baseBranch: 'devtest' }).base, 'devtest');
-  assert.equal(conventionsAnswer(state, { ...config, baseBranch: 'main' }, local).base, 'main');
-  const exec: Exec = async (_file, args) => ({ stdout: args.includes('get-url') ? 'https://github.com/acme/app.git\n' : '' });
-  const fork = await forkConventions({ exec, paths: HOST_PATHS }, { ...app, baseBranch: 'devtest' }, {});
-  assert.equal(conventionsAnswer(state, config, local, fork, [], { ...app, baseBranch: 'devtest' }).base, fork?.base);
-});
-
 test('hive_done takes one of the stage\'s verdicts and its evidence into result.verdict and the worker; an unknown verdict, an evidence over the cap or an evidence alone is refused (#134)', async (t) => {
   const { base, server, ptyId } = await start(t, [GITHUB_ENTRY], undefined, [{ ...STAGES[0], verdicts: ['ok', 'redo'] }, { name: 'later', from: {} }]);
   const client = await connect(t, base, ptyId);
@@ -647,7 +570,7 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
   const off = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo), mcp: { off: ['hive_remember', 'hive_recall', 'hive_revise', 'hive_forget'], servers: [] } }) });
   assert.equal(off.status, 200);
   const client = await connect(t, base, ptyId);
-  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop', 'hive_task']);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['benchmark_draft', 'benchmark_get', 'benchmark_list', 'hive_ask', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop', 'hive_task']);
   const answer = await call(client, 'hive_remember', { kind: 'fact', description: 'x', body: 'y' });
   assert.equal(answer.isError, true);
   assert.match(answer.text, /Tool hive_remember not found/);
@@ -659,19 +582,6 @@ test('a tool turned off in mcp.off leaves tools/list and a call to it gets the S
     assert.equal(gone.isError, true);
     assert.match(gone.text, new RegExp(`Tool ${tool} not found`));
   }
-});
-
-test('nestedConventions answers each nested repo with its GitHub repository, none for one off GitHub; conventionsAnswer carries the list, [] without one (#653)', async () => {
-  const urls: Record<string, string> = { [join('/app', 'docs')]: 'https://github.com/acme/docs.git\n', [join('/app', 'ee')]: 'https://gitlab.com/acme/ee.git\n' };
-  const exec: Exec = async (_file, args) => ({ stdout: urls[args[1]] ?? '' });
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: null, nestedRepos: ['docs', 'ee'], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
-  const nested = await nestedConventions({ exec, paths: HOST_PATHS }, app);
-  assert.deepEqual(nested, [{ path: 'docs', repository: 'acme/docs' }, { path: 'ee' }]);
-  assert.deepEqual(await nestedConventions({ exec, paths: HOST_PATHS }, undefined), []);
-  const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
-  const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
-  const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, local, undefined, nested), { hiveLanguage: 'pt', approval: false, nestedRepos: nested });
 });
 
 const PR9 = 'https://github.com/acme/r/pull/9';

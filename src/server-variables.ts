@@ -8,13 +8,13 @@ import type { MemoryStore } from './memory.js';
 import type { PluginRender } from './plugin-render.js';
 import { writeMemoryProtocols } from './server-memory.js';
 import { bodyOf } from './server-plugins.js';
-import { isVariableName } from './template.js';
+import { BUILT_INS, isVariableName } from './template.js';
 import type { Config, VariableValue, Workspace } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_SERVER_ERROR = 500;
 export const WORKSPACE_MESSAGE = 'workspace: no such workspace';
-export const NAME_MESSAGE = 'name: a variable name is a letter or _ followed by letters, digits or _, and never workspace';
+export const NAME_MESSAGE = `name: a variable name is a letter or _ followed by letters, digits or _, and never a built-in: ${BUILT_INS.join(', ')}`;
 export const SAVE_MESSAGE = 'hive.config.json could not be written; see hive.log';
 const VALUE = z.object({ value: z.union([z.string(), z.boolean(), z.null()]) });
 

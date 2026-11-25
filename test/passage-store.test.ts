@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createPassageStore, passagesDir, protocolRenderer } from '../src/passage-store.js';
 import { AFTER_MESSAGE } from '../src/protocol-inserts.js';
 import { renderProtocol } from '../src/protocol.js';
+import { NO_BUILT_INS, type RenderWorkspace } from '../src/template.js';
 import { tempDir } from './temp-dir.js';
 import { assertMode } from './posix-only.js';
 
@@ -68,4 +69,14 @@ test('protocolRenderer renders the passages for the workspace into every kind, l
   const broken = protocolRenderer({ list: () => Promise.reject(new Error('EACCES')) }, logger);
   assert.equal((await broken('a', [])).stage, renderProtocol('stage', [], []));
   assert.match(logged.at(-1) ?? '', /^protocol: passages unreadable \(Error\)$/);
+});
+
+test('protocolRenderer renders each passage with the workspace its renderOf answers, built-ins included (#742)', async (t) => {
+  const store = createPassageStore(await tempDir(t, 'home-'));
+  await store.create('---\nafter: done\n---\nBase {{ baseBranch }}.\n');
+  const renderOf = (name: string): RenderWorkspace => ({ name, variables: {}, builtIns: { ...NO_BUILT_INS, baseBranch: name === 'a' ? 'devtest' : null } });
+  const protocolFor = protocolRenderer(store, { error: () => undefined }, renderOf);
+  const passage = (text: string) => ({ id: 'p1', after: 'done', orphan: false, text, errors: [] });
+  assert.equal((await protocolFor('a', [])).stage, renderProtocol('stage', [], [passage('Base devtest.')]));
+  assert.equal((await protocolFor('b', [])).stage, renderProtocol('stage', [], [passage('Base .')]));
 });

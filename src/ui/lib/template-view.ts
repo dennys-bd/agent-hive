@@ -3,7 +3,7 @@
 import type { ConditionTerm, ConditionValue } from '../../template-condition.js';
 import { type Catalogue, findReferences, type MapBlock, type MapBranch, type TemplateMap } from '../../template-map.js';
 import { chainsOf, type Preview } from '../../template-preview.js';
-import type { ParsedTemplate } from '../../template.js';
+import { BUILT_INS, type ParsedTemplate } from '../../template.js';
 import { type MessageKey, t } from '../i18n.js';
 
 export type EditorMode = 'visual' | 'text';
@@ -18,9 +18,8 @@ interface LookArgs { text: string; parsed: ParsedTemplate; map: TemplateMap; cat
 
 const NONE: ReadonlySet<number> = new Set();
 const MARKDOWN = /\.md(\.liquid)?$/;
-// {{ name }} and {{ name | filter }}; a pill only for a name the header declares, or the built-in workspace
+// {{ name }} and {{ name | filter }}; a pill only for a name the header declares, or a built-in (workspace, fork, baseBranch, nestedRepos, #742)
 const OUTPUT = /\{\{-?\s*([A-Za-z_][A-Za-z0-9_]*)[^}]*\}\}/g;
-const BUILT_IN = 'workspace';
 
 /** Only a markdown body has headings and Liquid blocks (decision 14). */
 export const isMarkdown = (path: string): boolean => MARKDOWN.test(path);
@@ -106,7 +105,7 @@ function refsOf(source: string, line: number, catalogue: Catalogue): Decoration[
 }
 
 function decorationsOf({ text, parsed, map, catalogue, mode }: LookArgs): Decoration[] {
-  const names = new Set([...parsed.variables.map((v) => v.name), BUILT_IN]);
+  const names = new Set<string>([...parsed.variables.map((v) => v.name), ...BUILT_INS]);
   const branches = chainsOf(map.blocks).flatMap((c) => span(c.line, c.endLine)).map((line): Decoration => ({ line, className: 'template-branch', isBackground: true }));
   const greys = mode === 'text' ? markerLines(map).map((line): Decoration => ({ line, className: 'template-marker' })) : [];
   const body = text.split('\n').flatMap((source, index) => (index + 1 < parsed.bodyLine ? [] : [...pillsOf(source, index + 1, names), ...refsOf(source, index + 1, catalogue)]));

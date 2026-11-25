@@ -1,5 +1,6 @@
 import type { Machine } from './machine.js';
 import { githubRepository } from './task-refs.js';
+import type { RenderWorkspace } from './template.js';
 import { type Config, FORK_SYNCS, type ForkSync, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
 
 // A workspace that is a fork (#854): its config parser. The prefix is config.ts's CONFIG_FILE, written out: importing it would make
@@ -47,6 +48,26 @@ export const baseRemote = ({ fork }: Pick<Workspace, 'fork'>): string => (fork &
 export function workspaceBase(config: Pick<Config, 'baseBranch'>, workspace: Pick<Workspace, 'fork' | 'baseBranch'> | undefined): WorkspaceBase {
   const branch = workspace?.baseBranch ?? config.baseBranch;
   return { remote: workspace === undefined ? ORIGIN : baseRemote(workspace), fork: workspace?.fork ?? null, ...(branch === undefined ? {} : { branch }) };
+}
+
+// The skill's own nested-path rule (#742): a path is rendered into instruction text, so one that could not be a PR's anyway (a backtick, a
+// line break, a quote) never reaches it
+const RENDERABLE_PATH = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
+
+/** A workspace as a template renders it (#742, decision 2): its name and values, and the built-ins read from its Settings. One helper, so the
+ * plugin render, the protocol passages and the lint input fill them the same way; nothing here reads git, so a render never goes stale. */
+export function renderWorkspaceOf(config: Pick<Config, 'baseBranch'>, workspace: Pick<Workspace, 'name' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>): RenderWorkspace {
+  const { fork } = workspace;
+  const { branch } = workspaceBase(config, workspace);
+  return {
+    name: workspace.name,
+    variables: workspace.variables,
+    builtIns: {
+      fork: fork ? { remote: fork.remote, pr: fork.pr, baseRemote: baseRemote(workspace) } : null,
+      baseBranch: branch ?? null,
+      nestedRepos: workspace.nestedRepos.filter((path) => RENDERABLE_PATH.test(path) && !path.split('/').includes('..')),
+    },
+  };
 }
 
 /** The owner of an owner/name. */

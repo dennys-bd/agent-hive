@@ -7,21 +7,22 @@ import express from 'express';
 import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
-import type { CatalogueItem, CatalogueRead, ItemRead, LintInputRead, Stage, UpdatePreview, WorkspaceVariables } from '../src/types.js';
+import type { CatalogueItem, CatalogueRead, ItemRead, LintInputRead, Stage, UpdatePreview, Workspace, WorkspaceVariables } from '../src/types.js';
 import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { NO_POSIX_FAULTS } from './posix-only.js';
 
-async function serve(t: TestContext, f: Fixture, stages: Stage[] = [], variables: WorkspaceVariables = {}): Promise<{ base: string; lines: string[] }> {
+type Settings = Partial<Pick<Workspace, 'fork' | 'baseBranch' | 'nestedRepos'>>;
+async function serve(t: TestContext, f: Fixture, stages: Stage[] = [], variables: WorkspaceVariables = {}, settings: Record<string, Settings> = {}): Promise<{ base: string; lines: string[] }> {
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
   const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined, log });
-  const workspaces = f.workspaces.map((w) => ({ ...w, variables: variables[w.name] ?? {} }));
+  const workspaces = f.workspaces.map((w) => ({ ...w, variables: variables[w.name] ?? {}, fork: null, nestedRepos: [], ...settings[w.name] }));
   registerPluginRoutes(app, {
-    requireLive: () => ({ runtime: { config: { comb: { workspaces, flows: [{ stages }] } } } }),
+    requireLive: () => ({ runtime: { config: { baseBranch: 'main', comb: { workspaces, flows: [{ stages }] } } } }),
     store,
     home: f.home,
     pluginSource: f.pluginSource,
@@ -203,4 +204,15 @@ test('the dismissed routes round-trip the keys per version, null the original; a
   assert.deepEqual(await call(base, 'PUT', dismissed, { version: 'mine', keys: ['m'] }), [200, ['m']]);
   assert.deepEqual([(await call(base, 'GET', dismissed))[1], (await call(base, 'GET', `${dismissed}?version=mine`))[1]], [['a\u0000b'], ['m']]);
   await assertUntouched(f);
+});
+
+test("GET /api/lint-input answers each workspace's built-ins from its Settings: a fork's remote, target and base remote, its base branch over the config's, its nested repos (#742)", async (t) => {
+  const f = await fixture(t);
+  const { base } = await serve(t, f, [], {}, { 'agent-hive': { fork: { remote: 'upstream', pr: 'fork', sync: 'manual' }, nestedRepos: ['docs'], baseBranch: 'devtest' } });
+  const [status, body] = await call(base, 'GET', '/api/lint-input');
+  assert.equal(status, 200);
+  assert.deepEqual((body as LintInputRead).builtIns, {
+    'agent-hive': { fork: { remote: 'upstream', pr: 'fork', baseRemote: 'origin' }, baseBranch: 'devtest', nestedRepos: ['docs'] },
+    'hive-site': { fork: null, baseBranch: 'main', nestedRepos: [] },
+  });
 });

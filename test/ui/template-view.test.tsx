@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest';
-import { parseTemplate, renderTemplate } from '../../src/template';
+import { NO_BUILT_INS, parseTemplate, renderTemplate } from '../../src/template';
 import { parseCondition } from '../../src/template-condition';
 import { buildMap, type Catalogue, type MapBranch } from '../../src/template-map';
 import { previewTemplate } from '../../src/template-preview';
@@ -32,14 +32,14 @@ test("the marks: the chain's lines on the branch background, the markers grey in
 });
 
 test("the preview's look: the delivered header and the resolved lines, the markers hidden, the lines of a branch that does not hold dimmed, and the rest is the render (#319, decision 23)", () => {
-  const preview = previewTemplate(parsed, map, { name: 'hive-site', variables: {} });
+  const preview = previewTemplate(parsed, map, { name: 'hive-site', variables: {}, builtIns: NO_BUILT_INS });
   if (!preview.ok) throw new Error('no preview');
   const shown = previewLook(preview);
   // the delivered header is 4 lines, so source line n is model line n - 2
   expect(shown.hidden).toEqual([{ from: 12, to: 12 }, { from: 14, to: 14 }, { from: 16, to: 16 }]);
   expect(shown.decorations).toEqual([{ line: 14, className: 'template-dim' }, { line: 15, className: 'template-dim' }]);
   expect([[...shown.dimmed], shown.chips, shown.lineOf(20), shown.lineOf(16)]).toEqual([[16, 17], [], 18, 15]);
-  const render = renderTemplate(parsed, { name: 'hive-site', variables: {} });
+  const render = renderTemplate(parsed, { name: 'hive-site', variables: {}, builtIns: NO_BUILT_INS });
   const kept = shown.text.split('\n').filter((_, i) => !shown.decorations.some((d) => d.line === i + 1)).join('\n');
   expect(render.ok && kept).toBe(render.ok && render.text);
 });

@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { activityOfWorker, taskOfWorker } from './activities.js';
+import { taskOfWorker } from './activities.js';
 import { liveRecord } from './record-kit.js';
 import { freeEndRefused } from './runs.js';
 import { exitOf } from './transitions.js';
@@ -14,10 +14,9 @@ import { MCP_ROUTE } from './hooks-settings.js';
 import { isPrUrl } from './orchestrator.js';
 import { appendMessage, markAgentResolved } from './review-store.js';
 import { workerReview } from './mcp-review.js';
-import { conventionsAnswer, forkConventions, nestedConventions, workerWorkspace } from './mcp-conventions.js';
 import { type Answer, livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
 import { registerOptionalTools } from './mcp-optional.js';
-import { LOCAL_MACHINE, SOURCE_ACTIONS, type Stage, type SourceConfig, type CloseReason, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Task, type Worker } from './types.js';
+import { SOURCE_ACTIONS, type Stage, type SourceConfig, type CloseReason, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Task, type Worker } from './types.js';
 
 const SERVER_INFO = { name: 'hive', version: '1.0.0' }; // Claude Code names the tools mcp__hive__<tool>
 const RESULT_MAX_BYTES = 64 * 1024; // serialized, UTF-8
@@ -226,25 +225,6 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
   }));
 }
 
-// hive_conventions (#692, #318): the Hive's language, the stage's approval and a fork's PR target, which the plugin's skills read. Any skill may call it; it only reads.
-function registerConventionsTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
-  server.registerTool('hive_conventions', {
-    description: 'Read the Hive\'s language (hiveLanguage), whether your stage waits for the user\'s approval in the Hive (approval) and the stage\'s name (stage, absent in a free or local session), and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch, and nestedRepos: the workspace\'s nested repos, each path with its GitHub repository when it has one, and base: the workspace\'s base branch, when one is set (in a fork it is fork.base). Answers a JSON object.',
-    inputSchema: {},
-  }, async () => recorded(deps, header, 'hive_conventions', async () => {
-    const ptyId = livePtyId(deps, header);
-    const current = deps.live();
-    const worker = ptyId === undefined ? undefined : current?.state.workers.find((s) => s.runId === ptyId);
-    if (!current || !worker) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
-    const workspace = workerWorkspace(current.state, current.config, worker);
-    // #932: the worker's activity's machine, frozen at birth; a worker with no workspace reads nothing, so the host is only a name there
-    const machine = deps.machineFor(activityOfWorker(current.state, worker) ?? workspace ?? { machine: LOCAL_MACHINE });
-    const fork = await forkConventions(machine, workspace, current.config); // #854
-    const nested = await nestedConventions(machine, workspace); // #653
-    return reply(JSON.stringify(conventionsAnswer(current.state, current.config, worker, fork, nested, workspace)));
-  }));
-}
-
 /**
  * The workers' MCP server (#99), MCP Streamable HTTP in stateless mode: a server and a transport per request, JSON answers, no session.
  * The worker is the x-hive-pty header of that request. Under /hooks/, so it passes the host guard and needs no UI header.
@@ -258,7 +238,6 @@ export function mountMcp(app: Express, deps: McpDeps): void {
     registerAskTool(server, deps, header);
     if (!isLocal) registerStopTool(server, deps, header);
     registerReplyTool(server, deps, header);
-    registerConventionsTool(server, deps, header);
     // #333: read per request, so a switch reaches running sessions on their next request; no live config (setup mode) registers every tool
     registerOptionalTools(server, deps, header, deps.live()?.config.mcp.off ?? []);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

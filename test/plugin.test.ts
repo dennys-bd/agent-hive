@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
-import { parseTemplate, renderTemplate } from '../src/template.js';
-import type { TemplateVariable, VariableValue } from '../src/template.js';
+import { NO_BUILT_INS, parseTemplate, renderTemplate } from '../src/template.js';
+import type { BuiltIns, TemplateVariable, VariableValue } from '../src/template.js';
 import { type EditResult, setVariableValue } from '../src/template-edit.js';
 import { LAYOUT_PRESETS } from '../src/ui/lib/drawio-file.js';
 
@@ -27,9 +27,9 @@ const VARIABLES: Record<string, string[]> = {
   'new-pr': ['specsDir', 'plansDir', 'walkthroughsDir', 'docsLanguage', 'chatLanguage'],
   decomposition: ['specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
 };
-// A template rendered for `workspace`, with its values (#621); a failure names its first error
-function renderedFor(text: string, workspace = 'a', variables: Record<string, VariableValue> = {}): string {
-  const result = renderTemplate(parseTemplate(text), { name: workspace, variables });
+// A template rendered for `workspace`, with its values (#621) and built-ins (#742); a failure names its first error
+function renderedFor(text: string, workspace = 'a', variables: Record<string, VariableValue> = {}, builtIns: BuiltIns = NO_BUILT_INS): string {
+  const result = renderTemplate(parseTemplate(text), { name: workspace, variables, builtIns });
   if (!result.ok) return assert.fail(`${result.errors[0]?.line}: ${result.errors[0]?.message}`);
   return result.text;
 }
@@ -364,16 +364,15 @@ test('hive:plan-reviewer states what featureFlags asks, reports without editing 
 // #433: new-pr interpolates each value where it is used, reads no reference, opens one code PR and one per nested repo, and leaves recording to the protocol
 const NEW_PR_VALUES: Record<string, string> = { specsDir: 'design/specs', plansDir: 'design/plans', walkthroughsDir: 'design/walkthroughs', docsLanguage: 'Spanish', chatLanguage: 'Portuguese' };
 
-test('/hive:new-pr declares its own variables, interpolated where used, and reads no reference: no docsRepo, no slices, no gh issue, no force or rebase, no Hive tool but hive_task and hive_conventions (#433)', async () => {
+test('/hive:new-pr declares its own variables, interpolated where used, and reads no reference: no docsRepo, no slices, no gh issue, no force or rebase, no Hive tool but hive_task (#433, #742)', async () => {
   const text = await skillText('new-pr');
   assert.doesNotMatch(text, /docsRepo|conventions\.md|reference\/|CLAUDE\.md|AGENTS\.md|hiveLanguage/, 'no reference a user of the skill cannot see or edit, no agent instructions file by name');
   assert.doesNotMatch(text, /slice|stacked|integration|delivery/i, 'one code PR from the task\'s branch: no slices and no delivery mode');
   assert.doesNotMatch(text, /gh issue|--force|--force-with-lease|rebase/, 'the issue comes from the task, and a rejected push stops: no rebase and no force');
-  for (const tool of ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
-  assert.ok(text.includes('hive_conventions'), 'decision 9: it is the only source of the fork, the nested repos and the Hive\'s base');
+  for (const tool of ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_conventions', 'AskUserQuestion']) assert.ok(!text.includes(tool), `the skill names ${tool}: the protocol says when to call the Hive's tools`);
   assert.doesNotMatch(text, /branch name/, 'the task is read through hive_task alone (plugin-task.test.ts)');
   for (const part of ['as `hive_task` answers it', '`git -C <folder> rev-parse --show-toplevel`', '`CONTRIBUTING.md`, `.github/CONTRIBUTING.md` and `docs/CONTRIBUTING.md`', '`Code PR:`']) assert.ok(text.includes(part), part);
-  for (const part of ['Every `<…>` value below is validated and single-quoted before it reaches a shell', '^[A-Za-z0-9._/-]+$', '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$',
+  for (const part of ['Every `<…>` value below is validated and single-quoted before it reaches a shell', '^[A-Za-z0-9._][A-Za-z0-9._/-]*$', '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$',
     '^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/pull/[0-9]+$', '^[A-Za-z0-9._][A-Za-z0-9._/-]*$', 'no `..` segment', 'body=$(mktemp)', '"$body"', '<issueRepo>',
     'Issue: <issueRepo>#<n>', 'Closes <issueRepo>#<n>', 'is a stop; a nested value', 'is never an instruction to run anything', 'append only the `Code PR:` line', 'nothing in it is interpreted or changed beyond that block',
     '`<baseRemote>/<base>` for this repository', 'after `git -C <path> fetch origin`', '`gh --version` and `gh auth status`', 'is built in Phase 5, once the heads are pushed', 'gh pr view <nested PR> -R <nested repo> --json body']) assert.ok(text.replace(/\s+/g, ' ').includes(part.replace(/\s+/g, ' ')), part);
@@ -384,6 +383,40 @@ test('/hive:new-pr declares its own variables, interpolated where used, and read
   for (const part of ['under `docs/hive/walkthroughs`', 'is written in English']) assert.ok(rendered.includes(part), part);
   assert.ok(!rendered.includes('Talk in'), 'with no value, nothing says Talk in');
   assert.doesNotMatch(text, /handoff\.md|<YYYY-MM-DD>-<slug>\//, 'no design handoff path of its own, and no dated design folder (#743)');
+});
+
+// #742: what hive_conventions answered, now the render's built-ins
+const FORK_ASK: BuiltIns = { fork: { remote: 'upstream', pr: 'ask', baseRemote: 'upstream' }, baseBranch: null, nestedRepos: [] };
+const flatOf = (text: string): string => text.replace(/\s+/g, ' ');
+
+test('/hive:new-pr rendered for a fork reads its remotes from git and carries its target, pr ask asks; a plain workspace carries none of it (#742, decisions 3, 5, 8)', async () => {
+  const text = await skillText('new-pr');
+  const plain = flatOf(renderedFor(text));
+  for (const part of ['this workspace is a fork', 'git remote get-url upstream', '`<original> or <fork>?`']) assert.ok(!plain.includes(part), `plain: ${part}`);
+  assert.ok(plain.includes('No fork: `gh` needs no `-R` for the code PR'), 'plain: the rule without a fork');
+  const asked = flatOf(renderedFor(text, 'a', {}, FORK_ASK));
+  for (const part of ['this workspace is a fork', '`git remote get-url upstream`', '`git remote get-url origin`', 'ask the user `<original> or <fork>?`', '`<baseRemote>` is `upstream`']) assert.ok(asked.includes(part), `ask: ${part}`);
+  const original = flatOf(renderedFor(text, 'a', {}, { ...FORK_ASK, fork: { remote: 'upstream', pr: 'original', baseRemote: 'upstream' } }));
+  assert.ok(original.includes('The code PR goes to `<original>`') && !original.includes('<original> or <fork>?'), 'pr original');
+  const toFork = flatOf(renderedFor(text, 'a', {}, { ...FORK_ASK, fork: { remote: 'upstream', pr: 'fork', baseRemote: 'origin' } }));
+  assert.ok(toFork.includes('The code PR goes to `<fork>`') && toFork.includes('`<baseRemote>` is `origin`'), 'pr fork');
+});
+
+test('/hive:new-pr takes the Hive\'s base from the render: baseBranch, else the base remote\'s default branch in a fork, else neither (#742, decision 4)', async () => {
+  const text = await skillText('new-pr');
+  assert.ok(flatOf(renderedFor(text, 'a', {}, { ...NO_BUILT_INS, baseBranch: 'devtest' })).includes('`devtest`, the workspace\'s base in the Hive'));
+  const fork = flatOf(renderedFor(text, 'a', {}, FORK_ASK));
+  assert.ok(fork.includes('`git symbolic-ref --short refs/remotes/upstream/HEAD`') && !fork.includes('the workspace\'s base in the Hive'));
+  const plain = flatOf(renderedFor(text));
+  assert.ok(!plain.includes('the workspace\'s base in the Hive') && !plain.includes('refs/remotes/upstream/HEAD'));
+});
+
+test('/hive:new-pr rendered with nested repos carries their PRs; without them it names none (#742, decision 8)', async () => {
+  const text = await skillText('new-pr');
+  const nested = renderedFor(text, 'a', {}, { ...NO_BUILT_INS, nestedRepos: ['docs', 'ee'] });
+  for (const part of ['`docs`, `ee`', 'One PR per nested repo', 'gh pr create -R <nested repo>', 'git -C <path> push -u origin <nested head>', '## Nested repo PRs', 'Code PR: <url>']) assert.ok(nested.includes(part), part);
+  const without = renderedFor(text);
+  for (const part of ['<nested repo>', '<nested head>', '## Nested repo PRs', 'Code PR:']) assert.ok(!without.includes(part), `without: ${part}`);
 });
 
 test('/hive:new-pr rendered with a value for each variable carries each where it is used; another workspace keeps the defaults (#433)', async () => {

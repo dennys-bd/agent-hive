@@ -1405,7 +1405,7 @@ export interface ReviewerConfig { on: boolean; when: ReviewWhen; agent: AgentId 
 export const REVIEWER_DEFAULTS: ReviewerConfig = { on: true, when: 'save', agent: null, model: null, version: null };
 
 /** The Hive's MCP tools no config can turn off (#333): the stages and the skills depend on them. */
-export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply', 'hive_conventions'] as const;
+export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply'] as const;
 /** The tools mcp.off may turn off for the whole Hive (#333, screen 11f). */
 export const OPTIONAL_TOOLS = ['hive_remember', 'hive_recall', 'hive_revise', 'hive_forget', 'hive_create_task', 'hive_task', 'benchmark_list', 'benchmark_get', 'benchmark_draft'] as const;
 export type OptionalTool = (typeof OPTIONAL_TOOLS)[number];
@@ -2349,7 +2349,14 @@ export interface ItemRead { item: CatalogueItem; version: string | null; files: 
 /** GET /api/lint-input (#327): what the editor's lint reads beside the open file, the catalogue's variables and the plugin's scripts. */
 /** Each workspace's variables by its name (#621): what GET /api/lint-input answers beside the catalogue, and what the editor renders with. */
 export type WorkspaceVariables = Record<string, Record<string, VariableValue>>;
-export interface LintInputRead { catalogue: LintItem[]; scripts: string[]; variables: WorkspaceVariables } // #621: each workspace's values, by name
+/** A fork workspace as a template reads it (#742, decision 2): the original's remote, where the PRs go, and the base remote. */
+export interface ForkBuiltIn { remote: string; pr: PrTarget; baseRemote: string }
+/** What the Hive renders into every template beside `workspace` (#742, decision 2), read from the workspace's Settings at every render and never
+ * set by the user: the fork or null, the effective base branch or null, the nested repos' paths. */
+export interface BuiltIns { fork: ForkBuiltIn | null; baseBranch: string | null; nestedRepos: readonly string[] }
+/** Each workspace's built-ins by its name (#742): what GET /api/lint-input answers beside `variables`. */
+export type WorkspaceBuiltIns = Record<string, BuiltIns>;
+export interface LintInputRead { catalogue: LintItem[]; scripts: string[]; variables: WorkspaceVariables; builtIns: WorkspaceBuiltIns } // #621: each workspace's values, #742: its built-ins, by name
 
 /** A conflict's two answers in a version's update (#324): keep the version's text, or take the shipped one. */
 export const UPDATE_CHOICES = ['mine', 'hive'] as const;

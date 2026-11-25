@@ -187,3 +187,11 @@ test('a fix whose span is not in the posted text answers as an advice, one whose
   assert.deepEqual(body, { annotations: [{ ...kept, source: 'agent' }, { ...NOTE, line: 7, source: 'agent', kind: 'advice' }] });
   assert.deepEqual(lines.filter((l) => l.startsWith('WARN review:')), [`WARN review: ${BUILD} 1 fixes read as advice: line 7: the span is not on its line`]);
 });
+
+test('the reviewer\'s instructions render for no workspace: no fork, no base branch, no nested repo (#742, decision 7)', async (t) => {
+  const f = await reviewFixture(t);
+  await put(f.pluginSource, { 'agents/template-reviewer.md': REVIEWER_TEXT('{% if fork %}a fork{% else %}no fork{% endif %}, base [{{ baseBranch }}], {{ nestedRepos.size }} nested.') });
+  const { base, calls } = await serve(t, f, async () => answer([]));
+  assert.equal((await review(base, BUILD, BODY))[0], 200);
+  assert.ok(calls[0].prompt.startsWith('no fork, base [], 0 nested.\n\n'), calls[0].prompt.slice(0, 80));
+});

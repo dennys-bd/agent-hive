@@ -74,7 +74,7 @@ test('a name already declared, or workspace, shows its copy in the form and writ
   await user.clear(name);
   await user.type(name, 'workspace');
   await user.click(within(form).getByRole('button', { name: 'criar' }));
-  expect(within(form).getByRole('alert')).toHaveTextContent('um nome é uma letra ou _ seguida de letras, dígitos ou _, e não workspace');
+  expect(within(form).getByRole('alert')).toHaveTextContent('um nome é uma letra ou _ seguida de letras, dígitos ou _, e não uma embutida (workspace, fork, baseBranch, nestedRepos)');
   expect([view().model.getValue(), saves]).toEqual([VARS_TEXT, []]);
 });
 

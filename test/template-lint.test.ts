@@ -2,19 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { deliveredName, type ParsedTemplate, parseTemplate, type RenderWorkspace } from '../src/template.js';
+import { deliveredName, type ParsedTemplate, NO_BUILT_INS, parseTemplate, type RenderWorkspace } from '../src/template.js';
 import { type LintAnnotation, type LintInput, type LintItem, lintTemplate, variableUses } from '../src/template-lint.js';
 
 // The structural lint (#312): each check alone, the grouping of workspaces, the render's dedup, the shipped plugin linting clean.
 // Escaped, so the linter does not read a plain string's ${...} as a template mistake.
 const PLUGIN_ROOT = `\${HIVE_PLUGIN_ROOT}`;
-const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables, builtIns: NO_BUILT_INS });
 
 const STACKED: LintItem = {
   origin: 'hive',
   kind: 'skill',
   name: 'stacked-branch',
-  variables: parseTemplate('---\nvariables:\n  baseBranch: { required: true, workspaces: { hive: main } }\n---\n{{ baseBranch }}\n').variables,
+  variables: parseTemplate('---\nvariables:\n  branch: { required: true, workspaces: { hive: main } }\n---\n{{ branch }}\n').variables,
 };
 const INPUT: LintInput = {
   self: { origin: 'hive', kind: 'skill', name: 'x' },
@@ -110,20 +110,20 @@ test('calling a Hive skill whose required variable has no value in a workspace i
       line: 4,
       severity: 'red',
       check: 'callRequired',
-      title: 'missing baseBranch · /stacked-branch · hive-site',
-      body: '/stacked-branch requires "baseBranch", which has no value for hive-site.',
+      title: 'missing branch · /stacked-branch · hive-site',
+      body: '/stacked-branch requires "branch", which has no value for hive-site.',
       workspaces: ['hive-site'],
-      variable: 'baseBranch',
+      variable: 'branch',
       ref: '/stacked-branch',
     },
     {
       line: 5,
       severity: 'red',
       check: 'callRequired',
-      title: 'missing baseBranch · /hive:stacked-branch · hive-site',
-      body: '/hive:stacked-branch requires "baseBranch", which has no value for hive-site.',
+      title: 'missing branch · /hive:stacked-branch · hive-site',
+      body: '/hive:stacked-branch requires "branch", which has no value for hive-site.',
       workspaces: ['hive-site'],
-      variable: 'baseBranch',
+      variable: 'branch',
       ref: '/hive:stacked-branch',
     },
   ]);
@@ -171,7 +171,7 @@ test('a heading deeper than the previous by more than one level is yellow; fence
 
 test('annotations sort by line, then red before yellow, then title (#312)', () => {
   assert.deepEqual(lint([], ['Run scripts/missing.mjs, hive:ghost and `/nowhere`, then /hive:stacked-branch.']), [
-    '4 red callRequired missing baseBranch · /hive:stacked-branch · hive-site',
+    '4 red callRequired missing branch · /hive:stacked-branch · hive-site',
     '4 yellow reference unknown skill, agent or script /nowhere',
     '4 yellow reference unknown skill, agent or script hive:ghost',
     '4 yellow reference unknown skill, agent or script scripts/missing.mjs',
@@ -262,4 +262,9 @@ test('two templates that give a name different values are no finding while the w
   const called: LintItem = { origin: 'hive', kind: 'skill', name: 'stacked-branch', variables: parseTemplate('---\nvariables:\n  flags: { values: [b, c], default: c }\n---\n{{ flags }}\n').variables };
   const input = { ...INPUT, catalogue: [called], workspaces: [at('hive', { flags: 'b' })] };
   assert.deepEqual(brief(lintTemplate(template(['variables:', '  flags: { values: [a, b], default: a }'], ['{{ flags }}, then /hive:stacked-branch.']), input)), []);
+});
+
+test('a template reading fork.pr, baseBranch or nestedRepos without declaring them has no undeclared finding; declaring fork is the parse\'s red (#742, decision 6)', () => {
+  assert.deepEqual(lint([], ['{% if fork %}{{ fork.pr }}{% endif %} {{ baseBranch }} {{ nestedRepos | join: ", " }}']), []);
+  assert.deepEqual(lint(['variables:', '  fork: { default: x }'], ['{{ fork }}']), ['4 red parse variable "fork": fork is built in and cannot be declared']);
 });

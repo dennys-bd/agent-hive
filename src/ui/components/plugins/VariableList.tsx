@@ -1,16 +1,15 @@
 import { PencilIcon, Trash2Icon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { parseTemplate, type RenderWorkspace, type TemplateVariable, type ValueSource, valueFor, valueSource, type VariableValue, workspaceValueProblem } from '../../../template';
 import { type EditResult, removeVariable } from '../../../template-edit';
 import { type LintAnnotation, variableUses } from '../../../template-lint';
-import type { WorkspaceVariables } from '../../../types';
 import { Confirm } from '@/components/Confirm';
 import { VariableForm } from '@/components/plugins/VariableForm';
 import { Button } from '@/components/ui/button';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import type { WriteResult } from '@/hooks/use-item-editor';
 import { type MessageKey, t } from '@/i18n';
-import { renderFor } from '@/lib/workspace-values';
+import { renderFor, type WorkspaceRenders } from '@/lib/workspace-values';
 
 export type Origin = 'hive' | 'yours';
 export interface VariableListProps {
@@ -19,13 +18,14 @@ export interface VariableListProps {
   originOf?(name: string): Origin | undefined; // omitted: no origin line
   findings?(name: string): readonly LintAnnotation[]; onFinding?(finding: LintAnnotation): void; // omitted: no lint lines
   viewAs?: string; // a workspace's preview: the other workspaces' values are dimmed
-  values?: WorkspaceVariables; // #621: each workspace's values; omitted (a passage), a line reads only the text's own entries
+  values?: WorkspaceRenders; // #621, #742: each workspace's values and built-ins; omitted (a passage), a line reads only the text's own entries
+  footer?: ReactNode; // #742: last in the scroll column, the pane's built-ins; a protocol passage passes none
   onWorkspaceValue?(workspace: string, name: string, value: VariableValue | undefined): Promise<MessageKey | undefined>; // #621: omitted, every write is the text's own entry
 }
 interface Removal { name: string; lines: number[] }
 interface Shown { text: string; tone: string; isWrong: boolean }
 interface RowProps {
-  variable: TemplateVariable; workspaces: readonly string[]; values: WorkspaceVariables; hasSource: boolean; origin?: Origin; findings: readonly LintAnnotation[]; viewAs?: string;
+  variable: TemplateVariable; workspaces: readonly string[]; values: WorkspaceRenders; hasSource: boolean; origin?: Origin; findings: readonly LintAnnotation[]; viewAs?: string;
   onEdit(): void; onRemove(): void; onFinding(finding: LintAnnotation): void;
 }
 
@@ -33,7 +33,7 @@ const ORIGIN: Record<Origin, MessageKey> = { hive: 'plugins.variables.fromHive',
 // #621, decision 1: where a workspace's value comes from
 const SOURCE: Record<ValueSource, MessageKey> = { override: 'plugins.variables.source.override', workspace: 'plugins.variables.source.workspace', default: 'plugins.variables.default' };
 const NO_FINDINGS: readonly LintAnnotation[] = [];
-const NO_VALUES: WorkspaceVariables = {};
+const NO_VALUES: WorkspaceRenders = { variables: {}, builtIns: {} };
 const ICON_BUTTON = 'size-5 text-faint hover:text-foreground';
 const MISSING = '—';
 const MUTED = 'text-muted-foreground';
@@ -153,7 +153,7 @@ function PaneHead({ isDisabled, onAdd }: { isDisabled: boolean; onAdd(): void })
  * or a protocol passage's draft) and the workspace route (#621). The parse is memoised on the text: the list re-renders on every keystroke
  * (decision 23). A header that does not parse replaces the list with its line and hides the form (decision 22). "+ variable" opens the form
  * at the top; the pencil opens it in its card's place, so a card and its form never show together. */
-export function VariableList({ text, workspaces, onApply, originOf, findings, onFinding, viewAs, values = NO_VALUES, onWorkspaceValue }: VariableListProps) {
+export function VariableList({ text, workspaces, onApply, originOf, findings, onFinding, viewAs, values = NO_VALUES, onWorkspaceValue, footer }: VariableListProps) {
   const parsed = useMemo(() => parseTemplate(text), [text]);
   const [error, setError] = useState<MessageKey>();
   const [removal, setRemoval] = useState<Removal>();
@@ -167,7 +167,7 @@ export function VariableList({ text, workspaces, onApply, originOf, findings, on
   };
   const formOf = (variable?: TemplateVariable) => (
     <VariableForm
-      key={variable?.name ?? ''} text={text} workspaces={workspaces} variable={variable} values={values}
+      key={variable?.name ?? ''} text={text} workspaces={workspaces} variable={variable} values={values.variables}
       onApply={onApply} onWorkspaceValue={onWorkspaceValue} onClose={() => setForm(undefined)}
     />
   );
@@ -189,6 +189,7 @@ export function VariableList({ text, workspaces, onApply, originOf, findings, on
           )))}
         </ul>
       )}
+      {footer}
       {removal && <RemoveDialog removal={removal} onConfirm={() => write(removeVariable(text, removal.name))} onClose={() => setRemoval(undefined)} />}
     </div>
   );

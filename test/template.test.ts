@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { deliveredName, needsLiquid, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace, splitHeader, type TemplateError, valueFor, valueSource } from '../src/template.js';
+import { BUILT_INS, type BuiltIns, deliveredName, isVariableName, needsLiquid, NO_BUILT_INS, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate, type RenderWorkspace, splitHeader, type TemplateError, valueFor, valueSource } from '../src/template.js';
+import { PR_TARGETS } from '../src/types.js';
 
 // The Liquid render pipeline (#310): a skill or agent template's header, its variables, the render for one workspace, the .liquid name.
 const TEMPLATE = [
@@ -111,7 +112,7 @@ function failure(result: RenderResult): TemplateError[] {
   return result.ok ? [] : result.errors;
 }
 
-const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables });
+const at = (name: string, variables: RenderWorkspace['variables'] = {}): RenderWorkspace => ({ name, variables, builtIns: NO_BUILT_INS });
 
 test('rendering takes the workspace\'s value, else the default; a null default takes the else; workspace is built in (#310)', () => {
   const parsed = parseTemplate(TEMPLATE);
@@ -246,4 +247,37 @@ test('a workspace value a declaration cannot take fails that workspace\'s render
   assert.deepEqual(renderTemplate(parsed, at('b', { flags: 'always', quick: true })), { ok: true, text: 'always true d\n' });
   const overridden = parseTemplate('---\nvariables:\n  flags: { values: [none, always], default: none, workspaces: { a: always } }\n---\n{{ flags }}\n');
   assert.deepEqual(renderTemplate(overridden, at('a', { flags: 'sometimes' })), { ok: true, text: 'always\n' }, 'the override renders: the workspace value is not read');
+});
+
+// #742: the Hive's own values from the workspace's Settings, beside workspace
+const BUILT = (builtIns: Partial<BuiltIns>): RenderWorkspace => ({ name: 'app', variables: {}, builtIns: { ...NO_BUILT_INS, ...builtIns } });
+const BUILT_IN_BODY = [
+  '---', 'name: x', '---',
+  '{% if fork %}fork {{ fork.remote }} pr {{ fork.pr }} base remote {{ fork.baseRemote }}{% else %}no fork{% endif %}',
+  '{% if baseBranch %}base {{ baseBranch }}{% else %}no base{% endif %}',
+  '{% if nestedRepos.size > 0 %}nested {{ nestedRepos | join: ", " }}{% else %}no nested{% endif %}',
+  '',
+].join('\n');
+
+test('the built-ins render from the workspace: a fork with each pr, no fork, a base set and not, nested repos and none (#742, decision 2)', () => {
+  const parsed = parseTemplate(BUILT_IN_BODY);
+  const body = (workspace: RenderWorkspace): string => {
+    const result = renderTemplate(parsed, workspace);
+    return result.ok ? result.text.replace('---\nname: x\n---\n', '') : assert.fail(result.errors[0]?.message);
+  };
+  assert.equal(body(BUILT({})), 'no fork\nno base\nno nested\n', 'decision 7: no workspace\'s Settings');
+  for (const pr of PR_TARGETS) {
+    const baseRemote = pr === 'fork' ? 'origin' : 'upstream';
+    assert.equal(body(BUILT({ fork: { remote: 'upstream', pr, baseRemote } })).split('\n')[0], `fork upstream pr ${pr} base remote ${baseRemote}`, pr);
+  }
+  assert.equal(body(BUILT({ baseBranch: 'devtest', nestedRepos: ['docs', 'ee'] })), 'no fork\nbase devtest\nnested docs, ee\n');
+});
+
+test('declaring a built-in is refused at its line, and no workspace value takes its name (#742, decision 6)', () => {
+  for (const name of BUILT_INS) {
+    const errors = headerErrors('variables:', `  ${name}: { default: x }`);
+    assert.deepEqual(errors.map((error) => [error.line, error.variable, error.message]), [[3, name, `variable "${name}": ${name} is built in and cannot be declared`]], name);
+    assert.equal(isVariableName(name), false, name);
+  }
+  assert.equal(isVariableName('forked'), true, 'only the names themselves');
 });

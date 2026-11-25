@@ -11,14 +11,14 @@ const COLUMNS = 'grid grid-cols-[160px_minmax(0,1fr)_220px_40px] items-center ga
 // Copy keyed by tool name, since the route answers name, locked and on only; a Record per list makes tsc ask for a new tool's copy
 const DESCRIPTION: Record<LockedTool | OptionalTool, MessageKey> = {
   hive_done: 'plugins.mcp.tool.hive_done', hive_ask: 'plugins.mcp.tool.hive_ask', hive_stop: 'plugins.mcp.tool.hive_stop',
-  hive_pr: 'plugins.mcp.tool.hive_pr', hive_reply: 'plugins.mcp.tool.hive_reply', hive_conventions: 'plugins.mcp.tool.hive_conventions',
+  hive_pr: 'plugins.mcp.tool.hive_pr', hive_reply: 'plugins.mcp.tool.hive_reply',
   hive_remember: 'plugins.mcp.tool.hive_remember', hive_recall: 'plugins.mcp.tool.hive_recall',
   hive_revise: 'plugins.mcp.tool.hive_revise', hive_forget: 'plugins.mcp.tool.hive_forget', hive_create_task: 'plugins.mcp.tool.hive_create_task', hive_task: 'plugins.mcp.tool.hive_task',
   benchmark_list: 'plugins.mcp.tool.benchmark_list', benchmark_get: 'plugins.mcp.tool.benchmark_get', benchmark_draft: 'plugins.mcp.tool.benchmark_draft',
 };
 const LOCK_REASON: Record<LockedTool, MessageKey> = {
   hive_done: 'plugins.mcp.locked.hive_done', hive_ask: 'plugins.mcp.locked.hive_ask', hive_stop: 'plugins.mcp.locked.hive_stop',
-  hive_pr: 'plugins.mcp.locked.hive_pr', hive_reply: 'plugins.mcp.locked.hive_reply', hive_conventions: 'plugins.mcp.locked.hive_conventions',
+  hive_pr: 'plugins.mcp.locked.hive_pr', hive_reply: 'plugins.mcp.locked.hive_reply'
 };
 // What a tool turned off drops: a fixed count per tool, the passages src/protocol.ts gives it (REMEMBER_LINE, TASK_LINE, the memory section, which hive_recall off drops whole, #681, and its correcting line, which names only the tools of hive_revise and hive_forget that are on, #683);
 // hive_create_task and the benchmark's three have none. #336 makes the protocol drop them

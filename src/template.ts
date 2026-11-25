@@ -3,10 +3,10 @@
 // liquidjs and yaml, which both ship browser builds.
 import { Liquid, LiquidError } from 'liquidjs';
 import { type Document, isMap, isNode, isScalar, LineCounter, type Pair, parseDocument, type YAMLError } from 'yaml';
-import type { VariableValue, Workspace } from './types.js';
+import type { BuiltIns, VariableValue, Workspace } from './types.js';
 
 // #621: the config holds it now; template-edit.ts and the editor still import it from here
-export type { VariableValue };
+export type { BuiltIns, VariableValue };
 
 export type VariableKind = 'text' | 'list' | 'boolean';
 
@@ -53,7 +53,12 @@ export type RenderResult = { ok: true; text: string } | { ok: false; errors: Tem
 const FENCE = '---';
 const HEADER_FIRST_LINE = 2; // the header starts right under the opening fence
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const BUILT_IN = 'workspace';
+/** The names the Hive renders into every template (#742, decision 6): their one source is the config, so a declaration or a workspace value
+ * under one of them would shadow it. */
+export const BUILT_INS = ['workspace', 'fork', 'baseBranch', 'nestedRepos'] as const;
+const isBuiltIn = (name: string): boolean => (BUILT_INS as readonly string[]).includes(name);
+/** A render no workspace owns (#742, decision 7): no fork, no base branch, no nested repo. */
+export const NO_BUILT_INS: BuiltIns = { fork: null, baseBranch: null, nestedRepos: [] };
 const DECLARATION_KEYS = ['type', 'values', 'default', 'required', 'workspaces'];
 const BASED_ON_KEYS = ['name', 'repo', 'ref', 'license', 'url'];
 const YAML_POSITION = / at line \d+, column \d+:?$/;
@@ -82,8 +87,8 @@ const isValueList = (value: unknown): boolean =>
 const firstLine = (text: string): string => text.split('\n')[0];
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** A name a template may declare (#310), which a workspace's variables take too (#621): VARIABLE_NAME, and never the built-in workspace. */
-export const isVariableName = (name: string): boolean => VARIABLE_NAME.test(name) && name !== BUILT_IN;
+/** A name a template may declare (#310), which a workspace's variables take too (#621): VARIABLE_NAME, and never a built-in (#742). */
+export const isVariableName = (name: string): boolean => VARIABLE_NAME.test(name) && !isBuiltIn(name);
 
 // Claude Code's frontmatter rule: a header only when the first line is a fence, up to the next fence line. The body is a suffix of the
 // text, so a render can keep the header's bytes when it removes nothing.
@@ -144,7 +149,7 @@ function declarationProblem(raw: Record<string, unknown>): string | undefined {
 function readVariable(name: string, line: number, raw: unknown): TemplateVariable | TemplateError {
   const fail = (problem: string): TemplateError => ({ line, variable: name, message: `variable "${name}": ${problem}` });
   if (!VARIABLE_NAME.test(name)) return fail('a name is a letter or _ followed by letters, digits or _');
-  if (name === BUILT_IN) return fail('workspace is built in and cannot be declared');
+  if (isBuiltIn(name)) return fail(`${name} is built in and cannot be declared`);
   if (!isRecord(raw)) return fail('a declaration is a mapping');
   const problem = declarationProblem(raw);
   if (problem !== undefined) return fail(problem);
@@ -220,9 +225,9 @@ const hasLiquid = (body: string): boolean => LIQUID_MARK.test(body);
 export const hasDeclarations = (header: Record<string, unknown>): boolean =>
   Object.hasOwn(header, 'variables') || Object.hasOwn(header, 'basedOn');
 
-/** The workspace a render is for (#621): its name, which is the `workspace` built-in, and its values from the config. The config's Workspace
- * satisfies it, so a caller passes the workspace as it is. */
-export type RenderWorkspace = Pick<Workspace, 'name' | 'variables'>;
+/** The workspace a render is for (#621): its name, which is the `workspace` built-in, its values from the config, and the other built-ins read
+ * from its Settings (#742). src/fork.ts's renderWorkspaceOf builds it from the config; a render for no workspace passes NO_BUILT_INS. */
+export type RenderWorkspace = Pick<Workspace, 'name' | 'variables'> & { builtIns: BuiltIns };
 /** Where a variable's value comes from for a workspace (#621, decision 3). */
 export type ValueSource = 'override' | 'workspace' | 'default';
 
@@ -244,8 +249,9 @@ export function valueFor(variable: TemplateVariable, workspace: RenderWorkspace)
 export const workspaceValueProblem = (variable: TemplateVariable, workspace: RenderWorkspace): string | undefined =>
   (valueSource(variable, workspace) === 'workspace' ? valueProblem(variable.kind, variable.values ?? [], workspace.variables[variable.name]) : undefined);
 
-const contextFor = (variables: TemplateVariable[], workspace: RenderWorkspace): Record<string, VariableValue> => ({
+const contextFor = (variables: TemplateVariable[], workspace: RenderWorkspace): Record<string, unknown> => ({
   ...Object.fromEntries(variables.map((variable) => [variable.name, valueFor(variable, workspace)])),
+  ...workspace.builtIns,
   workspace: workspace.name,
 });
 

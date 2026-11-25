@@ -23,7 +23,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
 const DOCS = { name: 'docs', url: 'https://mcp.example.com/mcp', authHeader: 'Authorization', workspace: null, on: true };
 const UP = { name: 'up', command: 'npx', args: ['up-mcp'], workspace: WORKSPACE, on: true };
 const IDLE = { name: 'idle', command: 'npx', args: [], workspace: null, on: false };
-const LOCKED = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply', 'hive_conventions'];
+const LOCKED = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply'];
 
 interface Started { base: string; home: string; env: NodeJS.ProcessEnv; probed: string[] }
 
