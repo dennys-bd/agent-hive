@@ -3,7 +3,7 @@ import type { Machine } from './machine.js';
 import { githubRepository } from './task-refs.js';
 import { GITLAB_HOST, type RemoteRepository, remoteRepository } from './repo-host.js';
 import type { RenderWorkspace } from './template.js';
-import { type CombConfig, type Config, FORK_SYNCS, type ForkSync, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
+import { type CombConfig, type Config, FORK_SYNCS, type ForkSync, LOCAL_MACHINE, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
 
 // A workspace that is a fork (#854): its config parser. The prefix is config.ts's CONFIG_FILE, written out: importing it would make
 // config.ts, which calls this parser, and this file import each other.
@@ -115,10 +115,12 @@ export async function isGitlabFork(machine: Pick<Machine, 'exec'>, workspace: Pi
 /** The save's refusal and the boot's line (#1045): the workspace, then the sync's own words. */
 export const gitlabForkLine = (workspace: string): string => `${workspace}: ${FORK_ON_GITLAB}`;
 
-/** One warn line per fork workspace with a remote on GitLab (#1045, decision 16), each read on its own machine. A boot goes on: refusing
- * there would leave the whole Hive in setup mode for one workspace, and its sync already answers the refusal. */
+/** One warn line per fork workspace with a remote on GitLab (#1045, decision 16). A boot goes on: refusing there would leave the whole Hive
+ * in setup mode for one workspace, and its sync already answers the refusal. Only local workspaces are read: no call reaches another
+ * machine at boot (#932). ponytail: a GitLab fork on a WSL distro gets no boot line; its save and its sync still say the words. */
 export async function warnGitlabForks(config: { comb: Pick<CombConfig, 'workspaces'> } & Pick<Config, 'gitlabHosts'>, machineFor: (workspace: Pick<Workspace, 'machine'>) => Pick<Machine, 'exec'>, log: Pick<Logger, 'warn'>): Promise<void> {
   for (const workspace of config.comb.workspaces) {
+    if (workspace.machine !== LOCAL_MACHINE) continue;
     if (await isGitlabFork(machineFor(workspace), workspace, config.gitlabHosts)) log.warn(gitlabForkLine(workspace.name));
   }
 }

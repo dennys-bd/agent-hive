@@ -104,7 +104,9 @@ function issueOpener(isListed: IsListed, openIssueIn: (ref: IssueRef) => void): 
  * ponytail: decided on the list as read; a PR opened before the sidebar's first read opens on GitHub */
 function prOpener(isListed: IsListed, openPr: (ref: PrRef) => void): (url: string) => void {
   return (url) => {
-    const link = parsePrLink(url);
+    const parsed = parsePrLink(url);
+    // listed refs hold the host lowercased; an MR link keeps it as written
+    const link = parsed === undefined ? undefined : { ...parsed, host: parsed.host.toLowerCase() };
     if (link !== undefined && isListed(link)) return openPr(link);
     toast(t('pr.notListed'));
     window.open(url, '_blank', 'noreferrer');

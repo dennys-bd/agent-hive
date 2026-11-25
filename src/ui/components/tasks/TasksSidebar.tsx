@@ -8,7 +8,7 @@ import { TasksEntries } from '@/components/tasks/TasksEntries';
 import { ResizeHandle, SectionAdd, TasksSection } from '@/components/tasks/TasksSection';
 import type { DisplayControls } from '@/hooks/use-flow-view';
 import { centerOfRepo, type TasksNav } from '@/hooks/use-tasks-center';
-import { repoKey } from '../../../repo-host.js';
+import { repoKey } from '../../../repo-host';
 import { t } from '@/i18n';
 import { SECTIONS, type SidebarSection, type TasksSidebarView, lastOpen, readTasksSidebar, withResize, withToggle, writeTasksSidebar } from '@/lib/tasks-sidebar';
 
