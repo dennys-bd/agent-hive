@@ -20,6 +20,8 @@ const AGENT_SUFFIX = '.md';
 const FENCE = '---';
 const AGENT_NAME = /^[a-z0-9-]+$/; // it names a file under the home and a -c key, where '.', '/' or '=' would escape or split it
 const WRITING_CAPABILITIES: ReadonlySet<string> = new Set(['write', 'shell']); // #665: what Codex's workspace sandbox allows and read-only refuses
+// A header with tools: and no can: (a user's own agent) keeps the role it had before #665, so it never loses Codex's read-only sandbox
+const WRITING_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'Bash']);
 const FLOW_BRACKETS = /^\[|\]$/g; // can: [read, write] is a YAML flow list on its one line
 
 /** One agent of assets/plugin/agents. Codex's role uses name, description, readOnly and the body; tools and model are Claude's (#758), which
@@ -61,7 +63,8 @@ export const renderRole = (role: AgentRole): string =>
 function frontmatter(lines: readonly string[]): Map<string, string> {
   return new Map(lines.flatMap((line): [string, string][] => {
     const at = line.indexOf(':');
-    return at < 0 ? [] : [[line.slice(0, at).trim(), line.slice(at + 1).trim()]];
+    // an indented line belongs to a nested map or a block scalar: never a top-level key, so it cannot override the real can:
+    return at < 0 || /^\s/.test(line) ? [] : [[line.slice(0, at).trim(), line.slice(at + 1).trim()]];
   }));
 }
 
@@ -85,7 +88,9 @@ export function readAgent(file: string, text: string): AgentRole {
   const tools = listed === undefined || entries(listed).length === 0 ? undefined : entries(listed);
   const can = fields.get('can');
   // #665: no can: says nothing, and a header that says nothing gives every tool, for every runner
-  const readOnly = can !== undefined && !entries(can.replace(FLOW_BRACKETS, '')).some((capability) => WRITING_CAPABILITIES.has(capability));
+  const readOnly = can !== undefined
+    ? !entries(can.replace(FLOW_BRACKETS, '')).some((capability) => WRITING_CAPABILITIES.has(capability))
+    : tools !== undefined && !tools.some((tool) => WRITING_TOOLS.has(tool));
   const model = fields.get('model');
   return {
     name, description, readOnly, instructions: lines.slice(end + 1).join('\n'),

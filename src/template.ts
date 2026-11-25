@@ -225,7 +225,9 @@ export const toolsLine = (can: readonly unknown[]): string =>
 export const hasCapabilities = (header: Record<string, unknown>): boolean => Object.hasOwn(header, 'can');
 
 // A written tools: wins (#665): a user's own line may name a tool no capability gives, such as an MCP tool
-const needsTools = (header: Record<string, unknown>): boolean => hasCapabilities(header) && !Object.hasOwn(header, 'tools');
+// a blank tools: is no line: Claude would read it as every tool while Codex kept can:'s read-only role
+const writtenTools = (header: Record<string, unknown>): boolean => typeof header.tools === 'string' ? header.tools.trim() !== '' : header.tools != null;
+const needsTools = (header: Record<string, unknown>): boolean => hasCapabilities(header) && !writtenTools(header);
 
 // An empty list would write an empty tools line, which Claude reads as every tool; an unknown word would silently drop one
 function capabilityProblem(raw: unknown): string | undefined {

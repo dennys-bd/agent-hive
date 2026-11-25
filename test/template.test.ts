@@ -316,6 +316,13 @@ test('a block list or a commented can: is delivered as a one-line flow list, the
   assert.equal(deliveredHeader(parseTemplate(agentHeader('can: [read, write] # x'))), expected);
 });
 
+test('a blank tools: next to can: is no written line: the render writes it from can: (#665)', () => {
+  assert.equal(
+    deliveredHeader(parseTemplate(agentHeader('can: [read]', 'tools:'))),
+    '---\nname: reviewer\ndescription: Reviews.\ncan: [read]\ntools: Read, Grep, Glob\n---\n',
+  );
+});
+
 test('renderTemplate delivers a plain agent with can: through its header, not byte for byte (#665)', () => {
   assert.deepEqual(renderTemplate(parseTemplate(agentHeader('can: [read]')), at('hive')), {
     ok: true,

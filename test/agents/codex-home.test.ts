@@ -48,14 +48,16 @@ test('readAgent keeps name, description, tools, model and the body verbatim, a -
   });
 });
 
-test('an agent is read-only when its can: holds neither write nor shell; no can: is not read-only, whatever its tools line (#934, #665)', () => {
+test('an agent is read-only when its can: holds neither write nor shell; with no can:, a tools line without Write, Edit or Bash still is (#934, #665)', () => {
   const agent = (...lines: string[]): string => ['---', 'name: a', 'description: d.', ...lines, '---', 'x'].join('\n');
   assert.equal(readAgent('a.md', agent('can: [read]')).readOnly, true);
   assert.equal(readAgent('a.md', agent('can: [ read, dispatch ]')).readOnly, true, 'dispatch, which Codex lacks, never writes; a padded flow list reads the same');
   assert.equal(readAgent('a.md', agent('can: [read, shell]')).readOnly, false);
   assert.equal(readAgent('a.md', agent('can: [read, write]')).readOnly, false);
   assert.equal(readAgent('a.md', agent('can: [read]', 'tools: Read, Write')).readOnly, true, 'Claude\'s tool names no longer decide Codex\'s role');
-  assert.equal(readAgent('a.md', agent('tools: Read, Grep, Glob')).readOnly, false, 'no can: is a header that says nothing to Codex');
+  assert.equal(readAgent('a.md', agent('tools: Read, Grep, Glob')).readOnly, true, 'a user agent with only tools: keeps its read-only role');
+  assert.equal(readAgent('a.md', agent('tools: Read, Bash')).readOnly, false);
+  assert.equal(readAgent('a.md', agent('can: [read]', 'metadata:', '  can: [write, shell]')).readOnly, true, 'an indented can: is never the top-level one');
   assert.equal(readAgent('a.md', agent()).readOnly, false, 'a header that says nothing gives every tool');
 });
 
