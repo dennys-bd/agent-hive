@@ -13,6 +13,7 @@ export const GLOBS = Object.freeze([
   'test/benchmark/*.test.js',
   'test/repos/*.test.js',
   'test/read-model/*.test.js',
+  'test/gitlab/*.test.js',
 ]);
 
 // globSync answers with the platform's separator; excludes and the sort speak `/`

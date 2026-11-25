@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { IDLE_POLL_INTERVAL_MS, inBackoff, inRetryWait, isSourceQuota, POLL_INTERVAL_MS, QUOTA_RESERVE, shouldPoll, syncOf } from '../src/polling.js';
-import type { SourceQuota, State } from '../src/types.js';
+import { IDLE_POLL_INTERVAL_MS, inBackoff, inRetryWait, isSourceQuota, POLL_INTERVAL_MS, QUOTA_RESERVE_RATIO, shouldPoll, syncOf } from '../src/polling.js';
+import type { SourceQuota, SourceSync, State } from '../src/types.js';
 import { flowed } from './fixtures/main-flow.js';
 
 const NOW = Date.parse('2026-09-16T12:00:00.000Z');
@@ -14,6 +14,7 @@ const readAt = (state: State, ms: number, board = 'board'): State => ({ ...state
 const withQuota = (state: State, quota: SourceQuota, board = 'board'): State => ({ ...state, syncs: { ...state.syncs, [board]: { ...state.syncs[board], quota } } });
 const free = readAt({ ...initialState(1), syncs: { board: {} } }, NOW - POLL_INTERVAL_MS); // one empty worker, read 30 s ago
 const busy = readAt(reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...flowed([{ name: 'c', from: { board: ['Ready'] }, prompt: 'x' }])}, { type: 'poll', source: 'board', items: [{ item: TASK, column: 'Ready' }] }).state, NOW - POLL_INTERVAL_MS); // the only worker working
+const QUOTA_RESERVE = 500; // 10 % of quota()'s 5 000
 const quota = (remaining: number, resetsAt: number): SourceQuota => ({ limit: 5000, remaining, resetsAt: iso(resetsAt), at: iso(NOW) });
 
 test('shouldPoll is true whenever a job could start, however fresh the source\'s last read', () => {
@@ -37,7 +38,7 @@ test('shouldPoll is false while nothing could start and the source\'s last read 
 });
 
 test('shouldPoll is false inside the source\'s quota backoff whatever else holds, and true again once the reset has passed', () => {
-  assert.equal(QUOTA_RESERVE, 500);
+  assert.equal(QUOTA_RESERVE_RATIO, 0.1);
   const soon = NOW + MINUTE_MS;
   assert.equal(shouldPoll(withQuota(free, quota(QUOTA_RESERVE - 1, soon)), 'board', NOW), false, 'below the reserve with a free worker');
   const staleBusy = readAt(busy, NOW - IDLE_POLL_INTERVAL_MS);
@@ -90,4 +91,12 @@ test('syncOf keeps a backoffUntil Date.parse reads and drops any other, beside t
   const valid = quota(4320, NOW + MINUTE_MS);
   assert.deepEqual(syncOf({ polledAt: iso(NOW), quota: valid, error: 'x', backoffUntil: until }), { polledAt: iso(NOW), quota: valid, error: 'x', backoffUntil: until });
   for (const bad of ['soon', 7, null, {}]) assert.deepEqual(syncOf({ backoffUntil: bad }), {}, String(bad));
+});
+
+test('the reserve is a tenth of the limit: a self-hosted limit of 300 is in backoff at 20 remaining, not at 100', () => {
+  const soon = iso(NOW + MINUTE_MS);
+  const low = (remaining: number): SourceSync => ({ quota: { limit: 300, remaining, resetsAt: soon, at: iso(NOW) } });
+  assert.equal(inBackoff(low(100), NOW), false);
+  assert.equal(inBackoff(low(30), NOW), false, 'at the reserve is not below it');
+  assert.equal(inBackoff(low(20), NOW), true);
 });
