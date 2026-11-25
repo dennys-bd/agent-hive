@@ -991,7 +991,7 @@ test('parseConfig requires each workspace\'s variables: a name a template can de
   assert.throws(() => parseConfig(github({ workspaces: [without] })), shape, 'missing');
   for (const bad of [null, [], 'x']) assert.throws(() => parseConfig(withVariables(bad)), shape, JSON.stringify(bad));
   for (const name of ['2fast', 'a-b', 'workspace', 'fork']) {
-    assert.throws(() => parseConfig(withVariables({ [name]: 'x' })), { message: `hive.config.json: "comb.workspaces[0].variables.${name}" is not a variable name: a letter or _ followed by letters, digits or _, and never a built-in: workspace, fork, baseBranch, nestedRepos` }, name);
+    assert.throws(() => parseConfig(withVariables({ [name]: 'x' })), { message: `hive.config.json: "comb.workspaces[0].variables.${name}" is not a variable name: a letter or _ followed by letters, digits or _, and never a built-in: workspace, fork, baseBranch, nestedRepos, gitlabHosts` }, name);
   }
   for (const value of [3, ['x'], { a: 'b' }]) {
     assert.throws(() => parseConfig(withVariables({ specsDir: value })), { message: 'hive.config.json: "comb.workspaces[0].variables.specsDir" must be a string, true, false or null' }, JSON.stringify(value));

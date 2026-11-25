@@ -257,7 +257,7 @@ test('a workspace value the route refuses keeps the form open with its error and
   expect(value('testCommand', 'agent-hive')).toHaveTextContent('null');
 });
 test('the pane ends with the read-only built-ins of each workspace, after the variables (#742)', async () => {
-  const builtIns = { 'agent-hive': { fork: null, baseBranch: 'develop', nestedRepos: ['docs'] } };
+  const builtIns = { 'agent-hive': { fork: null, baseBranch: 'develop', nestedRepos: ['docs'], gitlabHosts: ['gitlab.com'] } };
   stubItems(serverOf({ lintInput: { catalogue: [], scripts: [], variables: {}, builtIns } }));
   render(<PluginsWindow />);
   await open('new-build');

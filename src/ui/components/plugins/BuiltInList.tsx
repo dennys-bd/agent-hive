@@ -9,7 +9,7 @@ interface Shown { text: string; isAbsent: boolean }
 
 const WHAT: Record<BuiltInName, MessageKey> = {
   workspace: 'plugins.builtIns.workspace.what', fork: 'plugins.builtIns.fork.what',
-  baseBranch: 'plugins.builtIns.baseBranch.what', nestedRepos: 'plugins.builtIns.nestedRepos.what',
+  baseBranch: 'plugins.builtIns.baseBranch.what', nestedRepos: 'plugins.builtIns.nestedRepos.what', gitlabHosts: 'plugins.builtIns.gitlabHosts.what',
 };
 
 // Absence is valid here (not a fork, no nested repo), so it reads as words and never as the variables' red dash
@@ -21,6 +21,7 @@ function shownOf(name: BuiltInName, workspace: string, builtIns: BuiltIns): Show
       : { text: t(`plugins.builtIns.fork.${builtIns.fork.pr}`, { remote: builtIns.fork.remote }), isAbsent: false };
     case 'baseBranch': return builtIns.baseBranch === null ? absent('plugins.builtIns.baseBranch.none') : { text: builtIns.baseBranch, isAbsent: false };
     case 'nestedRepos': return builtIns.nestedRepos.length === 0 ? absent('plugins.builtIns.nestedRepos.none') : { text: builtIns.nestedRepos.join(', '), isAbsent: false };
+    case 'gitlabHosts': return { text: builtIns.gitlabHosts.join(', '), isAbsent: false }; // #1044: gitlab.com is always there, so never "none"
   }
 }
 

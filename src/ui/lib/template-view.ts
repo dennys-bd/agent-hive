@@ -18,7 +18,7 @@ interface LookArgs { text: string; parsed: ParsedTemplate; map: TemplateMap; cat
 
 const NONE: ReadonlySet<number> = new Set();
 const MARKDOWN = /\.md(\.liquid)?$/;
-// {{ name }} and {{ name | filter }}; a pill only for a name the header declares, or a built-in (workspace, fork, baseBranch, nestedRepos, #742)
+// {{ name }} and {{ name | filter }}; a pill only for a name the header declares, or a built-in (workspace, fork, baseBranch, nestedRepos, #742; gitlabHosts, #1044)
 const OUTPUT = /\{\{-?\s*([A-Za-z_][A-Za-z0-9_]*)[^}]*\}\}/g;
 
 /** Only a markdown body has headings and Liquid blocks (decision 14). */

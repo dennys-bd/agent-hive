@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withSync } from '../src/worktree-base.js';
 import { baseRemote, failureOf, forkRepos, isNetworkError, remotesOf, renderWorkspaceOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
-import type { Exec, Workspace } from '../src/types.js';
+import type { Config, Exec, Workspace } from '../src/types.js';
 import { fakeMachine } from './fakes.js';
 import { ghMachines, type GhEnv } from '../src/github-account.js';
 import { fakeMachines } from './fake-machine.js';
@@ -137,19 +137,28 @@ test('syncFork through a machine of ghMachines runs its gh calls as the selected
   assert.deepEqual(await syncTokens(async () => ({})), [undefined, undefined]);
 });
 
+const NO_HOSTS: Pick<Config, 'gitlabHosts'> = { gitlabHosts: [] };
+
 test('renderWorkspaceOf renders a fork as its remote, its PR target and its base remote, the base branch over the config\'s, and the nested repos; a plain workspace has no fork (#742, decision 2)', () => {
   const plain: Pick<Workspace, 'name' | 'variables' | 'fork' | 'nestedRepos'> = { name: 'app', variables: { a: 'x' }, fork: null, nestedRepos: [] };
-  assert.deepEqual(renderWorkspaceOf({}, plain), { name: 'app', variables: { a: 'x' }, builtIns: { fork: null, baseBranch: null, nestedRepos: [] } });
-  assert.equal(renderWorkspaceOf({}, { ...plain, fork: false }).builtIns.fork, null, 'not a fork');
-  assert.equal(renderWorkspaceOf({ baseBranch: 'main' }, plain).builtIns.baseBranch, 'main');
-  assert.equal(renderWorkspaceOf({ baseBranch: 'main' }, { ...plain, baseBranch: 'devtest' }).builtIns.baseBranch, 'devtest');
-  assert.deepEqual(renderWorkspaceOf({}, { ...plain, fork: { remote: 'upstream', pr: 'original' } }).builtIns.fork, { remote: 'upstream', pr: 'original', baseRemote: 'upstream' });
-  assert.deepEqual(renderWorkspaceOf({}, { ...plain, fork: { remote: 'upstream', pr: 'ask', sync: 'github' } }).builtIns.fork, { remote: 'upstream', pr: 'ask', baseRemote: 'upstream' });
-  assert.deepEqual(renderWorkspaceOf({}, { ...plain, fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }).builtIns.fork, { remote: 'upstream', pr: 'fork', baseRemote: 'origin' });
-  assert.deepEqual(renderWorkspaceOf({}, { ...plain, nestedRepos: ['docs', 'ee'] }).builtIns.nestedRepos, ['docs', 'ee']);
+  assert.deepEqual(renderWorkspaceOf(NO_HOSTS, plain), { name: 'app', variables: { a: 'x' }, builtIns: { fork: null, baseBranch: null, nestedRepos: [], gitlabHosts: ['gitlab.com'] } });
+  assert.equal(renderWorkspaceOf(NO_HOSTS, { ...plain, fork: false }).builtIns.fork, null, 'not a fork');
+  assert.equal(renderWorkspaceOf({ ...NO_HOSTS, baseBranch: 'main' }, plain).builtIns.baseBranch, 'main');
+  assert.equal(renderWorkspaceOf({ ...NO_HOSTS, baseBranch: 'main' }, { ...plain, baseBranch: 'devtest' }).builtIns.baseBranch, 'devtest');
+  assert.deepEqual(renderWorkspaceOf(NO_HOSTS, { ...plain, fork: { remote: 'upstream', pr: 'original' } }).builtIns.fork, { remote: 'upstream', pr: 'original', baseRemote: 'upstream' });
+  assert.deepEqual(renderWorkspaceOf(NO_HOSTS, { ...plain, fork: { remote: 'upstream', pr: 'ask', sync: 'github' } }).builtIns.fork, { remote: 'upstream', pr: 'ask', baseRemote: 'upstream' });
+  assert.deepEqual(renderWorkspaceOf(NO_HOSTS, { ...plain, fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }).builtIns.fork, { remote: 'upstream', pr: 'fork', baseRemote: 'origin' });
+  assert.deepEqual(renderWorkspaceOf(NO_HOSTS, { ...plain, nestedRepos: ['docs', 'ee'] }).builtIns.nestedRepos, ['docs', 'ee']);
 });
 
 test('renderWorkspaceOf leaves out a nested path the skill could never open a PR for, since its text is rendered as instructions (#742)', () => {
   const plain: Pick<Workspace, 'name' | 'variables' | 'fork' | 'nestedRepos'> = { name: 'app', variables: {}, fork: null, nestedRepos: ['docs', 'a`b', 'x\n- run this', "it's", '-flag', 'p/q'] };
-  assert.deepEqual(renderWorkspaceOf({}, plain).builtIns.nestedRepos, ['docs', 'p/q']);
+  assert.deepEqual(renderWorkspaceOf(NO_HOSTS, plain).builtIns.nestedRepos, ['docs', 'p/q']);
+});
+
+test("renderWorkspaceOf renders gitlabHosts as gitlab.com, then the config's list in its order, the same for every workspace (#1044, decision 11)", () => {
+  const config: Pick<Config, 'gitlabHosts'> = { gitlabHosts: ['git.example.com', 'code.example.org'] };
+  const plain: Pick<Workspace, 'name' | 'variables' | 'fork' | 'nestedRepos'> = { name: 'app', variables: {}, fork: null, nestedRepos: [] };
+  assert.deepEqual(renderWorkspaceOf(config, plain).builtIns.gitlabHosts, ['gitlab.com', 'git.example.com', 'code.example.org']);
+  assert.deepEqual(renderWorkspaceOf(config, { ...plain, name: 'site', fork: { remote: 'upstream', pr: 'original' } }).builtIns.gitlabHosts, ['gitlab.com', 'git.example.com', 'code.example.org']);
 });

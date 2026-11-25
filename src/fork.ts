@@ -1,5 +1,6 @@
 import type { Machine } from './machine.js';
 import { githubRepository } from './task-refs.js';
+import { GITLAB_HOST } from './repo-host.js';
 import type { RenderWorkspace } from './template.js';
 import { type Config, FORK_SYNCS, type ForkSync, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
 
@@ -54,9 +55,10 @@ export function workspaceBase(config: Pick<Config, 'baseBranch'>, workspace: Pic
 // line break, a quote) never reaches it
 const RENDERABLE_PATH = /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/;
 
-/** A workspace as a template renders it (#742, decision 2): its name and values, and the built-ins read from its Settings. One helper, so the
- * plugin render, the protocol passages and the lint input fill them the same way; nothing here reads git, so a render never goes stale. */
-export function renderWorkspaceOf(config: Pick<Config, 'baseBranch'>, workspace: Pick<Workspace, 'name' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>): RenderWorkspace {
+/** A workspace as a template renders it (#742, decision 2): its name and values, and the built-ins read from its Settings and the general
+ * ones (#1044: gitlab.com, then the config's GitLab hosts). One helper, so the plugin render, the protocol passages and the lint input fill
+ * them the same way; nothing here reads git, so a render never goes stale. */
+export function renderWorkspaceOf(config: Pick<Config, 'baseBranch' | 'gitlabHosts'>, workspace: Pick<Workspace, 'name' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>): RenderWorkspace {
   const { fork } = workspace;
   const { branch } = workspaceBase(config, workspace);
   return {
@@ -66,6 +68,7 @@ export function renderWorkspaceOf(config: Pick<Config, 'baseBranch'>, workspace:
       fork: fork ? { remote: fork.remote, pr: fork.pr, baseRemote: baseRemote(workspace) } : null,
       baseBranch: branch ?? null,
       nestedRepos: workspace.nestedRepos.filter((path) => RENDERABLE_PATH.test(path) && !path.split('/').includes('..')),
+      gitlabHosts: [GITLAB_HOST, ...config.gitlabHosts],
     },
   };
 }

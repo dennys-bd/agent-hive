@@ -24,9 +24,10 @@ const MD_SUFFIX = '.md';
 const GONE = { recursive: true, force: true } as const;
 
 /** What a write reads of the config: each workspace's name, its values (#621), its checkout for the catalogue, and what its built-ins are read
- * from (#742): its fork, base branch and nested repos, and the config's base branch. Config satisfies it. */
+ * from (#742): its fork, base branch and nested repos, the config's base branch and the GitLab hosts (#1044). Config satisfies it. */
 export interface RenderConfig {
   baseBranch?: string;
+  gitlabHosts: string[];
   comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>[] };
 }
 

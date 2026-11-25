@@ -2355,9 +2355,10 @@ export interface ItemRead { item: CatalogueItem; version: string | null; files: 
 export type WorkspaceVariables = Record<string, Record<string, VariableValue>>;
 /** A fork workspace as a template reads it (#742, decision 2): the original's remote, where the PRs go, and the base remote. */
 export interface ForkBuiltIn { remote: string; pr: PrTarget; baseRemote: string }
-/** What the Hive renders into every template beside `workspace` (#742, decision 2), read from the workspace's Settings at every render and never
- * set by the user: the fork or null, the effective base branch or null, the nested repos' paths. */
-export interface BuiltIns { fork: ForkBuiltIn | null; baseBranch: string | null; nestedRepos: readonly string[] }
+/** What the Hive renders into every template beside `workspace` (#742, decision 2), read from Settings at every render and never set by the
+ * user: the fork or null, the effective base branch or null, the nested repos' paths, and the GitLab hosts, gitlab.com first (#1044), the
+ * same for every workspace. */
+export interface BuiltIns { fork: ForkBuiltIn | null; baseBranch: string | null; nestedRepos: readonly string[]; gitlabHosts: readonly string[] }
 /** Each workspace's built-ins by its name (#742): what GET /api/lint-input answers beside `variables`. */
 export type WorkspaceBuiltIns = Record<string, BuiltIns>;
 export interface LintInputRead { catalogue: LintItem[]; scripts: string[]; variables: WorkspaceVariables; builtIns: WorkspaceBuiltIns } // #621: each workspace's values, #742: its built-ins, by name
