@@ -47,7 +47,7 @@ test('a stage run with picks runs claude with them after the global args: the pi
   await until(() => workers.length === 1);
   const args = plainArgs(workers[0].launch).slice(-10);
   assert.deepEqual([args[0], args[1], ...args.slice(3)], [
-    '--verbose', '--agents', '--tools=Read,Write,Edit,Bash,Grep,Glob,Agent', '--agent', 'hive:designer', '--model', 'sonnet', '--session-id', sessionOf(server),
+    '--verbose', '--agents', '--tools=Read,Grep,Glob,Write,Edit,Bash,Agent', '--agent', 'hive:designer', '--model', 'sonnet', '--session-id', sessionOf(server),
   ]);
 });
 
