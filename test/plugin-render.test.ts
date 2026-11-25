@@ -10,6 +10,7 @@ import { createPluginRender, NoPluginFolderError, PLUGINS_DIR, pluginRenderPath,
 import { put, snapshot } from './custom-fixture.js';
 import { PLUGIN_ROOT } from '../src/template-refs.js';
 import { tempDir } from './temp-dir.js';
+import { toWire } from '../src/wire-path.js';
 
 // Each workspace's plugin folder (#316): the shipped plugin, the workspace's versions over it, every template rendered for it
 const X_TEMPLATE = [
@@ -49,10 +50,11 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   const shipped = await snapshot(pluginSource());
   assert.ok(Object.keys(shipped).some((path) => path.endsWith('.liquid')), 'the shipped plugin has templates');
   const decode = (bytes: string | undefined): string => Buffer.from(bytes ?? '', 'base64').toString('utf8');
-  // #338: a .md whose header has declarations is rendered too, under its own name; #665: so is an agent's with can:
+  // #338: a .md whose header has declarations is rendered too, under its own name; #665: so is an agent's with can:, its path read as the
+  // render reads it, with /, since the snapshot's keys are native (agents\\x.md on Windows)
   const isTemplate = (path: string, raw: string): boolean => {
     const { header } = parseTemplate(raw);
-    return path.endsWith('.liquid') || (path.endsWith('.md') && (hasDeclarations(header) || (path.startsWith('agents/') && hasCapabilities(header))));
+    return path.endsWith('.liquid') || (path.endsWith('.md') && (hasDeclarations(header) || (toWire(path, process.platform).startsWith('agents/') && hasCapabilities(header))));
   };
   // #446: every delivered .md names the workspace's folder where its source says ${HIVE_PLUGIN_ROOT}
   const rooted = (path: string, raw: string): string => (deliveredName(path).endsWith('.md') ? raw.split(PLUGIN_ROOT).join(pluginRenderPath(r.home, 'a')) : raw);
