@@ -14,7 +14,7 @@ const EXP = experiment({
 const TELLS = blindTells(EXP, ['code-reviewer']);
 const METRICS: BenchMetrics = {
   tokens: 5, costUsd: 0, ms: 6, waitingMs: 0, restarts: { count: 1, where: ['RUNTOK-1 build'] }, diff: { files: 1, insertions: 1, deletions: 0 }, tests: { green: 1, total: 1 },
-  tasks: [{ key: 'RUNTOK-1', title: 'One', tokens: 5, ms: 6, waitingMs: 0, stages: [], restarts: 1 }],
+  tasks: [{ key: 'RUNTOK-1', title: 'One', tokens: 5, ms: 6, waitingMs: 0, stages: [], restarts: 1, stageTokens: [] }],
 };
 
 test('blindTells names every arm, each stage skill with and without its slash and namespace, every plugin folder, the pinned subagents and the forbidden words; scrub leaves none and never touches a lone letter (#474)', () => {

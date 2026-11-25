@@ -160,3 +160,11 @@ test('prepareRun carries the main config\'s default models into the run\'s confi
   await assert.rejects(prepareRun(codex, codex.arms[0], 1, off), { message: 'agent codex is disabled: enable it in Settings › execution › agents' });
   assert.deepEqual(await readdir(join(hiveDir, 'benchmark', 'exp-1', 'runs')).catch(() => []), runs, 'no run home was written');
 });
+
+test("prepareRun puts every task in the flow's entry when the base names one, in its first stage when not (#672)", async (t) => {
+  const entered = experiment({ arms: [arm('a1', 'A', { tasks: OVERRIDES.tasks })], base: { ...SETUP, flow: { ...SETUP.flow, entry: 'Build' } } });
+  const run = await prepareRun(entered, entered.arms[0], 1, (await benchHome(t)).deps);
+  assert.deepEqual((await loadState(run.home)).tasks.map((x) => x.stage), ['Build', 'Build']);
+  const plain = await prepareRun(EXP, EXP.arms[1], 1, (await benchHome(t)).deps);
+  assert.deepEqual((await loadState(plain.home)).tasks.map((x) => x.stage), ['Spec', 'Spec']);
+});

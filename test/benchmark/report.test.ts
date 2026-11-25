@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregate, type ArmColumn, type SpreadCell } from '../../src/benchmark/report.js';
 import { renderReport } from '../../src/benchmark/report-md.js';
-import type { Arm, ArmSetup, BenchMetrics, BenchRun, BenchRunEvaluation, Experiment } from '../../src/types.js';
+import type { Arm, ArmSetup, BenchMetrics, BenchRun, BenchRunEvaluation, BenchTaskMetrics, Experiment } from '../../src/types.js';
 import { arm, deepFreeze, experiment, run, SETUP } from './fixtures.js';
 
 // The relatorio screen of docs/agent/design/benchmark.hv.html as an experiment: four arms over three full rounds, every arm's three values
@@ -203,4 +203,35 @@ test('report.md keeps a name with a newline, a backslash or a pipe on its own li
   assert.ok(md.startsWith('# x - A · forged: tok1\n'), 'the title collapses to one line');
   assert.ok(!md.split('\n').includes('- A · forged: tok1'), 'no forged arm line');
   assert.ok(md.includes('a\\\\\\|b'), 'the backslash is escaped before the pipe');
+});
+
+const withStageTokens = (r: BenchRun, stageTokens: BenchTaskMetrics['stageTokens']): BenchRun => (r.metrics === undefined ? r : {
+  ...r, metrics: { ...r.metrics, tasks: [{ key: 'T1', title: 'One', tokens: r.metrics.tokens, ms: 0, waitingMs: 0, stages: [], restarts: 0, stageTokens }] },
+});
+// D spends every token in Spec; A, B and C half in Spec and half in Build
+const staged = (e: Experiment): Experiment => ({
+  ...e, rounds: e.rounds.map((round) => ({ ...round, runs: round.runs.map((r) => {
+    const tokens = r.metrics?.tokens ?? 0;
+    return withStageTokens(r, r.armId === 'arm-d' ? [{ stage: 'Spec', tokens }] : [{ stage: 'Spec', tokens: tokens / 2 }, { stage: 'Build', tokens: tokens / 2 }]);
+  }) })),
+});
+
+test('the report has a tokens row per stage: median, min and max over the runs, 0 where a run used none, a run stored without stageTokens left out (#672)', () => {
+  const { execution: x } = aggregate(staged(fixture()), 'in', NOW);
+  assert.deepEqual(x.stageTokens.map((row) => row.key), ['Spec', 'Build']);
+  assert.deepEqual(x.stageTokens[0].cells, cells(c(1_550_000, 1_400_000, 1_700_000), c(1_250_000, 1_100_000, 1_350_000, true), c(1_450_000, 1_350_000, 1_500_000), c(2_200_000, 2_000_000, 2_500_000)));
+  assert.deepEqual(x.stageTokens[1].cells, cells(c(1_550_000, 1_400_000, 1_700_000), c(1_250_000, 1_100_000, 1_350_000), c(1_450_000, 1_350_000, 1_500_000), c(0, 0, 0, true)));
+  const stored = { key: 'T1', title: 'One', tokens: 0, ms: 0, waitingMs: 0, stages: [], restarts: 0 } as unknown as BenchTaskMetrics; // saved before #672
+  const legacy = withRun(staged(fixture()), 'aaaa03', { metrics: { ...benchRun(ROWS[2]).metrics!, tasks: [stored] } });
+  assert.deepEqual(aggregate(legacy, 'in', NOW).execution.stageTokens[0].cells['arm-a'], c(1_475_000, 1_400_000, 1_550_000, false, 2));
+});
+
+test('report.md writes a tokens · <stage> row per stage right under tokens, and names the part with no stage (#672)', () => {
+  const e = staged(fixture());
+  const lines = renderReport(e, aggregate(e, 'in', NOW)).split('\n');
+  const at = lines.findIndex((l) => l.startsWith('| tokens | '));
+  assert.deepEqual(lines.slice(at + 1, at + 4).map((l) => l.split(' | ')[0]), ['| tokens · Spec', '| tokens · Build', '| cost']);
+  assert.ok(lines[at + 1].includes('**'), "B's Spec median is the row's best");
+  const unstaged = withRun(e, 'aaaa01', { metrics: withStageTokens(benchRun(ROWS[0]), [{ stage: '', tokens: 5 }]).metrics });
+  assert.ok(renderReport(unstaged, aggregate(unstaged, 'in', NOW)).split('\n').some((l) => l.startsWith('| tokens · (no stage) | ')));
 });

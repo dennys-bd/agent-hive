@@ -924,7 +924,10 @@ export type BenchStage = Omit<Stage, 'from' | 'onStart'>;
 export type BenchTransition = Omit<Transition, 'sources'>;
 /** The Hive's flow as the experiment copied it (#536); the run's comb is built from it. commands: each named command's line for the seed's
  *  workspace. dropped: what the copy took out (`Spec.from`, `Done.after`, `Review → Done.sources`), for the dialog's note. */
-export interface BenchFlow { copiedAt: string; stages: BenchStage[]; transitions: BenchTransition[]; commands: { name: string; line: string }[]; dropped: string[] }
+export interface BenchFlow {
+  copiedAt: string; stages: BenchStage[]; transitions: BenchTransition[]; commands: { name: string; line: string }[]; dropped: string[];
+  entry?: string; // #672: the stage every task of a run starts in; absent = the first stage
+}
 /** What an arm changes of one stage, by field; model null = the agent's own default over a base model. */
 export type StageOverride = Partial<Pick<BenchStage, 'agent' | 'prompt' | 'skill' | 'commands' | 'judge' | 'threshold'>> & { model?: string | null };
 export interface BenchTask { key: string; title: string; body: string; blockedBy: string[] }
@@ -972,7 +975,10 @@ export interface BenchRun {
   metrics?: BenchMetrics; evaluation?: BenchRunEvaluation; interventions: Intervention[]; inMedian?: boolean;
   unpriced?: string[]; // #473: models off the price table, costed 0
 }
-export interface BenchTaskMetrics { key: string; title: string; tokens: number; ms: number; waitingMs: number; stages: { stage: string; ms: number }[]; restarts: number }
+export interface BenchTaskMetrics {
+  key: string; title: string; tokens: number; ms: number; waitingMs: number; stages: { stage: string; ms: number }[]; restarts: number;
+  stageTokens: { stage: string; tokens: number }[]; // #672: one per stage name of the task's usage parts, '' for a part with no stage
+}
 export interface BenchMetrics { tokens: number; costUsd: number; ms: number; waitingMs: number; restarts: { count: number; where: string[] }; diff: { files: number; insertions: number; deletions: number }; tests: { green: number; total: number }; tasks: BenchTaskMetrics[] }
 export interface CollectorResult { name: string; status: 'ok' | 'warn' | 'error'; summary: string; findings: ReviewFinding[] }
 export interface ScenarioResult { id: string; passed: number; total: number; screenshots: string[] }

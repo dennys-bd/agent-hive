@@ -12,27 +12,37 @@ type Comb = Pick<Config, 'comb' | 'defaultAgent'>;
 
 const isFilled = (record: object | undefined): boolean => record !== undefined && Object.keys(record).length > 0;
 
-// A run's local origin has no CI, and DONE_STAGE is where the run holds finished tasks
+// DONE_STAGE is where the run holds finished tasks; a wait for CI is no refusal since #672, skipCi takes it out
 function refusal(stages: readonly Stage[]): string | undefined {
   if (stages.length === 0) return 'the flow has no stage';
-  const waits = stages.find((s) => s.action === 'waitForCi');
-  if (waits !== undefined) return `stage ${waits.name} waits for CI, and a run's local origin has none`;
   if (stages.some((s) => s.name === DONE_STAGE)) return `a stage is named ${DONE_STAGE}, the stage a run holds its finished tasks in`;
   const unnamed = stages.find((s) => !STAGE_NAME.safeParse(s.name).success);
   return unnamed === undefined ? undefined : `a stage is named ${unnamed.name}, a name an arm cannot override`;
 }
 
+// #672: a run is unattended, so its gates go; a decomposition's stays, since its hive write is the user's own press (the decompose gate)
+const keepsGate = (stage: Stage): boolean => stage.action === 'skill' && stage.skill === 'decomposition';
+const losesGate = (stage: Stage): boolean => stage.approval === true && !keepsGate(stage);
+
 // from/onStart talk to a source the run does not have. after is dropped too: a delayed deleteActivity ("Done · 5d") would hold every run
 // until its timeout, and so is maxWorkers: 0, which would pause the run for as long. The agent is frozen here so a later change of the default agent in Settings cannot change the experiment.
 function benchStage(stage: Stage, defaultAgent: Config['defaultAgent']): { stage: BenchStage; dropped: string[] } {
-  const { from, onStart, after, maxWorkers, ...kept } = stage;
-  const dropped = [isFilled(from) ? `${stage.name}.from` : '', isFilled(onStart) ? `${stage.name}.onStart` : '', after === undefined ? '' : `${stage.name}.after`, maxWorkers === undefined ? '' : `${stage.name}.maxWorkers`].filter((d) => d !== '');
+  const { from, onStart, after, maxWorkers, approval, ...rest } = stage;
+  const kept: BenchStage = approval === true && keepsGate(stage) ? { ...rest, approval } : rest;
+  const dropped = [
+    isFilled(from) ? `${stage.name}.from` : '', isFilled(onStart) ? `${stage.name}.onStart` : '', losesGate(stage) ? `${stage.name}.approval` : '',
+    after === undefined ? '' : `${stage.name}.after`, maxWorkers === undefined ? '' : `${stage.name}.maxWorkers`,
+  ].filter((d) => d !== '');
   return { stage: runsAgent(kept) ? { ...kept, agent: kept.agent ?? defaultAgent } : kept, dropped };
 }
 
-function benchTransition(transition: Transition): { transition: BenchTransition; dropped: string[] } {
+// #672: out of a stage that lost its gate, approved is its done and feedback has nothing to answer; the parser refuses both without approval
+function benchTransition(transition: Transition, ungated: readonly string[]): { transition?: BenchTransition; dropped: string[] } {
   const { sources, ...kept } = transition;
-  return { transition: kept, dropped: isFilled(sources) ? [`${transition.from} → ${transition.to}.sources`] : [] };
+  const lost = isFilled(sources) ? [`${transition.from} → ${transition.to}.sources`] : [];
+  if (!ungated.includes(transition.from)) return { transition: kept, dropped: lost };
+  if (transition.when === 'feedback') return { dropped: [`${transition.from} → ${transition.to}.feedback`] };
+  return { transition: transition.when === 'approved' ? { ...kept, when: 'done' } : kept, dropped: lost };
 }
 
 // Only { name, line }: a command's env may hold a token, and the timeout means nothing to a run's one-shot stage
@@ -50,27 +60,97 @@ function commandLines(stages: readonly Stage[], commands: Config['comb']['comman
   return { lines };
 }
 
+type Wiring = { stages: Stage[]; transitions: Transition[] };
+const waitsForCi = (stage: Stage): boolean => stage.action === 'waitForCi';
+const passedExit = (transitions: readonly Transition[], name: string): Transition | undefined =>
+  transitions.find((t) => t.from === name && t.when === 'verdict' && t.verdict === 'passed');
+const sameTrigger = (a: Transition, b: Transition): boolean => a.from === b.from && a.when === b.when && a.verdict === b.verdict;
+const continued = (t: Transition): string | undefined => (typeof t.session === 'object' ? t.session.continueOf : undefined);
+
+// #672: a wait is skipped through its passed exit, so each needs one, and one that passes into another wait would not leave the waits
+function ciRefusal(stages: readonly Stage[], transitions: readonly Transition[]): string | undefined {
+  for (const ci of stages.filter(waitsForCi)) {
+    const exit = passedExit(transitions, ci.name);
+    if (exit === undefined) return `stage ${ci.name} waits for CI and has no passed exit to skip it by`;
+    if (stages.some((s) => s.name === exit.to && waitsForCi(s))) return `stage ${ci.name} passes into ${exit.to}, which waits for CI too`;
+  }
+  return undefined;
+}
+
+// #672: what entered the wait goes where its passed exit goes; the incoming prompt and session, when set, win over the exit's
+function rewired(into: Transition, exit: Transition): Transition {
+  return {
+    ...into, to: exit.to,
+    ...(into.prompt === undefined && exit.prompt !== undefined ? { prompt: exit.prompt } : {}),
+    ...(into.session === undefined && exit.session !== undefined ? { session: exit.session } : {}),
+  };
+}
+
+// The wait's own transitions go with it, and with the stage its approval and handoff
+function skipOne(wiring: Wiring, ci: Stage): Wiring {
+  const exit = passedExit(wiring.transitions, ci.name);
+  if (exit === undefined) return wiring; // ciRefusal already refused it
+  return {
+    stages: wiring.stages.filter((s) => s.name !== ci.name),
+    transitions: wiring.transitions.filter((t) => t.from !== ci.name).map((t) => (t.to === ci.name ? rewired(t, exit) : t)),
+  };
+}
+
+// #672: once rewired, nothing may resume a skipped stage's session, and no stage may leave twice on one trigger
+function wiringRefusal(wiring: Wiring, skipped: readonly string[]): string | undefined {
+  const resumes = wiring.transitions.find((t) => skipped.includes(continued(t) ?? ''));
+  if (resumes !== undefined) return `${resumes.from} → ${resumes.to} continues the session of ${continued(resumes) ?? ''}, which a run skips`;
+  const twice = wiring.transitions.find((t, i) => wiring.transitions.findIndex((o) => sameTrigger(o, t)) !== i);
+  return twice === undefined ? undefined : `stage ${twice.from} has two exits on ${twice.verdict ?? twice.when} in the run's copy, which keeps no sources`;
+}
+
+/** The flow without its waits for CI (#672): a run's local origin has no CI, and Dev's /hive:new-build already gates on the test command.
+ *  What entered a wait goes to its passed exit's target; each skipped wait is listed in dropped. */
+export function skipCi(stages: readonly Stage[], transitions: readonly Transition[]): (Wiring & { dropped: string[] }) | { refused: string } {
+  const waits = stages.filter(waitsForCi);
+  if (waits.length === 0) return { stages: [...stages], transitions: [...transitions], dropped: [] };
+  const refused = ciRefusal(stages, transitions);
+  if (refused !== undefined) return { refused };
+  const wiring = waits.reduce<Wiring>(skipOne, { stages: [...stages], transitions: [...transitions] });
+  const broken = wiringRefusal(wiring, waits.map((s) => s.name));
+  return broken === undefined ? { ...wiring, dropped: waits.map((s) => `${s.name} (waits for CI): skipped`) } : { refused: broken };
+}
+
 /** The workspace's flow as an experiment's base keeps it (#536), or the reason the Hive cannot run it. */
 export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
   const { commands } = config.comb;
-  const { stages, transitions } = flatten(config.comb.flows);
-  const refused = refusal(stages);
+  const flat = flatten(config.comb.flows);
+  const refused = refusal(flat.stages);
   if (refused !== undefined) return { refused };
+  const skipped = skipCi(flat.stages, flat.transitions);
+  if ('refused' in skipped) return skipped;
+  const { stages, transitions } = skipped;
   const resolved = commandLines(stages, commands, workspace);
   if ('refused' in resolved) return resolved;
   const copiedStages = stages.map((s) => benchStage(s, config.defaultAgent));
-  const copiedTransitions = transitions.map(benchTransition);
+  const ungated = stages.filter(losesGate).map((s) => s.name);
+  const copiedTransitions = transitions.map((t) => benchTransition(t, ungated));
   return {
     flow: {
-      copiedAt: now.toISOString(), stages: copiedStages.map((c) => c.stage), transitions: copiedTransitions.map((c) => c.transition), commands: resolved.lines,
-      dropped: [...copiedStages, ...copiedTransitions].flatMap((c) => c.dropped),
+      copiedAt: now.toISOString(), stages: copiedStages.map((c) => c.stage), commands: resolved.lines,
+      transitions: copiedTransitions.flatMap((c) => (c.transition === undefined ? [] : [c.transition])),
+      dropped: [...skipped.dropped, ...[...copiedStages, ...copiedTransitions].flatMap((c) => c.dropped)],
     },
   };
 }
 
-// The flow with every editable field taken out: what must stay as the copy made it
-const frame = (flow: BenchFlow): string =>
-  canonicalJson({ ...flow, stages: flow.stages.map((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !(STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)))) });
+// The flow with every editable field taken out: what must stay as the copy made it. entry is the experiment's own choice (#672)
+function frame(flow: BenchFlow): string {
+  const { entry: _entry, ...framed } = flow;
+  return canonicalJson({ ...framed, stages: framed.stages.map((s) => Object.fromEntries(Object.entries(s).filter(([k]) => !(STAGE_OVERRIDE_FIELDS as readonly string[]).includes(k)))) });
+}
+
+/** Where a run's tasks start (#672): a stage of the copy; DONE_STAGE holds the finished ones and runs nothing. */
+export function entryIssues(flow: BenchFlow): string[] {
+  if (flow.entry === undefined) return [];
+  if (flow.entry === DONE_STAGE) return [`base.flow.entry: ${DONE_STAGE} is where a run holds its finished tasks`];
+  return flow.stages.some((s) => s.name === flow.entry) ? [] : ['base.flow.entry: no such stage in the flow'];
+}
 
 // Which stages a field means something on: the agent's fields on a stage that runs an agent, the rest on their own action
 const FITS: Record<keyof StageOverride, (stage: BenchStage) => boolean> = {
@@ -105,5 +185,5 @@ export function overrideIssues(flow: BenchFlow, stages: Record<string, StageOver
  *  transitions, the commands, copiedAt, dropped), give an editable field a bad value, or name a command the copy has no line for. */
 export function flowIssues(copy: BenchFlow, next: BenchFlow): string[] {
   if (frame(copy) !== frame(next)) return ['base.flow: the flow is the copy the experiment was created with; change its structure in Settings and create another experiment'];
-  return next.stages.flatMap((s) => fieldIssues(s, next.commands));
+  return [...entryIssues(next), ...next.stages.flatMap((s) => fieldIssues(s, next.commands))];
 }

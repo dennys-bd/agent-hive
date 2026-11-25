@@ -35,6 +35,7 @@ const REPORT: BenchReport = {
   arms: [col('a1', 'A', 'comandos do repo'), col('a2', 'B', 'skills do plugin', { intervened: 1 }), col('a3', 'C', 'plugin + codex', { intervened: 1 }), col('a4', 'D', 'tarefas juntas', { onlyPerRun: true })],
   execution: {
     tokens: row('tokens', s(3.1 * M, 2.8 * M, 3.4 * M), s(2.5 * M, 2.2 * M, 2.7 * M), s(2.9 * M, 2.7 * M, 3 * M), s(2.2 * M, 2 * M, 2.5 * M, BEST)),
+    stageTokens: [],
     cost: row('cost', s(41, 37, 45), s(33, 29, 36), s(36, 34, 38), s(29, 26, 33, BEST)),
     time: row('time', s(5 * H + 32 * MIN, 5 * H + 10 * MIN, 5 * H + 50 * MIN), s(4 * H + 48 * MIN, 4 * H + 30 * MIN, 5 * H + 5 * MIN), s(6 * H, 5 * H, 6 * H, { timeouts: 2 }), s(4 * H + 20 * MIN, 4 * H + 5 * MIN, 4 * H + 40 * MIN, BEST)),
     waiting: row('waiting', s(22 * MIN, 14 * MIN, 30 * MIN), s(18 * MIN, 9 * MIN, 25 * MIN), s(31 * MIN, 20 * MIN, 40 * MIN), s(12 * MIN, 8 * MIN, 20 * MIN, BEST)),

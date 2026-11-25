@@ -30,6 +30,7 @@ export interface BenchReport {
     tokens: ReportRow<SpreadCell>; cost: ReportRow<SpreadCell>; time: ReportRow<SpreadCell>;
     waiting: ReportRow<SpreadCell>; restarts: ReportRow<SpreadCell>;
     diff: ReportRow<DiffCell | undefined>; tests: ReportRow<RatioCell>;
+    stageTokens: ReportRow<SpreadCell>[]; // #672: one per stage, keyed by the stage; report.md only, not the report tab
   };
   clicks: { first?: string; last?: string; row: ReportRow<RatioCell> };
   judgeRows: ReportRow<SpreadCell>[];                    // one per criterion, keyed by dimension
@@ -95,6 +96,21 @@ function clicksCount(runs: BenchRun[]): Count {
   return { passed: sum(results.map((s) => s.passed)), total: sum(results.map((s) => s.total)) };
 }
 
+// #672: a run's tokens in one stage over its tasks, 0 for a run with metrics that used none there. A run stored before #672 has tasks
+// without stageTokens: it takes no part, as spreadRow skips a metric a run lacks
+function stageTokensOf(run: BenchRun, stage: string): number | undefined {
+  const tasks = run.metrics?.tasks;
+  if (tasks === undefined || tasks.some((t) => t.stageTokens === undefined)) return undefined;
+  return sum(tasks.flatMap((t) => t.stageTokens.filter((s) => s.stage === stage).map((s) => s.tokens)));
+}
+
+// One row per stage, in the order the entering runs first name it
+function stageTokenRows(byArm: ByArm): ReportRow<SpreadCell>[] {
+  const runs = Object.values(byArm).flat();
+  const stages = [...new Set(runs.flatMap((r) => r.metrics?.tasks.flatMap((t) => (t.stageTokens ?? []).map((s) => s.stage)) ?? []))];
+  return stages.map((stage) => spreadRow(stage, byArm, (r) => stageTokensOf(r, stage), 'low'));
+}
+
 // Lower is better on every execution row; the diff has no best, more or fewer lines is not better by itself
 function execution(byArm: ByArm): BenchReport['execution'] {
   const low = (key: string, read: (metrics: BenchMetrics) => number) => spreadRow(key, byArm, fromMetrics(read), 'low');
@@ -102,6 +118,7 @@ function execution(byArm: ByArm): BenchReport['execution'] {
     tokens: low('tokens', (m) => m.tokens), cost: low('cost', (m) => m.costUsd), time: withTimeouts(low('time', (m) => m.ms), byArm),
     waiting: low('waiting', (m) => m.waitingMs), restarts: low('restarts', (m) => m.restarts.count),
     diff: { key: 'diff', cells: mapValues(byArm, diffCell) }, tests: ratioRow('tests', mapValues(byArm, testsCount)),
+    stageTokens: stageTokenRows(byArm),
   };
 }
 

@@ -60,10 +60,12 @@ function isWired(stages: unknown[], transitions: unknown[]): boolean {
     return names.includes(from) && (to === 'end' || names.includes(to));
   });
 }
-/** The shape of an experiment's copied flow (#536); schemas.ts reads it too. A base from before #536 holds stages, not a flow, so it fails. */
+/** The shape of an experiment's copied flow (#536); schemas.ts reads it too. A base from before #536 holds stages, not a flow, so it fails.
+ *  entry is optional (#672); which stage it names is flowIssues'. */
 export const isFlow = (v: unknown): v is BenchFlow =>
   isJsonObject(v) && isText(v.copiedAt) && Array.isArray(v.stages) && v.stages.length > 0 && v.stages.every(isBenchStage)
-  && isListOf(v.transitions, isBenchTransition) && isListOf(v.commands, isLine) && isTexts(v.dropped) && isWired(v.stages, v.transitions as unknown[]);
+  && isListOf(v.transitions, isBenchTransition) && isListOf(v.commands, isLine) && isTexts(v.dropped) && isWired(v.stages, v.transitions as unknown[])
+  && (v.entry === undefined || isText(v.entry));
 // An item id and a version name become a folder under the run home's custom/ (3.1): one segment each, as the custom store names them
 const isItems = (v: unknown): boolean => isJsonObject(v) && Object.entries(v).every(([id, version]) => parseItemId(id) !== undefined && isVersionName(version));
 const isWorktree = (v: unknown): boolean => isJsonObject(v) && isText(v.setup) && isText(v.teardown);

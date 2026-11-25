@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Activity, Intervention, SleptRun, Task, Worker } from '../../src/types.js';
+import { HIVE_EPIC, type Activity, type Intervention, type SleptRun, type Task, type Worker } from '../../src/types.js';
 import { DONE_STAGE, observe, type Progress, type Snapshot, startWatch, type WatchClient, watchRun } from '../../src/benchmark/watcher.js';
 import { clock, snap, task, watchTask, worker } from './fixtures.js';
 const D = DONE_STAGE;
@@ -9,6 +9,16 @@ const D = DONE_STAGE;
 const GRAPH = [watchTask(1), watchTask(2, [1]), watchTask(3, [1, 2]), watchTask(4)];
 const AT = new Date('2026-10-01T22:00:00.000Z');
 const four = (stages: string[], acts: Partial<Activity>[] = []): Snapshot => snap(stages.map((s, i) => task(i + 1, s)), [], acts);
+
+// #672: a task a decomposition made under local:<parent>; an inner node is born an epic, as the seed goal is stamped one
+const under = (n: number, parent: number, stage: string, isEpic = false): Task => {
+  const made = task(n, stage);
+  return { ...made, item: { ...made.item, parent: `local:${parent}`, ...(isEpic ? { epic: HIVE_EPIC } : {}) } };
+};
+const epicSeed = (stage: string): Task => {
+  const made = task(1, stage);
+  return { ...made, item: { ...made.item, epic: HIVE_EPIC } };
+};
 
 test('startWatch counts the free tasks as released; observe frees each task once all its blockers are in Done, and ends on the last Done (#105)', () => {
   const start = startWatch(GRAPH);
@@ -228,4 +238,22 @@ test('watchRun calls onInterventions after a read whose count changed and once m
 
 test('the held stage is Delivered: a real flow keeps its own Done (#536)', () => {
   assert.equal(DONE_STAGE, 'Delivered');
+});
+
+test('observe adopts every task under a seed but its epics, as <seed key>.<n> across levels, released at once and only once (#672)', () => {
+  // T1's decomposition: local:2 an inner node (an epic), local:3 under it, local:4 straight under T1; local:5 is under nothing watched
+  const tree = snap([epicSeed('Spec'), under(2, 1, 'Spec', true), under(3, 2, 'Spec'), under(4, 1, 'Spec'), task(5, 'Spec')]);
+  const step = observe(startWatch([watchTask(1)]), tree, AT);
+  assert.deepEqual(step.watch.tasks.map((t) => [t.itemId, t.key, t.blockedBy]), [['local:1', 'T1', []], ['local:3', 'T1.1', []], ['local:4', 'T1.2', []]]);
+  assert.deepEqual([step.watch.released, step.release], [['local:1', 'local:3', 'local:4'], []]);
+  assert.deepEqual(observe(step.watch, tree, AT).watch.tasks, step.watch.tasks, 'a later read adopts nothing twice');
+});
+
+test("an adopted child's error ends the run, and delivered and total count the children (#672)", () => {
+  const start = startWatch([watchTask(1)]);
+  const failed = snap([epicSeed('Spec'), under(2, 1, 'Build')], [], [{}, { error: 'spawn failed' }]);
+  assert.deepEqual(observe(start, failed, AT).end, { outcome: 'error', reason: 'MON-2: spawn failed' });
+  const half = observe(start, snap([epicSeed('Spec'), under(2, 1, D), under(3, 1, 'Build')]), AT);
+  assert.deepEqual([half.progress.delivered, half.progress.total, half.end], [1, 3, undefined]);
+  assert.deepEqual(observe(half.watch, snap([epicSeed(D), under(2, 1, D), under(3, 1, D)]), AT).end, { outcome: 'done' });
 });

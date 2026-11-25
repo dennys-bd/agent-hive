@@ -148,3 +148,10 @@ test('a loaded experiment keeps an mcp createdBy and drops an arm whose id is no
   const [loaded] = load(saved({ experiments: [e] })).experiments;
   assert.deepEqual([loaded.createdBy, loaded.arms.map((a) => a.id)], [{ kind: 'mcp', agent: 'claude', model: 'opus' }, ['a1']]);
 });
+
+test('a base flow loads with a string entry or none; any other entry drops the experiment (#672)', () => {
+  const withEntry = (entry: unknown): unknown => saved({ experiments: [experiment({ base: { ...SETUP, flow: { ...SETUP.flow, entry } as ArmSetup['flow'] } })] });
+  assert.deepEqual(ids(withEntry('Plan')), ['exp-1']);
+  assert.deepEqual(ids(withEntry(1)), []);
+  assert.deepEqual(ids(saved({ experiments: [experiment()] })), ['exp-1']);
+});
