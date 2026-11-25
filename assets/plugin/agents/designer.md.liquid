@@ -1,7 +1,7 @@
 ---
 name: designer
 description: Writes and iterates on a task's screens, one self-contained .hv.html per screen in one living folder, designsDir, in rounds. A round is one request (a spec, a design comment, a message) and ends with what changed, never with a commit or a design handoff; both are written only when asked. Modes create, update, sync, normalize, refine, import (a Claude Design export, never reviewed) and handoff, which commits the round and ends with the design handoff as text (design-handoff.md only on request). Call it as `Use the hive:designer agent on {result.spec}` to create, or `Use the hive:designer agent to update <screen> with <what>` for the rest. Design comments arrive in your session, not the agent's; forward each to it with SendMessage, or edit the screen yourself. When it ran as your subagent, dispatch hive:design-reviewer on designsDir with the screens and parts its answer lists, the spec or the request and, when its answer names them, the design system's path and why a screen departs from a pattern, after each create or update, and forward the blocking findings back, two rounds at most.
-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
+can: [read, write, shell, dispatch]
 variables:
   designsDir: { default: docs/hive/design }
   docsLanguage: { default: English }

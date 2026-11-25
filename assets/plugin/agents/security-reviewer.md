@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Reviews a diff for security problems. Dispatched by /hive:new-build on the whole diff, after the code review's fixes; not dispatched when the diff is only prose. An evaluate stage's reviewer or a benchmark's static collector can also run as it, with the patch in its prompt. Flags secrets, injection, unsafe argv and path handling, and broken access control.
-tools: Read, Grep, Glob, Bash
+can: [read, shell]
 basedOn:
   - { name: "ecc:security-reviewer", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/security-reviewer.md }
 ---

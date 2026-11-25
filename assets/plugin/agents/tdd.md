@@ -1,7 +1,7 @@
 ---
 name: tdd
 description: Implements one task of a plan, test first. Dispatched by /hive:new-build with its task's section of the plan, the plan's Global Constraints, the test command and the paths of the plan and the spec. RED, GREEN, refactor, then one commit when green.
-tools: Read, Write, Edit, Bash, Grep, Glob
+can: [read, write, shell]
 basedOn:
   - { name: "ecc:tdd-guide", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/tdd-guide.md }
 ---

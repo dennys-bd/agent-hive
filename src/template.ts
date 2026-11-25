@@ -205,6 +205,38 @@ function readBasedOn(raw: unknown, line: number): BasedOn[] | TemplateError {
   return list.map((origin) => ({ ...origin }));
 }
 
+// #665: what an agent may do, in words no runner owns; the render writes Claude Code's tools line from it, Codex's role reads it as written
+const CAPABILITIES = ['read', 'write', 'shell', 'dispatch'] as const;
+type Capability = (typeof CAPABILITIES)[number];
+const CAPABILITY_TOOLS: Record<Capability, readonly string[]> = {
+  read: ['Read', 'Grep', 'Glob'],
+  write: ['Write', 'Edit'],
+  shell: ['Bash'],
+  dispatch: ['Agent'],
+};
+const isCapability = (value: unknown): value is Capability => (CAPABILITIES as readonly unknown[]).includes(value);
+
+/** Claude's tools line for a can: list (#665): the table's order, since a tools line's order means nothing to Claude Code and one order keeps
+ * every delivery the same. */
+export const toolsLine = (can: readonly unknown[]): string =>
+  CAPABILITIES.filter((capability) => can.includes(capability)).flatMap((capability) => CAPABILITY_TOOLS[capability]).join(', ');
+
+/** Whether the header says what the agent may do (#665). Exported for the plugin render, which delivers such an agent instead of copying it. */
+export const hasCapabilities = (header: Record<string, unknown>): boolean => Object.hasOwn(header, 'can');
+
+// A written tools: wins (#665): a user's own line may name a tool no capability gives, such as an MCP tool
+// a blank tools: is no line: Claude would read it as every tool while Codex kept can:'s read-only role
+const writtenTools = (header: Record<string, unknown>): boolean => typeof header.tools === 'string' ? header.tools.trim() !== '' : header.tools != null;
+const needsTools = (header: Record<string, unknown>): boolean => hasCapabilities(header) && !writtenTools(header);
+
+// An empty list would write an empty tools line, which Claude reads as every tool; an unknown word would silently drop one
+function capabilityProblem(raw: unknown): string | undefined {
+  const known = CAPABILITIES.join(', ');
+  if (!Array.isArray(raw) || raw.length === 0) return `can must be a non-empty list out of ${known}`;
+  const stranger: unknown = raw.find((item) => !isCapability(item));
+  return stranger === undefined ? undefined : `unknown capability "${String(stranger)}" in can (known: ${known})`;
+}
+
 export function parseTemplate(text: string): ParsedTemplate {
   const { header, body, bodyLine } = splitHeader(text);
   const lineCounter = new LineCounter();
@@ -213,7 +245,12 @@ export function parseTemplate(text: string): ParsedTemplate {
   if (doc.errors.length > 0) return { ...blank, errors: doc.errors.map(yamlError) };
   const data = headerData(doc);
   if (typeof data === 'string') return { ...blank, errors: [{ line: HEADER_FIRST_LINE, message: data }] };
-  const { variables, errors } = readVariables(doc, data.variables, lineCounter);
+  const read = readVariables(doc, data.variables, lineCounter);
+  const canProblem = hasCapabilities(data) ? capabilityProblem(data.can) : undefined;
+  const errors = canProblem === undefined
+    ? read.errors
+    : [...read.errors, { line: headerLine(lineCounter, topPair(doc, 'can')?.key), message: canProblem }];
+  const { variables } = read;
   const parsed: ParsedTemplate = { ...blank, header: data, variables, errors };
   if (!Object.hasOwn(data, 'basedOn')) return parsed;
   const basedOn = readBasedOn(data.basedOn, headerLine(lineCounter, topPair(doc, 'basedOn')?.key));
@@ -280,20 +317,28 @@ export function liquidError(err: unknown, bodyLine: number): TemplateError {
 
 export function deliveredHeader(parsed: ParsedTemplate): string {
   const { text, doc } = parsed[SOURCE];
-  if (!hasDeclarations(parsed.header)) return text.slice(0, text.length - parsed.body.length);
+  const addsTools = needsTools(parsed.header);
+  const can = parsed.header.can;
+  if (!hasDeclarations(parsed.header) && !hasCapabilities(parsed.header)) return text.slice(0, text.length - parsed.body.length);
   // the clone, never the parse: the same parse renders every workspace
   const delivered = doc.clone();
   delivered.delete('variables');
   delivered.delete('basedOn');
+  // #665: Claude Code and Copilot read tools:, Codex's role reads can:, so the delivered file carries both
+  // can: rewritten as a one-line flow list with no comment: Codex's reader parses that one line, so a block list or a trailing # comment
+  // would read as no writing capability while Claude got the write tools
+  if (Array.isArray(can)) delivered.set('can', delivered.createNode(can, { flow: true }));
+  if (addsTools) delivered.set('tools', toolsLine(Array.isArray(can) ? can : []));
   if (!isMap(delivered.contents) || delivered.contents.items.length === 0) return '';
-  // lineWidth 0: yaml would otherwise refold long values at 80 columns; the line ending follows the source's
+  // lineWidth 0: yaml would otherwise refold long values at 80 columns; no flow padding: can: [read] stays on the one line Codex's reader
+  // parses, as written; the line ending follows the source's
   const eol = text.startsWith(`${FENCE}\r\n`) ? '\r\n' : '\n';
-  return `${FENCE}\n${delivered.toString({ lineWidth: 0 })}${FENCE}\n`.replace(/\n/g, eol);
+  return `${FENCE}\n${delivered.toString({ lineWidth: 0, flowCollectionPadding: false })}${FENCE}\n`.replace(/\n/g, eol);
 }
 
 export function renderTemplate(parsed: ParsedTemplate, workspace: RenderWorkspace): RenderResult {
   if (parsed.errors.length > 0) return { ok: false, errors: parsed.errors };
-  if (!hasDeclarations(parsed.header) && !hasLiquid(parsed.body)) return { ok: true, text: parsed[SOURCE].text };
+  if (!hasDeclarations(parsed.header) && !hasCapabilities(parsed.header) && !hasLiquid(parsed.body)) return { ok: true, text: parsed[SOURCE].text };
   const refused = valueErrors(parsed, workspace);
   if (refused.length > 0) return { ok: false, errors: refused };
   try {

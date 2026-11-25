@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Reviews a diff for quality, correctness and maintainability. Dispatched by /hive:new-build once, on the whole diff, when every task of the plan is green; an evaluate stage's reviewer or a benchmark's static collector can also run as it, with the patch in its prompt. Separate pass; never reviews its own work.
-tools: Read, Grep, Glob, Bash
+can: [read, shell]
 basedOn:
   - { name: "ecc:code-reviewer", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/code-reviewer.md }
 ---

@@ -48,13 +48,17 @@ test('readAgent keeps name, description, tools, model and the body verbatim, a -
   });
 });
 
-test('an agent is read-only when its tools have none of Write, Edit, Bash; a tool Codex lacks (Agent) is dropped; no tools list writes (#934)', () => {
-  const agent = (tools: string | undefined): string => ['---', 'name: a', 'description: d.', ...(tools === undefined ? [] : [`tools: ${tools}`]), '---', 'x'].join('\n');
-  assert.equal(readAgent('a.md', agent('Read, Grep, Glob')).readOnly, true);
-  assert.equal(readAgent('a.md', agent('Read, Agent')).readOnly, true);
-  assert.equal(readAgent('a.md', agent('Read, Grep, Glob, Bash')).readOnly, false);
-  assert.equal(readAgent('a.md', agent('Edit')).readOnly, false);
-  assert.equal(readAgent('a.md', agent(undefined)).readOnly, false, 'Claude gives an agent with no tools list every tool');
+test('an agent is read-only when its can: holds neither write nor shell; with no can:, a tools line without Write, Edit or Bash still is (#934, #665)', () => {
+  const agent = (...lines: string[]): string => ['---', 'name: a', 'description: d.', ...lines, '---', 'x'].join('\n');
+  assert.equal(readAgent('a.md', agent('can: [read]')).readOnly, true);
+  assert.equal(readAgent('a.md', agent('can: [ read, dispatch ]')).readOnly, true, 'dispatch, which Codex lacks, never writes; a padded flow list reads the same');
+  assert.equal(readAgent('a.md', agent('can: [read, shell]')).readOnly, false);
+  assert.equal(readAgent('a.md', agent('can: [read, write]')).readOnly, false);
+  assert.equal(readAgent('a.md', agent('can: [read]', 'tools: Read, Write')).readOnly, true, 'Claude\'s tool names no longer decide Codex\'s role');
+  assert.equal(readAgent('a.md', agent('tools: Read, Grep, Glob')).readOnly, true, 'a user agent with only tools: keeps its read-only role');
+  assert.equal(readAgent('a.md', agent('tools: Read, Bash')).readOnly, false);
+  assert.equal(readAgent('a.md', agent('can: [read]', 'metadata:', '  can: [write, shell]')).readOnly, true, 'an indented can: is never the top-level one');
+  assert.equal(readAgent('a.md', agent()).readOnly, false, 'a header that says nothing gives every tool');
 });
 
 test('readAgent returns the tools line split and trimmed and the model line, neither without its line; renderRole ignores both (#758)', () => {

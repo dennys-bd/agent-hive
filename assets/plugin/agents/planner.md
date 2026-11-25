@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Turns an approved spec into an implementation plan a fresh engineer can execute task by task, indexed. Dispatched by /hive:new-plan with the spec's path, the plan's path and the values the plan follows. Writes the plan file; returns questions instead when the spec, the task and the code leave something genuinely open.
-tools: Read, Grep, Glob, Write, Edit
+can: [read, write]
 basedOn:
   - { name: "ecc:planner", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/planner.md }
   - { name: "superpowers:writing-plans", repo: obra/superpowers, ref: v6.4.1, license: MIT, url: https://github.com/obra/superpowers/blob/v6.4.1/skills/writing-plans/SKILL.md }

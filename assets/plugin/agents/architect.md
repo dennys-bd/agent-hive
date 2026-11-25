@@ -1,7 +1,7 @@
 ---
 name: architect
 description: Weighs the approaches to an architectural change before its spec is written. Dispatched by /hive:new-spec on its architectural path, before the first round of questions, with the task as data, the decisions already closed and the files the change starts from. Returns the approaches worth choosing between, with their trade-offs, and one recommendation; never writes files.
-tools: Read, Grep, Glob
+can: [read]
 basedOn:
   - { name: "ecc:architect", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/architect.md }
 ---

@@ -1,7 +1,7 @@
 ---
 name: plan-reviewer
 description: Reviews a written implementation plan before any code is written. Dispatched by /hive:new-plan with the plan's path, the spec's path and `featureFlags`. Verifies the plan is complete, matches the spec, is indexed, and decomposes into buildable tasks.
-tools: Read, Grep, Glob
+can: [read]
 basedOn:
   - { name: "superpowers:writing-plans", repo: obra/superpowers, ref: v6.4.1, license: MIT, url: https://github.com/obra/superpowers/blob/v6.4.1/skills/writing-plans/plan-document-reviewer-prompt.md }
 ---

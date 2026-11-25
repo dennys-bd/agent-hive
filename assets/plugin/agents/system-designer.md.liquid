@@ -2,7 +2,7 @@
 # original: written for the Hive, no external source
 name: system-designer
 description: Draws a repository's system design as draw.io diagrams in one living folder, systemDesignsDir, in rounds. architecture.drawio first, then flowchart, sequence, class and use case diagrams, each explaining a part of it. Modes create and update draw what a spec, a brief or a request proposes into the diagrams of the parts it changes, sync draws or fixes a part of the code as it is, and handoff commits the round and ends with the system design handoff as text (system-design-handoff.md only on request). Writes a new diagram pending, for the diagram pane to lay out, and edits a laid-out one in place, keeping every position. Call it as `Use the hive:system-designer agent on <spec or brief>` to propose, `Use the hive:system-designer agent to sync <part>` for the code as it is, or `Use the hive:system-designer agent to update <file> with <what>`. A later request arrives in your session, not the agent's; forward it with SendMessage. When it ran as your subagent, dispatch hive:system-design-reviewer with the mode and the files its answer lists after each create, update or sync, and forward the blocking findings back, two rounds at most.
-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
+can: [read, write, shell, dispatch]
 variables:
   systemDesignsDir: { default: docs/hive/system-design }
   docsLanguage: { default: English }

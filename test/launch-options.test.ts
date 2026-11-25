@@ -28,7 +28,7 @@ test('specializedAgents lists the Hive plugin\'s agents as hive:<name>, sorted b
   const agents = specializedAgents(await renderedPlugin(t));
   assert.ok(agents.length > 0);
   assert.ok(agents.every((a) => a.name.startsWith('hive:') && a.description !== '' && a.instructions !== ''));
-  assert.deepEqual(agents.find((a) => a.name === 'hive:designer')?.tools, ['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob', 'Agent']);
+  assert.deepEqual(agents.find((a) => a.name === 'hive:designer')?.tools, ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Bash', 'Agent']);
   assert.equal(agents.some((a) => Object.hasOwn(a, 'readOnly')), false, 'readOnly is Codex\'s role file, not the run\'s');
 });
 
