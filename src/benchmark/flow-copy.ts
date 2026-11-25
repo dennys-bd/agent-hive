@@ -20,17 +20,29 @@ function refusal(stages: readonly Stage[]): string | undefined {
   return unnamed === undefined ? undefined : `a stage is named ${unnamed.name}, a name an arm cannot override`;
 }
 
+// #672: a run is unattended, so its gates go; a decomposition's stays, since its hive write is the user's own press (the decompose gate)
+const keepsGate = (stage: Stage): boolean => stage.action === 'skill' && stage.skill === 'decomposition';
+const losesGate = (stage: Stage): boolean => stage.approval === true && !keepsGate(stage);
+
 // from/onStart talk to a source the run does not have. after is dropped too: a delayed deleteActivity ("Done · 5d") would hold every run
 // until its timeout, and so is maxWorkers: 0, which would pause the run for as long. The agent is frozen here so a later change of the default agent in Settings cannot change the experiment.
 function benchStage(stage: Stage, defaultAgent: Config['defaultAgent']): { stage: BenchStage; dropped: string[] } {
-  const { from, onStart, after, maxWorkers, ...kept } = stage;
-  const dropped = [isFilled(from) ? `${stage.name}.from` : '', isFilled(onStart) ? `${stage.name}.onStart` : '', after === undefined ? '' : `${stage.name}.after`, maxWorkers === undefined ? '' : `${stage.name}.maxWorkers`].filter((d) => d !== '');
+  const { from, onStart, after, maxWorkers, approval, ...rest } = stage;
+  const kept: BenchStage = approval === true && keepsGate(stage) ? { ...rest, approval } : rest;
+  const dropped = [
+    isFilled(from) ? `${stage.name}.from` : '', isFilled(onStart) ? `${stage.name}.onStart` : '', losesGate(stage) ? `${stage.name}.approval` : '',
+    after === undefined ? '' : `${stage.name}.after`, maxWorkers === undefined ? '' : `${stage.name}.maxWorkers`,
+  ].filter((d) => d !== '');
   return { stage: runsAgent(kept) ? { ...kept, agent: kept.agent ?? defaultAgent } : kept, dropped };
 }
 
-function benchTransition(transition: Transition): { transition: BenchTransition; dropped: string[] } {
+// #672: out of a stage that lost its gate, approved is its done and feedback has nothing to answer; the parser refuses both without approval
+function benchTransition(transition: Transition, ungated: readonly string[]): { transition?: BenchTransition; dropped: string[] } {
   const { sources, ...kept } = transition;
-  return { transition: kept, dropped: isFilled(sources) ? [`${transition.from} → ${transition.to}.sources`] : [] };
+  const lost = isFilled(sources) ? [`${transition.from} → ${transition.to}.sources`] : [];
+  if (!ungated.includes(transition.from)) return { transition: kept, dropped: lost };
+  if (transition.when === 'feedback') return { dropped: [`${transition.from} → ${transition.to}.feedback`] };
+  return { transition: transition.when === 'approved' ? { ...kept, when: 'done' } : kept, dropped: lost };
 }
 
 // Only { name, line }: a command's env may hold a token, and the timeout means nothing to a run's one-shot stage
@@ -116,10 +128,12 @@ export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
   const resolved = commandLines(stages, commands, workspace);
   if ('refused' in resolved) return resolved;
   const copiedStages = stages.map((s) => benchStage(s, config.defaultAgent));
-  const copiedTransitions = transitions.map(benchTransition);
+  const ungated = stages.filter(losesGate).map((s) => s.name);
+  const copiedTransitions = transitions.map((t) => benchTransition(t, ungated));
   return {
     flow: {
-      copiedAt: now.toISOString(), stages: copiedStages.map((c) => c.stage), transitions: copiedTransitions.map((c) => c.transition), commands: resolved.lines,
+      copiedAt: now.toISOString(), stages: copiedStages.map((c) => c.stage), commands: resolved.lines,
+      transitions: copiedTransitions.flatMap((c) => (c.transition === undefined ? [] : [c.transition])),
       dropped: [...skipped.dropped, ...[...copiedStages, ...copiedTransitions].flatMap((c) => c.dropped)],
     },
   };

@@ -10,17 +10,18 @@ const flowOf = (result: ReturnType<typeof copyFlow>): BenchFlow => {
   return result.flow;
 };
 
-test("the user's flow copies without its source fields, approval and delete activity kept, agents frozen (#536)", () => {
+test("the user's flow copies without its source fields and its gate, delete activity kept, agents frozen (#536, #672)", () => {
   const flow = flowOf(copyFlow(benchComb(), 'bench', NOW));
   assert.equal(flow.copiedAt, NOW.toISOString());
   assert.deepEqual(flow.stages.map((s) => s.name), ['Spec', 'Plan', 'Build', 'Checks', 'Review', 'Done']);
   assert.ok(flow.stages.every((s) => !('from' in s) && !('onStart' in s) && !('after' in s)));
   assert.deepEqual(flow.stages[0], { name: 'Spec', prompt: '/hive:new-spec {id}', agent: 'codex', model: 'gpt-5' });
-  assert.deepEqual([flow.stages[1].agent, flow.stages[2].agent, flow.stages[2].approval], ['claude', 'claude', true]);
+  assert.deepEqual([flow.stages[1].agent, flow.stages[2].agent, 'approval' in flow.stages[2]], ['claude', 'claude', false]);
   assert.equal(flow.stages[5].action, 'deleteActivity');
   assert.ok(flow.transitions.every((t) => !('sources' in t)));
+  assert.deepEqual(flow.transitions.filter((t) => t.from === 'Build'), [{ from: 'Build', to: 'Checks', when: 'done' }]);
   assert.deepEqual(flow.transitions.find((t) => t.from === 'Checks' && t.verdict === 'failed'), { from: 'Checks', to: 'Build', when: 'verdict', verdict: 'failed', maxTries: 3 });
-  assert.deepEqual(flow.dropped, ['Spec.from', 'Spec.onStart', 'Done.after', 'Review → Done.sources']);
+  assert.deepEqual(flow.dropped, ['Spec.from', 'Spec.onStart', 'Build.approval', 'Done.after', 'Build → Build.feedback', 'Review → Done.sources']);
 });
 
 test("a commands stage's names resolve to the seed workspace's lines, the workspace's own first (#536)", () => {
@@ -42,8 +43,7 @@ test('flowIssues: an edit of the editable fields passes; a renamed stage, a move
   assert.deepEqual(flowIssues(flow, edit(0, { agent: 'claude', model: 'opus', prompt: '/x {id}' })), []);
   assert.deepEqual(flowIssues(flow, edit(4, { judge: { agent: 'codex' }, threshold: 8 })), []);
   assert.match(flowIssues(flow, edit(0, { name: 'Other' }))[0], /structure/);
-  const { approval: _approval, ...noApproval } = flow.stages[2];
-  assert.match(flowIssues(flow, { ...flow, stages: flow.stages.map((s, j) => (j === 2 ? noApproval : s)) })[0], /structure/);
+  assert.match(flowIssues(flow, edit(0, { approval: true }))[0], /structure/);
   assert.match(flowIssues(flow, { ...flow, transitions: flow.transitions.slice(1) })[0], /structure/);
   assert.match(flowIssues(flow, edit(3, { commands: ['deploy'] }))[0], /Checks: no line for command deploy/);
   assert.match(flowIssues(flow, edit(4, { threshold: 11 }))[0], /Review/);
@@ -118,4 +118,21 @@ test('a wait for CI refuses the copy with no passed exit, a passed exit into ano
   assert.match(refusedOf(copyFlow(combOf(CI_STAGES, [...CI_TRANSITIONS, resumes]), 'bench', NOW)), /In Review → Dev continues the session of CI/);
   const doubled: Transition = { from: 'Dev', to: 'In Review', when: 'done' };
   assert.match(refusedOf(copyFlow(combOf(CI_STAGES, [...CI_TRANSITIONS, doubled]), 'bench', NOW)), /stage Dev has two exits on done/);
+});
+
+test("a copy drops every gate but a decomposition skill stage's: its approved exits become done, its feedback goes, each listed (#672)", () => {
+  const stages: Stage[] = [
+    { name: 'Router', from: {}, prompt: '/route {id}', verdicts: ['decompose', 'spec'] },
+    { name: 'decompose', from: {}, action: 'skill', skill: 'decomposition', approval: true },
+    { name: 'Spec', from: {}, prompt: '/hive:new-spec {id}', approval: true },
+  ];
+  const transitions: Transition[] = [
+    { from: 'Router', to: 'decompose', when: 'verdict', verdict: 'decompose' }, { from: 'Router', to: 'Spec', when: 'verdict', verdict: 'spec' },
+    { from: 'decompose', to: 'Spec', when: 'approved' }, { from: 'Spec', to: 'end', when: 'approved' }, { from: 'Spec', to: 'Spec', when: 'feedback' },
+  ];
+  const flow = flowOf(copyFlow(combOf(stages, transitions), 'bench', NOW));
+  assert.equal(flow.stages[1].approval, true, 'the decompose gate stays: its hive write is the user press');
+  assert.equal('approval' in flow.stages[2], false);
+  assert.deepEqual(flow.transitions.slice(2), [{ from: 'decompose', to: 'Spec', when: 'approved' }, { from: 'Spec', to: 'end', when: 'done' }]);
+  assert.deepEqual(flow.dropped, ['Spec.approval', 'Spec → Spec.feedback']);
 });
