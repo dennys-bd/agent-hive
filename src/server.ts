@@ -79,7 +79,7 @@ import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
 import { blockingTypesOf, canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
-import { renderWorkspaceOf } from './fork.js';
+import { renderWorkspaceOf, warnGitlabForks } from './fork.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerCopilotTrustRoute } from './server-copilot-trust.js';
 import { registerNestedRoute } from './server-nested.js';
@@ -133,7 +133,7 @@ import { registerGithubAccountRoutes } from './server-github-accounts.js';
 import { createGithubAdd, type GithubAdd } from './github-login-gh.js';
 import { accountsRefusal } from './accounts-config.js';
 import { AccountError, accountEnv, createRunAccounts, refusalLine, reportedAccount, type AccountEnvDeps, type AccountSeam } from './account-env.js';
-import { configFrom, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
+import { configFrom, forkRefusal, hiveSourceRefusal, movedStages, nestedRefusal, workspacesRefusal, renamesRefusal, setupRefusal, strandedRefusal } from './settings-save.js';
 import { createLocalMachine } from './machine-local.js';
 import { createMachines } from './machines.js';
 import { helperBundle } from './wsl/helper-install.js';
@@ -1329,7 +1329,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     const current = live && { config: live.runtime.config, state: live.state };
-    const refusal = (await workspacesRefusal(config, machineFor, current)) ?? (await nestedRefusal(config, machineFor, current?.config)) ?? setupRefusal(config, machineFor) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #565, #952, #964); #932: each workspace on its machine
+    const refusal = (await workspacesRefusal(config, machineFor, current)) ?? (await nestedRefusal(config, machineFor, current?.config)) ?? (await forkRefusal(config, machineFor, current?.config)) ?? setupRefusal(config, machineFor) ?? renamesRefusal(body.renames, config, current) ?? hiveSourceRefusal(config, current?.state, config.language ?? effectiveLanguage()) ?? strandedRefusal(config, current?.state, movedStages(body.stageRenames)) ?? (await accountsRefusal(body.accounts, deps.credentialsEnv, current?.config.accounts)); // all before any write (#278, #299, #653, #1045, #565, #952, #964); #932: each workspace on its machine
     if (refusal) {
       res.status(refusal.status).json({ error: refusal.message, code: refusal.code, machine: refusal.machine, reason: refusal.reason }); // #932: an unavailable machine's id and why; absent fields drop out
       return;
@@ -1643,6 +1643,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (deps.runtime && deps.state) {
       live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
       await startSemaphores(deps.runtime.config); // #798: hive.ts skips configure()
+      await warnGitlabForks(deps.runtime.config, machineFor, log); // #1045, decision 16: a GitLab fork already in the file loads, its workspace named once in hive.log
     }
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep

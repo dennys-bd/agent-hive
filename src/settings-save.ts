@@ -11,6 +11,7 @@ import type { CombConfig, Config, Flow, Language, Workspace, SettingsBody, Sourc
 import type { MachineFor } from './machine.js';
 import { machineRefusal } from './machines.js';
 import { workspacePathProblem } from './worktree.js';
+import { gitlabForkLine, isGitlabFork } from './fork.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_CONFLICT = 409;
@@ -175,6 +176,18 @@ export async function nestedRefusal(next: { comb: Pick<CombConfig, 'workspaces'>
       const problem = await nestedRepoProblem(machine, workspace.path, path);
       if (problem) return { status: HTTP_BAD_REQUEST, message: `${workspace.name}: nested repo ${path}: ${nestedProblemText(path, problem)}` };
     }
+  }
+  return undefined;
+}
+
+/** Why a save cannot take a fork workspace (#1045, decision 14): one whose original's remote or origin is on a GitLab host of the saved
+ * gitlabHosts (400), in the words its sync reports. After the folder checks, on each workspace's machine; a remote of no host kind is the
+ * sync's NOT_GITHUB, never a refusal here. */
+export async function forkRefusal(next: { comb: Pick<CombConfig, 'workspaces'> } & Pick<Config, 'gitlabHosts'>, machineFor: MachineFor, live?: Pick<Config, 'comb'>): Promise<Refusal | undefined> {
+  const reached = await reachable(next.comb.workspaces, machineFor, live);
+  if (!Array.isArray(reached)) return reached;
+  for (const workspace of reached) {
+    if (await isGitlabFork(machineFor(workspace), workspace, next.gitlabHosts)) return { status: HTTP_BAD_REQUEST, message: gitlabForkLine(workspace.name) };
   }
   return undefined;
 }

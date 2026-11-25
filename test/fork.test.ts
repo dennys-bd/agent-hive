@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withSync } from '../src/worktree-base.js';
-import { baseRemote, failureOf, forkRepos, isNetworkError, NOT_GITHUB, remotesOf, renderWorkspaceOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
+import { baseRemote, failureOf, forkRepos, isNetworkError, NOT_GITHUB, remotesOf, renderWorkspaceOf, runEnv, syncFork, warnGitlabForks, workspaceBase } from '../src/fork.js';
 import type { Config, Exec, Workspace } from '../src/types.js';
 import { fakeMachine } from './fakes.js';
 import { ghMachines, type GhEnv } from '../src/github-account.js';
@@ -176,4 +176,14 @@ test('forkRepos refuses a fork with either remote on GitLab and one off both hos
   for (const refusal of [onGitlab, { reason: NOT_GITHUB }]) {
     assert.deepEqual(await syncFork(fakeMachine({ exec: remotes('', '') }), refusal, 'main'), { mode: 'github', base: 'origin:main', result: 'error', reason: refusal.reason });
   }
+});
+
+test('warnGitlabForks writes one warn line per fork workspace with a remote on GitLab, each read on its own machine; a GitHub fork and a plain workspace none (#1045, decision 16)', async () => {
+  const lines: string[] = [];
+  const remotes: Exec = async (_file, args) => ({ stdout: args[1] === '/lab' ? 'https://gitlab.com/acme/app.git\n' : 'git@github.com:acme/app.git\n' });
+  const ws = (name: string, path: string, fork: Workspace['fork']): Workspace => ({ name, path, env: {}, fork, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' });
+  const upstream: Workspace['fork'] = { remote: 'upstream', pr: 'original' };
+  const comb = { workspaces: [ws('lab', '/lab', upstream), ws('hub', '/hub', upstream), ws('plain', '/lab', null)] };
+  await warnGitlabForks({ comb, gitlabHosts: [] }, () => fakeMachine({ exec: remotes }), { warn: (line: string) => { lines.push(line); } });
+  assert.deepEqual(lines, ['lab: forks on GitLab are not supported']);
 });

@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -12,7 +13,7 @@ import type { GhToken } from '../src/github-token.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State, Flow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, type McpSettings } from '../src/types.js';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import { flatten } from '../src/flows.js';
 import { strandedMessage } from '../src/settings-save.js';
 import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained, bodyFlows, WORKSPACE } from './fakes.js';
@@ -1425,4 +1426,20 @@ test('POST /settings refuses to delete a flow that holds tasks, naming it and th
   assert.deepEqual(await names(), ['main', 'spare'], 'nothing written');
   assert.equal((await postSettings(base, onOwnStages({ ...BODY, flows: [main] }))).status, 200);
   assert.deepEqual(await names(), ['main'], 'the empty flow is gone');
+});
+
+test('POST /settings refuses a fork whose original or origin is on a GitLab host of the saved gitlabHosts, in its sync\'s words; a GitHub fork and one on a host of no kind save (#1045, decision 14)', async (t) => {
+  const { base, repo } = await start(t);
+  const git = (...args: string[]) => promisify(execFile)('git', ['-C', repo, ...args]);
+  await git('remote', 'add', 'origin', 'git@github.com:me/app.git');
+  await git('remote', 'add', 'upstream', 'https://git.example.com/acme/app.git');
+  const fork = (gitlabHosts: string[]) => ({ ...BODY, gitlabHosts, workspaces: workspacesAt(repo).map((w) => ({ ...w, fork: { remote: 'upstream', pr: 'original' } })) });
+  assert.equal((await postSettings(base, fork([]))).status, 200, 'git.example.com unlisted: a host of no kind, the sync\'s NOT_GITHUB, never refused here');
+  const refused = await postSettings(base, fork(['git.example.com']));
+  assert.equal(refused.status, 400);
+  assert.deepEqual(await json(refused), { error: 'hive: forks on GitLab are not supported' });
+  await git('remote', 'set-url', 'upstream', 'https://github.com/acme/app.git');
+  assert.equal((await postSettings(base, fork(['git.example.com']))).status, 200, 'both remotes on GitHub');
+  await git('remote', 'set-url', 'origin', 'https://gitlab.com/me/app.git');
+  assert.deepEqual(await json(postSettings(base, fork([]))), { error: 'hive: forks on GitLab are not supported' }, 'gitlab.com is GitLab with no list');
 });

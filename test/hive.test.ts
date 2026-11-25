@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -774,4 +776,17 @@ test('a hive.config.json that fails the boot opens neither usage.sqlite nor the 
   const { home } = await hiveWithConfig(t, { theme: 'sepia' });
   await assert.rejects(bootHive(home), { message: 'hive.config.json: "theme" must be one of: system, light, dark' });
   assert.deepEqual([existsSync(join(home, USAGE_FILE)), existsSync(join(home, READ_MODEL_FILE))], [false, false]);
+});
+
+test('a boot with a fork whose original is on gitlab.com loads the config and logs one warn line naming the workspace (#1045, decision 16)', async (t) => {
+  const { home, repo } = await hiveWithConfig(t, {});
+  const git = (...args: string[]) => promisify(execFile)('git', ['-C', repo, ...args]);
+  await git('remote', 'add', 'origin', 'git@github.com:me/app.git');
+  await git('remote', 'add', 'upstream', 'https://gitlab.com/acme/app.git');
+  await rewriteWorkspaces(home, (workspace) => ({ ...workspace, fork: { remote: 'upstream', pr: 'original' } }));
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const lines = await logLines(home);
+  assert.equal(lines.filter((l) => l === 'WARN  hive: forks on GitLab are not supported').length, 1, lines.join('\n'));
+  assert.equal((await settingsInfo(home, port)).configured, true, 'the config loads: only the fork is refused');
 });
