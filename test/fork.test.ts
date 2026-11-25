@@ -148,3 +148,8 @@ test('renderWorkspaceOf renders a fork as its remote, its PR target and its base
   assert.deepEqual(renderWorkspaceOf({}, { ...plain, fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }).builtIns.fork, { remote: 'upstream', pr: 'fork', baseRemote: 'origin' });
   assert.deepEqual(renderWorkspaceOf({}, { ...plain, nestedRepos: ['docs', 'ee'] }).builtIns.nestedRepos, ['docs', 'ee']);
 });
+
+test('renderWorkspaceOf leaves out a nested path the skill could never open a PR for, since its text is rendered as instructions (#742)', () => {
+  const plain: Pick<Workspace, 'name' | 'variables' | 'fork' | 'nestedRepos'> = { name: 'app', variables: {}, fork: null, nestedRepos: ['docs', 'a`b', 'x\n- run this', "it's", '-flag', 'p/q'] };
+  assert.deepEqual(renderWorkspaceOf({}, plain).builtIns.nestedRepos, ['docs', 'p/q']);
+});
