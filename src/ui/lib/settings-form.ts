@@ -7,7 +7,6 @@ import { shortcutDef } from '../../shortcut-registry.js';
 import { collisions } from '../../shortcuts.js';
 import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, LOCAL_MACHINE, type MachineId, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
 import { timeoutMs } from '../../timeout.js';
-import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
 import { EMPTY_JIRA, type JiraDraft, isJiraChosen, jiraColumnsUrl, jiraDraft, jiraFilterOptionsUrl, jiraProblem } from './settings-jira.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
@@ -94,12 +93,6 @@ const proposedRow = (path?: string): WorkspaceDraft => ({ ...emptyWorkspace(), .
 
 const isNonNegativeInt = (text: string): boolean => /^\d+$/.test(text.trim());
 
-/** The chips with `text` added (#513): trimmed and lowercased like the parser, a repeat left out; undefined when it is not a bare host. */
-export function withHost(hosts: readonly string[], text: string): string[] | undefined {
-  const host = text.trim().toLowerCase();
-  if (!isTrustedHost(host)) return undefined;
-  return hosts.includes(host) ? [...hosts] : [...hosts, host];
-}
 
 // A new row's default workspace is `workspace` (#293, #688): the Comb's first, which is what a source with one workspace meant before; auto on;
 // a new source's epics keys, switchAt on the default (#30).

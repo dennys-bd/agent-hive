@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import { emptyCommand, emptyEnvRow, emptyImpl, type EnvRowDraft } from '../src/ui/lib/settings-commands.js';
-import { sourceColumnsUrl, draftFrom, emptySource, emptyStage, emptyWorkspace, filterOptionsUrl, isMinutes, projectsUrl, type SourceDraft, type SettingsDraft, type StageDraft, toSettingsBody, validateSettings, withHost } from '../src/ui/lib/settings-form.js';
+import { sourceColumnsUrl, draftFrom, emptySource, emptyStage, emptyWorkspace, filterOptionsUrl, isMinutes, projectsUrl, type SourceDraft, type SettingsDraft, type StageDraft, toSettingsBody, validateSettings } from '../src/ui/lib/settings-form.js';
 import { EMPTY_JIRA, type JiraDraft } from '../src/ui/lib/settings-jira.js';
 import { parseConfig } from '../src/config.js';
 import { sourceTaskPropsProblem } from '../src/ui/lib/setup-source-task-props.js';
@@ -443,12 +443,6 @@ test('the draft carries onClose and toSettingsBody always sends it (#513)', () =
   assert.equal(draftFrom(info(undefined, false)).onClose, 'menuBar', 'a first setup: today\'s behaviour');
   assert.equal(draftFrom(info(CONFIG)).onClose, 'quit', 'CONFIG saves quit');
   assert.equal(toSettingsBody({ ...draftFrom(info(CONFIG)), onClose: 'menuBar' }).onClose, 'menuBar');
-});
-
-test('withHost adds one trimmed, lowercased host, ignores a repeat and refuses what is not a bare host (#513)', () => {
-  assert.deepEqual(withHost(['github.com'], ' Docs.Example.com '), ['github.com', 'docs.example.com']);
-  assert.deepEqual(withHost(['github.com'], 'GITHUB.com'), ['github.com'], 'a repeat is no change');
-  for (const bad of ['https://github.com', 'github.com:443', 'github.com/x', '*.github.com', '']) assert.equal(withHost([], bad), undefined, bad);
 });
 
 test('what deleting an activity forgets (#236, #573): a new form starts with every switch off, a saved config gives its own and the body always carries it; no combination is a problem, since the worktree and the branch always go', () => {

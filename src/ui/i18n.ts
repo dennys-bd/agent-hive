@@ -1004,6 +1004,10 @@ const en = {
   'settings.trustedDomains.hint': 'links to these hosts and their subdomains open without asking',
   'settings.trustedDomains.add': 'add host',
   'settings.trustedDomains.remove': 'remove {host}',
+  'settings.gitlabHosts': 'GitLab hosts', // #1044
+  'settings.gitlabHosts.hint': 'self-hosted GitLab servers · gitlab.com always is one',
+  'settings.gitlabHosts.add': 'add GitLab host',
+  'settings.gitlabHosts.remove': 'remove {host}',
   'settings.branch': 'branch name for each task',
   'settings.baseBranch': 'base branch',
   'settings.baseBranch.auto': "the base repository's default",
@@ -1344,6 +1348,7 @@ const en = {
   'settings.error.format.command': '{language}: custom formatter {n} needs a command line',
   'settings.error.format.extensions': '{language}: custom formatter {n} needs one or more extensions, each with its dot (.sql)',
   'settings.error.trustedDomain': 'trusted domains: {host} is not a host (like github.com, without https://, a port, a path or *)', // #404
+  'settings.error.gitlabHost': 'GitLab hosts: {host} is not a GitLab host (like git.example.com, without https://, a port, a path or *; github.com is GitHub)', // #1044
   'settings.error.shortcutCollision': 'shortcuts: {a} and {b} use the same keys', // #449
   'settings.error.shortcutFixed': 'shortcuts: {name} uses the keys of {fixed}, which never change', // #585
   'settings.error.shortcutReserved': 'shortcuts: {name} uses keys the menus keep (copy, paste, undo, quit…)',
@@ -4653,6 +4658,10 @@ const pt: Record<MessageKey, string> = {
   'settings.trustedDomains.hint': 'links para esses hosts e subdomínios abrem sem perguntar',
   'settings.trustedDomains.add': 'adicionar host',
   'settings.trustedDomains.remove': 'remover {host}',
+  'settings.gitlabHosts': 'hosts GitLab',
+  'settings.gitlabHosts.hint': 'servidores GitLab próprios · gitlab.com sempre é um',
+  'settings.gitlabHosts.add': 'adicionar host GitLab',
+  'settings.gitlabHosts.remove': 'remover {host}',
   'settings.branch': 'nome da branch de cada tarefa',
   'settings.baseBranch': 'branch base',
   'settings.baseBranch.auto': 'a padrão do repositório base',
@@ -4993,6 +5002,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.format.command': '{language}: o formatador personalizado {n} precisa de uma linha de comando',
   'settings.error.format.extensions': '{language}: o formatador personalizado {n} precisa de uma ou mais extensões, cada uma com seu ponto (.sql)',
   'settings.error.trustedDomain': 'domínios confiáveis: {host} não é um host (como github.com, sem https://, porta, caminho ou *)',
+  'settings.error.gitlabHost': 'hosts GitLab: {host} não é um host GitLab (como git.example.com, sem https://, porta, caminho ou *; github.com é o GitHub)',
   'settings.error.shortcutCollision': 'atalhos: {a} e {b} usam as mesmas teclas',
   'settings.error.shortcutFixed': 'atalhos: {name} usa as teclas de {fixed}, que não mudam',
   'settings.error.shortcutReserved': 'atalhos: {name} usa teclas reservadas pelos menus (copiar, colar, desfazer, sair…)',

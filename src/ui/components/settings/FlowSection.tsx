@@ -55,6 +55,7 @@ export function searchEntries(draft: SettingsDraft): SettingEntry[] {
   return [
     ...cardEntries('flow', 'settings.sources', ['settings.sources.createIn', 'settings.sources.local', 'settings.prefix']),
     settingEntry('settings.connections', 'flow'),
+    settingEntry('settings.gitlabHosts', 'flow'), // #1044
     settingEntry('settings.stages', 'flow'),
     ...draft.sources.flatMap(sourceEntries),
     ...draft.stages.flatMap(stageEntries),

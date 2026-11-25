@@ -77,6 +77,9 @@ test('sources lists one row per source with its badge and summary (#514)', async
   const order = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
   expect(order.indexOf(t('settings.sources'))).toBeLessThan(order.indexOf(t('settings.connections')));
   expect(order.indexOf(t('settings.connections'))).toBeLessThan(order.indexOf(t('settings.stages')));
+  // #1044: the GitLab hosts card sits right under the connections, with or without a GitLab source
+  expect(order.indexOf(t('settings.connections'))).toBeLessThan(order.indexOf(t('settings.gitlabHosts')));
+  expect(order.indexOf(t('settings.gitlabHosts'))).toBeLessThan(order.indexOf(t('settings.stages')));
 
   // #513/#524: the group hint sits beside its h2, as a sibling span, not stacked under it.
   const sourcesHeading = screen.getByRole('heading', { level: 2, name: t('settings.sources') });
