@@ -22,7 +22,7 @@ export const MACHINE_MESSAGE = 'machine must be "local" or "wsl:<distro>"'; // #
 
 export interface ForkRouteDeps {
   machineFor: MachineFor; // #158, #932: the workspace's machine, or the one the Settings form's draft names
-  requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'baseBranch'> } } | undefined;
+  requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'baseBranch' | 'gitlabHosts'> } } | undefined;
 }
 
 const refuse = (res: Response, status: number, message: string): void => {
@@ -30,11 +30,12 @@ const refuse = (res: Response, status: number, message: string): void => {
 };
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-// The GitHub sync of the workspace's effective base, run once and only answered: nothing is kept (#854)
-async function manualSync(machine: Machine, workspace: Workspace, config: Pick<Config, 'baseBranch'>): Promise<ForkSyncAnswer> {
+// The GitHub sync of the workspace's effective base, run once and only answered: nothing is kept (#854). #1045: its remotes read against the
+// config's GitLab hosts, so a fork on GitLab answers the save's words
+async function manualSync(machine: Machine, workspace: Workspace, config: Pick<Config, 'baseBranch' | 'gitlabHosts'>): Promise<ForkSyncAnswer> {
   const { remote, branch } = workspaceBase(config, workspace);
   const base = branch ?? (await remoteHead((...args) => gitOrWords(workspace.path, args, machine.exec), remote));
-  return syncFork(machine, await forkRepos(machine, workspace), base);
+  return syncFork(machine, await forkRepos(machine, workspace, config.gitlabHosts), base);
 }
 
 /** POST /workspaces/:name/sync and GET /settings/remotes (#854). */

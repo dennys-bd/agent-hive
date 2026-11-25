@@ -1,6 +1,6 @@
 import type { Machine } from './machine.js';
 import { githubRepository } from './task-refs.js';
-import { GITLAB_HOST } from './repo-host.js';
+import { GITLAB_HOST, type RemoteRepository, remoteRepository } from './repo-host.js';
 import type { RenderWorkspace } from './template.js';
 import { type Config, FORK_SYNCS, type ForkSync, type ForkSyncAnswer, type ForkSyncResult, type GitRemote, PR_TARGETS, type PrTarget, type Workspace, type WorkspaceFork } from './types.js';
 
@@ -32,6 +32,9 @@ export function parseFork(raw: unknown, field: string): WorkspaceFork | false | 
 
 const SYNC_TIMEOUT_MS = 60_000; // each gh call, as the wait for CI's (#834)
 export const NOT_GITHUB = 'origin or the original\'s remote is not a GitHub repository';
+/** The words a fork with a remote on GitLab is refused in (#1045, decision 15): its sync's, the save's and the boot's. Forks on GitLab are
+ * out of #787. */
+export const FORK_ON_GITLAB = 'forks on GitLab are not supported';
 // gh's and git's words for a host they could not reach, and the codes Node's fetch puts on its cause when DNS, the route or the connect
 // fails (#291: apiGql's `fetch failed`)
 const NETWORK = /could not resolve host|error connecting to|dial tcp|network is unreachable|connection (?:refused|reset|timed out)|operation timed out|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_CONNECT_TIMEOUT/i;
@@ -39,8 +42,15 @@ const REMOTE_LINE = /^(\S+)\t(\S+) \(fetch\)$/;
 
 /** A fork's two GitHub repositories (#854), owner/name: the original's remote and origin. */
 export interface ForkRepos { original: string; fork: string }
-/** Where a workspace's worktrees start (#854): the base remote, the effective base branch (absent: <remote>/HEAD, else main), and its fork. */
-export interface WorkspaceBase { remote: string; branch?: string; fork: WorkspaceFork | false | null }
+/** Why a fork has no GitHub pair (#1045, decision 15): FORK_ON_GITLAB or NOT_GITHUB, the words its sync reports. */
+export interface ForkRefusal { reason: string }
+/** A workspace's fork as its remotes read (#854, #1045): the GitHub pair, the refusal, or undefined for a workspace that is not a fork. */
+export type ForkAnswer = ForkRepos | ForkRefusal | undefined;
+export const isForkRepos = (answer: ForkAnswer): answer is ForkRepos => answer !== undefined && 'original' in answer;
+/** Where a workspace's worktrees start (#854): the base remote, the effective base branch (absent: <remote>/HEAD, else main), and its fork.
+ * gitlabHosts (#1045): the config's, which the fork sync at a worktree's creation reads its remotes against; absent where no worktree is made,
+ * so gitlab.com alone is GitLab there. */
+export interface WorkspaceBase { remote: string; branch?: string; fork: WorkspaceFork | false | null; gitlabHosts?: readonly string[] }
 
 /** The base remote (#854): the original's with PRs to it or ask; origin with PRs to the fork and for a workspace that is not a fork. */
 export const baseRemote = ({ fork }: Pick<Workspace, 'fork'>): string => (fork && fork.pr !== 'fork' ? fork.remote : ORIGIN);
@@ -80,11 +90,18 @@ export const ownerOf = (repository: string): string => repository.split('/')[0] 
 const repositoryAt = (machine: Pick<Machine, 'exec'>, path: string, remote: string): Promise<string | undefined> =>
   machine.exec('git', ['-C', path, 'remote', 'get-url', remote]).then(({ stdout }) => githubRepository(stdout.trim()), () => undefined);
 
-/** The original and the fork (#854), from `git remote get-url` of the two remotes; undefined for a workspace that is not a fork or with a remote off GitHub. */
-export async function forkRepos(machine: Pick<Machine, 'exec'>, workspace: Pick<Workspace, 'path' | 'fork'>): Promise<ForkRepos | undefined> {
+// A remote's host and repository against the GitLab hosts; none when git fails or the remote is of no host kind
+const remoteAt = (machine: Pick<Machine, 'exec'>, path: string, remote: string, gitlabHosts: readonly string[]): Promise<RemoteRepository | undefined> =>
+  machine.exec('git', ['-C', path, 'remote', 'get-url', remote]).then(({ stdout }) => remoteRepository(stdout.trim(), gitlabHosts), () => undefined);
+
+/** The original and the fork (#854), from `git remote get-url` of the two remotes read against the config's GitLab hosts (#1045): the pair
+ * when both are on GitHub, FORK_ON_GITLAB when either is on GitLab, NOT_GITHUB otherwise; undefined for a workspace that is not a fork. */
+export async function forkRepos(machine: Pick<Machine, 'exec'>, workspace: Pick<Workspace, 'path' | 'fork'>, gitlabHosts: readonly string[]): Promise<ForkAnswer> {
   if (!workspace.fork) return undefined;
-  const [original, fork] = await Promise.all([repositoryAt(machine, workspace.path, workspace.fork.remote), repositoryAt(machine, workspace.path, ORIGIN)]);
-  return original !== undefined && fork !== undefined ? { original, fork } : undefined;
+  const [original, fork] = await Promise.all([remoteAt(machine, workspace.path, workspace.fork.remote, gitlabHosts), remoteAt(machine, workspace.path, ORIGIN, gitlabHosts)]);
+  if (original?.kind === 'gitlab' || fork?.kind === 'gitlab') return { reason: FORK_ON_GITLAB };
+  // a remote of either kind that is not GitLab is GitHub: the pair
+  return original !== undefined && fork !== undefined ? { original: original.repository, fork: fork.repository } : { reason: NOT_GITHUB };
 }
 
 /** The repository the base remote points at (#854): what GH_REPO names; none for a workspace that is not a fork. */
@@ -128,9 +145,10 @@ const countOf = (value: unknown): number => {
 };
 
 /** The GitHub sync, fast-forward only (#854): compare the fork's base with the original's. Nothing to receive is current; commits only on the
- * fork are diverged and nothing is written; otherwise merge-upstream, which then fast-forwards. Never throws. */
-export async function syncFork(machine: Pick<Machine, 'exec'>, repos: ForkRepos | undefined, base: string): Promise<ForkSyncAnswer> {
-  if (repos === undefined) return { mode: 'github', base: `${ORIGIN}:${base}`, result: 'error', reason: NOT_GITHUB };
+ * fork are diverged and nothing is written; otherwise merge-upstream, which then fast-forwards. A fork with no GitHub pair is the error with
+ * forkRepos' words (#1045). Never throws. */
+export async function syncFork(machine: Pick<Machine, 'exec'>, repos: ForkAnswer, base: string): Promise<ForkSyncAnswer> {
+  if (!isForkRepos(repos)) return { mode: 'github', base: `${ORIGIN}:${base}`, result: 'error', reason: repos?.reason ?? NOT_GITHUB };
   const answer = { mode: 'github' as const, base: `${ownerOf(repos.fork)}:${base}` };
   const gh = async (args: string[]): Promise<string> => (await machine.exec('gh', args, { timeout: SYNC_TIMEOUT_MS })).stdout;
   try {

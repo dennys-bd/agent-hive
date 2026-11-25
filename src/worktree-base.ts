@@ -1,5 +1,5 @@
 import type { Logger } from './log.js';
-import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
+import { type ForkAnswer, failureOf, forkRepos, isForkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
 import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
 import { type Machine, MachineError } from './machine.js';
 import { samePath } from './same-path.js';
@@ -175,10 +175,10 @@ export async function defaultBase(git: Git, repo: string, base: WorkspaceBase, e
   const branch = base.branch ?? (await remoteHead(git, base.remote));
   const own = base.fork;
   const fork = own && own.pr !== 'original' ? own : undefined;
-  const repos: ForkRepos | undefined = fork === undefined || fork.sync === 'manual' ? undefined : await forkRepos({ exec }, { path: repo, fork });
+  const repos: ForkAnswer = fork === undefined || fork.sync === 'manual' ? undefined : await forkRepos({ exec }, { path: repo, fork }, base.gitlabHosts ?? []);
   const sync = fork?.sync === 'github' ? await syncFork({ exec }, repos, branch) : undefined;
   const found = await baseFor(git, base.remote, branch);
-  const owner = repos === undefined ? 'origin' : ownerOf(repos.fork);
+  const owner = isForkRepos(repos) ? ownerOf(repos.fork) : 'origin';
   const merge = fork?.pr === 'fork' && fork.sync === 'local' ? { remote: fork.remote, branch, owner } : undefined;
   return { ...found, ...(sync === undefined ? {} : { sync }), ...(merge === undefined ? {} : { merge }) };
 }

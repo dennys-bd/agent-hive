@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withSync } from '../src/worktree-base.js';
-import { baseRemote, failureOf, forkRepos, isNetworkError, remotesOf, renderWorkspaceOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
+import { baseRemote, failureOf, forkRepos, isNetworkError, NOT_GITHUB, remotesOf, renderWorkspaceOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
 import type { Config, Exec, Workspace } from '../src/types.js';
 import { fakeMachine } from './fakes.js';
 import { ghMachines, type GhEnv } from '../src/github-account.js';
@@ -94,12 +94,12 @@ test('remotesOf reads git remote -v once per remote with the GitHub repository e
   };
   assert.deepEqual(await remotesOf(fakeMachine({ exec: exec }), '/app'), [{ name: 'origin', repository: 'me/app' }, { name: 'upstream', repository: 'acme/app' }, { name: 'mirror' }]);
   const workspace: Workspace = { name: 'app', path: '/app', env: { NODE_ENV: 'development' }, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' };
-  assert.deepEqual(await forkRepos(fakeMachine({ exec: exec }), workspace), REPOS);
+  assert.deepEqual(await forkRepos(fakeMachine({ exec: exec }), workspace, []), REPOS);
   assert.deepEqual(await runEnv(fakeMachine({ exec: exec }), workspace), { GH_REPO: 'acme/app', NODE_ENV: 'development' });
   assert.deepEqual(await runEnv(fakeMachine({ exec: exec }), { ...workspace, fork: { remote: 'upstream', pr: 'fork', sync: 'manual' } }), { GH_REPO: 'me/app', NODE_ENV: 'development' });
   assert.deepEqual(await runEnv(fakeMachine({ exec: exec }), { ...workspace, env: { GH_REPO: 'acme/other' } }), { GH_REPO: 'acme/other' }, 'the workspace\'s own wins');
   assert.equal(await runEnv(fakeMachine({ exec: exec }), { ...workspace, fork: false }), workspace.env, 'not a fork: its env as it is');
-  assert.equal(await forkRepos(fakeMachine({ exec: async () => ({ stdout: 'https://gitlab.com/a/b.git\n' }) }), workspace), undefined);
+  assert.deepEqual(await forkRepos(fakeMachine({ exec: async () => ({ stdout: 'https://gitlab.com/a/b.git\n' }) }), workspace, []), { reason: 'forks on GitLab are not supported' });
 });
 
 test('the compare path encodes the branch and the owners, so a branch name never adds a path segment or a query (#854)', async () => {
@@ -161,4 +161,19 @@ test("renderWorkspaceOf renders gitlabHosts as gitlab.com, then the config's lis
   const plain: Pick<Workspace, 'name' | 'variables' | 'fork' | 'nestedRepos'> = { name: 'app', variables: {}, fork: null, nestedRepos: [] };
   assert.deepEqual(renderWorkspaceOf(config, plain).builtIns.gitlabHosts, ['gitlab.com', 'git.example.com', 'code.example.org']);
   assert.deepEqual(renderWorkspaceOf(config, { ...plain, name: 'site', fork: { remote: 'upstream', pr: 'original' } }).builtIns.gitlabHosts, ['gitlab.com', 'git.example.com', 'code.example.org']);
+});
+
+test('forkRepos refuses a fork with either remote on GitLab and one off both hosts as not GitHub; syncFork reports each refusal as its reason (#1045, decision 15)', async () => {
+  const workspace: Pick<Workspace, 'path' | 'fork'> = { path: '/app', fork: { remote: 'upstream', pr: 'original' } };
+  const remotes = (upstream: string, origin: string): Exec => async (_file, args) => ({ stdout: `${args.at(-1) === 'upstream' ? upstream : origin}\n` });
+  const answer = (upstream: string, origin: string, hosts: string[] = []) => forkRepos(fakeMachine({ exec: remotes(upstream, origin) }), workspace, hosts);
+  const onGitlab = { reason: 'forks on GitLab are not supported' };
+  assert.deepEqual(await answer('https://gitlab.com/acme/app.git', 'git@github.com:me/app.git'), onGitlab, 'the original on gitlab.com, with no list');
+  assert.deepEqual(await answer('https://github.com/acme/app.git', 'git@git.example.com:me/app.git', ['git.example.com']), onGitlab, 'the fork on a listed host');
+  assert.deepEqual(await answer('https://github.com/acme/app.git', 'git@code.example.org:me/app.git'), { reason: NOT_GITHUB }, 'a host of no kind');
+  assert.deepEqual(await answer('https://github.com/acme/app.git', 'git@github.com:me/app.git'), REPOS);
+  assert.equal(await forkRepos(fakeMachine({ exec: remotes('', '') }), { path: '/app', fork: false }, []), undefined, 'not a fork');
+  for (const refusal of [onGitlab, { reason: NOT_GITHUB }]) {
+    assert.deepEqual(await syncFork(fakeMachine({ exec: remotes('', '') }), refusal, 'main'), { mode: 'github', base: 'origin:main', result: 'error', reason: refusal.reason });
+  }
 });

@@ -1,7 +1,7 @@
 import { taskWorkspace } from '../config.js';
 import { prRepo } from '../pull-requests.js';
 import { githubRepository } from '../task-refs.js';
-import { forkRepos } from '../fork.js';
+import { forkRepos, isForkRepos } from '../fork.js';
 import type { Machine } from '../machine.js';
 import type { ActivityRecord, Config, PrTarget, State, Workspace } from '../types.js';
 
@@ -16,8 +16,9 @@ type MaybeRef = Omit<RepoRef, 'repository'> & { repository?: string };
 
 // A workspace's own repositories (#854): a fork's original then its fork when both are on GitHub, else its origin
 async function ownRefs(machine: Pick<Machine, 'exec'>, workspace: Workspace): Promise<MaybeRef[]> {
-  const repos = workspace.fork ? await forkRepos(machine, workspace) : undefined;
-  if (repos === undefined || !workspace.fork) return [{ repository: await originRepository(machine, workspace.path), workspace: workspace.name }];
+  // temporary (#1045 Task 1): no GitLab host is listed yet; Task 3 hands it config.gitlabHosts
+  const repos = workspace.fork ? await forkRepos(machine, workspace, []) : undefined;
+  if (!isForkRepos(repos) || !workspace.fork) return [{ repository: await originRepository(machine, workspace.path), workspace: workspace.name }];
   const { pr } = workspace.fork;
   return [
     { repository: repos.original, workspace: workspace.name, role: 'original', pr, pair: repos.fork },
