@@ -174,7 +174,7 @@ test('a repository row shows its square, its name and PR count over its context;
   expect(within(site).getByText('2')).toHaveClass('tabular-nums');
   expect(within(section('repositórios')).getByText('PRs')).not.toHaveAttribute('role', 'button');
   await userEvent.setup().click(within(site).getByText('site'));
-  expect(props.nav.show).toHaveBeenCalledWith({ kind: 'repo', repository: 'acme/site', tab: 'prs' });
+  expect(props.nav.show).toHaveBeenCalledWith({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' });
 });
 
 test('with no repository listed the repositories section still shows, empty (#572)', async () => {

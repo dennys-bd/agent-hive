@@ -29,9 +29,9 @@ const STATE: State = {
 beforeEach(() => setLanguage('pt'));
 
 test('resolveCenter keeps a center whose flow, source and repository exist, and the hive source while it is on; any other reads as the first flow (#571, #572)', () => {
-  const live: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'ship' }, { kind: 'tasks', view: 'outside' }, { kind: 'tasks', view: 'list' }, { kind: 'source', source: 'roadmap' }, { kind: 'source', source: 'hive' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }];
+  const live: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'ship' }, { kind: 'tasks', view: 'outside' }, { kind: 'tasks', view: 'list' }, { kind: 'source', source: 'roadmap' }, { kind: 'source', source: 'hive' }, { kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'issues' }];
   for (const center of live) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE], true)).toBe(center);
-  const stale: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'gone' }, { kind: 'source', source: 'notes' }, { kind: 'repo', repository: 'acme/else', tab: 'prs' }];
+  const stale: TasksCenter[] = [{ kind: 'tasks', view: 'flow', flow: 'gone' }, { kind: 'source', source: 'notes' }, { kind: 'repo', host: 'github.com', repository: 'acme/else', tab: 'prs' }];
   for (const center of stale) expect(resolveCenter(center, FLOWS, [ROADMAP], [SITE], true)).toEqual(FIRST_CENTER);
   expect(resolveCenter({ kind: 'source', source: 'hive' }, FLOWS, [ROADMAP], [SITE], false)).toEqual(FIRST_CENTER);
 });
@@ -44,15 +44,15 @@ test('centerOfTask places a task in the flow its stage belongs to, else outside 
 
 test('backOf: a page goes back to its list, labelled voltar; the list, a source\'s table and a repository\'s list go back to the last flow, else the first; a flow, sem fluxo and no flows have none (#571, #921)', () => {
   const show = vi.fn();
-  const issue = { repository: 'acme/site', number: 12 };
+  const issue = { host: 'github.com', repository: 'acme/site', number: 12 };
   const none: [TasksCenter, readonly Flow[]][] = [
     [FIRST_CENTER, FLOWS], [{ kind: 'tasks', view: 'flow', flow: 'ship' }, FLOWS], [{ kind: 'tasks', view: 'outside' }, FLOWS],
-    [{ kind: 'tasks', view: 'list' }, []], [{ kind: 'source', source: 'roadmap' }, []], [{ kind: 'repo', repository: 'acme/site', tab: 'prs' }, []],
+    [{ kind: 'tasks', view: 'list' }, []], [{ kind: 'source', source: 'roadmap' }, []], [{ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' }, []],
   ];
   for (const [center, flows] of none) expect(backOf(center, show, flows, 'ship')).toBeUndefined();
   const lists: TasksCenter[] = [
     { kind: 'tasks', view: 'list' }, { kind: 'source', source: 'roadmap' }, { kind: 'source', source: 'hive' },
-    { kind: 'repo', repository: 'acme/site', tab: 'prs' }, { kind: 'repo', repository: 'acme/site', tab: 'issues' },
+    { kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' }, { kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'issues' },
   ];
   for (const center of lists) {
     const back = backOf(center, show, FLOWS, 'ship');
@@ -64,8 +64,8 @@ test('backOf: a page goes back to its list, labelled voltar; the list, a source\
   expect(backOf(lists[0], show, FLOWS, 'gone')?.label).toBe('build'); // the last one was removed: the first
   const pages: [TasksCenter, TasksCenter][] = [
     [{ kind: 'source', source: 'roadmap', issue }, { kind: 'source', source: 'roadmap' }],
-    [{ kind: 'repo', repository: 'acme/site', tab: 'issues', issue }, { kind: 'repo', repository: 'acme/site', tab: 'issues' }],
-    [{ kind: 'repo', repository: 'acme/site', tab: 'prs', pr: { repository: 'acme/site', number: 7 } }, { kind: 'repo', repository: 'acme/site', tab: 'prs' }],
+    [{ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'issues', issue }, { kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'issues' }],
+    [{ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs', pr: { host: 'github.com', repository: 'acme/site', number: 7 } }, { kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' }],
   ];
   for (const [page, list] of pages) {
     const back = backOf(page, show, FLOWS, 'ship');
@@ -85,7 +85,7 @@ test("useTasksCenter starts on the first flow; show resolves the flow, the sourc
   expect(result.current.flow?.name).toBe('ship');
   act(() => result.current.show({ kind: 'source', source: 'roadmap' }));
   expect(result.current.source).toBe(ROADMAP);
-  act(() => result.current.show({ kind: 'repo', repository: 'acme/site', tab: 'prs' }));
+  act(() => result.current.show({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' }));
   expect(result.current.repo).toBe(SITE);
   act(() => result.current.goTo('roadmap:PVTI_2'));
   expect(result.current.center).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });
@@ -110,14 +110,14 @@ test('goTo of a task the state does not hold yet shows the first flow, then its 
 test("a page under a source or a repository is the details panel's page and has a way back; a removed source or repository reads as the first flow (#571)", () => {
   const { result, rerender } = renderHook(({ repos, nav }) => useTasksCenter(STATE, nav, repos, vi.fn()), { initialProps: { repos: [SITE], nav: NAV } });
   act(() => result.current.show({ kind: 'source', source: 'roadmap' }));
-  act(() => result.current.openIssue({ repository: 'acme/site', number: 12 }));
+  act(() => result.current.openIssue({ host: 'github.com', repository: 'acme/site', number: 12 }));
   expect(result.current.page).toMatchObject({ kind: 'issue', url: 'https://github.com/acme/site/issues/12' });
   expect(result.current.back?.label).toBe('voltar');
   rerender({ repos: [SITE], nav: { ...NAV, sources: [] } });
   expect(result.current.center).toEqual(FIRST_CENTER);
   expect(result.current.page).toBeUndefined();
-  act(() => result.current.openPr({ repository: 'acme/site', number: 7 }));
-  expect(result.current.center).toMatchObject({ kind: 'repo', repository: 'acme/site', tab: 'prs' });
+  act(() => result.current.openPr({ host: 'github.com', repository: 'acme/site', number: 7 }));
+  expect(result.current.center).toMatchObject({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' });
   expect(result.current.page).toMatchObject({ kind: 'pr', url: 'https://github.com/acme/site/pull/7' });
   rerender({ repos: [], nav: NAV });
   expect(result.current.center).toEqual(FIRST_CENTER);
@@ -281,7 +281,7 @@ test('useTasksCenter remembers the last flow shown: a list goes back to it, to t
   act(() => result.current.show({ kind: 'tasks', view: 'list' }));
   expect(result.current.back?.label).toBe('build'); // the first flow, the center's start
   act(() => result.current.show({ kind: 'tasks', view: 'flow', flow: 'ship' }));
-  act(() => result.current.show({ kind: 'repo', repository: 'acme/site', tab: 'issues' }));
+  act(() => result.current.show({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'issues' }));
   expect(result.current.back?.label).toBe('ship');
   act(() => result.current.back?.onBack());
   expect(result.current.center).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });
@@ -294,14 +294,14 @@ test('useTasksCenter remembers the last flow shown: a list goes back to it, to t
 
 test('onMerged goes to the PR list only while the stored center is still that PR\'s page; otherwise it leaves the center (#921)', () => {
   const { result } = renderHook(() => useTasksCenter(STATE, NAV, [SITE], vi.fn()));
-  const pr = { repository: 'acme/site', number: 7 };
+  const pr = { host: 'github.com', repository: 'acme/site', number: 7 };
   act(() => result.current.openPr(pr));
   act(() => result.current.onMerged(pr));
-  expect(result.current.center).toEqual({ kind: 'repo', repository: 'acme/site', tab: 'prs' });
-  const other = { repository: 'acme/site', number: 8 };
+  expect(result.current.center).toEqual({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs' });
+  const other = { host: 'github.com', repository: 'acme/site', number: 8 };
   act(() => result.current.openPr(other));
   act(() => result.current.onMerged(pr));
-  expect(result.current.center).toEqual({ kind: 'repo', repository: 'acme/site', tab: 'prs', pr: other });
+  expect(result.current.center).toEqual({ kind: 'repo', host: 'github.com', repository: 'acme/site', tab: 'prs', pr: other });
   act(() => result.current.show({ kind: 'tasks', view: 'flow', flow: 'ship' }));
   act(() => result.current.onMerged(pr));
   expect(result.current.center).toEqual({ kind: 'tasks', view: 'flow', flow: 'ship' });

@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 const COMPONENTS: Components = {
   a: ({ node: _node, children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a>,
 };
-// A body is untrusted and the app serves its own API on the same origin: a relative src or href (`![](/repositories/o/n/pulls/1)`) would make
+// A body is untrusted and the app serves its own API on the same origin: a relative src or href (`![](/repositories/github.com/o%2Fn/pulls/1)`) would make
 // the window GET its own server. Only absolute http(s) URLs pass, and mailto for links.
 const urlTransform: UrlTransform = (url, key) => (/^https?:\/\//i.test(url) || (key === 'href' && /^mailto:/i.test(url)) ? url : null);
 const PLUGINS = [remarkGfm];

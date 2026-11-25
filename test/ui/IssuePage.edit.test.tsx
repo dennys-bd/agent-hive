@@ -48,7 +48,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const renderPage = () => render(
-  <IssuePage state={STATE} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onOpenPr={vi.fn()} />,
+  <IssuePage state={STATE} issue={{ host: 'github.com', repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onOpenPr={vi.fn()} />,
 );
 const posts = (): unknown[] => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));
 
@@ -66,7 +66,7 @@ test('a title edit posts with the updatedAt read; a 409 says so, reloads, keeps 
   expect(toast.error).toHaveBeenCalledWith(CHANGED);
   expect(screen.getByRole('textbox', { name: 'título' })).toHaveValue('Pager fixed');
   expect(posts()).toEqual([{ title: 'Pager fixed', updatedAt: U1 }]);
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/issues/12', expect.objectContaining({ method: 'POST' }));
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/issues/12', expect.objectContaining({ method: 'POST' }));
   await user.click(screen.getByRole('button', { name: 'salvar' }));
   await waitFor(() => expect(screen.queryByRole('textbox', { name: 'título' })).not.toBeInTheDocument());
   expect(posts()).toEqual([{ title: 'Pager fixed', updatedAt: U1 }, { title: 'Pager fixed', updatedAt: U2 }]);

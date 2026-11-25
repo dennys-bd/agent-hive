@@ -17,11 +17,11 @@ const STATE: State = {
   activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['site'], sourceWorkspaces: {}, workspaceColors: {}, workspaceMachines: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
-const ROUTE = '/repositories/acme/site/issues/12';
+const ROUTE = '/repositories/github.com/acme%2Fsite/issues/12';
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   if (init?.method === 'POST') return jsonRes({ ok: true });
-  return jsonRes(String(input) === '/repositories/acme/site/labels' ? ['bug', 'docs', 'ui'] : ISSUE);
+  return jsonRes(String(input) === '/repositories/github.com/acme%2Fsite/labels' ? ['bug', 'docs', 'ui'] : ISSUE);
 };
 const fetchMock = vi.fn(answer);
 beforeEach(() => {
@@ -34,7 +34,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 // Beside the details panel's slot (#64): the labels are the properties' and render there
 const renderPage = () => render(
-  <IssuePage state={STATE} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onOpenPr={vi.fn()} />,
+  <IssuePage state={STATE} issue={{ host: 'github.com', repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onOpenPr={vi.fn()} />,
   { wrapper: WithSlot },
 );
 const posted = (path: string): unknown[] => fetchMock.mock.calls.filter(([input, init]) => String(input) === path && init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));
@@ -77,7 +77,7 @@ test('a comment posts to the issue, clears the box and reads the page again; com
 
 test('a failed labels read shows a muted error line instead of reading… forever (#757)', async () => {
   const user = userEvent.setup();
-  fetchMock.mockImplementation(async (input) => (String(input) === '/repositories/acme/site/labels' ? jsonRes({ error: 'boom' }, 502) : jsonRes(ISSUE)));
+  fetchMock.mockImplementation(async (input) => (String(input) === '/repositories/github.com/acme%2Fsite/labels' ? jsonRes({ error: 'boom' }, 502) : jsonRes(ISSUE)));
   renderPage();
   await screen.findByRole('button', { name: 'adicionar label' }); // the page's title and the slot's both read Pager breaks: an issue out of the flow
   await user.click(screen.getByRole('button', { name: 'adicionar label' }));

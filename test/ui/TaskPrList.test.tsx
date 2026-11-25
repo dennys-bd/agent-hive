@@ -19,8 +19,8 @@ const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.str
 const read = (state: PrChecks['state']) => ({ checks: { state, items: [] }, mergeState: 'clean', updatedAt: AT });
 // #7 passes, #9 fails; acme/docs is no listed repository: its checks route answers 404
 const answer = async (input: RequestInfo | URL): Promise<Response> => {
-  if (String(input) === '/repositories/acme/app/pulls/7/checks') return jsonRes(read('success'));
-  if (String(input) === '/repositories/acme/app/pulls/9/checks') return jsonRes(read('failure'));
+  if (String(input) === '/repositories/github.com/acme%2Fapp/pulls/7/checks') return jsonRes(read('success'));
+  if (String(input) === '/repositories/github.com/acme%2Fapp/pulls/9/checks') return jsonRes(read('failure'));
   return jsonRes({ error: 'Not Found' }, 404);
 };
 const fetchMock = vi.fn(answer);
@@ -57,7 +57,7 @@ test('each open PR\'s checks are read once: ✓ in green on success, ✗ in red 
   expect(await within(lines()[2]).findByTitle('checks falharam')).toHaveClass('text-destructive');
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   expect(fetchMock.mock.calls.map(([input]) => String(input)).sort()).toEqual([
-    '/repositories/acme/app/pulls/7/checks', '/repositories/acme/app/pulls/9/checks', '/repositories/acme/docs/pulls/88/checks',
+    '/repositories/github.com/acme%2Fapp/pulls/7/checks', '/repositories/github.com/acme%2Fapp/pulls/9/checks', '/repositories/github.com/acme%2Fdocs/pulls/88/checks',
   ]);
   expect(within(lines()[0]).queryByTitle(/^checks/)).toBeNull();
   expect(within(lines()[3]).queryByTitle(/^checks/)).toBeNull();

@@ -8,6 +8,7 @@ import { TasksEntries } from '@/components/tasks/TasksEntries';
 import { ResizeHandle, SectionAdd, TasksSection } from '@/components/tasks/TasksSection';
 import type { DisplayControls } from '@/hooks/use-flow-view';
 import { centerOfRepo, type TasksNav } from '@/hooks/use-tasks-center';
+import { repoKey } from '../../../repo-host.js';
 import { t } from '@/i18n';
 import { SECTIONS, type SidebarSection, type TasksSidebarView, lastOpen, readTasksSidebar, withResize, withToggle, writeTasksSidebar } from '@/lib/tasks-sidebar';
 
@@ -32,7 +33,7 @@ function sectionsOf({ state, effective, sources, nav, display, onNewFlow }: Task
       title: t('tasks.sidebar.sources'), action: sources.onAdd && <SectionAdd label={t('flow.sources.add')} onClick={sources.onAdd} />,
       body: <FlowSources nav={sources} tasks={state.tasks} selected={center.kind === 'source' ? center.source : undefined} onPick={(source) => show({ kind: 'source', source })} onList={() => show({ kind: 'tasks', view: 'list' })} onOnly={onOnly} />,
     },
-    repos: { title: t('repos.title'), action: <span className="text-muted-foreground">{t('repos.prs')}</span>, body: <FlowRepositories selected={center.kind === 'repo' ? center.repository : undefined} onPick={(repository) => show(centerOfRepo(repository))} /> },
+    repos: { title: t('repos.title'), action: <span className="text-muted-foreground">{t('repos.prs')}</span>, body: <FlowRepositories selected={center.kind === 'repo' ? repoKey(center) : undefined} onPick={(repo) => show(centerOfRepo(repo.host, repo.repository))} /> },
   };
 }
 

@@ -24,7 +24,7 @@ const OTHER: RepoSummary = { ...SITE, repository: 'acme/other', url: 'https://gi
 const EMPTY: RepoPrs = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z', rows: [] };
 const NEW: RepoSummary = { ...SITE, repository: 'acme/new', url: 'https://github.com/acme/new' };
 const UNSYNCED: RepoPrs = { ...EMPTY, syncedAt: null };
-const OPEN_PATH = '/repositories/acme/site/pulls?state=open';
+const OPEN_PATH = '/repositories/github.com/acme%2Fsite/pulls?state=open';
 // #12 is a task of roadmap whose stack is #6 (merged) then #7
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: 'https://github.com/acme/site/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const STACK = [{ url: `${LINK}6`, state: 'merged' as const, slice: { k: 1, type: 'stacked' as const } }, { url: `${LINK}7`, state: 'open' as const, slice: { k: 2, type: 'stacked' as const } }];
@@ -37,10 +37,10 @@ const state: State = {
 const jsonRes = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const answer = async (input: RequestInfo | URL): Promise<Response> => {
   const url = String(input);
-  if (url === '/repositories/acme/site/pulls?state=open') return jsonRes(OPEN);
-  if (url === '/repositories/acme/other/pulls?state=open') return jsonRes(EMPTY);
-  if (url === '/repositories/acme/new/pulls?state=open') return jsonRes(UNSYNCED);
-  return jsonRes(url === '/repositories/acme/site/pulls?state=merged' ? MERGED : { ok: true });
+  if (url === '/repositories/github.com/acme%2Fsite/pulls?state=open') return jsonRes(OPEN);
+  if (url === '/repositories/github.com/acme%2Fother/pulls?state=open') return jsonRes(EMPTY);
+  if (url === '/repositories/github.com/acme%2Fnew/pulls?state=open') return jsonRes(UNSYNCED);
+  return jsonRes(url === '/repositories/github.com/acme%2Fsite/pulls?state=merged' ? MERGED : { ok: true });
 };
 const fetchMock = vi.fn(answer);
 beforeEach(() => {
@@ -58,7 +58,7 @@ const rowOf = (text: string) => within(screen.getByText(text).closest('tr') as H
 test('the list reads the open PRs: the segments, the columns, each cell\'s state and tone, a draft\'s dashes, the stack and the task, the footer (#758)', async () => {
   renderTable();
   expect(await screen.findByText('PR 7')).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/pulls?state=open');
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/pulls?state=open');
   expect(screen.getByRole('radio', { name: 'abertos 3' })).toHaveAttribute('aria-checked', 'true');
   expect(screen.getByRole('radio', { name: 'mergeados' })).toHaveAttribute('aria-checked', 'false');
   expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['PR', 'estado', 'checks', 'review', 'merge', 'pilha', 'tarefa', 'atualizado']);
@@ -103,7 +103,7 @@ test('mergeados reads the merged PRs; past the first 100 the footer says so (#75
   await user.click(screen.getByRole('radio', { name: 'mergeados' }));
   expect(await screen.findByText('PR 5')).toBeInTheDocument();
   expect(rowOf('PR 5').getByText('mergeado')).toHaveClass('text-muted-foreground');
-  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/pulls?state=merged');
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/github.com/acme%2Fsite/pulls?state=merged');
   expect(screen.getByText(/mostrando os primeiros 100/)).toBeInTheDocument();
 });
 

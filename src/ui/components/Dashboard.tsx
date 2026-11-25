@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import type { RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State } from '../../types';
+import { repoKey } from '../../repo-host';
 import { behaviourOf } from '../../signals';
 import { HIVE_SOURCE } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
@@ -79,14 +80,15 @@ type RepoCenter = Extract<TasksCenter, { kind: 'repo' }>;
 // the header; a page's header goes back to its list, a list's to the last flow (#921); #69: a merge goes back to the PR list only while the
 // center is still that PR's page (#921 decision 12)
 function repoCenter(state: State, nav: TasksNav, repo: RepoSummary, center: RepoCenter): ReactNode {
-  const onRepository = (name: string): void => nav.show(centerOfRepo(name));
+  // #854: a fork's original is on its fork's host, GitHub, since forks on GitLab are refused (#1045, decision 5)
+  const onRepository = (name: string): void => nav.show(centerOfRepo(repo.host, name));
   const mode: HeaderMode = { kind: 'repo', header: { summary: repo, tab: center.tab, onTab: nav.onRepoTab, onRepository } };
   const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} mode={mode} onRefresh={reload} back={nav.back} github={github} />;
   const { issue, pr } = center;
-  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={() => nav.onMerged(pr)} />;
-  if (issue) return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onOpenPr={nav.openPrUrl} />;
-  if (center.tab === 'prs') return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} back={nav.back} onOpen={(row) => nav.openPr({ repository: repo.repository, number: row.number })} />;
-  return <RepoIssueTable key={repo.repository} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} back={nav.back} onOpen={(read) => nav.openIssue({ repository: repo.repository, number: read.number })} />;
+  if (pr) return <PrPage key={`${repoKey(pr)}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={nav.goTo} onOpenIssue={nav.openIssueUrl} onOpenPr={nav.openPrUrl} onMerged={() => nav.onMerged(pr)} />;
+  if (issue) return <IssuePage key={`${repoKey(issue)}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onOpenPr={nav.openPrUrl} />;
+  if (center.tab === 'prs') return <RepoPrTable key={repoKey(repo)} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} back={nav.back} onOpen={(row) => nav.openPr({ host: repo.host, repository: repo.repository, number: row.number })} />;
+  return <RepoIssueTable key={repoKey(repo)} state={state} summary={repo} onTab={nav.onRepoTab} onRepository={onRepository} back={nav.back} onOpen={(read) => nav.openIssue({ host: repo.host, repository: repo.repository, number: read.number })} />;
 }
 
 // A source's table (#756, handoff §5), or one of its issues' pages (#757) under the source header
@@ -94,8 +96,8 @@ function sourceCenter(state: State, nav: TasksNav, source: SourceConfig, reposit
   if (!issue) return <ProjectTable state={state} source={source} onGoTo={nav.goTo} onOpenIssue={nav.openProjectItem} back={nav.back} />;
   return (
     <IssuePage
-      key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={source.name}
-      workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
+      key={`${repoKey(issue)}#${issue.number}`} state={state} issue={issue} meta={source.name}
+      workspace={repositories.find((r) => repoKey(r) === repoKey(issue))?.workspace}
       header={(reload, github) => <FlowHeader state={state} mode={{ kind: 'source', source }} onRefresh={reload} back={nav.back} github={github} />}
       onOpenPr={nav.openPrUrl}
     />

@@ -43,9 +43,9 @@ export function useRepoRead<T>(path: string): { data?: T; isLoading: boolean; re
   return { data: held.path === path ? held.data : (cache.get(path) as T | undefined), isLoading, reload };
 }
 
-/** A repository's issues in one state (#757), read again on its repository's issue changes (#182). */
-export function useRepoIssues(repository: string, state: RepoIssues['state']): { issues?: RepoIssues; isLoading: boolean; reload(): Promise<void> } {
-  const { data, isLoading, reload } = useRepoRead<RepoIssues>(`${repoPath(repository)}/issues?state=${state}`);
+/** A repository's issues in one state (#757), read again on its repository's issue changes (#182); under its host (#1045). */
+export function useRepoIssues(host: string, repository: string, state: RepoIssues['state']): { issues?: RepoIssues; isLoading: boolean; reload(): Promise<void> } {
+  const { data, isLoading, reload } = useRepoRead<RepoIssues>(`${repoPath(host, repository)}/issues?state=${state}`);
   useReadModelReload(repository, LIST_KINDS, reload);
   return { issues: data, isLoading, reload };
 }

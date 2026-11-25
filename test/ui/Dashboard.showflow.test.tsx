@@ -36,7 +36,7 @@ const working: State = withPointedWork({ ...state, workers: [WORKER], tasks: [TA
 const jsonRes = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const PRS = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z', rows: [] };
 const EMPTY_VIEW = { statuses: [], fields: [], builtins: {}, truncated: false, items: [] }; // the source tables open directly now (#571)
-const ANSWERS: Record<string, unknown> = { '/repositories': [SITE], '/repositories/acme/site/pulls?state=open': PRS, '/sources/roadmap/project': EMPTY_VIEW, '/sources/other/project': EMPTY_VIEW };
+const ANSWERS: Record<string, unknown> = { '/repositories': [SITE], '/repositories/github.com/acme%2Fsite/pulls?state=open': PRS, '/sources/roadmap/project': EMPTY_VIEW, '/sources/other/project': EMPTY_VIEW };
 const answer = async (input: RequestInfo | URL): Promise<Response> => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true });
 
 beforeEach(() => {

@@ -50,8 +50,8 @@ const state: State = {
 };
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const ANSWERS: Record<string, unknown> = {
-  '/repositories': [SITE], '/repositories/acme/site/issues?state=open': OPEN, '/repositories/acme/site/pulls?state=open': PRS, '/repositories/acme/site/issues/12': PAGE,
-  '/repositories/acme/site/pulls/7': PR_PAGE, '/repositories/acme/site/pulls/7/changes': PR_CHANGES, '/repositories/acme/site/pulls/7/review': { reviewed: [], drafts: [] },
+  '/repositories': [SITE], '/repositories/github.com/acme%2Fsite/issues?state=open': OPEN, '/repositories/github.com/acme%2Fsite/pulls?state=open': PRS, '/repositories/github.com/acme%2Fsite/issues/12': PAGE,
+  '/repositories/github.com/acme%2Fsite/pulls/7': PR_PAGE, '/repositories/github.com/acme%2Fsite/pulls/7/changes': PR_CHANGES, '/repositories/github.com/acme%2Fsite/pulls/7/review': { reviewed: [], drafts: [] },
 };
 const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true });
 const fetchMock = vi.fn(answer);
