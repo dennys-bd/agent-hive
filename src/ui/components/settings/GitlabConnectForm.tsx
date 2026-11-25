@@ -83,7 +83,7 @@ export function GitlabConnectForm({ hosts, onSubmit, onConnected, onClose }: Git
       </div>
       {refusal !== undefined && <FailedLine text={t(GITLAB_REFUSAL_KEY[refusal])} />}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onClose}>{t('settings.accounts.add.cancel')}</Button>
+        <Button type="button" variant="outline" size="sm" disabled={isPending} onClick={onClose}>{t('settings.accounts.add.cancel')}</Button>
         <Button type="submit" size="sm" disabled={isPending}>
           {isPending ? <><Spinner /> {t('settings.accounts.gitlab.connecting')}</> : t('settings.accounts.gitlab.connect')}
         </Button>
