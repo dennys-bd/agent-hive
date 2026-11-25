@@ -22,7 +22,7 @@ function answer(claude: unknown = CLAUDE, github: unknown = GITHUB, replies: Rec
     const reply = replies[`${init?.method ?? 'GET'} ${url}`];
     if (reply !== undefined) return reply();
     if (url.endsWith('/add')) return json({ state: 'idle' });
-    const body = url === '/settings/accounts/claude' ? claude : url === '/settings/github/accounts' ? github : 404;
+    const body = url === '/settings/accounts/claude' ? claude : url === '/settings/github/accounts' ? github : url === '/settings/accounts/gitlab' ? { accounts: [] } : 404;
     return typeof body === 'number' ? json({ error: 'raw route error' }, body) : json(body);
   });
   vi.stubGlobal('fetch', fetch);
@@ -121,7 +121,7 @@ test('until the lists answer, each group shows its machine\'s row on the generic
   expect(names('claude')).toEqual([t('settings.accounts.machine')]);
   expect(names('github')).toEqual([t('settings.accounts.machine'), 'alice']);
   expect(within(group('github')).getByRole('radio', { name: 'alice' })).toBeChecked();
-  expect(screen.getAllByText(t('settings.accounts.loading'))).toHaveLength(3);
+  expect(screen.getAllByText(t('settings.accounts.loading'))).toHaveLength(4); // GitLab's group reads too (#1048)
   expect(screen.queryByText(t('settings.accounts.gone'))).toBeNull();
 });
 
@@ -145,6 +145,7 @@ test('the search lists one entry per group under execução › contas, landing 
     [{ raw: 'claude' }, settingAnchor('settings.accounts', 'claude')],
     [{ raw: 'copilot' }, settingAnchor('settings.accounts', 'copilot')],
     ['settings.accounts.github', settingAnchor('settings.accounts', 'github')],
+    ['settings.accounts.gitlab', settingAnchor('settings.accounts', 'gitlab')],
   ]);
   for (const entry of entries) expect([entry.path, entry.view]).toEqual([['settings.section.execution', 'settings.accounts'], { section: 'execution' }]);
 });
@@ -225,4 +226,15 @@ test('remove is locked, with its hint, on the saved choice and the drafted one, 
 test('a remove route encodes every dot, so a name of . or .. reaches its own route (#965)', () => {
   expect(removeRoute('claude', '..')).toBe('/settings/accounts/claude/%2E%2E');
   expect(removeRoute('github', 'a.b/c')).toBe('/settings/github/accounts/a%2Eb%2Fc');
+});
+
+test('the gitlab group follows github\'s, with no radio group of its own (#1048)', async () => {
+  answer();
+  renderCard();
+  await read();
+  const github = document.getElementById(settingAnchor('settings.accounts', 'github')) as HTMLElement;
+  const gitlab = document.getElementById(settingAnchor('settings.accounts', 'gitlab')) as HTMLElement;
+  expect(github.compareDocumentPosition(gitlab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(within(gitlab).queryByRole('radiogroup')).toBeNull();
+  expect(screen.getAllByRole('radiogroup')).toHaveLength(3);
 });

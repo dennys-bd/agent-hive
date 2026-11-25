@@ -877,3 +877,9 @@ test('the accounts card\'s add and remove read as the handoff writes them, in bo
     '{name} está em uso nas execuções: escolha e salve outra antes de remover', 'não deu para remover {name} agora ·',
   ]);
 });
+
+test('the accounts card\'s GitLab group reads in both languages: rows only, the expiry as the user chose it (#1048)', () => {
+  const keys = ['settings.accounts.gitlab', 'settings.accounts.failed.gitlab', 'settings.accounts.gitlab.expires', 'settings.accounts.gitlab.expired'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['gitlab', 'couldn\'t read the GitLab accounts right now ·', 'expires {date}', 'expired']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['gitlab', 'não deu para ler as contas do GitLab agora ·', 'expira em {date}', 'expirado']);
+});

@@ -2005,6 +2005,11 @@ const en = {
   'settings.accounts.remove.locked': 'chosen for runs · choose and save another before removing it',
   'settings.accounts.remove.inUse': '{name} is in use by runs · choose and save another before removing it',
   'settings.accounts.remove.failed': 'couldn\'t remove {name} right now ·',
+  // #1048: GitLab's group of the accounts card: rows only, no choice
+  'settings.accounts.gitlab': 'gitlab',
+  'settings.accounts.failed.gitlab': 'couldn\'t read the GitLab accounts right now ·', // the raw error stays in the console
+  'settings.accounts.gitlab.expires': 'expires {date}',
+  'settings.accounts.gitlab.expired': 'expired', // on the token's expires_at day too: GitLab stops it at 00:00 UTC
   'settings.agent.offPath': 'not on PATH',
   'settings.agents.error.model': '{agent}: the default model must be a model name',
   'settings.agents.error.claudeModel': '"{model}" is not a {agent} model',
@@ -5656,6 +5661,10 @@ const pt: Record<MessageKey, string> = {
   'settings.accounts.remove.locked': 'escolhida para as execuções · escolha e salve outra antes de remover',
   'settings.accounts.remove.inUse': '{name} está em uso nas execuções: escolha e salve outra antes de remover',
   'settings.accounts.remove.failed': 'não deu para remover {name} agora ·',
+  'settings.accounts.gitlab': 'gitlab',
+  'settings.accounts.failed.gitlab': 'não deu para ler as contas do GitLab agora ·',
+  'settings.accounts.gitlab.expires': 'expira em {date}',
+  'settings.accounts.gitlab.expired': 'expirado',
   'settings.agent.offPath': 'fora do PATH',
   'settings.agents.error.model': '{agent}: o modelo padrão precisa ser um nome de modelo',
   'settings.agents.error.claudeModel': '"{model}" não é um modelo do {agent}',

@@ -27,7 +27,7 @@ function daemon(): Daemon {
       return post ?? json(url === CLAUDE_ADD ? d.claudeAdd : d.githubAdd, 202);
     }
     if (init?.method === 'DELETE') return new Response(null, { status: 204 });
-    const reads: Record<string, unknown> = { '/settings/accounts/claude': { names: d.claude }, '/settings/github/accounts': { logins: d.github }, [CLAUDE_ADD]: d.claudeAdd, [GITHUB_ADD]: d.githubAdd };
+    const reads: Record<string, unknown> = { '/settings/accounts/claude': { names: d.claude }, '/settings/github/accounts': { logins: d.github }, '/settings/accounts/gitlab': { accounts: [] }, [CLAUDE_ADD]: d.claudeAdd, [GITHUB_ADD]: d.githubAdd };
     return reads[url] === undefined ? json({ error: 'raw route error' }, 404) : json(reads[url]);
   }));
   return d;
