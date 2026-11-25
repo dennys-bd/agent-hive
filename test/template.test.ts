@@ -310,6 +310,12 @@ test('the delivered header gains tools: from can: and keeps can:; a written tool
   );
 });
 
+test('a block list or a commented can: is delivered as a one-line flow list, the only form Codex\'s role reader parses (#665)', () => {
+  const expected = '---\nname: reviewer\ndescription: Reviews.\ncan: [read, write]\ntools: Read, Grep, Glob, Write, Edit\n---\n';
+  assert.equal(deliveredHeader(parseTemplate(agentHeader('can:\n  - read\n  - write'))), expected);
+  assert.equal(deliveredHeader(parseTemplate(agentHeader('can: [read, write] # x'))), expected);
+});
+
 test('renderTemplate delivers a plain agent with can: through its header, not byte for byte (#665)', () => {
   assert.deepEqual(renderTemplate(parseTemplate(agentHeader('can: [read]')), at('hive')), {
     ok: true,

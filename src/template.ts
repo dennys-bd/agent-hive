@@ -316,13 +316,17 @@ export function liquidError(err: unknown, bodyLine: number): TemplateError {
 export function deliveredHeader(parsed: ParsedTemplate): string {
   const { text, doc } = parsed[SOURCE];
   const addsTools = needsTools(parsed.header);
-  if (!hasDeclarations(parsed.header) && !addsTools) return text.slice(0, text.length - parsed.body.length);
+  const can = parsed.header.can;
+  if (!hasDeclarations(parsed.header) && !hasCapabilities(parsed.header)) return text.slice(0, text.length - parsed.body.length);
   // the clone, never the parse: the same parse renders every workspace
   const delivered = doc.clone();
   delivered.delete('variables');
   delivered.delete('basedOn');
   // #665: Claude Code and Copilot read tools:, Codex's role reads can:, so the delivered file carries both
-  if (addsTools) delivered.set('tools', toolsLine(Array.isArray(parsed.header.can) ? parsed.header.can : []));
+  // can: rewritten as a one-line flow list with no comment: Codex's reader parses that one line, so a block list or a trailing # comment
+  // would read as no writing capability while Claude got the write tools
+  if (Array.isArray(can)) delivered.set('can', delivered.createNode(can, { flow: true }));
+  if (addsTools) delivered.set('tools', toolsLine(Array.isArray(can) ? can : []));
   if (!isMap(delivered.contents) || delivered.contents.items.length === 0) return '';
   // lineWidth 0: yaml would otherwise refold long values at 80 columns; no flow padding: can: [read] stays on the one line Codex's reader
   // parses, as written; the line ending follows the source's
