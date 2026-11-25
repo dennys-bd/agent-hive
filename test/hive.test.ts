@@ -450,6 +450,18 @@ test('a hive.config.json without trustedDomains opens setup mode with the parse 
   await assert.rejects(bootHive(wrong.home), { message: 'hive.config.json: "trustedDomains" holds "https://github.com", which is not a host name (like github.com: no scheme, port, path or *)' }, 'a key that is there but wrong is no file from before the key');
 });
 
+test('a hive.config.json without gitlabHosts opens setup mode with the parse error, prefilled with []; github.com in it still fails the boot (#1044)', async (t) => {
+  const { home } = await hiveWithConfig(t, { prefix: 'OLD', gitlabHosts: undefined });
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const info = await settingsInfo(home, port);
+  assert.equal(info.configured, false);
+  assert.equal(info.error, 'hive.config.json: "gitlabHosts" must be an array of host names ([] = only gitlab.com)');
+  assert.deepEqual([info.config?.comb.prefix, info.config?.gitlabHosts], ['OLD', []], 'the rest of the file, the form default for the list');
+  const wrong = await hiveWithConfig(t, { gitlabHosts: ['github.com'] });
+  await assert.rejects(bootHive(wrong.home), { message: 'hive.config.json: "gitlabHosts" holds "github.com", which is GitHub, not a GitLab host' }, 'a key that is there but wrong is no file from before the key');
+});
+
 test('a hive.config.json without shortcuts opens setup mode with the parse error, prefilled with {}; a binding that is not one still fails the boot (#449)', async (t) => {
   const { home } = await hiveWithConfig(t, { prefix: 'OLD', shortcuts: undefined });
   const { server, port } = await bootHive(home);

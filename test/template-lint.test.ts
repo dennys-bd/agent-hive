@@ -268,3 +268,7 @@ test('a template reading fork.pr, baseBranch or nestedRepos without declaring th
   assert.deepEqual(lint([], ['{% if fork %}{{ fork.pr }}{% endif %} {{ baseBranch }} {{ nestedRepos | join: ", " }}']), []);
   assert.deepEqual(lint(['variables:', '  fork: { default: x }'], ['{{ fork }}']), ['4 red parse variable "fork": fork is built in and cannot be declared']);
 });
+
+test('a template reading gitlabHosts without declaring it has no undeclared finding (#1044, decision 11)', () => {
+  assert.deepEqual(lint([], ['{% if gitlabHosts contains "git.example.com" %}listed{% endif %}']), []);
+});

@@ -105,7 +105,7 @@ async function renderedHome(t: TestContext): Promise<{ render: PluginRender; wor
   });
   const workspaces = [{ name: 'a', path: repo, variables: {}, fork: null, nestedRepos: [] }, { name: 'b', path: repo, variables: {}, fork: null, nestedRepos: [] }];
   const render = createPluginRender({ home, pluginSource: pluginSource(), log: { error: () => undefined }, env: { CODEX_HOME: codex } });
-  await render.write({ comb: { workspaces } });
+  await render.write({ gitlabHosts: [], comb: { workspaces } });
   return { render, workspaces };
 }
 

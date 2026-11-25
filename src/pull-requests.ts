@@ -1,5 +1,6 @@
 import type { Correlation, RecordInput } from './facts.js';
 import type { ActivityRecord, PrState, SliceDelivery, TaskPr } from './types.js';
+import { buildPrLink, GITHUB_HOST, parsePrLink } from './repo-host.js';
 
 export const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
 
@@ -171,8 +172,16 @@ export function withPrStates(records: ActivityRecord[], states: TaskPr[]): Activ
   });
 }
 
-/** The PR's number, read off its link on display (#207), never stored: the link already holds it. The whole link if it has none. */
-export const prNumber = (url: string): string => /\/pull\/(\d+)/.exec(url)?.[1] ?? url;
+// A GitHub link with a tail (…/pull/N/files) still reads as before #1044: parsePrLink is anchored, these two are not
+const PULL_NUMBER = /\/pull\/(\d+)/;
+const PULL_REPO = /github\.com\/([^/]+\/[^/]+)\/pull\//;
+
+/** The PR's number, read off its link on display (#207), never stored: the link already holds it, a GitLab MR's iid too (#1044). The whole
+ * link if it has none. */
+export const prNumber = (url: string): string => {
+  const link = parsePrLink(url);
+  return link === undefined ? (PULL_NUMBER.exec(url)?.[1] ?? url) : String(link.number);
+};
 
 /** A PR's line in its group (#698), derived on display: its slice's place among the group's slices, and the PR it targets when that is a PR. */
 export interface PrLine { pr: TaskPr; position?: { k: number; total: number }; base?: string }
@@ -181,11 +190,12 @@ export interface PrLine { pr: TaskPr; position?: { k: number; total: number }; b
  * count its slices only; own marks the task's repository. */
 export interface PrGroup { repo: string; type?: SliceDelivery; lines: PrLine[]; merged: number; slices: number; own: boolean }
 
-/** owner/name off a PR link (#698): never sent, the link already holds it. */
-export const prRepo = (url: string): string => /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1] ?? url;
+/** owner/name off a PR link (#698), a GitLab MR's full path (#1044): never sent, the link already holds it. */
+export const prRepo = (url: string): string => parsePrLink(url)?.repository ?? PULL_REPO.exec(url)?.[1] ?? url;
 
-/** A PR's link from its repository and number (#758): what the routes name a PR by, and the review file's key. */
-export const prLink = (repository: string, number: number): string => `https://github.com/${repository}/pull/${number}`;
+/** A PR's link from its repository and number (#758): what the routes name a PR by, and the review file's key. GitHub's until the shapes
+ * carry a host (#1045). */
+export const prLink = (repository: string, number: number): string => buildPrLink({ host: GITHUB_HOST, repository, number });
 
 /** The repository's name without its owner (#698): what the details panel, the flow line and the picker show. */
 export const repoName = (repo: string): string => repo.split('/').at(-1) ?? repo;

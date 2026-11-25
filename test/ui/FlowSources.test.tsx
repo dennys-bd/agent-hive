@@ -35,7 +35,7 @@ const info: SettingsInfo = {
       flows: [{ name: 'main', stages: [{ name: 'fila', from: { board: ['Ready'], core: ['Ready'] } }], transitions: [] }], commands: [],
     },
     logLevel: 'info', agentArgs: { claude: [], codex: [], copilot: [] }, agentModels: { claude: null, codex: null, copilot: null }, agentEnabled: { claude: true, codex: true, copilot: false }, budget: {}, usageRules: [], commandSemaphores: [], accounts: {},
-    onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
+    onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], gitlabHosts: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, reviewer: REVIEWER_DEFAULTS, mcp: MCP_DEFAULTS,
   },
 };
 
@@ -77,6 +77,9 @@ test('sources lists one row per source with its badge and summary (#514)', async
   const order = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
   expect(order.indexOf(t('settings.sources'))).toBeLessThan(order.indexOf(t('settings.connections')));
   expect(order.indexOf(t('settings.connections'))).toBeLessThan(order.indexOf(t('settings.stages')));
+  // #1044: the GitLab hosts card sits right under the connections, with or without a GitLab source
+  expect(order.indexOf(t('settings.connections'))).toBeLessThan(order.indexOf(t('settings.gitlabHosts')));
+  expect(order.indexOf(t('settings.gitlabHosts'))).toBeLessThan(order.indexOf(t('settings.stages')));
 
   // #513/#524: the group hint sits beside its h2, as a sibling span, not stacked under it.
   const sourcesHeading = screen.getByRole('heading', { level: 2, name: t('settings.sources') });

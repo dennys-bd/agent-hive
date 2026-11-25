@@ -1,6 +1,7 @@
 import { type ComponentProps, useEffect, useState } from 'react';
 import { ConnectionsGroup } from '@/components/settings/ConnectionsGroup';
 import { FlowRow } from '@/components/settings/FlowRow';
+import { GitlabHostsGroup } from '@/components/settings/GitlabHostsGroup';
 import { SourcesGroup } from '@/components/settings/SourcesGroup';
 import { StageEditor, type StageFocus, type TransitionFocus } from '@/components/settings/StageEditor';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
@@ -25,7 +26,7 @@ export interface CombTabProps {
   flowTasks(id: string): number; // #565: a draft flow's saved tasks
 }
 
-// Settings › fluxo's list page (#514): sources first (the local source, then the sources), then how the Hive reaches GitHub and the stages (#515 reworks those, #524 the local row).
+// Settings › fluxo's list page (#514): sources first (the local source, then the sources), then how the Hive reaches GitHub, the GitLab hosts (#1044) and the stages (#515 reworks those, #524 the local row).
 export function CombTab({ draft, options, githubProjects, github, agents, launchWorkspace, focus, stage, newFlow, flowTasks, onChange, onConnectGithub, onEditSource, onAddSource, onOpenRules }: CombTabProps) {
   const launchOptions = useLaunchOptions(launchWorkspace);
   const githubSources = draft.sources.filter((b) => b.type === 'github');
@@ -47,6 +48,7 @@ export function CombTab({ draft, options, githubProjects, github, agents, launch
           onConnect: onConnectGithub, onAuthChange: (auth: GithubAuth) => onChange({ auth }), onOpenQuota: onOpenRules,
         } : undefined}
       />
+      <GitlabHostsGroup hosts={draft.gitlabHosts} onChange={(gitlabHosts) => onChange({ gitlabHosts })} />
       {/* (#515, #134, #887, #565) the stages card, over the open flow: StageEditor owns it, since its header's + etapa and + transição act on its selection */}
       <FlowStages
         draft={draft} newFlow={newFlow} flowTasks={flowTasks} stage={stage} focus={focus} onChange={onChange}

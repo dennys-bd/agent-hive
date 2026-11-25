@@ -4,6 +4,7 @@
 import { Liquid, LiquidError } from 'liquidjs';
 import { type Document, isMap, isNode, isScalar, LineCounter, type Pair, parseDocument, type YAMLError } from 'yaml';
 import type { BuiltIns, VariableValue, Workspace } from './types.js';
+import { GITLAB_HOST } from './repo-host.js';
 
 // #621: the config holds it now; template-edit.ts and the editor still import it from here
 export type { BuiltIns, VariableValue };
@@ -53,12 +54,12 @@ export type RenderResult = { ok: true; text: string } | { ok: false; errors: Tem
 const FENCE = '---';
 const HEADER_FIRST_LINE = 2; // the header starts right under the opening fence
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-/** The names the Hive renders into every template (#742, decision 6): their one source is the config, so a declaration or a workspace value
- * under one of them would shadow it. */
-export const BUILT_INS = ['workspace', 'fork', 'baseBranch', 'nestedRepos'] as const;
+/** The names the Hive renders into every template (#742, decision 6; gitlabHosts #1044): their one source is the config, so a declaration or a
+ * workspace value under one of them would shadow it. */
+export const BUILT_INS = ['workspace', 'fork', 'baseBranch', 'nestedRepos', 'gitlabHosts'] as const;
 const isBuiltIn = (name: string): boolean => (BUILT_INS as readonly string[]).includes(name);
-/** A render no workspace owns (#742, decision 7): no fork, no base branch, no nested repo. */
-export const NO_BUILT_INS: BuiltIns = { fork: null, baseBranch: null, nestedRepos: [] };
+/** A render no workspace owns (#742, decision 7): no fork, no base branch, no nested repo; gitlab.com is GitLab for every render (#1044). */
+export const NO_BUILT_INS: BuiltIns = { fork: null, baseBranch: null, nestedRepos: [], gitlabHosts: [GITLAB_HOST] };
 const DECLARATION_KEYS = ['type', 'values', 'default', 'required', 'workspaces'];
 const BASED_ON_KEYS = ['name', 'repo', 'ref', 'license', 'url'];
 const YAML_POSITION = / at line \d+, column \d+:?$/;

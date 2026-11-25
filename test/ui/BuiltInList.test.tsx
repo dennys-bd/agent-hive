@@ -6,7 +6,7 @@ import { BuiltInList } from '@/components/plugins/BuiltInList';
 import { setLanguage } from '@/i18n';
 
 const BUILT_INS: WorkspaceBuiltIns = {
-  'agent-hive': { fork: { remote: 'upstream', pr: 'original', baseRemote: 'upstream' }, baseBranch: 'develop', nestedRepos: ['docs', 'site'] },
+  'agent-hive': { fork: { remote: 'upstream', pr: 'original', baseRemote: 'upstream' }, baseBranch: 'develop', nestedRepos: ['docs', 'site'], gitlabHosts: ['gitlab.com', 'git.example.com'] },
   'hive-site': NO_BUILT_INS,
 };
 const WORKSPACES = ['agent-hive', 'hive-site'];
@@ -18,7 +18,7 @@ beforeEach(() => setLanguage('en'));
 test('one read-only card per built-in, in the template order, under a built-in region (#742)', () => {
   show();
   const region = screen.getByRole('region', { name: 'built-in' });
-  expect(within(region).getAllByRole('listitem').map((li) => li.getAttribute('aria-label'))).toEqual(['workspace', 'fork', 'baseBranch', 'nestedRepos']);
+  expect(within(region).getAllByRole('listitem').map((li) => li.getAttribute('aria-label'))).toEqual(['workspace', 'fork', 'baseBranch', 'nestedRepos', 'gitlabHosts']);
   for (const role of ['button', 'textbox', 'combobox', 'switch']) expect(within(region).queryAllByRole(role)).toEqual([]);
   expect(within(region).getByText(/never declares them/)).toBeInTheDocument();
 });
@@ -35,6 +35,9 @@ test('each workspace line shows its value, and absence reads as words in the san
   expect(within(card('baseBranch')).getByTitle('baseBranch · hive-site')).toHaveTextContent('none');
   expect(within(card('nestedRepos')).getByTitle('nestedRepos · agent-hive')).toHaveTextContent('docs, site');
   expect(within(card('nestedRepos')).getByTitle('nestedRepos · hive-site')).toHaveTextContent('none');
+  expect(within(card('gitlabHosts')).getByTitle('gitlabHosts · agent-hive')).toHaveTextContent('gitlab.com, git.example.com');
+  expect(within(card('gitlabHosts')).getByTitle('gitlabHosts · agent-hive')).toHaveClass('font-mono');
+  expect(within(card('gitlabHosts')).getByTitle('gitlabHosts · hive-site')).toHaveTextContent('gitlab.com'); // #1044: never empty, so no "none"
 });
 
 test('the fork line says where the PRs go for each target (#742)', () => {

@@ -14,7 +14,7 @@ export interface SettingsView { section: SettingsSection; source?: string; langu
 // A Record over every draft key: a new SettingsDraft field fails tsc until it is given a section.
 export const SECTION_OF: Record<keyof SettingsDraft, FormSection> = {
   workspaces: 'workspaces', commands: 'workspaces', commandSemaphores: 'rules', // #803: the card lives in rules
-  prefix: 'flow', hiveSource: 'flow', createIn: 'flow', sources: 'flow', auth: 'flow', flows: 'flow', stages: 'flow', transitions: 'flow',
+  prefix: 'flow', hiveSource: 'flow', createIn: 'flow', sources: 'flow', auth: 'flow', flows: 'flow', stages: 'flow', transitions: 'flow', gitlabHosts: 'flow', // #1044: the card under the connections
   defaultAgent: 'execution', agentArgs: 'execution', agentModels: 'execution', agentEnabled: 'execution',branch: 'execution', baseBranch: 'execution', approvalMinutes: 'execution', rateLimitWaitMinutes: 'execution', shutdownIdleMinutes: 'execution', deleteActivity: 'execution',
   closeSessionTab: 'execution', closeStageTab: 'execution', closeSessionTabNotice: 'execution', closeStageTabNotice: 'execution', // #614
   closeTerminalTab: 'execution', closeTerminalTabNotice: 'execution', // #696

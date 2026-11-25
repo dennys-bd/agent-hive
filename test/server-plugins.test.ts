@@ -22,7 +22,7 @@ async function serve(t: TestContext, f: Fixture, stages: Stage[] = [], variables
   const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined, log });
   const workspaces = f.workspaces.map((w) => ({ ...w, variables: variables[w.name] ?? {}, fork: null, nestedRepos: [], ...settings[w.name] }));
   registerPluginRoutes(app, {
-    requireLive: () => ({ runtime: { config: { baseBranch: 'main', comb: { workspaces, flows: [{ stages }] } } } }),
+    requireLive: () => ({ runtime: { config: { baseBranch: 'main', gitlabHosts: ['git.example.com'], comb: { workspaces, flows: [{ stages }] } } } }),
     store,
     home: f.home,
     pluginSource: f.pluginSource,
@@ -212,7 +212,7 @@ test("GET /api/lint-input answers each workspace's built-ins from its Settings: 
   const [status, body] = await call(base, 'GET', '/api/lint-input');
   assert.equal(status, 200);
   assert.deepEqual((body as LintInputRead).builtIns, {
-    'agent-hive': { fork: { remote: 'upstream', pr: 'fork', baseRemote: 'origin' }, baseBranch: 'devtest', nestedRepos: ['docs'] },
-    'hive-site': { fork: null, baseBranch: 'main', nestedRepos: [] },
+    'agent-hive': { fork: { remote: 'upstream', pr: 'fork', baseRemote: 'origin' }, baseBranch: 'devtest', nestedRepos: ['docs'], gitlabHosts: ['gitlab.com', 'git.example.com'] },
+    'hive-site': { fork: null, baseBranch: 'main', nestedRepos: [], gitlabHosts: ['gitlab.com', 'git.example.com'] },
   });
 });

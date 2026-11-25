@@ -71,8 +71,9 @@ export function extractPrUrl(command: string, response: unknown): string | undef
   return text.match(PR_URL)?.[0];
 }
 
-/** hive_pr's url: exactly a GitHub pull request link, the shape the gh pr create detection accepts. */
-export const isPrUrl = (url: string): boolean => new RegExp(`^${PR_URL.source}$`).test(url);
+// hive_pr's url, create-task's pr and the state guards' links (#1044): repo-host.ts owns the shape; extractPrUrl's PR_URL stays GitHub's,
+// since detecting glab mr create is #1052's
+export { isPrUrl } from './repo-host.js';
 
 /** Any local process can hit /hooks/event and the id reaches the panel and the log: only a plain id of a sane length is kept. */
 export function isSessionId(value: unknown): value is string {

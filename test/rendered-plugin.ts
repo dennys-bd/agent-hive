@@ -10,7 +10,7 @@ export async function renderedPlugin(t: AfterHost, workspace = 'a'): Promise<str
   const home = await tempDir(t, 'rendered-');
   const errors: string[] = [];
   const render = createPluginRender({ home, pluginSource: pluginSource(), log: { error: (line) => errors.push(line) }, env: { CODEX_HOME: join(home, 'codex') } });
-  await render.write({ comb: { workspaces: [{ name: workspace, path: home, variables: {}, fork: null, nestedRepos: [] }] } });
+  await render.write({ gitlabHosts: [], comb: { workspaces: [{ name: workspace, path: home, variables: {}, fork: null, nestedRepos: [] }] } });
   if (errors.length > 0) throw new Error(errors.join('\n'));
   return render.dir(workspace);
 }

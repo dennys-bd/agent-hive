@@ -33,7 +33,7 @@ const MCP_STAGES = [...STAGES, { name: 'later', from: {} }];
 const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY],
   flows: bodyFlows(MCP_STAGES), onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
-  shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [], commandSemaphores: [],
+  shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], gitlabHosts: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [], commandSemaphores: [],
 };
 const EVENT_TYPES = ['done', 'pr', 'ask', 'createTask', 'stop'];
 
@@ -129,6 +129,7 @@ test('each invalid input gets a tool error with its reason and dispatches nothin
   await refused('hive_pr', { url: 'http://github.com/acme/r/pull/9' }, /https/);
   await refused('hive_pr', { url: 'not a url' }, /https/);
   await refused('hive_pr', { url: 'https://evil.example/acme/r/pull/9' }, /pull request URL/);
+  await refused('hive_pr', { url: 'https://gitlab.com/acme/r/-/merge_requests/9' }, /pull request URL/); // #1044: GitHub only until the host check lands
   await refused('hive_ask', { question: '   ' }, /1 to 2000/);
   await refused('hive_ask', { question: 'x'.repeat(2001) }, /1 to 2000/);
   await refused('hive_create_task', { title: ' ' }, /título obrigatório/);

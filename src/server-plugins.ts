@@ -48,7 +48,7 @@ const MAX_KEY_LENGTH = 4096; // a key ends with its line's text, so it is as lon
 const DISMISSED = z.object({ version: z.string().nullable(), keys: z.array(z.string().max(MAX_KEY_LENGTH)).max(MAX_DISMISSED) });
 
 export interface PluginRouteDeps {
-  requireLive(res: Response): { runtime: { config: { baseBranch?: string; comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>[]; flows: readonly { stages: readonly StageRef[] }[] } } } } | undefined;
+  requireLive(res: Response): { runtime: { config: { baseBranch?: string; gitlabHosts: string[]; comb: { workspaces: readonly Pick<Workspace, 'name' | 'path' | 'variables' | 'fork' | 'baseBranch' | 'nestedRepos'>[]; flows: readonly { stages: readonly StageRef[] }[] } } } } | undefined;
   store: CustomStore;
   home: string;
   pluginSource: string;

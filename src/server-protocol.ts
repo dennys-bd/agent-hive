@@ -24,7 +24,7 @@ export const TEXT_MESSAGE = 'text must be a string';
 const DISK_MESSAGE = 'the passages cannot be read or written';
 
 export interface ProtocolRouteDeps {
-  requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'mcp' | 'baseBranch'> } } | undefined;
+  requireLive(res: Response): { runtime: { config: Pick<Config, 'comb' | 'mcp' | 'baseBranch' | 'gitlabHosts'> } } | undefined;
   /** Runs `job` on the POST /settings chain: a save in flight has set live before the rewrite reads its mcp.off. */
   queueSave(job: () => Promise<void>): Promise<void>;
   passages: PassageStore;
@@ -52,7 +52,7 @@ async function guarded(deps: ProtocolRouteDeps, res: Response, job: () => Promis
 }
 
 // The blocks as the screen strikes them through (#337), and each passage with the workspaces where its render fails
-function protocolView(passages: readonly Passage[], config: Pick<Config, 'comb' | 'mcp' | 'baseBranch'>): ProtocolView {
+function protocolView(passages: readonly Passage[], config: Pick<Config, 'comb' | 'mcp' | 'baseBranch' | 'gitlabHosts'>): ProtocolView {
   const { off } = config.mcp;
   const renders = config.comb.workspaces.map((workspace) => [workspace.name, renderPassages(passages, renderWorkspaceOf(config, workspace))] as const);
   return {

@@ -1004,6 +1004,10 @@ const en = {
   'settings.trustedDomains.hint': 'links to these hosts and their subdomains open without asking',
   'settings.trustedDomains.add': 'add host',
   'settings.trustedDomains.remove': 'remove {host}',
+  'settings.gitlabHosts': 'GitLab hosts', // #1044
+  'settings.gitlabHosts.hint': 'self-hosted GitLab servers · gitlab.com always is one',
+  'settings.gitlabHosts.add': 'add GitLab host',
+  'settings.gitlabHosts.remove': 'remove {host}',
   'settings.branch': 'branch name for each task',
   'settings.baseBranch': 'base branch',
   'settings.baseBranch.auto': "the base repository's default",
@@ -1344,6 +1348,7 @@ const en = {
   'settings.error.format.command': '{language}: custom formatter {n} needs a command line',
   'settings.error.format.extensions': '{language}: custom formatter {n} needs one or more extensions, each with its dot (.sql)',
   'settings.error.trustedDomain': 'trusted domains: {host} is not a host (like github.com, without https://, a port, a path or *)', // #404
+  'settings.error.gitlabHost': 'GitLab hosts: {host} is not a GitLab host (like git.example.com, without https://, a port, a path or *; github.com is GitHub)', // #1044
   'settings.error.shortcutCollision': 'shortcuts: {a} and {b} use the same keys', // #449
   'settings.error.shortcutFixed': 'shortcuts: {name} uses the keys of {fixed}, which never change', // #585
   'settings.error.shortcutReserved': 'shortcuts: {name} uses keys the menus keep (copy, paste, undo, quit…)',
@@ -2683,7 +2688,7 @@ const en = {
   // #321: the variables pane
   'plugins.variables.error.undeclared': 'that variable is no longer declared',
   'plugins.variables.error.taken': 'that name is already declared',
-  'plugins.variables.error.badName': 'a name is a letter or _ followed by letters, digits or _, and not a built-in (workspace, fork, baseBranch, nestedRepos)',
+  'plugins.variables.error.badName': 'a name is a letter or _ followed by letters, digits or _, and not a built-in (workspace, fork, baseBranch, nestedRepos, gitlabHosts)',
   'plugins.variables.error.invalid': 'the header does not accept that declaration',
   'plugins.builtIns.title': 'built-in',
   'plugins.builtIns.hint': "they come from each workspace's Settings. a template reads them, never declares them.",
@@ -2691,6 +2696,7 @@ const en = {
   'plugins.builtIns.fork.what': 'the original and where the PRs go',
   'plugins.builtIns.baseBranch.what': "the workspace's base branch, else the general one",
   'plugins.builtIns.nestedRepos.what': "the nested repos' paths",
+  'plugins.builtIns.gitlabHosts.what': 'gitlab.com and the GitLab hosts of Settings', // #1044
   'plugins.builtIns.fork.none': 'not a fork',
   'plugins.builtIns.fork.original': '{remote} · PRs to the original',
   'plugins.builtIns.fork.fork': '{remote} · PRs to the fork',
@@ -4652,6 +4658,10 @@ const pt: Record<MessageKey, string> = {
   'settings.trustedDomains.hint': 'links para esses hosts e subdomínios abrem sem perguntar',
   'settings.trustedDomains.add': 'adicionar host',
   'settings.trustedDomains.remove': 'remover {host}',
+  'settings.gitlabHosts': 'hosts GitLab',
+  'settings.gitlabHosts.hint': 'servidores GitLab próprios · gitlab.com sempre é um',
+  'settings.gitlabHosts.add': 'adicionar host GitLab',
+  'settings.gitlabHosts.remove': 'remover {host}',
   'settings.branch': 'nome da branch de cada tarefa',
   'settings.baseBranch': 'branch base',
   'settings.baseBranch.auto': 'a padrão do repositório base',
@@ -4992,6 +5002,7 @@ const pt: Record<MessageKey, string> = {
   'settings.error.format.command': '{language}: o formatador personalizado {n} precisa de uma linha de comando',
   'settings.error.format.extensions': '{language}: o formatador personalizado {n} precisa de uma ou mais extensões, cada uma com seu ponto (.sql)',
   'settings.error.trustedDomain': 'domínios confiáveis: {host} não é um host (como github.com, sem https://, porta, caminho ou *)',
+  'settings.error.gitlabHost': 'hosts GitLab: {host} não é um host GitLab (como git.example.com, sem https://, porta, caminho ou *; github.com é o GitHub)',
   'settings.error.shortcutCollision': 'atalhos: {a} e {b} usam as mesmas teclas',
   'settings.error.shortcutFixed': 'atalhos: {name} usa as teclas de {fixed}, que não mudam',
   'settings.error.shortcutReserved': 'atalhos: {name} usa teclas reservadas pelos menus (copiar, colar, desfazer, sair…)',
@@ -6327,7 +6338,7 @@ const pt: Record<MessageKey, string> = {
   // #321: the variables pane
   'plugins.variables.error.undeclared': 'essa variável não está mais declarada',
   'plugins.variables.error.taken': 'esse nome já está declarado',
-  'plugins.variables.error.badName': 'um nome é uma letra ou _ seguida de letras, dígitos ou _, e não uma embutida (workspace, fork, baseBranch, nestedRepos)',
+  'plugins.variables.error.badName': 'um nome é uma letra ou _ seguida de letras, dígitos ou _, e não uma embutida (workspace, fork, baseBranch, nestedRepos, gitlabHosts)',
   'plugins.variables.error.invalid': 'o cabeçalho não aceita essa declaração',
   'plugins.builtIns.title': 'embutidas',
   'plugins.builtIns.hint': 'vêm das configurações de cada workspace. um template as lê, nunca as declara.',
@@ -6335,6 +6346,7 @@ const pt: Record<MessageKey, string> = {
   'plugins.builtIns.fork.what': 'o original e para onde vão os PRs',
   'plugins.builtIns.baseBranch.what': 'a branch base do workspace, senão a geral',
   'plugins.builtIns.nestedRepos.what': 'os caminhos dos repos aninhados',
+  'plugins.builtIns.gitlabHosts.what': 'gitlab.com e os hosts GitLab das configurações',
   'plugins.builtIns.fork.none': 'não é fork',
   'plugins.builtIns.fork.original': '{remote} · PRs ao original',
   'plugins.builtIns.fork.fork': '{remote} · PRs à fork',

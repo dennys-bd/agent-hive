@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { taskOfPr } from './activities.js';
-import { isPrUrl } from './orchestrator.js';
+import { isGithubPrUrl } from './repo-host.js';
 import type { Logger } from './log.js';
 import { canCreate, hasIssueTypes, sourceTypeName, type CanCreate } from './create-in.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
@@ -119,7 +119,7 @@ export async function createTask(deps: CreateDeps, body: unknown): Promise<Creat
 // hive_pr accepts it; one task per PR, as origin is for an issue. The record id is drawn here so the reducer stays pure. Nothing reaches GitHub.
 async function createFromPr(deps: CreateDeps, body: Record<string, unknown>, source: unknown, pr: unknown): Promise<Created | Refusal> {
   if (source !== undefined && source !== HIVE_SOURCE) return { status: HTTP_BAD_REQUEST, message: PR_HIVE_ONLY_MESSAGE };
-  if (typeof pr !== 'string' || !isPrUrl(pr)) return { status: HTTP_BAD_REQUEST, message: PR_URL_MESSAGE };
+  if (typeof pr !== 'string' || !isGithubPrUrl(pr)) return { status: HTTP_BAD_REQUEST, message: PR_URL_MESSAGE };
   if (taskOfPr(deps.state, pr) !== undefined) return { status: HTTP_CONFLICT, message: PR_TAKEN_MESSAGE };
   return createInHive(deps, { ...body, url: body.url ?? pr }, { url: pr, recordId: randomUUID() });
 }

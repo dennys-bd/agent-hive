@@ -397,6 +397,18 @@ test('parseConfig requires trustedDomains, an array of bare hosts, trimmed, lowe
   assert.throws(() => parseConfig({ ...GITHUB, trustedDomains: [' HTTPS://GitHub.com '] }), { message: notHost('https://github.com') }, 'named as normalized');
 });
 
+test('parseConfig requires gitlabHosts, an array of bare hosts, trimmed, lowercased, without duplicates and without gitlab.com; github.com is refused (#1044, decisions 8, 9)', () => {
+  assert.deepEqual(parseConfig(GITHUB).gitlabHosts, [], 'what combConfig writes: the form default');
+  assert.deepEqual(parseConfig({ ...GITHUB, gitlabHosts: [' Git.Example.com ', 'code.example.org', 'git.example.com', 'GitLab.com'] }).gitlabHosts, ['git.example.com', 'code.example.org']);
+  const missing = 'hive.config.json: "gitlabHosts" must be an array of host names ([] = only gitlab.com)';
+  for (const bad of [undefined, null, 'git.example.com', {}, ['git.example.com', 1]]) assert.throws(() => parseConfig({ ...GITHUB, gitlabHosts: bad }), { message: missing }, JSON.stringify(bad));
+  const notHost = (entry: string): string => `hive.config.json: "gitlabHosts" holds "${entry}", which is not a host name (like git.example.com: no scheme, port, path or *)`;
+  for (const bad of ['https://git.example.com', 'git.example.com:8443', 'git.example.com/group', '*.example.com', '']) {
+    assert.throws(() => parseConfig({ ...GITHUB, gitlabHosts: ['git.example.com', bad] }), { message: notHost(bad) }, bad);
+  }
+  assert.throws(() => parseConfig({ ...GITHUB, gitlabHosts: ['git.example.com', ' GitHub.com '] }), { message: 'hive.config.json: "gitlabHosts" holds "github.com", which is GitHub, not a GitLab host' });
+});
+
 test('parseConfig requires shortcuts, the user\'s changes only: a binding stored normalized or null for off; an unknown id, a bad binding, a collision and a reserved key are refused by name (#449); Cmd+, Shift+Enter and Escape are fixed keys (#481)', () => {
   assert.deepEqual(parseConfig(GITHUB).shortcuts, {}, 'what combConfig writes: every default');
   assert.deepEqual(parseConfig({ ...GITHUB, shortcuts: { toggleRight: 'Shift+CmdOrCtrl+y', clear: null } }).shortcuts, { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null });
@@ -979,7 +991,7 @@ test('parseConfig requires each workspace\'s variables: a name a template can de
   assert.throws(() => parseConfig(github({ workspaces: [without] })), shape, 'missing');
   for (const bad of [null, [], 'x']) assert.throws(() => parseConfig(withVariables(bad)), shape, JSON.stringify(bad));
   for (const name of ['2fast', 'a-b', 'workspace', 'fork']) {
-    assert.throws(() => parseConfig(withVariables({ [name]: 'x' })), { message: `hive.config.json: "comb.workspaces[0].variables.${name}" is not a variable name: a letter or _ followed by letters, digits or _, and never a built-in: workspace, fork, baseBranch, nestedRepos` }, name);
+    assert.throws(() => parseConfig(withVariables({ [name]: 'x' })), { message: `hive.config.json: "comb.workspaces[0].variables.${name}" is not a variable name: a letter or _ followed by letters, digits or _, and never a built-in: workspace, fork, baseBranch, nestedRepos, gitlabHosts` }, name);
   }
   for (const value of [3, ['x'], { a: 'b' }]) {
     assert.throws(() => parseConfig(withVariables({ specsDir: value })), { message: 'hive.config.json: "comb.workspaces[0].variables.specsDir" must be a string, true, false or null' }, JSON.stringify(value));

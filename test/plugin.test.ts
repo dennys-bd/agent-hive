@@ -411,7 +411,7 @@ test('/hive:new-pr declares its own variables, interpolated where used, and read
 });
 
 // #742: what hive_conventions answered, now the render's built-ins
-const FORK_ASK: BuiltIns = { fork: { remote: 'upstream', pr: 'ask', baseRemote: 'upstream' }, baseBranch: null, nestedRepos: [] };
+const FORK_ASK: BuiltIns = { fork: { remote: 'upstream', pr: 'ask', baseRemote: 'upstream' }, baseBranch: null, nestedRepos: [], gitlabHosts: ['gitlab.com'] };
 const flatOf = (text: string): string => text.replace(/\s+/g, ' ');
 
 test('/hive:new-pr rendered for a fork reads its remotes from git and carries its target, pr ask asks; a plain workspace carries none of it (#742, decisions 3, 5, 8)', async () => {

@@ -83,6 +83,7 @@
   "consoleLines": 5000,
   "commandSemaphores": [],
   "trustedDomains": [],
+  "gitlabHosts": [],
   "shortcuts": {},
   "fileIcons": { "set": "material", "scope": "all", "muted": false },
   "sidebarsPerView": { "left": true, "right": true, "rightTab": true },

@@ -33,7 +33,7 @@ async function rig(t: TestContext, shipped: Record<string, string> = SHIPPED): P
   return { home, source, codex, repo, logs, create };
 }
 
-const config = (repo: string, ...names: string[]): RenderConfig => ({ comb: { workspaces: names.map((name) => ({ name, path: repo, variables: {}, fork: null, nestedRepos: [] })) } });
+const config = (repo: string, ...names: string[]): RenderConfig => ({ gitlabHosts: [], comb: { workspaces: names.map((name) => ({ name, path: repo, variables: {}, fork: null, nestedRepos: [] })) } });
 const version = (home: string, item: string, name: string, workspaces: string[], files: Record<string, string>, from: string | null = 'original') =>
   put(join(home, 'custom', 'hive', item, name), { 'version.json': JSON.stringify({ name, from, workspaces }), ...Object.fromEntries(Object.entries(files).map(([path, text]) => [`files/${path}`, text])) });
 const text = (r: Rig, workspace: string, path: string): Promise<string> => readFile(join(pluginRenderPath(r.home, workspace), path), 'utf8');
@@ -231,7 +231,7 @@ test('the HIVE_PLUGIN_ROOT placeholder becomes the workspace\'s absolute folder 
 
 test('a workspace\'s value renders in its own folder where the template has no entry for it; an entry of the template still wins (#621, decision 3)', async (t) => {
   const r = await rig(t);
-  await r.create().write({ comb: { workspaces: [{ name: 'a', path: r.repo, variables: { delivery: 'single' }, fork: null, nestedRepos: [] }, { name: 'b', path: r.repo, variables: { delivery: 'stacked' }, fork: null, nestedRepos: [] }] } });
+  await r.create().write({ gitlabHosts: [], comb: { workspaces: [{ name: 'a', path: r.repo, variables: { delivery: 'single' }, fork: null, nestedRepos: [] }, { name: 'b', path: r.repo, variables: { delivery: 'stacked' }, fork: null, nestedRepos: [] }] } });
   assert.ok((await text(r, 'a', 'skills/x/SKILL.md')).endsWith('\n---\nA\n'), 'a\'s own entry, stacked, over its value');
   assert.ok((await text(r, 'b', 'skills/x/SKILL.md')).endsWith('\n---\nA\n'), 'b renders its value, where the default would give B');
 });
@@ -239,7 +239,7 @@ test('a workspace\'s value renders in its own folder where the template has no e
 test('each workspace renders with its built-ins from the config: its fork, its base branch over the config\'s, its nested repos (#742)', async (t) => {
   const reads = '---\nname: x\ndescription: X\n---\n{% if fork %}{{ fork.remote }} {{ fork.pr }}{% else %}none{% endif %} {{ baseBranch }} {{ nestedRepos | join: "," }}\n';
   const r = await rig(t, { ...SHIPPED, 'skills/x/SKILL.md.liquid': reads });
-  await r.create().write({ baseBranch: 'main', comb: { workspaces: [
+  await r.create().write({ baseBranch: 'main', gitlabHosts: [], comb: { workspaces: [
     { name: 'a', path: r.repo, variables: {}, fork: { remote: 'upstream', pr: 'ask', sync: 'github' }, nestedRepos: ['docs'], baseBranch: 'devtest' },
     { name: 'b', path: r.repo, variables: {}, fork: null, nestedRepos: [] },
   ] } });
@@ -249,7 +249,7 @@ test('each workspace renders with its built-ins from the config: its fork, its b
 
 test('a fork workspace\'s rendered /hive:new-pr reads its original\'s remote; a plain one has no fork rule (#742)', async (t) => {
   const r = await rig(t);
-  await r.create(pluginSource()).write({ comb: { workspaces: [
+  await r.create(pluginSource()).write({ gitlabHosts: [], comb: { workspaces: [
     { name: 'a', path: r.repo, variables: {}, fork: { remote: 'upstream', pr: 'original' }, nestedRepos: [] },
     { name: 'b', path: r.repo, variables: {}, fork: null, nestedRepos: [] },
   ] } });

@@ -7,7 +7,6 @@ import { shortcutDef } from '../../shortcut-registry.js';
 import { collisions } from '../../shortcuts.js';
 import { type AgentId, type BenchmarkPrIn, BENCHMARK_PR_IN_NEW, LOCAL_MACHINE, type MachineId, MEMORY_CAP_DEFAULT, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
 import { timeoutMs } from '../../timeout.js';
-import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
 import { EMPTY_JIRA, type JiraDraft, isJiraChosen, jiraColumnsUrl, jiraDraft, jiraFilterOptionsUrl, jiraProblem } from './settings-jira.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
@@ -74,6 +73,7 @@ export interface SettingsDraft {
   signals: SignalSettings; // #727: the signal table, edited in rules
   terminalFont: string; // the font field as typed (#376); "" = the system monospace
   trustedDomains: string[]; // the chips (#404, #513), normalized as added
+  gitlabHosts: string[]; // the GitLab host chips (#1044), normalized as added; gitlab.com never among them
   consoleLines: string; // the Limits tab's field as typed (#353)
   shortcuts: Shortcuts; // only the user's changes, as the config holds them (#449): the atalhos tab edits the map itself
   accounts: AccountsDraft; // #964: one name per provider, '' = the machine's login, edited on execution
@@ -93,12 +93,6 @@ const proposedRow = (path?: string): WorkspaceDraft => ({ ...emptyWorkspace(), .
 
 const isNonNegativeInt = (text: string): boolean => /^\d+$/.test(text.trim());
 
-/** The chips with `text` added (#513): trimmed and lowercased like the parser, a repeat left out; undefined when it is not a bare host. */
-export function withHost(hosts: readonly string[], text: string): string[] | undefined {
-  const host = text.trim().toLowerCase();
-  if (!isTrustedHost(host)) return undefined;
-  return hosts.includes(host) ? [...hosts] : [...hosts, host];
-}
 
 // A new row's default workspace is `workspace` (#293, #688): the Comb's first, which is what a source with one workspace meant before; auto on;
 // a new source's epics keys, switchAt on the default (#30).
@@ -175,6 +169,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     fileIcons: config?.fileIcons ?? FILE_ICONS_DEFAULTS, // Material on a new form (#754); the parser still requires the key
     terminalFont: config?.terminalFont ?? '', // a new form uses the system monospace (#376); the parser still requires the key
     trustedDomains: config?.trustedDomains ?? [], // a new form trusts nothing (#404); the parser still requires the key
+    gitlabHosts: config?.gitlabHosts ?? [], // a new form lists none beside gitlab.com (#1044); the parser still requires the key
     shortcuts: config?.shortcuts ?? {}, // a new form changes no shortcut (#449); the parser still requires the key
     accounts: accountsDraft(config?.accounts), // #964: a member left out is the machine's login
   };
@@ -365,6 +360,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     editor: editorFrom(draft.editor), // always sent (#780)
     terminalFont: draft.terminalFont.trim(), // always sent (#376), '' included: optional() would drop it and the save would keep the old font
     trustedDomains: draft.trustedDomains, // always sent (#404), [] included: an emptied field un-trusts everything
+    gitlabHosts: draft.gitlabHosts, // always sent (#1044), [] included: an emptied field leaves gitlab.com alone
     consoleLines: Number(draft.consoleLines.trim()), // always sent (#353); validateSettings ran first
     shortcuts: draft.shortcuts, // always sent (#449), {} included: Restaurar todos must reach the file
     accounts: accountsFrom(draft.accounts), // always sent (#964), {} included: choosing the machine's login drops the member

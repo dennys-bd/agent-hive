@@ -176,10 +176,13 @@ test('needsLiquid looks at the body only; deliveredName strips one .liquid (#310
   assert.equal(deliveredName('x.liquid.liquid'), 'x.liquid');
 });
 
-test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310); its one local import is types.ts\'s, type-only (#621)', () => {
+test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310); types.ts only type-only (#621), and repo-host.ts, Node-free itself (#1044)', () => {
   // Runs from dist/test: the TypeScript source is read as text.
+  const imports = (file: string): string[] => [...readFileSync(fileURLToPath(new URL(`../../src/${file}`, import.meta.url)), 'utf8').matchAll(/from '([^']+)'/g)].map((match) => match[1] ?? '');
   const source = readFileSync(fileURLToPath(new URL('../../src/template.ts', import.meta.url)), 'utf8');
-  assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml', './types.js']);
+  assert.deepEqual(imports('template.ts'), ['liquidjs', 'yaml', './types.js', './repo-host.js']);
+  assert.deepEqual(imports('repo-host.ts'), ['./trusted-hosts.js']);
+  assert.deepEqual(imports('trusted-hosts.ts'), []);
   assert.match(source, /^import type \{[^}]*\} from '\.\/types\.js';$/m, 'erased: the bundle gets no types.ts');
   assert.doesNotMatch(source, /\bprocess\.|\brequire\(|import\(/);
 });
@@ -271,6 +274,16 @@ test('the built-ins render from the workspace: a fork with each pr, no fork, a b
     assert.equal(body(BUILT({ fork: { remote: 'upstream', pr, baseRemote } })).split('\n')[0], `fork upstream pr ${pr} base remote ${baseRemote}`, pr);
   }
   assert.equal(body(BUILT({ baseBranch: 'devtest', nestedRepos: ['docs', 'ee'] })), 'no fork\nbase devtest\nnested docs, ee\n');
+});
+
+test("gitlabHosts renders gitlab.com first, then the config's hosts; a render for no workspace has gitlab.com alone (#1044, decision 11)", () => {
+  const parsed = parseTemplate('---\nname: x\n---\n{{ gitlabHosts | join: "," }} {% if gitlabHosts contains "git.example.com" %}listed{% else %}unlisted{% endif %}\n');
+  const body = (workspace: RenderWorkspace): string => {
+    const result = renderTemplate(parsed, workspace);
+    return result.ok ? result.text.replace('---\nname: x\n---\n', '') : assert.fail(result.errors[0]?.message);
+  };
+  assert.equal(body(BUILT({})), 'gitlab.com unlisted\n');
+  assert.equal(body(BUILT({ gitlabHosts: ['gitlab.com', 'git.example.com'] })), 'gitlab.com,git.example.com listed\n');
 });
 
 test('declaring a built-in is refused at its line, and no workspace value takes its name (#742, decision 6)', () => {
