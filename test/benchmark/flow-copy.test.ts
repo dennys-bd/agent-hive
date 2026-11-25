@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { copyFlow, flowIssues, overrideIssues } from '../../src/benchmark/flow-copy.js';
-import type { BenchFlow, BenchStage, Stage } from '../../src/types.js';
+import type { BenchFlow, BenchStage, Stage, Transition } from '../../src/types.js';
+import { mainFlows } from '../fixtures/main-flow.js';
 import { BENCH_STAGES, benchComb, NOW } from './fixtures.js';
 
 const flowOf = (result: ReturnType<typeof copyFlow>): BenchFlow => {
@@ -27,9 +28,8 @@ test("a commands stage's names resolve to the seed workspace's lines, the worksp
   assert.deepEqual(flowOf(copyFlow(benchComb(), 'other', NOW)).commands.map((c) => c.line), ['pnpm test', 'npm run lint']);
 });
 
-test('a wait for CI refuses with its name; a stage named Delivered, an empty flow and a command with no line refuse too (#536)', () => {
+test('a stage named Delivered, an empty flow and a command with no line refuse (#536)', () => {
   const withStage = (extra: Stage) => copyFlow(benchComb([...BENCH_STAGES, extra]), 'bench', NOW);
-  assert.match((withStage({ name: 'CI', from: {}, action: 'waitForCi', ciChecks: 'all', rerunOnce: false }) as { refused: string }).refused, /CI waits for CI/);
   assert.match((withStage({ name: 'Delivered', from: {} }) as { refused: string }).refused, /Delivered/);
   assert.match((copyFlow(benchComb([]), 'bench', NOW) as { refused: string }).refused, /no stage/);
   const deploy: Stage = { name: 'Ship', from: {}, action: 'commands', commands: ['deploy'], stopOnFailure: true, onMissing: 'fail' };
@@ -79,4 +79,43 @@ test('a stage copies without maxWorkers, recorded as dropped (#536)', () => {
   const flow = flowOf(copyFlow(benchComb([{ ...BENCH_STAGES[0], maxWorkers: 0 }, ...BENCH_STAGES.slice(1)]), 'bench', NOW));
   assert.ok(!('maxWorkers' in flow.stages[0]));
   assert.ok(flow.dropped.includes('Spec.maxWorkers'));
+});
+
+const combOf = (stages: Stage[], transitions: Transition[]): ReturnType<typeof benchComb> =>
+  ({ ...benchComb(), comb: { ...benchComb().comb, flows: mainFlows(stages, transitions) } });
+const refusedOf = (result: ReturnType<typeof copyFlow>): string => {
+  assert.ok('refused' in result, JSON.stringify(result));
+  return result.refused;
+};
+const CI: Stage = { name: 'CI', from: {}, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
+const CI_STAGES: Stage[] = [{ name: 'Dev', from: {}, prompt: '/hive:new-build {id}' }, CI, { name: 'In Review', from: {}, prompt: '/hive:new-pr {id}' }];
+const CI_TRANSITIONS: Transition[] = [
+  { from: 'Dev', to: 'CI', when: 'done', maxTries: 2 },
+  { from: 'CI', to: 'In Review', when: 'verdict', verdict: 'passed', prompt: 'CI is green: {id}' },
+  { from: 'CI', to: 'Dev', when: 'verdict', verdict: 'failed' },
+  { from: 'In Review', to: 'end', when: 'done' },
+];
+
+test('a wait for CI is skipped: what entered it goes to its passed exit, with the exit prompt unless it has its own, listed as skipped (#672)', () => {
+  const flow = flowOf(copyFlow(combOf(CI_STAGES, CI_TRANSITIONS), 'bench', NOW));
+  assert.deepEqual(flow.stages.map((s) => s.name), ['Dev', 'In Review']);
+  assert.deepEqual(flow.transitions, [
+    { from: 'Dev', to: 'In Review', when: 'done', maxTries: 2, prompt: 'CI is green: {id}' },
+    { from: 'In Review', to: 'end', when: 'done' },
+  ]);
+  assert.deepEqual(flow.dropped, ['CI (waits for CI): skipped']);
+  const own = CI_TRANSITIONS.map((t) => (t.from === 'Dev' ? { ...t, prompt: 'mine {id}', session: 'new' as const } : t));
+  assert.deepEqual(flowOf(copyFlow(combOf(CI_STAGES, own), 'bench', NOW)).transitions[0], { from: 'Dev', to: 'In Review', when: 'done', maxTries: 2, prompt: 'mine {id}', session: 'new' });
+});
+
+test('a wait for CI refuses the copy with no passed exit, a passed exit into another wait, a session that continues it, or a doubled exit (#672)', () => {
+  const noPassed = CI_TRANSITIONS.filter((t) => t.verdict !== 'passed');
+  assert.match(refusedOf(copyFlow(combOf(CI_STAGES, noPassed), 'bench', NOW)), /stage CI waits for CI and has no passed exit/);
+  const second: Stage = { ...CI, name: 'CI2' };
+  const chained = [...CI_TRANSITIONS.map((t) => (t.from === 'CI' && t.verdict === 'passed' ? { ...t, to: 'CI2' } : t)), { from: 'CI2', to: 'In Review', when: 'verdict' as const, verdict: 'passed' }];
+  assert.match(refusedOf(copyFlow(combOf([...CI_STAGES, second], chained), 'bench', NOW)), /stage CI passes into CI2, which waits for CI too/);
+  const resumes: Transition = { from: 'In Review', to: 'Dev', when: 'verdict', verdict: 'changes', session: { continueOf: 'CI' } };
+  assert.match(refusedOf(copyFlow(combOf(CI_STAGES, [...CI_TRANSITIONS, resumes]), 'bench', NOW)), /In Review → Dev continues the session of CI/);
+  const doubled: Transition = { from: 'Dev', to: 'In Review', when: 'done' };
+  assert.match(refusedOf(copyFlow(combOf(CI_STAGES, [...CI_TRANSITIONS, doubled]), 'bench', NOW)), /stage Dev has two exits on done/);
 });

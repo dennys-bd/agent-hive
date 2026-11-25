@@ -12,11 +12,9 @@ type Comb = Pick<Config, 'comb' | 'defaultAgent'>;
 
 const isFilled = (record: object | undefined): boolean => record !== undefined && Object.keys(record).length > 0;
 
-// A run's local origin has no CI, and DONE_STAGE is where the run holds finished tasks
+// DONE_STAGE is where the run holds finished tasks; a wait for CI is no refusal since #672, skipCi takes it out
 function refusal(stages: readonly Stage[]): string | undefined {
   if (stages.length === 0) return 'the flow has no stage';
-  const waits = stages.find((s) => s.action === 'waitForCi');
-  if (waits !== undefined) return `stage ${waits.name} waits for CI, and a run's local origin has none`;
   if (stages.some((s) => s.name === DONE_STAGE)) return `a stage is named ${DONE_STAGE}, the stage a run holds its finished tasks in`;
   const unnamed = stages.find((s) => !STAGE_NAME.safeParse(s.name).success);
   return unnamed === undefined ? undefined : `a stage is named ${unnamed.name}, a name an arm cannot override`;
@@ -50,12 +48,71 @@ function commandLines(stages: readonly Stage[], commands: Config['comb']['comman
   return { lines };
 }
 
+type Wiring = { stages: Stage[]; transitions: Transition[] };
+const waitsForCi = (stage: Stage): boolean => stage.action === 'waitForCi';
+const passedExit = (transitions: readonly Transition[], name: string): Transition | undefined =>
+  transitions.find((t) => t.from === name && t.when === 'verdict' && t.verdict === 'passed');
+const sameTrigger = (a: Transition, b: Transition): boolean => a.from === b.from && a.when === b.when && a.verdict === b.verdict;
+const continued = (t: Transition): string | undefined => (typeof t.session === 'object' ? t.session.continueOf : undefined);
+
+// #672: a wait is skipped through its passed exit, so each needs one, and one that passes into another wait would not leave the waits
+function ciRefusal(stages: readonly Stage[], transitions: readonly Transition[]): string | undefined {
+  for (const ci of stages.filter(waitsForCi)) {
+    const exit = passedExit(transitions, ci.name);
+    if (exit === undefined) return `stage ${ci.name} waits for CI and has no passed exit to skip it by`;
+    if (stages.some((s) => s.name === exit.to && waitsForCi(s))) return `stage ${ci.name} passes into ${exit.to}, which waits for CI too`;
+  }
+  return undefined;
+}
+
+// #672: what entered the wait goes where its passed exit goes; the incoming prompt and session, when set, win over the exit's
+function rewired(into: Transition, exit: Transition): Transition {
+  return {
+    ...into, to: exit.to,
+    ...(into.prompt === undefined && exit.prompt !== undefined ? { prompt: exit.prompt } : {}),
+    ...(into.session === undefined && exit.session !== undefined ? { session: exit.session } : {}),
+  };
+}
+
+// The wait's own transitions go with it, and with the stage its approval and handoff
+function skipOne(wiring: Wiring, ci: Stage): Wiring {
+  const exit = passedExit(wiring.transitions, ci.name);
+  if (exit === undefined) return wiring; // ciRefusal already refused it
+  return {
+    stages: wiring.stages.filter((s) => s.name !== ci.name),
+    transitions: wiring.transitions.filter((t) => t.from !== ci.name).map((t) => (t.to === ci.name ? rewired(t, exit) : t)),
+  };
+}
+
+// #672: once rewired, nothing may resume a skipped stage's session, and no stage may leave twice on one trigger
+function wiringRefusal(wiring: Wiring, skipped: readonly string[]): string | undefined {
+  const resumes = wiring.transitions.find((t) => skipped.includes(continued(t) ?? ''));
+  if (resumes !== undefined) return `${resumes.from} → ${resumes.to} continues the session of ${continued(resumes) ?? ''}, which a run skips`;
+  const twice = wiring.transitions.find((t, i) => wiring.transitions.findIndex((o) => sameTrigger(o, t)) !== i);
+  return twice === undefined ? undefined : `stage ${twice.from} has two exits on ${twice.verdict ?? twice.when} once its wait for CI is skipped`;
+}
+
+/** The flow without its waits for CI (#672): a run's local origin has no CI, and Dev's /hive:new-build already gates on the test command.
+ *  What entered a wait goes to its passed exit's target; each skipped wait is listed in dropped. */
+export function skipCi(stages: readonly Stage[], transitions: readonly Transition[]): (Wiring & { dropped: string[] }) | { refused: string } {
+  const waits = stages.filter(waitsForCi);
+  if (waits.length === 0) return { stages: [...stages], transitions: [...transitions], dropped: [] };
+  const refused = ciRefusal(stages, transitions);
+  if (refused !== undefined) return { refused };
+  const wiring = waits.reduce<Wiring>(skipOne, { stages: [...stages], transitions: [...transitions] });
+  const broken = wiringRefusal(wiring, waits.map((s) => s.name));
+  return broken === undefined ? { ...wiring, dropped: waits.map((s) => `${s.name} (waits for CI): skipped`) } : { refused: broken };
+}
+
 /** The workspace's flow as an experiment's base keeps it (#536), or the reason the Hive cannot run it. */
 export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
   const { commands } = config.comb;
-  const { stages, transitions } = flatten(config.comb.flows);
-  const refused = refusal(stages);
+  const flat = flatten(config.comb.flows);
+  const refused = refusal(flat.stages);
   if (refused !== undefined) return { refused };
+  const skipped = skipCi(flat.stages, flat.transitions);
+  if ('refused' in skipped) return skipped;
+  const { stages, transitions } = skipped;
   const resolved = commandLines(stages, commands, workspace);
   if ('refused' in resolved) return resolved;
   const copiedStages = stages.map((s) => benchStage(s, config.defaultAgent));
@@ -63,7 +120,7 @@ export function copyFlow(config: Comb, workspace: string, now: Date): FlowCopy {
   return {
     flow: {
       copiedAt: now.toISOString(), stages: copiedStages.map((c) => c.stage), transitions: copiedTransitions.map((c) => c.transition), commands: resolved.lines,
-      dropped: [...copiedStages, ...copiedTransitions].flatMap((c) => c.dropped),
+      dropped: [...skipped.dropped, ...[...copiedStages, ...copiedTransitions].flatMap((c) => c.dropped)],
     },
   };
 }
