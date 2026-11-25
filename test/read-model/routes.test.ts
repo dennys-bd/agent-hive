@@ -47,7 +47,7 @@ async function routesOn(t: TestContext, options: Options = {}): Promise<Harness>
     },
   };
   const deps: RepoRouteDeps = {
-    requireLive: () => ({ state: initialState(0), runtime: { config: { comb: COMB } } }), machineFor: () => fakeMachine({ exec }),
+    requireLive: () => ({ state: initialState(0), runtime: { config: { comb: COMB, gitlabHosts: [] } } }), machineFor: () => fakeMachine({ exec }),
     gql: async (query, variables) => {
       gqlCalls += 1;
       if (options.gql) return options.gql(query, variables);
@@ -309,7 +309,7 @@ test('an original lists only the login\'s PRs, in its rows and its counts (#854,
   const db = await tempModel(t);
   seedPrs(db);
   db.upsertIssue(prIssueRow(3, T1, { title: 'PR 3', author: 'Bia' }), 'sync'); // GitHub logins ignore case
-  const original = prsOf(db, SOURCE, { repository: REPO, workspace: 'hive', role: 'original', pair: 'bia/hive' }, 'closed');
+  const original = prsOf(db, SOURCE, { host: 'github.com', repository: REPO, workspace: 'hive', role: 'original', pair: 'github.com/bia/hive' }, 'closed');
   assert.deepEqual([original.rows, original.counts], [[], { open: 3, merged: 1, closed: 0 }]);
 });
 

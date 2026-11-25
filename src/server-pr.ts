@@ -12,6 +12,7 @@ import { prLink, prNumber, prRepo } from './pull-requests.js';
 import { sourceLogin } from './read-model/rows.js';
 import { prDataOf, type StoredPr } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
+import { GITHUB_HOST } from './repo-host.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
 import { readingOf, type Reading, type RepoReadModel } from './server-repos.js';
 import { type ChangesReader, changesReaderOf, dropStale, GitHubUnreachable, HeadMoved } from './server-pr-changes.js';
@@ -79,7 +80,7 @@ export async function listedRepository(deps: Pick<PrRouteDeps, 'requireLive' | '
   if (!live) return undefined;
   const repository = `${req.params.owner as string}/${req.params.name as string}`;
   // a workspace has no machine until 10.1: the local one
-  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor)).find((r) => r.repository === repository); // #932: each workspace on its machine
+  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor)).find((r) => r.host === GITHUB_HOST && r.repository === repository); // #932: each workspace on its machine; temporary (#1045 Task 3): Task 5's route names the host
   if (ref) return { state: live.state, repository, ref, config: live.runtime.config };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;

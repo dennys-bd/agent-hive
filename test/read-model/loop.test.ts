@@ -57,7 +57,7 @@ test('the full listing runs when the reconcile stamp is absent or older than 24 
   assert.deepEqual(report.requests, { 200: 2, 304: 7 });
   assert.equal(db.scope(SOURCE, REPO, 'reconcile')?.syncedAt, SYNCED);
   const absent = fakeRest([...Array(7).fill({ status: 304 }), ok([]), ok([])]);
-  await syncRepository({ db, rest: absent.rest, gql: NO_GQL, source: SOURCE, now: NOW }, { repository: OTHER, workspace: 'hive' });
+  await syncRepository({ db, rest: absent.rest, gql: NO_GQL, source: SOURCE, now: NOW }, { host: 'github.com', repository: OTHER, workspace: 'hive' });
   assert.deepEqual(absent.calls.slice(7).map(([path]) => path), listing(OTHER), 'no stamp at all is due');
 });
 
@@ -129,7 +129,7 @@ test('a round whose comments scope fails emits issues, keeps the comments cursor
     return path.startsWith('repos/acme/hive/issues') ? ok([restIssue(1, T2)]) : ok([]);
   };
   const log = { ...quiet, error: (message: string): void => { errors.push(message); } };
-  const { loop, notified } = loopOn(db, rest, { repositories: async () => [REF, { repository: 'acme/other', workspace: 'hive' }], log });
+  const { loop, notified } = loopOn(db, rest, { repositories: async () => [REF, { host: 'github.com', repository: 'acme/other', workspace: 'hive' }], log });
   await loop.runOnce();
   assert.deepEqual(notified, [[REPO, ['issues', 'repo']], ['acme/other', ['repo']]]); // the next repository stored its repos row
   assert.deepEqual(db.scope(SOURCE, REPO, 'comments'), { cursor: T1, etag: 'EC', syncedAt: T1 });

@@ -20,7 +20,7 @@ function routes(t: TestContext, answer: Answer, extra: Partial<State> = {}, poll
   app.use(express.json());
   const state: State = { ...initialState(0), ...extra };
   const deps: RepoRouteDeps = {
-    requireLive: () => ({ state, runtime: { config: { comb: COMB } } }), machineFor: () => fakeMachine({ exec }), gql: fakeGqlJson(answer).gql,
+    requireLive: () => ({ state, runtime: { config: { comb: COMB, gitlabHosts: [] } } }), machineFor: () => fakeMachine({ exec }), gql: fakeGqlJson(answer).gql,
     poll: poll ?? (async (names) => { polls.push(names); }), log: { error: (message: string) => { errors.push(message); } },
   };
   registerRepoRoutes(app, deps);

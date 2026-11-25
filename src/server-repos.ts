@@ -15,6 +15,7 @@ import { quotaFrom } from './sources/github-pages.js';
 import type { GhRateLimit } from './sources/github-queries.js';
 import type { Config, RepoIssues, SourceQuota, State } from './types.js';
 import type { MachineFor } from './machine.js';
+import { GITHUB_HOST } from './repo-host.js';
 
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
@@ -40,7 +41,7 @@ const QUOTA_MESSAGE = 'GitHub quota is low';
 
 /** What the repository routes need (#757). */
 export interface RepoRouteDeps {
-  requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
+  requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb' | 'gitlabHosts'> } } | undefined; // #1045: the list reads the GitLab hosts
   machineFor: MachineFor; // #932: each workspace's git remote get-url, on its machine, on each request
   gql: GqlJson; // the writes' GraphQL (gh api graphql --input -): the Hive's own login, as the PR page's writes (#592, #758); a repository is no source's
   poll(names: string[]): Promise<void>; // /sources/refresh's path, for these sources only: after a write on a task's issue
@@ -92,7 +93,7 @@ async function named(ctx: RepoContext, req: Request, res: Response): Promise<{ s
   const found = await listed(ctx, res);
   if (!found) return undefined;
   const repository = `${req.params.owner as string}/${req.params.name as string}`;
-  const ref = found.refs.find((r) => r.repository === repository);
+  const ref = found.refs.find((r) => r.host === GITHUB_HOST && r.repository === repository); // temporary (#1045 Task 3): Task 5's routes name the host
   if (ref !== undefined) return { state: found.state, repository, ref };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;

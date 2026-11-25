@@ -92,7 +92,7 @@ import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { jiraRoundSources } from './read-model/jira-round.js';
 import { createReadModelLoop, readModelEvent, type ReadModelLoop, type RefetchOutcome } from './read-model/loop.js';
-import { listRepositories } from './repos/repositories.js';
+import { githubRefs, listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
@@ -1496,7 +1496,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { ghToken, log }));
   const readLoop = deps.readLoop ?? (deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess, reportRetry,
-    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, machineFor) : []),
+    repositories: async () => (live ? githubRefs(await listRepositories(live.runtime.config, live.state, machineFor)) : []), // #1045: GitHub's only until GitLab is read (#1055)
     jiraSources: async () => (live ? jiraRoundSources(live.runtime.config.comb.sources, live.state.syncs) : []), // #824: per round, so a Settings save takes the next one
   }));
   // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
@@ -1518,7 +1518,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #497: hive_pr's preload, over the repositories the Hive lists now (a Settings change takes the next call)
   preloadPr ??= preloaderOf({
     ...repoModel, log,
-    isListed: async (repository) => live !== undefined && (await listRepositories(live.runtime.config, live.state, machineFor)).some((r) => r.repository === repository),
+    isListed: async (repository) => live !== undefined && githubRefs(await listRepositories(live.runtime.config, live.state, machineFor)).some((r) => r.repository === repository), // #1045: hive_pr takes GitHub links only until #1051
   }, changesReader);
   registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, machineFor }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
