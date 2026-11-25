@@ -63,6 +63,7 @@ const CONFIG: Config = {
   theme: 'dark', // not the form default, so draftFrom visibly reads it (#296)
   terminalFont: 'MesloLGS NF', // not the form default, so draftFrom visibly reads it (#376)
   trustedDomains: ['github.com', 'docs.example.com'], // not the form default, so draftFrom visibly reads it (#404)
+  gitlabHosts: ['git.example.com'], // not the form default, so draftFrom visibly reads it (#1044)
   shortcuts: { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null }, // not the form default, so draftFrom visibly reads it (#449)
   consoleLines: 20000, // not the form default, so draftFrom visibly reads it (#353)
   fileIcons: { set: 'vscode', scope: 'folders', muted: true }, sidebarsPerView: { left: false, right: true, rightTab: false }, signals: { ...SIGNALS_DEFAULTS, onOpen: 'last' }, // not the form default, so draftFrom visibly reads it (#754, #727)
@@ -102,6 +103,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual([github.language, github.budgetHour, github.budgetDay], ['pt', '50000', '']);
   assert.equal(github.baseBranch, 'develop');
   assert.deepEqual(github.trustedDomains, ['github.com', 'docs.example.com']);
+  assert.deepEqual(github.gitlabHosts, ['git.example.com']);
   assert.deepEqual(github.shortcuts, { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null }, 'the saved changes as they are (#449)');
   assert.deepEqual(github.rules.map(withoutId), [
     { source: 'hour', percent: '80', stage: '', kind: 'signal', value: 'yellow' },
@@ -115,7 +117,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
     hiveSource: true, createIn: 'hive',
     prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], commandSemaphores: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', epics: 'show', epicFollows: 'aheadThenBehind', taskProps: { defaults: { workspace: '', auto: true, entry: { flowId: empty.flows[0].id } }, rules: [] } }],
     flows: [{ name: 'main' }], stages: [], transitions: [], language: 'en', branch: '', baseBranch: '', budgetHour: '', budgetDay: '', rules: [], auth: 'cli', onClose: 'menuBar',
-    deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: String(SHUTDOWN_IDLE_DEFAULT), approvalMinutes: String(APPROVAL_MINUTES_DEFAULT), rateLimitWaitMinutes: String(RATE_LIMIT_WAIT_DEFAULT), showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: String(CONSOLE_LINES_DEFAULT), shortcuts: {},
+    deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: String(SHUTDOWN_IDLE_DEFAULT), approvalMinutes: String(APPROVAL_MINUTES_DEFAULT), rateLimitWaitMinutes: String(RATE_LIMIT_WAIT_DEFAULT), showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, theme: 'system', terminalFont: '', trustedDomains: [], gitlabHosts: [], consoleLines: String(CONSOLE_LINES_DEFAULT), shortcuts: {},
     defaultAgent: 'claude', // DEFAULT_AGENT on a first run (#516)
     agentArgs: { claude: '', codex: '', copilot: '' }, agentModels: { claude: '', codex: '', copilot: '' }, agentEnabled: { claude: true, codex: true, copilot: false }, // no saved list (#924)
     fileIcons: { set: 'material', scope: 'all', muted: true }, // FILE_ICONS_DEFAULTS on a new form (#754)
@@ -210,6 +212,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     editor: EDITOR_DEFAULTS,
     terminalFont: 'MesloLGS NF',
     trustedDomains: ['github.com', 'docs.example.com'],
+    gitlabHosts: ['git.example.com'],
     shortcuts: { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null },
     consoleLines: 20000,
     accounts: {}, // always sent (#964): CONFIG selects nothing
@@ -228,6 +231,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   assert.equal(bare.terminalFont, '', 'always sent, an empty field included: "" is the system monospace (#376)');
   assert.equal(toSettingsBody({ ...draftFrom(undefined), terminalFont: ' MesloLGS NF ' }).terminalFont, 'MesloLGS NF', 'trimmed, as baseBranch is');
   assert.deepEqual(bare.trustedDomains, [], 'always sent, an empty field included: every link asks (#404)');
+  assert.deepEqual(bare.gitlabHosts, [], 'always sent, an empty field included: only gitlab.com (#1044)');
   assert.deepEqual(bare.shortcuts, {}, 'always sent, {} included: every default (#449)');
   assert.deepEqual([bare.closeSessionTab, bare.closeStageTab, bare.closeSessionTabNotice, bare.closeStageTabNotice], ['keep', 'keep', true, true], 'always sent, the new form\'s defaults included (#614)');
   assert.deepEqual(toSettingsBody({ ...draftFrom(undefined), trustedDomains: ['github.com', 'docs.example.com'] }).trustedDomains, ['github.com', 'docs.example.com'], '[] sent as is: the chips already normalize (#513)');

@@ -28,7 +28,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system',
   terminalFont: '',
   consoleLines: 5000,
-  trustedDomains: [],
+  trustedDomains: [], gitlabHosts: [],
   shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [], commandSemaphores: [],
 };
 
@@ -1089,6 +1089,27 @@ test('POST /settings writes trustedDomains trimmed, lowercased and without dupli
   assert.deepEqual(await onDisk(), ['github.com', 'docs.example.com'], 'rejected before the write');
   assert.equal((await postSettings(base, { ...BODY, trustedDomains: [] })).status, 200);
   assert.deepEqual(await onDisk(), [], 'an emptied list is saved as such: every link asks');
+});
+
+test('POST /settings writes gitlabHosts trimmed, lowercased, without duplicates or gitlab.com; an omitted key keeps the saved list, and a first setup without it, a port or github.com is a 400 naming it (#1044)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).gitlabHosts;
+  const { gitlabHosts: _gitlabHosts, ...withoutHosts } = BODY;
+  const first = await postSettings(base, withoutHosts);
+  assert.equal(first.status, 400);
+  assert.deepEqual(await json(first), { error: 'hive.config.json: "gitlabHosts" must be an array of host names ([] = only gitlab.com)' });
+  await assert.rejects(stat(configFile(home)), 'nothing written');
+  assert.equal((await postSettings(base, { ...BODY, gitlabHosts: [' Git.Example.com ', 'git.example.com', 'gitlab.com'] })).status, 200);
+  assert.deepEqual(await onDisk(), ['git.example.com']);
+  assert.equal((await postSettings(base, withoutHosts)).status, 200);
+  assert.deepEqual(await onDisk(), ['git.example.com'], 'an API caller that omits it keeps the saved list');
+  const port = await postSettings(base, { ...BODY, gitlabHosts: ['git.example.com:8443'] });
+  assert.equal(port.status, 400);
+  assert.deepEqual(await json(port), { error: 'hive.config.json: "gitlabHosts" holds "git.example.com:8443", which is not a host name (like git.example.com: no scheme, port, path or *)' });
+  const github = await postSettings(base, { ...BODY, gitlabHosts: ['github.com'] });
+  assert.equal(github.status, 400);
+  assert.deepEqual(await json(github), { error: 'hive.config.json: "gitlabHosts" holds "github.com", which is GitHub, not a GitLab host' });
+  assert.deepEqual(await onDisk(), ['git.example.com'], 'rejected before the write');
 });
 
 test('POST /settings writes shortcuts normalized; an omitted key keeps the saved map, and a first setup without it or a collision is a 400 (#449)', async (t) => {

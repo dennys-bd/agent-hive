@@ -1547,6 +1547,7 @@ export interface Config {
   theme: Theme; // required, no default (#296); main.ts reads it raw for the windows' first paint (configuredTheme)
   terminalFont: string; // required, no default (#376): one font family name, trimmed; "" = the system monospace. The UI quotes it (terminalFontStack)
   trustedDomains: string[]; // required, no default (#404): hosts whose terminal links open without asking; a host covers its subdomains. Trimmed, lowercased, no duplicates
+  gitlabHosts: string[]; // required, no default (#1044): the self-hosted GitLab hosts beside gitlab.com, matched exactly by repo-host.ts. Trimmed, lowercased, no duplicates, never gitlab.com or github.com
   shortcuts: Shortcuts; // required, no default (#449): only the user's changes to the keyboard shortcuts; {} = every default
   consoleLines: number; // required, no default (#353): the most lines a console channel keeps, summed over its runs; integer CONSOLE_LINES_MIN..CONSOLE_LINES_MAX
   /** Branch a new worker's worktree starts from (as origin/<branch>); absent = the remote's default (origin/HEAD), else main. */
@@ -1983,6 +1984,9 @@ export interface SettingsBody {
   /** The form always sends it (#404), [] included. configFrom still reads it over the saved file, so an API caller that omits it keeps the
    * saved list (POST /trusted-domains sends only this key and the prefix); a first setup without it is a parse error naming trustedDomains. */
   trustedDomains: string[];
+  /** The form always sends it (#1044), [] included. configFrom still reads it over the saved file, so an API caller that omits it keeps the
+   * saved list; a first setup without it is a parse error naming gitlabHosts. */
+  gitlabHosts: string[];
   /** The form always sends it (#449), {} included. configFrom still reads it over the saved file, so an API caller that omits it keeps the
    * saved map (POST /trusted-domains sends neither); a first setup without it is a parse error naming shortcuts. */
   shortcuts: Shortcuts;

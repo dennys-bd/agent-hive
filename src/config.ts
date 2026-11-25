@@ -20,6 +20,7 @@ import { parseJiraSource } from './config-jira.js';
 import { parseEpicDeleteActivity, parseEpicKeys, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
+import { hostKind } from './repo-host.js';
 import { parseEditorConfig } from './editor-config.js';
 import { parseReviewer } from './reviewer-config.js';
 import { parseNestedRepos } from './config-nested.js';
@@ -34,7 +35,7 @@ export const CONFIG_FILE = 'hive.config.json';
 
 export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github', 'jira'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
-export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor' | 'accounts'> = {
+export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'commandSemaphores' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'gitlabHosts' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor' | 'accounts'> = {
   logLevel: 'info',
   agentArgs: { claude: [], codex: [], copilot: [] },
   // #482: a first save without them; #873: copilot off until its hooks land (#608 node 2): a worker of it never leaves working before
@@ -593,6 +594,18 @@ function requireTrustedDomains(value: unknown): string[] {
   return [...new Set(hosts)];
 }
 
+// Required, no default (#1044): the self-hosted GitLab hosts, matched exactly by repo-host.ts. The trusted domains' host rule, trimmed and
+// lowercased; github.com is GitHub, so it is refused, and gitlab.com, GitLab already, is dropped like a repeat.
+function requireGitlabHosts(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) throw new Error(`${CONFIG_FILE}: "gitlabHosts" must be an array of host names ([] = only gitlab.com)`);
+  const hosts = (value as string[]).map((v) => v.trim().toLowerCase());
+  const bad = hosts.find((host) => !isTrustedHost(host));
+  if (bad !== undefined) throw new Error(`${CONFIG_FILE}: "gitlabHosts" holds "${bad}", which is not a host name (like git.example.com: no scheme, port, path or *)`);
+  const github = hosts.find((host) => hostKind(host, []) === 'github');
+  if (github !== undefined) throw new Error(`${CONFIG_FILE}: "gitlabHosts" holds "${github}", which is GitHub, not a GitLab host`);
+  return [...new Set(hosts.filter((host) => hostKind(host, []) !== 'gitlab'))];
+}
+
 function parseFields(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
   const moved = MOVED_INTO_COMB.find((key) => raw[key] !== undefined);
@@ -645,6 +658,7 @@ function parseFields(raw: unknown): Config {
     theme: requireTheme(raw.theme),
     terminalFont: requireTerminalFont(raw.terminalFont),
     trustedDomains: requireTrustedDomains(raw.trustedDomains),
+    gitlabHosts: requireGitlabHosts(raw.gitlabHosts), // #1044
     consoleLines: requireIntFrom(raw.consoleLines, 'consoleLines', CONSOLE_LINES_MIN, CONSOLE_LINES_MAX),
     shortcuts: parseShortcuts(raw.shortcuts, process.platform === 'darwin'), // the rules live in shortcuts.ts, shared with the settings form (#449); this platform's defaults (#585)
     editor: requireEditor(raw.editor, comb.workspaces.map((w) => w.name)), // #780

@@ -69,6 +69,7 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
     theme: body.theme ?? current?.theme, // the form always sends it (#296); an API caller that omits it keeps the saved one
     terminalFont: body.terminalFont ?? current?.terminalFont, // the form always sends it (#376), "" included; an API caller that omits it keeps the saved one
     trustedDomains: body.trustedDomains ?? current?.trustedDomains, // the form always sends it (#404), [] included; POST /trusted-domains sends the list plus its host
+    gitlabHosts: body.gitlabHosts ?? current?.gitlabHosts, // the form always sends it (#1044), [] included; POST /trusted-domains sends none and keeps the saved list
     shortcuts: body.shortcuts ?? current?.shortcuts, // the form always sends it (#449), {} included; POST /trusted-domains sends none and keeps the saved map
     consoleLines: body.consoleLines ?? current?.consoleLines, // the form always sends it (#353); an API caller that omits it keeps the saved value
     baseBranch: body.baseBranch ?? current?.baseBranch, // the form always sends it ('' = automatic); an omitted key keeps the saved one

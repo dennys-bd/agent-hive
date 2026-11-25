@@ -74,6 +74,7 @@ export interface SettingsDraft {
   signals: SignalSettings; // #727: the signal table, edited in rules
   terminalFont: string; // the font field as typed (#376); "" = the system monospace
   trustedDomains: string[]; // the chips (#404, #513), normalized as added
+  gitlabHosts: string[]; // the GitLab host chips (#1044), normalized as added; gitlab.com never among them
   consoleLines: string; // the Limits tab's field as typed (#353)
   shortcuts: Shortcuts; // only the user's changes, as the config holds them (#449): the atalhos tab edits the map itself
   accounts: AccountsDraft; // #964: one name per provider, '' = the machine's login, edited on execution
@@ -175,6 +176,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     fileIcons: config?.fileIcons ?? FILE_ICONS_DEFAULTS, // Material on a new form (#754); the parser still requires the key
     terminalFont: config?.terminalFont ?? '', // a new form uses the system monospace (#376); the parser still requires the key
     trustedDomains: config?.trustedDomains ?? [], // a new form trusts nothing (#404); the parser still requires the key
+    gitlabHosts: config?.gitlabHosts ?? [], // a new form lists none beside gitlab.com (#1044); the parser still requires the key
     shortcuts: config?.shortcuts ?? {}, // a new form changes no shortcut (#449); the parser still requires the key
     accounts: accountsDraft(config?.accounts), // #964: a member left out is the machine's login
   };
@@ -365,6 +367,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     editor: editorFrom(draft.editor), // always sent (#780)
     terminalFont: draft.terminalFont.trim(), // always sent (#376), '' included: optional() would drop it and the save would keep the old font
     trustedDomains: draft.trustedDomains, // always sent (#404), [] included: an emptied field un-trusts everything
+    gitlabHosts: draft.gitlabHosts, // always sent (#1044), [] included: an emptied field leaves gitlab.com alone
     consoleLines: Number(draft.consoleLines.trim()), // always sent (#353); validateSettings ran first
     shortcuts: draft.shortcuts, // always sent (#449), {} included: Restaurar todos must reach the file
     accounts: accountsFrom(draft.accounts), // always sent (#964), {} included: choosing the machine's login drops the member
