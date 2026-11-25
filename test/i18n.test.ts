@@ -883,3 +883,27 @@ test('the accounts card\'s GitLab group reads in both languages: rows only, the 
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['gitlab', 'couldn\'t read the GitLab accounts right now ·', 'expires {date}', 'expired']);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['gitlab', 'não deu para ler as contas do GitLab agora ·', 'expira em {date}', 'expirado']);
 });
+
+test('the GitLab connect form and every refusal read in both languages (#1048)', () => {
+  const keys = [
+    'settings.accounts.add.gitlab', 'settings.accounts.add.gitlab.name', 'settings.accounts.gitlab.host', 'settings.accounts.gitlab.hostHint',
+    'settings.accounts.gitlab.token', 'settings.accounts.gitlab.tokenHint', 'settings.accounts.gitlab.tokenLink', 'settings.accounts.gitlab.connect',
+    'settings.accounts.gitlab.connecting', 'settings.accounts.gitlab.refused.host', 'settings.accounts.gitlab.refused.token',
+    'settings.accounts.gitlab.refused.refused', 'settings.accounts.gitlab.refused.scope', 'settings.accounts.gitlab.refused.unverifiable',
+    'settings.accounts.gitlab.refused.unreachable', 'settings.accounts.gitlab.refused.unknown', 'settings.accounts.gitlab.refused.failed',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    '+ account', '+ account on GitLab', 'host', 'gitlab.com, or a host saved under flow › GitLab hosts', 'personal access token', 'with the api scope',
+    'create one on GitLab', 'connect', 'connecting…', 'not a GitLab host · save it under flow › GitLab hosts first', 'paste the whole token, with no spaces',
+    'GitLab refused this token · check it and try again', 'the token lacks the api scope · create one with api',
+    'this GitLab can\'t show the token\'s scopes: it needs version 15.5 or later', 'couldn\'t reach GitLab right now · try again',
+    'this host has no stored account', 'couldn\'t connect the account right now · try again',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    '+ conta', '+ conta no GitLab', 'host', 'gitlab.com, ou um host salvo em fluxo › hosts GitLab', 'token de acesso pessoal', 'com o escopo api',
+    'criar um no GitLab', 'conectar', 'conectando…', 'não é um host GitLab · salve-o antes em fluxo › hosts GitLab', 'cole o token inteiro, sem espaços',
+    'o GitLab recusou este token · confira e tente de novo', 'o token não tem o escopo api · crie um com api',
+    'este GitLab não mostra os escopos do token: precisa da versão 15.5 ou mais nova', 'não deu para falar com o GitLab agora · tente de novo',
+    'este host não tem conta guardada', 'não deu para conectar a conta agora · tente de novo',
+  ]);
+});

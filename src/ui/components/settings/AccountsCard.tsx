@@ -25,7 +25,8 @@ import { ACCOUNT_PROVIDERS, type AccountProvider, type AccountsConfig } from '..
 // #1048: GitLab's group follows GitHub's, outside ACCOUNT_PROVIDERS: rows and their removes only, no choice.
 
 type Patch = (patch: Partial<SettingsDraft>) => void;
-interface AccountsCardProps { draft: SettingsDraft; saved: AccountsConfig; onChange: Patch; onOpenFlow(): void }
+// gitlabHosts (#1048): the saved config's, the GitLab connect form's choices after gitlab.com; none before a first save
+interface AccountsCardProps { draft: SettingsDraft; saved: AccountsConfig; gitlabHosts?: readonly string[]; onChange: Patch; onOpenFlow(): void }
 interface GroupProps extends AccountsCardProps { provider: AccountProvider; accounts: Accounts; slots?: AddSlots }
 /** A remove the route did not do, worded under the list. */
 interface RemoveRefusal { outcome: Exclude<RemoveOutcome, 'removed'>; name: string }
@@ -144,7 +145,7 @@ function AccountGroup({ provider, accounts, draft, saved, onChange, onOpenFlow, 
   );
 }
 
-export function AccountsCard({ draft, saved, onChange, onOpenFlow }: AccountsCardProps) {
+export function AccountsCard({ draft, saved, gitlabHosts = [], onChange, onOpenFlow }: AccountsCardProps) {
   const accounts = useAccounts();
   // A provider's group, which an add wraps to hand it the header's action and the foot; the order is ACCOUNT_PROVIDERS'
   const group = (provider: AccountProvider) => (slots?: AddSlots): ReactNode => (
@@ -155,7 +156,7 @@ export function AccountsCard({ draft, saved, onChange, onOpenFlow }: AccountsCar
       <ClaudeAccountAdd onConnected={accounts.refetch} render={group('claude')} />
       {group('copilot')()}
       <GithubLoginAdd onConnected={accounts.refetch} render={group('github')} />
-      <GitlabAccountsGroup />
+      <GitlabAccountsGroup hosts={gitlabHosts} />
     </SettingsGroup>
   );
 }

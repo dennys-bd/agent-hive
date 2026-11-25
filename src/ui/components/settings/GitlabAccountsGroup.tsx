@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
-import { FailedLine, TextButton } from '@/components/settings/AccountAdd';
+import { Done, FailedLine, HeaderAdd, TextButton } from '@/components/settings/AccountAdd';
+import { GitlabConnectForm } from '@/components/settings/GitlabConnectForm';
 import { RemoveAction } from '@/components/settings/RemoveAction';
 import { Spinner } from '@/components/ui/spinner';
 import { type GitlabAccounts, useGitlabAccounts } from '@/hooks/use-gitlab-accounts';
@@ -8,7 +9,9 @@ import { settingAnchor } from '@/lib/settings-search';
 import type { GitlabAccountRow } from '../../../types';
 
 // Settings › execution › accounts › gitlab (#1048): the stored GitLab accounts, one per host. No radio: no selection points at one, so the rows
-// only show and remove, and a remove is always allowed.
+// only show and remove, and a remove is always allowed. The header's add opens the connect form at the group's foot, as Claude's add does.
+
+interface GitlabAccountsGroupProps { hosts: readonly string[] } // the saved config's gitlabHosts: the form's choices after gitlab.com
 
 // GitLab's tokens stop at 00:00 UTC of their expires_at day, so that day already reads as expired
 const isExpired = (expiresAt: string, now: Date): boolean => expiresAt <= now.toISOString().slice(0, 10);
@@ -57,14 +60,19 @@ function AccountList({ nameId, accounts }: { nameId: string; accounts: GitlabAcc
   );
 }
 
-export function GitlabAccountsGroup() {
+export function GitlabAccountsGroup({ hosts }: GitlabAccountsGroupProps) {
   const nameId = useId();
   const accounts = useGitlabAccounts();
+  const [isFormOpen, setFormOpen] = useState(false);
+  const [added, setAdded] = useState<string>(); // the screen reader's announcement; the eye sees the new row
   const isLoading = !accounts.isFailed && accounts.accounts === undefined;
+  const open = (): void => { setAdded(undefined); setFormOpen(true); };
+  const connected = (row: GitlabAccountRow): void => { setFormOpen(false); setAdded(`${row.username} · ${row.host}`); };
   return (
     <div id={settingAnchor('settings.accounts', 'gitlab')} className="flex flex-col gap-3 border-t px-5 py-4 first:border-t-0">
       <div className="flex min-h-8 items-center gap-3">
         <span id={nameId} className="font-semibold text-sm">{t('settings.accounts.gitlab')}</span>
+        <HeaderAdd label="settings.accounts.add.gitlab" name={t('settings.accounts.add.gitlab.name')} isHidden={isFormOpen} onClick={open} />
       </div>
       {isLoading && <p role="status" className="flex items-center gap-1.5 text-muted-foreground text-xs"><Spinner />{t('settings.accounts.loading')}</p>}
       {accounts.isFailed && (
@@ -73,6 +81,8 @@ export function GitlabAccountsGroup() {
         </FailedLine>
       )}
       <AccountList nameId={nameId} accounts={accounts} />
+      {isFormOpen && <GitlabConnectForm hosts={hosts} onSubmit={accounts.connect} onConnected={connected} onClose={() => setFormOpen(false)} />}
+      <Done name={added} />
     </div>
   );
 }

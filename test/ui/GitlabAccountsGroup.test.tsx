@@ -36,7 +36,7 @@ const deletes = (fetch: ReturnType<typeof daemon>['fetch'], host: string): numbe
 
 test('a row per account in the route\'s order: the host, the username muted and the expiry note; a past date reads expired in the waiting colour, a token that never expires has none; no radio (#1048)', async () => {
   daemon([OLD, NEVER, COM]);
-  render(<GitlabAccountsGroup />);
+  render(<GitlabAccountsGroup hosts={[]} />);
   await screen.findByText('gitlab.com');
   expect(within(list()).getAllByRole('listitem').map((row) => row.textContent)).toEqual([
     `git.example.comana.work${t('settings.accounts.gitlab.expired')}`,
@@ -54,7 +54,7 @@ test('until the list answers the group shows the reading line; a failed read, or
   vi.spyOn(console, 'error').mockImplementation(() => {});
   const answers = [json({ error: 'raw route error' }, 500), json({ accounts: [{ host: 'gitlab.com' }] }), json({ accounts: [COM] })];
   const { fetch } = daemon([], { [`GET ${ROUTE}`]: () => answers.shift() ?? json({ accounts: [] }) });
-  render(<GitlabAccountsGroup />);
+  render(<GitlabAccountsGroup hosts={[]} />);
   expect(screen.getByText(t('settings.accounts.loading'))).toBeInTheDocument();
   expect(await screen.findByText(t('settings.accounts.failed.gitlab'))).toBeInTheDocument();
   expect(screen.queryByText(/raw route error/)).toBeNull();
@@ -73,7 +73,7 @@ test('remove takes the confirm, deletes by host and re-reads; a 404 re-reads wit
     [`DELETE ${ROUTE}/git.example.com`]: () => { state.rows = state.rows.filter((row) => row.host !== 'git.example.com'); return json({ error: 'unknown' }, 404); },
     [`DELETE ${ROUTE}/code.example.org`]: () => json({ error: 'gitlab account not removed' }, 500),
   });
-  render(<GitlabAccountsGroup />);
+  render(<GitlabAccountsGroup hosts={[]} />);
   await screen.findByText('gitlab.com');
   confirmRemove('gitlab.com');
   await waitFor(() => expect(screen.queryByText('gitlab.com')).toBeNull());

@@ -14,8 +14,9 @@ import { cardEntries, type SettingEntry, settingAnchor, settingEntry } from '@/l
 import { agentName } from '../../../agents';
 import { AGENT_IDS, type AccountsConfig, type AgentAvailability, type DeleteActivityScope } from '../../../types';
 
-// savedAccounts (#964): the saved config's selection, which the accounts card's stale row reads; absent before a first save
-interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; launchWorkspace?: string; savedAccounts?: AccountsConfig; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
+// savedAccounts (#964): the saved config's selection, which the accounts card's stale row reads; absent before a first save. savedGitlabHosts
+// (#1048): the saved config's GitLab hosts, the card's GitLab connect choices
+interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; launchWorkspace?: string; savedAccounts?: AccountsConfig; savedGitlabHosts?: readonly string[]; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
 
 // Literal text, never through t(): its placeholder regex would read {id} as a placeholder.
 const BRANCH_TOKENS = ['{id}', '{title}', '{slug}'] as const;
@@ -59,11 +60,11 @@ function SessionsGroup({ draft, onChange }: Pick<ExecutionSectionProps, 'draft' 
 }
 
 // Settings › execution (#510): how each worker starts (#516), waits for you and what goes when its activity is deleted.
-export function ExecutionSection({ draft, agents, launchWorkspace, savedAccounts = {}, onChange, onOpenFlow }: ExecutionSectionProps) {
+export function ExecutionSection({ draft, agents, launchWorkspace, savedAccounts = {}, savedGitlabHosts, onChange, onOpenFlow }: ExecutionSectionProps) {
   return (
     <>
       <AgentsCard draft={draft} agents={agents} launchWorkspace={launchWorkspace} onChange={onChange} onOpenFlow={onOpenFlow} />
-      <AccountsCard draft={draft} saved={savedAccounts} onChange={onChange} onOpenFlow={onOpenFlow} />
+      <AccountsCard draft={draft} saved={savedAccounts} gitlabHosts={savedGitlabHosts} onChange={onChange} onOpenFlow={onOpenFlow} />
       <SessionsGroup draft={draft} onChange={onChange} />
       <SettingsGroup title="settings.group.branches" hint="settings.group.branches.hint">
         <div className={FIELD_ROW}>
