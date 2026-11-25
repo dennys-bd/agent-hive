@@ -14,9 +14,9 @@ import { hiveFetch } from './secret-client.js';
 // What reached gh's stdin (#592): the mutations, in order
 const mutations = (gh: FakeGh): unknown[] => gh.calls.flatMap((c) => (c.input === undefined ? [] : [c.input]));
 const OTHER_HEAD = 'b'.repeat(40);
-const PATH = '/repositories/acme/app/pulls/7'; // task 1's, awaiting approval
-const PATH2 = '/repositories/acme/app/pulls/9'; // task 2's
-const LONE = '/repositories/acme/app/pulls/8'; // on no task
+const PATH = '/repositories/github.com/acme%2Fapp/pulls/7'; // task 1's, awaiting approval
+const PATH2 = '/repositories/github.com/acme%2Fapp/pulls/9'; // task 2's
+const LONE = '/repositories/github.com/acme%2Fapp/pulls/8'; // on no task
 
 test('enviar publishes a one-comment review at the head the page showed; a stale head or a merged PR is 409 and sends nothing (#592)', async (t) => {
   const gh = fakeGh();
@@ -100,7 +100,7 @@ test('mergear approves only when it merges the task\'s last open PR: the first o
   const stageOf = (): unknown => server.getState()?.tasks.find((c) => c.item.itemId === 'local:1')?.stage;
   assert.equal((await send(base, 'POST', `${PATH}/merge`, { method: 'squash', head: HEAD })).status, 200);
   assert.deepEqual([activityOf(server.getState()!, 'local:1')?.approval !== undefined, stageOf()], [true, 'fila']);
-  assert.equal((await send(base, 'POST', '/repositories/acme/app/pulls/10/merge', { method: 'squash', head: HEAD })).status, 200);
+  assert.equal((await send(base, 'POST', '/repositories/github.com/acme%2Fapp/pulls/10/merge', { method: 'squash', head: HEAD })).status, 200);
   assert.deepEqual([prsOf(server.getState()!, 'local:1').map((p) => p.state), stageOf()], [['merged', 'merged'], 'feito']);
 });
 

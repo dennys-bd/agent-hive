@@ -19,12 +19,14 @@ const SITE = 'acme/site';
 const LATER = '2026-10-06T00:00:00Z';
 const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' });
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: [workspace('hive'), workspace('site')], sources: [], flows: [], commands: [], hiveSource: true, createIn: 'hive' };
-// each workspace's origin: /code/hive is acme/hive, /code/site is acme/site
-const exec: Exec = async (_file, args) => ({ stdout: `git@github.com:acme/${args[1] === '/code/site' ? 'site' : 'hive'}.git\n` });
-const READS = ['/repositories', '/repositories/acme/hive/issues?state=open', '/repositories/acme/hive/issues/12', '/repositories/acme/hive/labels', '/repositories/acme/hive/pulls?state=open'];
+// each workspace's origin: /code/hive is acme/hive, /code/site is acme/site, /code/lab is acme/hive on gitlab.com (#1045)
+const ORIGINS: Record<string, string> = { '/code/hive': 'git@github.com:acme/hive.git\n', '/code/site': 'git@github.com:acme/site.git\n', '/code/lab': 'https://gitlab.com/acme/hive.git\n' };
+const exec: Exec = async (_file, args) => ({ stdout: ORIGINS[String(args[1])] ?? '' });
+const LAB_COMB: CombConfig = { ...COMB, workspaces: [...COMB.workspaces, workspace('lab')] };
+const READS = ['/repositories', '/repositories/github.com/acme%2Fhive/issues?state=open', '/repositories/github.com/acme%2Fhive/issues/12', '/repositories/github.com/acme%2Fhive/labels', '/repositories/github.com/acme%2Fhive/pulls?state=open'];
 
 type Refetch = (db: ReadModel, repository: string, number: number) => Promise<RefetchOutcome>;
-interface Options { model?: boolean; source?: string | undefined; sourceFails?: true; refetch?: Refetch; gql?: GqlJson }
+interface Options { model?: boolean; source?: string | undefined; sourceFails?: true; refetch?: Refetch; gql?: GqlJson; lab?: true }
 interface Harness { base: string; db: ReadModel; gqlCalls(): number; refetched: string[]; errors: string[]; notified: [string, SyncKind[]][] }
 
 // The repository routes over a real read model in a temporary home; GraphQL throws on any call and counts it, unless the test answers it
@@ -47,7 +49,7 @@ async function routesOn(t: TestContext, options: Options = {}): Promise<Harness>
     },
   };
   const deps: RepoRouteDeps = {
-    requireLive: () => ({ state: initialState(0), runtime: { config: { comb: COMB, gitlabHosts: [] } } }), machineFor: () => fakeMachine({ exec }),
+    requireLive: () => ({ state: initialState(0), runtime: { config: { comb: options.lab ? LAB_COMB : COMB, gitlabHosts: [] } } }), machineFor: () => fakeMachine({ exec }),
     gql: async (query, variables) => {
       gqlCalls += 1;
       if (options.gql) return options.gql(query, variables);
@@ -118,10 +120,37 @@ test('the counts are rows by state and kind; lastActivity is the later of pushed
 test('GET …/issues answers the state asked, newest update first, with the issues scope\'s syncedAt; a never-synced repository has none (#181)', async (t) => {
   const { base, db } = await routesOn(t);
   seed(db);
-  assert.deepEqual(await get(`${base}/repositories/acme/hive/issues?state=open`), [200, { state: 'open', total: 2, truncated: false, syncedAt: SYNCED, issues: [listed(2, T2), listed(1, T1)] }]);
-  assert.deepEqual(await get(`${base}/repositories/acme/site/issues?state=open`), [200, NO_ISSUES]);
-  assert.deepEqual(await get(`${base}/repositories/acme/hive/issues?state=all`), [400, { error: 'state must be open or closed' }]);
-  assert.deepEqual(await get(`${base}/repositories/acme/other/issues?state=open`), [404, { error: 'repository is not one the Hive lists' }]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fhive/issues?state=open`), [200, { state: 'open', total: 2, truncated: false, syncedAt: SYNCED, issues: [listed(2, T2), listed(1, T1)] }]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fsite/issues?state=open`), [200, NO_ISSUES]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fhive/issues?state=all`), [400, { error: 'state must be open or closed' }]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fother/issues?state=open`), [404, { error: 'repository is not one the Hive lists' }]);
+});
+
+test('a route names its repository by host and path: the old shape, a wrong host and an unlisted host answer the 404 (#1045, decisions 6, 7)', async (t) => {
+  const { base, db } = await routesOn(t);
+  seed(db);
+  const unlisted = [404, { error: 'repository is not one the Hive lists' }];
+  assert.deepEqual(await get(`${base}/repositories/acme/hive/issues?state=open`), unlisted, 'acme is no host the Hive lists');
+  assert.deepEqual(await get(`${base}/repositories/gitlab.com/acme%2Fhive/issues?state=open`), unlisted, 'acme/hive is listed on github.com only');
+  assert.deepEqual(await get(`${base}/repositories/code.example.org/acme%2Fhive/labels`), unlisted);
+});
+
+test('a GitLab repository lists beside the GitHub one of its path with the fallback summary and never its rows; its lists answer empty and its issue page and writes the 409 (#1045, decision 8)', async (t) => {
+  const { base, db, gqlCalls, refetched } = await routesOn(t, { lab: true });
+  seed(db);
+  const [, summaries] = await get(`${base}/repositories`);
+  assert.deepEqual((summaries as unknown[]).at(-1), {
+    host: 'gitlab.com', repository: REPO, url: 'https://gitlab.com/acme/hive', workspace: 'lab', openPrs: 0, openIssues: 0, closedIssues: 0, canPush: false, issuesEnabled: false, syncedAt: null,
+  });
+  const LAB = `${base}/repositories/gitlab.com/acme%2Fhive`;
+  assert.deepEqual(await get(`${LAB}/issues?state=closed`), [200, { ...NO_ISSUES, state: 'closed' }]);
+  assert.deepEqual(await get(`${LAB}/pulls?state=open`), [200, { rows: [], counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: false, syncedAt: null }]);
+  assert.deepEqual(await get(`${LAB}/labels`), [200, []]);
+  const notRead = [409, { error: 'GitLab repositories are not read yet' }];
+  assert.deepEqual(await get(`${LAB}/issues/12`), notRead);
+  const writes: [string, unknown][] = [['', { title: 'New', updatedAt: T1 }], ['/labels', { add: ['bug'], remove: [] }], ['/comments', { body: 'Looks good' }]];
+  for (const [path, body] of writes) assert.deepEqual(await post(`${LAB}/issues/12${path}`, body), notRead, path || 'edit');
+  assert.deepEqual([gqlCalls(), refetched], [0, []]);
 });
 
 test('GET …/issues past REPO_ISSUE_LIMIT answers the first 1000 and says truncated (#181)', async (t) => {
@@ -129,7 +158,7 @@ test('GET …/issues past REPO_ISSUE_LIMIT answers the first 1000 and says trunc
   db.transaction(() => {
     for (let n = 1; n <= REPO_ISSUE_LIMIT + 1; n++) db.upsertIssue(issueRow(n, T1, { state: 'open' }), 'sync');
   });
-  const [status, body] = await get(`${base}/repositories/acme/hive/issues?state=open`);
+  const [status, body] = await get(`${base}/repositories/github.com/acme%2Fhive/issues?state=open`);
   const page = body as { total: number; truncated: boolean; issues: unknown[] };
   assert.deepEqual([status, page.total, page.truncated, page.issues.length], [200, REPO_ISSUE_LIMIT + 1, true, REPO_ISSUE_LIMIT]);
 });
@@ -138,7 +167,7 @@ test('GET …/issues/:number answers the stored page at once and starts its refe
   const { base, db, refetched } = await routesOn(t, { refetch: () => new Promise<RefetchOutcome>(() => undefined) });
   seed(db);
   db.upsertComment({ ...commentRow('C2', 'I_12', T2), author: null }, 'sync');
-  assert.deepEqual(await get(`${base}/repositories/acme/hive/issues/12`), [200, {
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fhive/issues/12`), [200, {
     number: 12, title: 'T12', url: 'https://github.com/acme/hive/issues/12', labels: ['bug'], assignees: ['bia', 'caio'], updatedAt: T1, pullRequests: CLOSING_PRS,
     repository: REPO, body: 'b', author: 'bia', createdAt: ISSUE_ROW.createdAt, commentCount: 2,
     comments: [
@@ -159,7 +188,7 @@ test('an issue page the model lacks waits for its refetch: the row after changed
         return outcome;
       },
     });
-    answers.push(await get(`${base}/repositories/acme/hive/issues/7`));
+    answers.push(await get(`${base}/repositories/github.com/acme%2Fhive/issues/7`));
   }
   assert.deepEqual([answers[0]?.[0], (answers[0]?.[1] as { title?: string } | undefined)?.title], [200, 'T7']);
   const missing = [404, { error: 'issue not found: acme/hive#7' }];
@@ -170,7 +199,7 @@ test('an issue page the model lacks waits for its refetch: the row after changed
 test('GET …/labels answers the labels table, a label no issue carries included (#181)', async (t) => {
   const { base, db } = await routesOn(t);
   seed(db);
-  assert.deepEqual(await get(`${base}/repositories/acme/hive/labels`), [200, ['bug', 'wontfix']]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fhive/labels`), [200, ['bug', 'wontfix']]);
 });
 
 test('rows stored under another source never show in any of the read answers (#181)', async (t) => {
@@ -181,9 +210,9 @@ test('rows stored under another source never show in any of the read answers (#1
   db.upsertIssue(issueRow(5, T1, { source: OTHER_SOURCE, repository: SITE, state: 'open' }), 'sync');
   const [, summaries] = await get(`${base}/repositories`);
   assert.deepEqual((summaries as unknown[])[1], NEVER_SYNCED_SITE);
-  assert.deepEqual(await get(`${base}/repositories/acme/site/issues?state=open`), [200, NO_ISSUES]);
-  assert.deepEqual(await get(`${base}/repositories/acme/site/issues/5`), [404, { error: 'issue not found: acme/site#5' }]);
-  assert.deepEqual(await get(`${base}/repositories/acme/site/labels`), [200, []]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fsite/issues?state=open`), [200, NO_ISSUES]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fsite/issues/5`), [404, { error: 'issue not found: acme/site#5' }]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fsite/labels`), [200, []]);
 });
 
 test('with no read model, or no login, the read routes answer 503 and none calls GraphQL (#181)', async (t) => {
@@ -215,12 +244,12 @@ async function post(url: string, body: unknown): Promise<[number, unknown]> {
   return [res.status, await res.json()];
 }
 
-const page12 = async (base: string): Promise<Record<string, unknown>> => (await get(`${base}/repositories/acme/hive/issues/12`))[1] as Record<string, unknown>;
+const page12 = async (base: string): Promise<Record<string, unknown>> => (await get(`${base}/repositories/github.com/acme%2Fhive/issues/12`))[1] as Record<string, unknown>;
 
 test('an edit upserts the issue its mutation answers: the next GET shows it with no sync round, and the event names issues (#183)', async (t) => {
   const { base, db, notified } = await routesOn(t, { gql: github(UPDATE_ISSUE, () => ({ updateIssue: { issue: { ...ANSWERED, title: 'New' } } })) });
   seed(db);
-  assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
+  assert.deepEqual(await post(`${base}/repositories/github.com/acme%2Fhive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
   const shown = await page12(base);
   assert.deepEqual([shown.title, shown.updatedAt], ['New', T2]);
   assert.deepEqual(notified, [[REPO, ['issues']]]);
@@ -230,7 +259,7 @@ test('a label change upserts the labelable its last mutation answers: the next G
   const labelled = { ...ANSWERED, labels: { nodes: [{ name: 'bug' }, { name: 'docs' }] } };
   const { base, db } = await routesOn(t, { gql: github(ADD_LABELS, () => ({ addLabelsToLabelable: { labelable: labelled } })) });
   seed(db);
-  assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: ['docs'], remove: [] }), [200, { ok: true }]);
+  assert.deepEqual(await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/labels`, { add: ['docs'], remove: [] }), [200, { ok: true }]);
   assert.deepEqual((await page12(base)).labels, ['bug', 'docs']);
 });
 
@@ -238,7 +267,7 @@ test('a comment upserts its comment and the issue it moved: the next GET counts 
   const answer = () => ({ addComment: { commentEdge: { node: POSTED }, subject: { ...ANSWERED, comments: { totalCount: 2 } } } });
   const { base, db, notified } = await routesOn(t, { gql: github(ADD_COMMENT, answer) });
   seed(db);
-  assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'Looks good' }), [200, { ok: true }]);
+  assert.deepEqual(await post(`${base}/repositories/github.com/acme%2Fhive/issues/12/comments`, { body: 'Looks good' }), [200, { ok: true }]);
   const shown = (await page12(base)) as { commentCount: number; comments: unknown[] };
   assert.deepEqual([shown.commentCount, shown.comments.at(-1)], [2, { author: 'bia', createdAt: T2, body: 'Looks good', url: POSTED.url }]);
   assert.equal(db.issue(SOURCE, REPO, 12)?.comments, 2);
@@ -255,7 +284,7 @@ test('a refused write leaves the database as it was: GitHub\'s error, an issue c
     const { base, db, notified } = await routesOn(t, { gql });
     seed(db);
     const before = [db.issue(SOURCE, REPO, 12), db.comments(SOURCE, 'I_12')];
-    assert.equal((await post(`${base}/repositories/acme/hive/issues/12${path}`, body))[0], status, `${path || 'edit'} ${status}`);
+    assert.equal((await post(`${base}/repositories/github.com/acme%2Fhive/issues/12${path}`, body))[0], status, `${path || 'edit'} ${status}`);
     assert.deepEqual([db.issue(SOURCE, REPO, 12), db.comments(SOURCE, 'I_12'), notified], [...before, []]);
   }
 });
@@ -267,12 +296,12 @@ test('an answer the model cannot store still answers ok and is logged; with no l
   for (const [options, logged] of cases) {
     const { base, db, notified, errors, gqlCalls } = await routesOn(t, options);
     seed(db);
-    assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
+    assert.deepEqual(await post(`${base}/repositories/github.com/acme%2Fhive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
     assert.deepEqual([db.issue(SOURCE, REPO, 12)?.title, notified, errors.length, gqlCalls()], ['T12', [], logged, 2]);
   }
 });
 
-const PULLS = '/repositories/acme/hive/pulls';
+const PULLS = '/repositories/github.com/acme%2Fhive/pulls';
 const PR_LINK = 'https://github.com/acme/hive/pull/';
 
 // acme/hive's PRs synced: 7 open with its poll and its decision, 8 an open draft, 5 merged, 4 closed and caio's
@@ -301,7 +330,7 @@ test('GET …/pulls answers each state from the model with no GraphQL call: #758
   assert.deepEqual(await get(`${base}${PULLS}?state=merged`), [200, answer([{ url: `${PR_LINK}5`, number: 5, title: 'PR 5', state: 'merged', isDraft: false, mergeState: 'unknown', updatedAt: T1 }])]);
   assert.deepEqual(await get(`${base}${PULLS}?state=closed`), [200, answer([{ url: `${PR_LINK}4`, number: 4, title: 'PR 4', state: 'closed', isDraft: false, mergeState: 'unknown', updatedAt: T1 }])]);
   assert.deepEqual(await get(`${base}${PULLS}?state=draft`), [400, { error: 'state must be open, merged or closed' }]);
-  assert.deepEqual(await get(`${base}/repositories/acme/other/pulls?state=open`), [404, { error: 'repository is not one the Hive lists' }]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fother/pulls?state=open`), [404, { error: 'repository is not one the Hive lists' }]);
   assert.equal(gqlCalls(), 0);
 });
 
@@ -316,7 +345,7 @@ test('an original lists only the login\'s PRs, in its rows and its counts (#854,
 test('a never-synced repository answers syncedAt null and no rows, another source\'s rows never show; past PR_LIST_LIMIT the list says truncated (#186)', async (t) => {
   const { base, db } = await routesOn(t);
   db.upsertIssue(prIssueRow(5, T1, { source: OTHER_SOURCE, repository: SITE }), 'sync');
-  assert.deepEqual(await get(`${base}/repositories/acme/site/pulls?state=open`), [200, { rows: [], counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: false, syncedAt: null }]);
+  assert.deepEqual(await get(`${base}/repositories/github.com/acme%2Fsite/pulls?state=open`), [200, { rows: [], counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: false, syncedAt: null }]);
   db.transaction(() => {
     for (let n = 1; n <= PR_LIST_LIMIT + 1; n += 1) db.upsertIssue(prIssueRow(n, T1), 'sync');
   });

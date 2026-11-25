@@ -13,7 +13,7 @@ import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github-pages.js';
 import type { GhRateLimit } from './sources/github-queries.js';
-import type { Config, RepoIssues, SourceQuota, State } from './types.js';
+import type { Config, RepoIssues, RepoPrs, SourceQuota, State } from './types.js';
 import type { MachineFor } from './machine.js';
 import { GITHUB_HOST } from './repo-host.js';
 
@@ -33,6 +33,8 @@ const STATE_MESSAGE = 'state must be open or closed';
 const PR_STATE_MESSAGE = 'state must be open, merged or closed';
 const NUMBER_MESSAGE = 'number must be an issue number';
 const UNKNOWN_REPOSITORY_MESSAGE = 'repository is not one the Hive lists';
+/** A GitLab repository's issue page, issue writes and PR routes until #1055 (#1045, decision 8), shown as any route error is. */
+export const GITLAB_NOT_READ_MESSAGE = 'GitLab repositories are not read yet';
 const STATES: readonly RepoIssues['state'][] = ['open', 'closed'];
 const ISSUE_NUMBER = /^[1-9]\d{0,9}$/;
 const HTTP_TOO_MANY_REQUESTS = 429;
@@ -87,16 +89,35 @@ async function listed(ctx: RepoContext, res: Response): Promise<{ state: State; 
   return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, ctx.deps.machineFor) };
 }
 
-// The repository a route's :owner/:name names, one listRepositories gives, with its ref (#186: an original's role and pair), or undefined
-// once the refusal is out: the Hive's login reads and writes only the repositories the Hive lists
+// The repository a route's :host and :repository name (#1045, decision 7: both exactly, the path decoded from its one segment), one
+// listRepositories gives, with its ref (#186: an original's role and pair), or undefined once the 404 is out: the Hive's login reads and
+// writes only the repositories the Hive lists, and a host it does not list is no different from a repository it does not list
 async function named(ctx: RepoContext, req: Request, res: Response): Promise<{ state: State; repository: string; ref: RepoRef } | undefined> {
   const found = await listed(ctx, res);
   if (!found) return undefined;
-  const repository = `${req.params.owner as string}/${req.params.name as string}`;
-  const ref = found.refs.find((r) => r.host === GITHUB_HOST && r.repository === repository); // temporary (#1045 Task 3): Task 5's routes name the host
-  if (ref !== undefined) return { state: found.state, repository, ref };
+  const { host, repository } = req.params as { host: string; repository: string };
+  const ref = found.refs.find((r) => r.host === host && r.repository === repository);
+  if (ref !== undefined) return { state: found.state, repository: ref.repository, ref };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;
+}
+
+// A GitLab repository's lists until #1055 (#1045, decision 8): their empty shapes, never the GitHub rows of the same path
+const noIssues = (state: RepoIssues['state']): RepoIssues => ({ state, total: 0, issues: [], truncated: false, syncedAt: null });
+const NO_PRS: RepoPrs = { rows: [], counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: false, syncedAt: null };
+
+// A ref off GitHub until #1055 (#1045, decision 8): a list answers `empty`, anything else the 409; true once it answered
+function answeredGitlab(res: Response, ref: RepoRef, empty?: unknown): boolean {
+  if (ref.host === GITHUB_HOST) return false;
+  if (empty === undefined) refuse(res, { status: HTTP_CONFLICT, message: GITLAB_NOT_READ_MESSAGE });
+  else res.json(empty);
+  return true;
+}
+
+// A write's repository (#1045): named, and on GitHub, whose login every write goes with
+async function namedWrite(ctx: RepoContext, req: Request, res: Response): Promise<{ state: State; repository: string; ref: RepoRef } | undefined> {
+  const found = await named(ctx, req, res);
+  return found && !answeredGitlab(res, found.ref) ? found : undefined;
 }
 
 // The route's :number, a positive integer, or undefined
@@ -172,18 +193,18 @@ async function write(ctx: RepoContext, res: Response, target: Target, run: () =>
 
 // The issue page's writes (#757), each straight to GitHub with the Hive's login, the body checked before GitHub is asked; each answer upserted into the read model (#183)
 function registerWriteRoutes(app: Express, ctx: RepoContext): void {
-  app.post('/repositories/:owner/:name/issues/:number', async (req: Request, res: Response) => {
+  app.post('/repositories/:host/:repository/issues/:number', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const body = editOf(req.body);
     if (number === undefined || body === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: EDIT_MESSAGE });
-    const found = await named(ctx, req, res);
+    const found = await namedWrite(ctx, req, res);
     if (found) await write(ctx, res, { ...found, number }, async () => issueAnswer(found.repository, await editIssue(ctx.gql, found.repository, number, body.edit, body.updatedAt)), true);
   });
-  app.post('/repositories/:owner/:name/issues/:number/labels', async (req: Request, res: Response) => {
+  app.post('/repositories/:host/:repository/issues/:number/labels', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const { add, remove } = bodyOf(req);
     if (number === undefined || !isNames(add) || !isNames(remove)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LABELS_MESSAGE });
-    const found = await named(ctx, req, res);
+    const found = await namedWrite(ctx, req, res);
     if (!found) return;
     await write(ctx, res, { ...found, number }, async () => {
       const labelable = await setLabels(ctx.gql, found.repository, number, add, remove);
@@ -191,11 +212,11 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
     }, true);
   });
   // A comment changes nothing the flow shows: no poll
-  app.post('/repositories/:owner/:name/issues/:number/comments', async (req: Request, res: Response) => {
+  app.post('/repositories/:host/:repository/issues/:number/comments', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const { body } = bodyOf(req);
     if (number === undefined || typeof body !== 'string' || body.trim() === '' || body.length > BODY_MAX) return refuse(res, { status: HTTP_BAD_REQUEST, message: COMMENT_MESSAGE });
-    const found = await named(ctx, req, res);
+    const found = await namedWrite(ctx, req, res);
     if (found) await write(ctx, res, { ...found, number }, async () => commentAnswer(found.repository, await comment(ctx.gql, found.repository, number, body)), false);
   });
 }
@@ -226,10 +247,12 @@ export async function readingOf(deps: Pick<RepoRouteDeps, 'readModel' | 'log'>, 
 
 type NamedReading = Reading & { repository: string; ref: RepoRef };
 
-async function namedReading(ctx: RepoContext, req: Request, res: Response): Promise<NamedReading | undefined> {
+// A read's repository and the model to read it from (#181); a GitLab ref answers `empty`, or the 409 when none is given (#1045)
+async function namedReading(ctx: RepoContext, req: Request, res: Response, empty?: unknown): Promise<NamedReading | undefined> {
   const found = await named(ctx, req, res);
-  const reading = found && (await readingOf(ctx.deps, res));
-  return found && reading ? { ...reading, repository: found.repository, ref: found.ref } : undefined;
+  if (!found || answeredGitlab(res, found.ref, empty)) return undefined;
+  const reading = await readingOf(ctx.deps, res);
+  return reading ? { ...reading, repository: found.repository, ref: found.ref } : undefined;
 }
 
 // The issue page (#181): a stored row at once, its refetch started and not awaited (the loop logs a failure; a change comes back as a
@@ -260,27 +283,27 @@ function registerReadRoutes(app: Express, ctx: RepoContext): void {
     const reading = found && (await readingOf(ctx.deps, res));
     if (found && reading) res.json(found.refs.map((ref) => summaryOf(reading.model.db, reading.source, ref)));
   });
-  app.get('/repositories/:owner/:name/issues', async (req: Request, res: Response) => {
+  app.get('/repositories/:host/:repository/issues', async (req: Request, res: Response) => {
     const state = STATES.find((s) => s === req.query.state);
     if (state === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: STATE_MESSAGE });
-    const reading = await namedReading(ctx, req, res);
+    const reading = await namedReading(ctx, req, res, noIssues(state));
     if (reading) res.json(issuesOf(reading.model.db, reading.source, reading.repository, state));
   });
-  app.get('/repositories/:owner/:name/issues/:number', async (req: Request, res: Response) => {
+  app.get('/repositories/:host/:repository/issues/:number', async (req: Request, res: Response) => {
     const number = numberOf(req);
     if (number === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: NUMBER_MESSAGE });
     const reading = await namedReading(ctx, req, res);
     if (reading) await issuePage(res, reading, number);
   });
-  app.get('/repositories/:owner/:name/labels', async (req: Request, res: Response) => {
-    const reading = await namedReading(ctx, req, res);
+  app.get('/repositories/:host/:repository/labels', async (req: Request, res: Response) => {
+    const reading = await namedReading(ctx, req, res, []);
     if (reading) res.json(reading.model.db.labels(reading.source, reading.repository));
   });
   // #186: no GitHub call; an original lists only the login's PRs, as the search's author:@me did
-  app.get('/repositories/:owner/:name/pulls', async (req: Request, res: Response) => {
+  app.get('/repositories/:host/:repository/pulls', async (req: Request, res: Response) => {
     const state = PR_STATES.find((s) => s === req.query.state);
     if (state === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: PR_STATE_MESSAGE });
-    const reading = await namedReading(ctx, req, res);
+    const reading = await namedReading(ctx, req, res, NO_PRS);
     if (reading) res.json(prsOf(reading.model.db, reading.source, reading.ref, state));
   });
 }

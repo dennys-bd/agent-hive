@@ -8,13 +8,13 @@ import { prTextOf } from './pr-bodies.js';
 import { PrNotFound } from './pr-github.js';
 import { conflictedFiles } from './pr-conflicts.js';
 import { addPrDraft, markPrReviewed, type PrReviewStore, removePrDraft, updatePrDraft } from './pr-review-store.js';
-import { prLink, prNumber, prRepo } from './pull-requests.js';
+import { prNumber, prRepo } from './pull-requests.js';
 import { sourceLogin } from './read-model/rows.js';
 import { prDataOf, type StoredPr } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
-import { GITHUB_HOST } from './repo-host.js';
+import { buildPrLink, GITHUB_HOST } from './repo-host.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
-import { readingOf, type Reading, type RepoReadModel } from './server-repos.js';
+import { GITLAB_NOT_READ_MESSAGE, readingOf, type Reading, type RepoReadModel } from './server-repos.js';
 import { type ChangesReader, changesReaderOf, dropStale, GitHubUnreachable, HeadMoved } from './server-pr-changes.js';
 import { badRequest, errorMessage, refuse } from './server-review.js';
 import type { LiveView, Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -40,8 +40,9 @@ const DRAFT_MESSAGE = `anchor e text (1 a ${REVIEW_TEXT_MAX} caracteres) são ob
 const TEXT_MESSAGE = `text precisa ter de 1 a ${REVIEW_TEXT_MAX} caracteres`;
 const UNKNOWN_DRAFT_MESSAGE = 'rascunho desconhecido';
 
-/** Every PR route's path (#758): the PR under a repository GET /repositories lists, by its number. */
-export const PR_ROUTE = '/repositories/:owner/:name/pulls/:number';
+/** Every PR route's path (#758): the PR under a repository GET /repositories lists, by its host, its path in one encoded segment (#1045) and
+ * its number. */
+export const PR_ROUTE = '/repositories/:host/:repository/pulls/:number';
 
 /** What the PR routes read (#592, #758): the live state, the dispatch (a merge), git (the repositories' origins, the conflicted files), the
  * PR review files and their event, and gh, whatever auth.github says: the login the workers open their PRs with. */
@@ -73,15 +74,15 @@ export function githubRefusal(deps: Pick<PrRouteDeps, 'log'>, res: Response, err
   refuse(res, refusal);
 }
 
-/** The repository a route's :owner/:name names (#758): one GET /repositories lists, #757's guard, with its ref (#854: its role and pair) and the
- * live config; undefined once its 404 is out. The Hive reads and writes the PRs of the repositories it lists only. */
+/** The repository a route's :host and :repository name (#758, #1045 decision 7: both exactly): one GET /repositories lists, #757's guard, with
+ * its ref (#854: its role and pair) and the live config; undefined once its 404 is out. The Hive reads and writes the PRs of the repositories
+ * it lists only. */
 export async function listedRepository(deps: Pick<PrRouteDeps, 'requireLive' | 'machineFor'>, req: Request, res: Response): Promise<{ state: State; repository: string; ref: RepoRef; config: LiveView['runtime']['config'] } | undefined> {
   const live = deps.requireLive(res);
   if (!live) return undefined;
-  const repository = `${req.params.owner as string}/${req.params.name as string}`;
-  // a workspace has no machine until 10.1: the local one
-  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor)).find((r) => r.host === GITHUB_HOST && r.repository === repository); // #932: each workspace on its machine; temporary (#1045 Task 3): Task 5's route names the host
-  if (ref) return { state: live.state, repository, ref, config: live.runtime.config };
+  const { host, repository } = req.params as { host: string; repository: string };
+  const ref = (await listRepositories(live.runtime.config, live.state, deps.machineFor)).find((r) => r.host === host && r.repository === repository); // #932: each workspace on its machine
+  if (ref) return { state: live.state, repository: ref.repository, ref, config: live.runtime.config };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;
 }
@@ -89,8 +90,8 @@ export async function listedRepository(deps: Pick<PrRouteDeps, 'requireLive' | '
 /** The PR a route names (#758): its link, the State and the live config it was named in, and the task that holds it, when one does. */
 export interface PrTarget { url: string; state: State; config: LiveView['runtime']['config']; task?: Task }
 
-/** The PR a route's :owner/:name/:number names, or undefined once the refusal is out: a malformed number 400, an unlisted repository 404. No
- * task is needed: a PR without one is read, reviewed and merged the same way. */
+/** The PR a route's :host, :repository and :number name, or undefined once the refusal is out: a malformed number 400, an unlisted repository
+ * 404, a GitLab one 409 until #1055 (#1045, decision 8). No task is needed: a PR without one is read, reviewed and merged the same way. */
 export async function prTarget(deps: Pick<PrRouteDeps, 'requireLive' | 'machineFor'>, req: Request, res: Response): Promise<PrTarget | undefined> {
   const raw = req.params.number;
   if (typeof raw !== 'string' || !PR_NUMBER.test(raw)) {
@@ -99,7 +100,8 @@ export async function prTarget(deps: Pick<PrRouteDeps, 'requireLive' | 'machineF
   }
   const listed = await listedRepository(deps, req, res);
   if (!listed) return undefined;
-  const url = prLink(listed.repository, Number(raw));
+  if (listed.ref.host !== GITHUB_HOST) return void refuse(res, { status: HTTP_CONFLICT, message: GITLAB_NOT_READ_MESSAGE });
+  const url = buildPrLink({ host: listed.ref.host, repository: listed.repository, number: Number(raw) });
   const task = taskOfPr(listed.state, url);
   return { url, state: listed.state, config: listed.config, ...(task === undefined ? {} : { task }) };
 }
