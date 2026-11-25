@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPrLink, hostKind, isPrUrl, type PrLink, parsePrLink, remoteRepository } from '../src/repo-host.js';
 import { githubRepository } from '../src/task-refs.js';
+import { isPrUrl as orchestratorIsPrUrl } from '../src/orchestrator.js';
+import { prLink, prNumber, prRepo } from '../src/pull-requests.js';
 
 const LISTED = ['git.example.com'];
 
@@ -68,4 +70,14 @@ test('isPrUrl takes a GitHub PR link as before and an MR link on any host name, 
   assert.equal(isPrUrl('https://github.com/acme/app/pull/12'), true);
   assert.equal(isPrUrl('https://code.example.org/acme/app/-/merge_requests/3'), true, "no list: the host check is the callers'");
   assert.equal(isPrUrl('https://github.com/acme/app/issues/12'), false);
+});
+
+test("the GitHub helpers read the module: githubRepository takes a host in any case, the orchestrator's isPrUrl is the module's, prNumber and prRepo read an MR link (#1044, decisions 4, 6, 7)", () => {
+  assert.equal(githubRepository('git@GitHub.com:acme/app.git'), 'acme/app', 'the host lowercased (decision 3)');
+  assert.equal(githubRepository('https://gitlab.com/acme/app.git'), undefined);
+  assert.equal(orchestratorIsPrUrl, isPrUrl);
+  const mr = 'https://git.example.com/acme/platform/app/-/merge_requests/7';
+  assert.deepEqual([prNumber(mr), prRepo(mr)], ['7', 'acme/platform/app']);
+  assert.deepEqual([prNumber('https://github.com/o/r/pull/42/files'), prRepo('https://github.com/o/r/pull/42')], ['42', 'o/r'], 'a GitHub link reads as before');
+  assert.equal(prLink('o/r', 42), 'https://github.com/o/r/pull/42');
 });

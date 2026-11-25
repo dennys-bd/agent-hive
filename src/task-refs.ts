@@ -1,6 +1,7 @@
 // A terminal's task references (#588), resolved on the daemon's own State: pure, so node:test covers it; server-files.ts's open-ref routes
 // call it, and the terminal side (xterm-setup.ts) reads its RefTarget as the routes' answer.
 import type { State, Task } from './types.js';
+import { remoteRepository } from './repo-host.js';
 
 /** Where a task reference's click goes (#588): the panel of a task the Hive holds, or the issue on GitHub. */
 export type RefTarget = { taskId: string } | { url: string };
@@ -14,11 +15,12 @@ const issueOf = (task: Task): string | undefined => ISSUE_URL.exec(task.item.url
 // GitHub sets facets.repository today; a later source or a hand-edited state could put a path or query in it, so the URL gets owner/name only
 export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/;
 
-// A GitHub origin, https (a token in it included) or ssh, with or without .git
-const GITHUB_REMOTE = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)((?!\.+\/)[\w.-]+\/(?!\.+(?:\.git)?\/?$)[\w.-]+?)(?:\.git)?\/?$/;
-
-/** The owner/name of a GitHub remote URL, undefined for any other (#588): what a terminal with no repository of its own falls back to. */
-export const githubRepository = (remote: string): string | undefined => GITHUB_REMOTE.exec(remote)?.[1];
+/** The owner/name of a GitHub remote URL, undefined for any other (#588): what a terminal with no repository of its own falls back to.
+ * repo-host.ts reads it (#1044); GitHub needs no list of hosts. */
+export const githubRepository = (remote: string): string | undefined => {
+  const read = remoteRepository(remote, []);
+  return read?.kind === 'github' ? read.repository : undefined;
+};
 
 /** The target of `ref` seen from a terminal of `repository` (owner/name; absent for a workspace shell or a local task):
  * - `PREFIX-N`: the task whose item.id it is, exactly. No fallback: the id is the Hive's own, there is no issue behind it.
