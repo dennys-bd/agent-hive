@@ -85,7 +85,7 @@ function seed(db: ReadModel): void {
 const listed = (n: number, updatedAt: string) => ({
   number: n, title: `T${n}`, url: `https://github.com/acme/hive/issues/${n}`, labels: ['bug'], assignees: ['bia', 'caio'], updatedAt, pullRequests: [],
 });
-const NEVER_SYNCED_SITE = { repository: SITE, url: 'https://github.com/acme/site', workspace: 'site', openPrs: 0, openIssues: 0, closedIssues: 0, canPush: false, issuesEnabled: true, syncedAt: null };
+const NEVER_SYNCED_SITE = { host: 'github.com', repository: SITE, url: 'https://github.com/acme/site', workspace: 'site', openPrs: 0, openIssues: 0, closedIssues: 0, canPush: false, issuesEnabled: true, syncedAt: null };
 const NO_ISSUES = { state: 'open', total: 0, truncated: false, syncedAt: null, issues: [] };
 
 test('the five read routes answer a synced repository from the model and never call GraphQL (#181, #186)', async (t) => {
@@ -100,7 +100,7 @@ test('GET /repositories lists a synced repository with its repos row and counts,
   const { base, db } = await routesOn(t);
   seed(db);
   assert.deepEqual(await get(`${base}/repositories`), [200, [
-    { repository: REPO, url: 'https://github.com/acme/hive', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: T3, syncedAt: SYNCED },
+    { host: 'github.com', repository: REPO, url: 'https://github.com/acme/hive', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, lastActivity: T3, syncedAt: SYNCED },
     NEVER_SYNCED_SITE,
   ]]);
 });

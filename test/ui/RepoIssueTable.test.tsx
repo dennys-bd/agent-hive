@@ -12,7 +12,7 @@ import { flowed } from '../fixtures/main-flow.js';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z' };
+const SITE: RepoSummary = { host: 'github.com', repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z' };
 const issue = (n: number, extra: Partial<RepoIssue> = {}): RepoIssue => ({
   number: n, title: `Issue ${n}`, url: `https://github.com/acme/site/issues/${n}`, labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z', pullRequests: [], ...extra,
 });

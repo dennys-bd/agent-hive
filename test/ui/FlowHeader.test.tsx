@@ -152,7 +152,7 @@ test('with onRefresh, atualizar runs it instead of polling every source (#756)',
 test('with a repository the header shows its workspace square, its name, its workspace, the PRs and issues tabs with GitHub\'s open counts, and its own search (#757, #758)', async () => {
   const user = userEvent.setup();
   const onTab = vi.fn();
-  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
+  const summary = { host: 'github.com', repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
   render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'prs', onTab } }} />);
   expect(within(header()).getByText('web')).toHaveAttribute('title', 'acme/web');
   expect(within(header()).getByText('workspace site')).toBeInTheDocument();
@@ -249,7 +249,7 @@ test('with github, GitHub sits right before atualizar, titled abrir no GitHub, i
   const user = userEvent.setup();
   const open = vi.spyOn(window, 'open').mockReturnValue(null);
   onTestFinished(() => open.mockRestore());
-  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
+  const summary = { host: 'github.com', repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
   const page = (github?: string) => <FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} mode={{ kind: 'repo', header: { summary, tab: 'issues', onTab: vi.fn() } }} github={github} />;
   const { rerender } = render(page());
   expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
@@ -363,7 +363,7 @@ test('a back to the last flow is titled for it, by the key as bound now; with go
 });
 
 test('the tasks header (todas em lista) and a repository list start with the back when given (#921)', () => {
-  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
+  const summary = { host: 'github.com', repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
   const back: BackLink = { label: 'build', onBack: vi.fn(), toFlow: true };
   const { rerender } = render(<FlowHeader state={state(tasks)} search="" onSearch={vi.fn()} back={back} />);
   expect(header().firstElementChild).toBe(within(header()).getByRole('button', { name: 'build' }));
