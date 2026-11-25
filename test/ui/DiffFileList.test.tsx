@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { DiffFileList } from '@/components/DiffFileList';
+import { byFolder } from '@/lib/diff-rows';
 import { setLanguage } from '@/i18n';
 import type { DiffLine, FileDiff } from '../../src/types';
 
@@ -83,4 +84,9 @@ test('the filter narrows the rows, any case, and drops a folder it leaves empty 
   await user.clear(filter);
   await user.type(filter, 'change');
   expect(items()).toEqual(['CHANGELOG.mdmodificado']);
+});
+
+test('a folder with a subfolder heads its files once when the files are grouped by folder (#1040)', () => {
+  renderList({ files: byFolder(['agent/design/README.md', 'agent/design/parts/x.html', 'agent/design/tour.hv.html'].map((p) => file(p))) });
+  expect(items().filter((text) => text === '⌄agent/design')).toHaveLength(1);
 });

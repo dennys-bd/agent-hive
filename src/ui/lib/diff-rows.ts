@@ -1,5 +1,5 @@
 // A diff's rows as the pane draws them (#591): the counts a file, the list and the bar show, and the side-by-side pairing. Pure.
-import type { DiffHunk, DiffLine } from '../../types.js'; // src/ui/lib is compiled by the root tsc too (#591)
+import type { DiffHunk, DiffLine, FileDiff } from '../../types.js'; // src/ui/lib is compiled by the root tsc too (#591)
 
 export type DiffLayout = 'unified' | 'split';
 export interface Counts { add: number; del: number }
@@ -47,3 +47,11 @@ export function hunkContext(header: string): string {
   const context = end === -1 ? '' : header.slice(end + 2).trim();
   return context === '' ? header : context;
 }
+
+/** The files grouped by folder (#1040): git's full-path order sorts a subfolder into the middle of its parent's files, which the list would
+ * read as the parent starting twice. Stable, by code unit like git (not localeCompare), so a folder's own files precede its subfolders. */
+export const byFolder = (files: FileDiff[]): FileDiff[] =>
+  [...files].sort((a, b) => {
+    const [x, y] = [splitPath(a.path).dir, splitPath(b.path).dir];
+    return x < y ? -1 : x > y ? 1 : 0;
+  });

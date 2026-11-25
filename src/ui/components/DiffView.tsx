@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { taskLabel } from '../../tasks';
 import type { DiffScope, FileDiff } from '../../types';
 import { DiffBar, latestCheckpoint } from '@/components/DiffBar';
@@ -15,6 +15,7 @@ import { useReviewSubmit } from '@/hooks/use-review-submit';
 import { type MessageKey, t } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
 import { taskReview } from '@/lib/review-events';
+import { byFolder } from '@/lib/diff-rows';
 import { defaultSessionOf, EMPTY_REVIEW, isReviewedIn, reviewSessions, selectionAnchor } from '@/lib/review-view';
 
 /** How a diff tab's scope reads (#270, #591): after the task in the tab's label, and in its strip. */
@@ -50,7 +51,8 @@ export function DiffView({ tab, label, active, activity, onScope }: DiffViewProp
   const checkpoint = tab.scope === 'checkpoint' ? tab.checkpoint ?? latestCheckpoint(activity.activity) : undefined; // #619
   const { state, refresh } = useTaskDiff(activity.activity.id, tab.scope, active, checkpoint); // the live activity's worktree (#629)
   const openFile = useOpenFile(); // abrir arquivo: the file in this activity's editor pane (#717)
-  const files = state.status === 'ready' ? state.diff.files : NO_FILES;
+  const source = state.status === 'ready' ? state.diff.files : NO_FILES;
+  const files = useMemo(() => (source.length === 0 ? NO_FILES : byFolder(source)), [source]); // one order for the list, the cards and J/K (#1040)
   const [layout, setLayout] = useDiffLayout();
   const prefix = useId();
   const sectionId = (path: string): string => `${prefix}${path}`;

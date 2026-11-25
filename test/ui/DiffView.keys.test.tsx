@@ -15,9 +15,9 @@ test('] and [ move the open file, V marks it, only while the focus is in the pan
   renderPane();
   await within(screen.getByRole('region', { name: LABEL })).findByRole('region', { name: 'src/a.ts' });
   await user.click(within(list()).getAllByRole('button')[0]);
+  await user.keyboard(']'); // the list is grouped by folder (#1040): b.ts, img/logo.png, src/a.ts
+  expect(current()).toMatch(/^logo\.png/);
   await user.keyboard(']');
-  expect(current()).toMatch(/^b\.ts/);
-  await user.keyboard('[[');
   expect(current()).toMatch(/^a\.ts/);
   await user.keyboard('[[');
   expect(current()).toMatch(/^logo\.png/);
