@@ -20,8 +20,8 @@ test('the pane draws the bar\'s totals, a 280px list (folder rows, names in thei
   expect(callsTo(hive, 'GET', '/activities/a-I1/diff?scope=worktree')).toHaveLength(1);
   expect(bar()).toHaveTextContent('3 arquivos · +1 −1');
   expect(list()).toHaveClass('w-[280px]', 'border-r');
-  expect(rows()).toEqual(['a.tsmodificado+1 −1', 'b.tsrenomeado', 'logo.pngadicionado']);
-  expect(within(list()).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['⌄src', 'a.tsmodificado+1 −1', 'b.tsrenomeado', '⌄img', 'logo.pngadicionado']);
+  expect(rows()).toEqual(['b.tsrenomeado', 'logo.pngadicionado', 'a.tsmodificado+1 −1']); // grouped by folder (#1040)
+  expect(within(list()).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['b.tsrenomeado', '⌄img', 'logo.pngadicionado', '⌄src', 'a.tsmodificado+1 −1']);
   expect(within(list()).getByText('src').closest('li')).toHaveClass('text-muted-foreground');
   expect(within(list()).getByText('logo.png')).toHaveClass('text-working');
   expect(within(list()).getAllByRole('button')[0]).toHaveAttribute('aria-current', 'true');

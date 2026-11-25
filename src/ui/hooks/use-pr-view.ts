@@ -1,10 +1,10 @@
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { FileDiff, PrReviewFile } from '../../types';
 import { prMark } from '@/components/pr-actions';
 import { prSurface } from '@/components/pr-surface';
 import type { CommentTarget, ReviewSurface } from '@/components/review-surface';
 import { type FileNav, type LineSelect, useDiffLayout, useFileNav, useLineSelection } from '@/hooks/use-diff-pane';
-import type { DiffLayout } from '@/lib/diff-rows';
+import { byFolder, type DiffLayout } from '@/lib/diff-rows';
 import { selectedAnchor } from '@/lib/review-view';
 import type { PrView } from '@/lib/pr-view';
 
@@ -18,7 +18,8 @@ export interface PrReviewView {
 }
 
 export function usePrView(pr: PrView | undefined, review: PrReviewFile | undefined, reread: () => void, after: () => void): PrReviewView {
-  const files = pr?.files ?? NO_FILES;
+  const source = pr?.files ?? NO_FILES;
+  const files = useMemo(() => (source.length === 0 ? NO_FILES : byFolder(source)), [source]); // one order for the list, the cards and J/K (#1040)
   const [layout, setLayout] = useDiffLayout();
   const prefix = useId();
   const sectionId = (path: string): string => `${prefix}${path}`;

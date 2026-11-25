@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
-import { countsOf, hunkContext, splitPath, splitRows } from '@/lib/diff-rows';
-import type { DiffHunk, DiffLine } from '../../src/types';
+import { byFolder, countsOf, hunkContext, splitPath, splitRows } from '@/lib/diff-rows';
+import type { DiffHunk, DiffLine, FileDiff } from '../../src/types';
 
 const ctx = (o: number, n: number, text: string): DiffLine => ({ kind: 'context', text, old: o, new: n });
 const del = (o: number, text: string): DiffLine => ({ kind: 'del', text, old: o });
@@ -30,4 +30,29 @@ test('hunkContext keeps the function git printed after the range, and the whole 
   expect(hunkContext('@@ -1 +1 @@   ')).toBe('@@ -1 +1 @@   ');
   expect(splitPath('src/ui/a.ts')).toEqual({ dir: 'src/ui/', name: 'a.ts' });
   expect(splitPath('a.ts')).toEqual({ dir: '', name: 'a.ts' });
+});
+
+const fileAt = (path: string): FileDiff => ({ path, status: 'modified', hash: 'a'.repeat(64), hunks: [] });
+const pathsOf = (files: FileDiff[]): string[] => files.map((f) => f.path);
+
+test('byFolder keeps a folder\'s own files together before its subfolders (#1040)', () => {
+  expect(pathsOf(byFolder(['agent/design/README.md', 'agent/design/parts/x.html', 'agent/design/tour.hv.html'].map(fileAt))))
+    .toEqual(['agent/design/README.md', 'agent/design/tour.hv.html', 'agent/design/parts/x.html']);
+});
+
+test('byFolder puts root files first and keeps git\'s order inside a folder (#1040)', () => {
+  expect(pathsOf(byFolder(['src/b.ts', 'README.md', 'src/a.ts', 'CHANGELOG.md'].map(fileAt))))
+    .toEqual(['README.md', 'CHANGELOG.md', 'src/b.ts', 'src/a.ts']);
+});
+
+test('byFolder keeps a sibling folder like a-b/ contiguous next to a/ (#1040)', () => {
+  expect(pathsOf(byFolder(['a/x.ts', 'a-b/y.ts', 'a/c/z.ts', 'a/w.ts', 'a-b/v.ts'].map(fileAt))))
+    .toEqual(['a-b/y.ts', 'a-b/v.ts', 'a/x.ts', 'a/w.ts', 'a/c/z.ts']);
+});
+
+test('byFolder returns a new array and leaves its input as it was (#1040)', () => {
+  const input = ['b/x.ts', 'a.ts'].map(fileAt);
+  const sorted = byFolder(input);
+  expect(pathsOf(input)).toEqual(['b/x.ts', 'a.ts']);
+  expect(sorted).not.toBe(input);
 });
