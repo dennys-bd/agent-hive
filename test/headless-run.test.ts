@@ -1,14 +1,15 @@
+import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { AccountError } from '../src/account-env.js';
+import { type AccountEnvDeps, AccountError } from '../src/account-env.js';
 import { AGENTS } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { type HeadlessInput, headlessProcess, runHeadless } from '../src/headless-run.js';
 import { type AgentId, EDITOR_FILE_MAX } from '../src/types.js';
-import { copilotOnMachine, NO_ACCOUNTS } from './fixtures/accounts.js';
+import { APP_WORKSPACE, copilotOnMachine, NO_ACCOUNTS } from './fixtures/accounts.js';
 import { tempDir } from './temp-dir.js';
 
 const POSIX_ONLY = { skip: process.platform === 'win32' && 'POSIX only: the fake CLI is an extensionless sh script on a :-joined PATH' };
@@ -189,5 +190,30 @@ test('a refused account fails the headless run before its folder exists: nothing
 test('a headless Copilot run whose account check refuses runs nothing: gh logged out is copilot/missing, before its folder exists (#962)', async (t) => {
   const tmpRoot = await tempDir(t, 'headless-tmp-');
   assert.deepEqual(await runHeadless(input('copilot'), { env: { PATH: '' }, tmpRoot, account: NO_ACCOUNTS }), { failure: 'account copilot missing', detail: '' });
+  assert.deepEqual(await readdir(tmpRoot), []);
+});
+
+const GL_TEST = `glpat-test-${randomUUID()}`; // built at runtime: no token in a fixture
+const ON_GITLAB: AccountEnvDeps = {
+  ...NO_ACCOUNTS, credentials: async () => ({ gitlab: { 'gitlab.com': { token: GL_TEST, username: 'ana' } } }), gitlabOrigin: async () => 'gitlab.com',
+};
+
+test('a headless run in a workspace on a GitLab host has GITLAB_TOKEN and GITLAB_HOST in its env; one with no workspace has neither, an inherited pair dropped (#1049)', POSIX_ONLY, async (t) => {
+  const cli = await fakeCli(t, 'claude', `cat > /dev/null; printf '{"type":"result","is_error":false,"result":"","structured_output":{"text":"%s|%s"}}' "\${GITLAB_TOKEN:-unset}" "\${GITLAB_HOST:-unset}"`);
+  const env = { ...cli.env, GITLAB_TOKEN: 'inherited', GITLAB_HOST: 'code.example.org' };
+  const text = async (run: HeadlessInput): Promise<string> => {
+    const result = await runHeadless(run, { env, tmpRoot: cli.tmpRoot, account: ON_GITLAB });
+    assert.ok('answer' in result, 'failure' in result ? result.failure : '');
+    return (JSON.parse(result.answer) as { text: string }).text;
+  };
+  assert.equal(await text({ ...input('claude'), workspace: APP_WORKSPACE }), `${GL_TEST}|gitlab.com`);
+  assert.equal(await text(input('claude')), 'unset|unset');
+});
+
+test('a GitLab credential read that rejects fails the headless run as account gitlab unreachable before its folder exists, naming no token (#1049)', async (t) => {
+  const tmpRoot = await tempDir(t, 'headless-tmp-');
+  const account: AccountEnvDeps = { ...ON_GITLAB, credentials: async () => { throw new Error(`store broke near ${GL_TEST}`); } };
+  // an empty PATH: had the run gone on, its failure would be the agent not found, never the account's
+  assert.deepEqual(await runHeadless({ ...input('claude'), workspace: APP_WORKSPACE }, { env: { PATH: '' }, tmpRoot, account }), { failure: 'account gitlab unreachable', detail: '' });
   assert.deepEqual(await readdir(tmpRoot), []);
 });

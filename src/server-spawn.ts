@@ -169,7 +169,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   // #159: the machine launches after writing its files; a spawn resolves once the pty exists, as when it wrote them itself. A rejection is onSpawnFailed's
   const launched = (ptyId: string): Promise<void> => pool.started(ptyId).catch(() => undefined);
   // #953: the run's env: the seam resolved before anything starts, its accounts kept under the pty, the workspace's env over the account's
-  const accountEnvOf = (ptyId: string, agent: AgentId | undefined, env: Record<string, string>): Promise<Record<string, string>> => ptyAccountEnv(deps, ptyId, agent, env);
+  const accountEnvOf = (ptyId: string, agent: AgentId | undefined, workspace: Workspace, env: Record<string, string>): Promise<Record<string, string>> => ptyAccountEnv(deps, ptyId, agent, workspace, env);
   // A start that fails before its pty (#945): spawnFailed frees the worker with the reason; undefined, for the caller to return on
   const failed = async (ptyId: string, err: unknown): Promise<undefined> => {
     await dispatch({ type: 'spawnFailed', ptyId, message: err instanceof AccountError ? refusalLine(err) : errorMessage(err) });
@@ -259,7 +259,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       const resolved = requireWorkspace(config, task);
       workspace = resolved.name;
       external = await externalMcp(config, resolved.name); // #333
-      env = await accountEnvOf(ptyId, agent, await runEnv(machine, resolved)); // #738, #854, #953: before prepare, so a refused account leaves no worktree; one a save removed fails the same way
+      env = await accountEnvOf(ptyId, agent, resolved, await runEnv(machine, resolved)); // #738, #854, #953: before prepare, so a refused account leaves no worktree; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
       protocol = await readProtocolText(protocolPath); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
@@ -303,7 +303,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const onMachine = await runRefusal(agent, { machine, folder: place.workspace.path, ...agentCheck(config, deps.language()) }); // #946: the session gains the stage's check, before the stage start is recorded
     if (onMachine !== undefined) return void (await failed(ptyId, new Error(onMachine)));
     // #854, #953: before the stage start is recorded, as every refusal above; a refused account or a gone env frees the worker through spawnFailed
-    const env = await accountEnvOf(ptyId, agent, await runEnv(machine, place.workspace)).catch((err: unknown) => failed(ptyId, err));
+    const env = await accountEnvOf(ptyId, agent, place.workspace, await runEnv(machine, place.workspace)).catch((err: unknown) => failed(ptyId, err));
     if (env === undefined) return;
     // Refused above, before the stage start is recorded: a session that never runs leaves no mark
     // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
@@ -358,7 +358,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     const machine = machineFor(activity);
     const startDir = taskDir(machine.paths, workspace.path, activity);
-    const env = await accountEnvOf(ptyId, undefined, await runEnv(machine, workspace)); // #854, #953: a fork's GH_REPO, resolved once per launch; a rejection is server.ts' spawnFailed
+    const env = await accountEnvOf(ptyId, undefined, workspace, await runEnv(machine, workspace)); // #854, #953: a fork's GH_REPO, resolved once per launch; a rejection is server.ts' spawnFailed
     const where = found ? { cwd: startDir, env } : await keptLaunch(machine, terminal, startDir, env); // a command's run is never kept (#696)
     pool.start({
       ptyId, machine,
@@ -381,7 +381,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       return;
     }
     const machine = machineFor(workspace); // #932: the workspace's own machine; its shell has no task's activity
-    const env = await accountEnvOf(ptyId, undefined, await runEnv(machine, workspace)); // #953
+    const env = await accountEnvOf(ptyId, undefined, workspace, await runEnv(machine, workspace)); // #953
     pool.start({
       ptyId, machine,
       spec: { ptyId, slug: LOCAL_SLUG, workspace: workspace.name, terminal: true, ...sized(size), ...(await keptLaunch(machine, terminal, workspace.path, env)) },

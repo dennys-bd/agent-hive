@@ -2,7 +2,7 @@ import type { Machine, MachineFor } from './machine.js';
 import { randomUUID } from 'node:crypto';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { heldSession, taskOfWorker } from './activities.js';
-import { requireWorkspace } from './config.js';
+import { requireWorkspace, taskWorkspace, workspaceByName } from './config.js';
 import { writeRunFiles } from './spawn.js';
 import { type AccountEnvAnswer, ACCOUNT_UNAVAILABLE, seamRefusalLine, type AccountSeam, type RunAccountsStore } from './account-env.js';
 import { capturedReply, isEnvLine, refusedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
@@ -24,7 +24,7 @@ import { inFlow } from './tasks.js';
 import { strayAgents } from './shell-procs.js';
 import { capturedCwd, liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type AgentId, type Config, type Effect, type HiveEvent, type SessionRef, type State, type Task, type Worker } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Config, type Effect, type HiveEvent, type SessionRef, type State, type Task, type Worker, type Workspace } from './types.js';
 
 // The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
 // shim's register, which captures an agent typed in it as a free session.
@@ -109,6 +109,15 @@ function registerForget(app: Express, deps: TerminalRouteDeps): void {
     await deps.dispatch({ type: 'forgetTerminal', terminalId });
     res.json({ ok: true });
   });
+}
+
+// #1049: the workspace whose origin picks the capture's GitLab account, read before the seam as captureRun reads it: its task's, else its
+// activity's. One no longer in the config is none here; captureRun refuses it right after
+function captureWorkspace(live: { state: State; runtime: Runtime }, worker: Worker): Workspace | undefined {
+  const { state, runtime: { config } } = live;
+  const activity = state.activities.find((a) => a.id === worker.activityId);
+  const task = activity?.kind === 'task' ? taskOfWorker(state, worker) : undefined;
+  return task === undefined ? workspaceByName(config, activity?.workspace) : taskWorkspace(config, task);
 }
 
 // #924, #932: the capture through its worker's runner: the Hive's flags, the agent's own args, the session id the route drew (none for an agent
@@ -215,7 +224,8 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const cwd = capturedCwd(form.cwd, terminal?.cwd) ?? terminal?.cwd ?? '';
     let account: AccountEnvAnswer;
     try {
-      account = await deps.accountEnv({ agent }); // #953: before anything of the run's is recorded or written
+      const workspace = captureWorkspace(after, worker);
+      account = await deps.accountEnv({ agent, ...(workspace === undefined ? {} : { workspace }) }); // #953: before anything of the run's is recorded or written
       deps.runAccounts.set(runId, account.accounts);
     } catch (err) {
       return unregister(refused(seamRefusalLine(err)));

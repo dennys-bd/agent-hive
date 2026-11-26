@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,9 @@ import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { NO_ACCOUNTS } from './fixtures/accounts.js';
+
+// #1049: a GitLab account stored, so the seam reads the origin; built at runtime, no token in a fixture
+const GITLAB_TOKEN_OF_TEST = `glpat-test-${randomUUID()}`;
 
 // An evaluate stage on the server (#877): the runner alone over a real git worktree and a fake agent CLI first on PATH (no real claude or
 // codex ever runs), then the Stop route through a server.
@@ -69,7 +73,7 @@ async function worldOf(t: TestContext, added = 'export const b = 2;\n'): Promise
 }
 
 interface Harness {
-  runner: EvaluateRunner; runtime: Runtime; worktree: string; events: HiveEvent[]; prepared: string[]; logs: string[]; log: string;
+  runner: EvaluateRunner; runtime: Runtime; worktree: string; events: HiveEvent[]; prepared: string[]; logs: string[]; log: string; origins: string[];
   effect(reviewers: EvaluateRow[], judge?: EvaluateRow): Extract<Effect, { type: 'evaluate' }>;
   read(name: string): Promise<string>;
   drop(): void; // current() answers no mark from now on
@@ -84,9 +88,9 @@ async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepar
   const mark: StageEvaluate = { stage: 'eval', runId: 'R1', workerId: 'w1', startedAt: '2026-10-21T12:00:00.000Z', phase: 'reviewing' };
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: 'hive-1-task-1', base: { ref: 'main', tellWorker: false }, evaluate: mark };
   let isDropped = false;
-  const h: Pick<Harness, 'events' | 'prepared' | 'logs'> = { events: [], prepared: [], logs: [] };
+  const h: Pick<Harness, 'events' | 'prepared' | 'logs' | 'origins'> = { events: [], prepared: [], logs: [], origins: [] };
   const runner = createEvaluateRunner({
-    exec: git, agents, accountDeps: () => NO_ACCOUNTS,
+    exec: git, agents, accountDeps: () => ({ ...NO_ACCOUNTS, credentials: async () => ({ gitlab: { 'gitlab.com': { token: GITLAB_TOKEN_OF_TEST, username: 'ana' } } }), gitlabOrigin: async (workspace) => { h.origins.push(workspace.name); return undefined; } }), // #1049
     log: { info: (line) => h.logs.push(line), warn: (line) => h.logs.push(line) },
     dispatch: async (event) => { h.events.push(event); return []; },
     prepare: async (_r, _a, _t, key) => { h.prepared.push(key); onPrepare?.(); return worktree; },
@@ -146,6 +150,13 @@ test('both reviewers run at once in the worktree, read-only; then evaluateJudgin
   assert.match(judge, /^diff --git a\/a\.ts b\/a\.ts/m, 'the patch against the activity\'s base');
   assert.ok(h.logs.includes('evaluate #HIVE-1: scores 8,9 against 7: below: none'), h.logs.join('\n'));
   assert.ok(h.logs.every((line) => !line.includes('a.ts') && !line.includes('diff --git')), 'no finding nor patch in the log');
+});
+
+test('every reviewer and the judge run with the task\'s workspace, whose origin the seam reads for the GitLab account (#1049)', async (t) => {
+  const h = await harness(t, { env: { SCORES: scoresJson([8, 9]) } });
+  await h.runner.run(h.runtime, h.effect([{ agent: 'claude', focus: 'slow' }, { agent: 'codex', focus: 'slow2' }]));
+  assert.equal(lastOf(h)?.type, 'evaluateEnded', JSON.stringify(h.events));
+  assert.deepEqual(h.origins, ['hive', 'hive', 'hive'], 'two reviewers and the judge');
 });
 
 test('an evaluate effect on a workspace not on local breaks before the worktree: nothing prepared, no agent run (#932)', async (t) => {

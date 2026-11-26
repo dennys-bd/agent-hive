@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { initialState } from '../../src/orchestrator.js';
-import { githubRefs, listRepositories, originRepository } from '../../src/repos/repositories.js';
+import { githubRefs, gitlabOriginHost, listRepositories, originRepository } from '../../src/repos/repositories.js';
 import type { CombConfig, Exec, State, Task, Workspace } from '../../src/types.js';
 import { NOT_SUPPORTED, unavailableMachine } from '../../src/machines.js';
 import { fakeMachine } from '../fake-machine.js';
@@ -154,4 +154,20 @@ test('each workspace lists its repositories from its own machine; one on an unav
   };
   assert.deepEqual((await listRepositories({ comb, gitlabHosts: [] }, initialState(0), machineFor)).map((r) => r.repository), ['acme/hive']);
   assert.deepEqual(asked, ['local', 'wsl:Y']);
+});
+
+test('gitlabOriginHost answers the GitLab host of a checkout\'s origin, lowercased; none on GitHub, on a host of no kind, with no checkout, or for a host dropped from the list (#1049)', async () => {
+  const remotes: Record<string, string> = {
+    '/code/a': 'git@GitLab.com:acme/app.git\n', '/code/b': 'https://git.example.com/group/sub/app.git\n',
+    '/code/c': 'git@github.com:acme/hive.git\n', '/code/d': 'https://code.example.org/acme/docs.git\n',
+  };
+  const machine = fakeMachine({ exec: async (_file, args) => {
+    const remote = remotes[args[1] ?? ''];
+    if (remote === undefined) throw new Error('not a git repository');
+    return { stdout: remote };
+  } });
+  const hosts = ['git.example.com'];
+  const read = await Promise.all(['/code/a', '/code/b', '/code/c', '/code/d', '/code/none'].map((path) => gitlabOriginHost(machine, path, hosts)));
+  assert.deepEqual(read, ['gitlab.com', 'git.example.com', undefined, undefined, undefined]);
+  assert.equal(await gitlabOriginHost(machine, '/code/b', []), undefined);
 });

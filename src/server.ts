@@ -92,7 +92,7 @@ import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { jiraRoundSources } from './read-model/jira-round.js';
 import { createReadModelLoop, readModelEvent, type ReadModelLoop, type RefetchOutcome } from './read-model/loop.js';
-import { githubRefs, listRepositories } from './repos/repositories.js';
+import { githubRefs, gitlabOriginHost, listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
@@ -403,8 +403,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
   // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
   const runAccounts = createRunAccounts();
-  // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's
-  const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv), machineGithub: account.machine });
+  // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's. #1049: a
+  // workspace's GitLab origin is read on its own machine against the live gitlabHosts, at every spawn
+  const accountDeps = (): AccountEnvDeps => ({
+    accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv), machineGithub: account.machine,
+    gitlabOrigin: (workspace) => gitlabOriginHost(machineFor(workspace), workspace.path, live?.runtime.config.gitlabHosts ?? []),
+  });
   const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
   const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, language: () => effectiveLanguage(), home, facts: wiring.facts, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends

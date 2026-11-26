@@ -4,6 +4,7 @@ import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { commandShimDir, commandShimsEnvFile } from './command-shim.js';
 import { envValue, findExec } from './exec-path.js';
+import { GITLAB_ENV_NAMES } from './gitlab/account-env.js';
 import { killTree } from './kill-tree.js';
 import { shellInitDir, shellQuote } from './shell-init.js';
 import { shimDir } from './shim.js';
@@ -94,8 +95,9 @@ export const runSession = (sessionId: string | undefined, policy: SessionPolicy)
 export { runTmpDir } from './run-tmp.js'; // #873: moved, so a runner can name the run's tmp dir; every caller still imports it from here
 
 // The Hive's own variables no child inherits (see ptyEnv); every runner's hostEnv joins them (#924)
-// HIVE_PWSH too (#645): only terminalEnv sets it, so an inherited one never picks the terminal's shell
-const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME', 'HIVE_PWSH'];
+// HIVE_PWSH too (#645): only terminalEnv sets it, so an inherited one never picks the terminal's shell. #1049: and glab's token and host,
+// which the seam sets only for the GitLab host of the run's own origin
+const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME', 'HIVE_PWSH', ...GITLAB_ENV_NAMES];
 
 /** The Hive's own env minus what a child must not inherit (see ptyEnv): every runner's host env, whatever the run's agent, since it
  * describes the process the Hive was started from (#924). A language server (#780) is started with the same. */

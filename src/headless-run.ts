@@ -16,15 +16,16 @@ import { type ExecLookup, resolveExec } from './exec-path.js';
 import { type Process, type Ran, runOn } from './format-run.js';
 import { runDetached } from './machine-run.js';
 import { withoutHiveEnv } from './spawn.js';
-import type { AgentId } from './types.js';
+import type { AgentId, Workspace } from './types.js';
 
 export const HEADLESS_TIMEOUT_MS = 180_000;
 const SCHEMA_FILE = 'schema.json';
 const ANSWER_FILE = 'answer.txt';
 const FILE_MODE = 0o600; // the schema; the folder's 0700 already keeps the answer this user's
 
-// timeoutMs: the run's own (#877); HeadlessDeps.timeoutMs, the tests' override, still wins over it
-export interface HeadlessInput { agent: AgentId; model?: string; prompt: string; schema: object; signal: AbortSignal; cwd?: string; readOnlyTools?: true; mcpConfig?: string; allowedTools?: readonly string[]; outsideRepo?: true; timeoutMs?: number }
+// timeoutMs: the run's own (#877); HeadlessDeps.timeoutMs, the tests' override, still wins over it. workspace: the task's (#1049), whose
+// origin picks the GitLab account; only an evaluation passes one, the one headless run in a task's worktree
+export interface HeadlessInput { agent: AgentId; model?: string; prompt: string; schema: object; signal: AbortSignal; cwd?: string; readOnlyTools?: true; mcpConfig?: string; allowedTools?: readonly string[]; outsideRepo?: true; timeoutMs?: number; workspace?: Workspace }
 type HeadlessFailure = { failure: string; detail: string };
 export type HeadlessResult = { answer: string } | HeadlessFailure;
 /** `account` is every caller's (#953): the live selection and the credential store. The rest are the tests' seams: the env (a fake CLI first on
@@ -55,9 +56,9 @@ export function headlessProcess(agent: AgentId, args: string[], env: NodeJS.Proc
 }
 
 // #953: the run's account env, before its folder exists; a refused account runs nothing and is the run's failure, any other error a throw
-async function headlessAccount(agent: AgentId, deps: AccountEnvDeps): Promise<{ env: Record<string, string> } | HeadlessFailure> {
+async function headlessAccount(input: Pick<HeadlessInput, 'agent' | 'workspace'>, deps: AccountEnvDeps): Promise<{ env: Record<string, string> } | HeadlessFailure> {
   try {
-    return await accountEnv({ agent }, deps);
+    return await accountEnv({ agent: input.agent, ...(input.workspace === undefined ? {} : { workspace: input.workspace }) }, deps);
   } catch (err) {
     if (err instanceof AccountError) return { failure: refusalLine(err), detail: '' };
     throw err;
@@ -68,7 +69,7 @@ async function headlessAccount(agent: AgentId, deps: AccountEnvDeps): Promise<{ 
  *  provider fails with anything but AccountError. */
 export async function runHeadless(input: HeadlessInput, deps: HeadlessDeps): Promise<HeadlessResult> {
   const runner = runners[input.agent];
-  const account = await headlessAccount(input.agent, deps.account);
+  const account = await headlessAccount(input, deps.account);
   if ('failure' in account) return account;
   const dir = await mkdtemp(join(deps.tmpRoot ?? tmpdir(), 'hive-headless-'));
   try {

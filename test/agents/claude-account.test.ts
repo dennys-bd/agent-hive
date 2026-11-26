@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { AccountError, accountEnv } from '../../src/account-env.js';
 import { runners } from '../../src/agents/registry.js';
 import type { Credentials } from '../../src/types.js';
-import { LOGGED_OUT } from '../fixtures/accounts.js';
+import { LOGGED_OUT, OFF_GITLAB } from '../fixtures/accounts.js';
 
 const TOKEN = 'not-a-real-token-956';
 const STORE: Credentials = { claude: { work: { token: TOKEN } } };
@@ -31,11 +31,11 @@ test('a selected name the store lacks throws claude/missing, matched exactly, wi
 });
 
 test('through the seam, a Claude run gets the selected account\'s token and the run\'s account is its name (#956)', async () => {
-  const answer = await accountEnv({ agent: 'claude' }, { accounts: { claude: 'work' }, credentials: store(), machineGithub });
+  const answer = await accountEnv({ agent: 'claude' }, { accounts: { claude: 'work' }, credentials: store(), machineGithub, gitlabOrigin: OFF_GITLAB });
   assert.deepEqual(answer, { env: { CLAUDE_CODE_OAUTH_TOKEN: TOKEN }, accounts: { claude: 'work' } });
 });
 
 test('through the seam, no accounts.claude sets no CLAUDE_CODE_OAUTH_TOKEN, and a name the store lacks refuses (#956)', async () => {
-  assert.deepEqual(await accountEnv({ agent: 'claude' }, { accounts: {}, credentials: store(), machineGithub }), { env: {}, accounts: {} });
-  await assert.rejects(accountEnv({ agent: 'claude' }, { accounts: { claude: 'gone' }, credentials: store(), machineGithub }), isMissing);
+  assert.deepEqual(await accountEnv({ agent: 'claude' }, { accounts: {}, credentials: store(), machineGithub, gitlabOrigin: OFF_GITLAB }), { env: {}, accounts: {} });
+  await assert.rejects(accountEnv({ agent: 'claude' }, { accounts: { claude: 'gone' }, credentials: store(), machineGithub, gitlabOrigin: OFF_GITLAB }), isMissing);
 });
