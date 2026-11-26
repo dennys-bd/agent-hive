@@ -20,8 +20,9 @@ export interface ServerFacts {
   typed(ptyId: string): void; // an input effect's text reached the pty: its UserPromptSubmit is the Hive's
   usageSince(ptyId: string): number | undefined; // the open stage run's start: what the turn-end read counts usage from
   prActivity(state: State | undefined, reads: PrActivity[], open?: readonly string[]): void; // pr.checks once per run, pr.commits on a change
-  // The PR poll's second query (commits and check runs), after the state query and failure-isolated from it: merge detection never waits on it
-  pollPrActivity(state: State | undefined, urls: string[], gql: Gql): Promise<void>;
+  // The PR poll's activity: the GitHub query of `urls` (commits and check runs, #742), after the state query and failure-isolated from it, and
+  // the GitLab MRs' reads (#1052), written in one prActivity pruned to `open`, every open link of both hosts, so neither prunes the other's
+  pollPrActivity(state: State | undefined, urls: string[], gql: Gql, gitlab?: PrActivity[], open?: readonly string[]): Promise<void>;
   // A source write's outcome as source.action (warn when it failed) and a listing's as source.polled (debug) or source.poll_failed (warn): each
   // wraps the call's promise and hands it back settled the same way, so server.ts keeps its own lines
   sourceAction<T>(state: State | undefined, taskId: string, action: string, work: Promise<T>): Promise<T>;
@@ -138,15 +139,17 @@ function prRecorders(log: ErrorLog, write: Write): Pick<ServerFacts, 'prActivity
   }, undefined);
   return {
     prActivity,
-    pollPrActivity: async (state, urls, gql) => {
+    pollPrActivity: async (state, urls, gql, gitlab = [], open = urls) => {
       const query = prActivityQuery(urls);
-      if (query === undefined) return;
+      if (query === undefined && gitlab.length === 0) return;
+      let github: PrActivity[] = [];
       try {
-        const data = await gql(query);
-        prActivity(state, guard(log, 'parsePrActivity', parsePrActivity, [])(urls, data), urls);
+        if (query !== undefined) github = guard(log, 'parsePrActivity', parsePrActivity, [])(urls, await gql(query));
       } catch (err) {
         log.error(`pr activity: ${err instanceof Error ? err.message : String(err)}`); // the state query's own line, as it logs its failure
+        if (gitlab.length === 0) return; // as before #1052: a failed query alone writes nothing
       }
+      prActivity(state, [...github, ...gitlab], open);
     },
   };
 }

@@ -57,7 +57,10 @@ import { syncsFor, effectiveLimits, isChildSession, reduce, SIGNALS } from './or
 import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { posixShell } from './posix-shell.js';
-import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
+import { prNumber } from './pull-requests.js';
+import { gitlabAccess } from './gitlab/account.js';
+import type { GitlabAccess } from './gitlab/pr-states.js';
+import { pollPrStates } from './server-pr-states.js';
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { readUnlisted, unlistedStarted } from './poll-reads.js';
 import { registerTaskRoutes } from './server-tasks.js';
@@ -199,6 +202,7 @@ export interface ServerDeps {
   accountEnv?: typeof accountEnv; // #953: tests: a seam that refuses where no runner is asked (a terminal); the default is account-env.ts'
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
+  gitlab?: GitlabAccess; // #1052: the PR poll's GitLab clients; tests inject a fake, the default is each host's stored account (gitlabAccess)
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
   home: string; // the Hive's own directory (#202): hive.config.json, state.json, hive.log, hooks.json, prompts/
   /** This boot's secret (#467): what every request and pty upgrade must carry, and what the workers get in their MCP config (their env gets only the path of hive.secret).
@@ -896,19 +900,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   }
 
-  // After every poll (#207): one query for every open PR on every task, one point at most. Diagnostic like refreshQuota: a failure is
-  // logged and every PR keeps its last known state; the next poll tries again.
+  // After every poll (#207): GitHub's open PRs in one query and GitLab's MRs through each host's account (#1052). Diagnostic like refreshQuota:
+  // a failure is logged and every PR keeps its last known state; the next poll tries again
   async function refreshPrStates(): Promise<void> {
-    const urls = openPrUrls(live?.state.activityRecords ?? []);
-    const query = prStatesQuery(urls);
-    if (query === undefined) return;
-    try {
-      const states = parsePrStates(urls, await prGql(query));
-      if (states.length > 0) await dispatch({ type: 'prStates', states });
-    } catch (err) {
-      log.error(`pr states: ${errorMessage(err)}`);
-    }
-    await wiring.pollPrActivity(live?.state, urls, prGql); // #742: commits and checks in a query of their own: its failure never costs a merge
+    const gitlab = deps.gitlab ?? ((host: string) => gitlabAccess(host, deps.credentialsEnv));
+    await pollPrStates({ state: () => live?.state, gql: prGql, gitlab, dispatch, log, pollPrActivity: wiring.pollPrActivity });
   }
 
   // Info, not error: an API-key user has no OAuth token by design and sees the reason in hive.log once, not every 5 min. The reason never

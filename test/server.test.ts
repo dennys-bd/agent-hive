@@ -18,6 +18,7 @@ import { HOUR_MS } from '../src/usage.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { prStatesQuery } from '../src/pull-requests.js';
 import { createServer, type HiveServer, killStrays, type ServerDeps } from '../src/server.js';
+import type { GitlabAccess } from '../src/gitlab/pr-states.js';
 import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '../src/activities.js';
 import { runSessionId } from '../src/record-kit.js';
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
@@ -2466,6 +2467,29 @@ test('the hook route checks a glab mr create\'s link against the saved GitLab ho
   assert.equal((await hookEvent(base, ptyId, payload)).status, 204);
   assert.equal((await hookEvent(base, ptyId, payload)).status, 204);
   assert.deepEqual(prs0(server).map((pr) => [pr.url, pr.state]), [[mr, 'open']]);
+});
+
+test('the PR poll reads an open GitLab MR through its host\'s account, never through gh: merged, with its times (#1052)', async (t) => {
+  const mr = 'https://gitlab.com/acme/app/-/merge_requests/7';
+  const gh: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    if (file !== 'gh') return { stdout: '' };
+    gh.push(args);
+    return { stdout: JSON.stringify({ data: {} }) };
+  };
+  const paths: string[] = [];
+  const gitlab: GitlabAccess = async (host) => (host !== 'gitlab.com' ? undefined : {
+    get: async (path: string) => {
+      paths.push(path);
+      return path.endsWith('/commits?per_page=100') ? { body: [] } : { body: { state: 'merged', created_at: '2026-11-20T10:00:00.000Z', merged_at: '2026-11-21T09:00:00.000Z' } };
+    },
+  });
+  const { server } = await start(t, BODY, undefined, {}, { exec, gitlab });
+  await server.dispatch({ type: 'pr', ptyId: worker0(server).runId!, url: mr });
+  await server.poll();
+  assert.deepEqual(prs0(server).map(({ url, state, openedAt, mergedAt }) => ({ url, state, openedAt, mergedAt })), [{ url: mr, state: 'merged', openedAt: '2026-11-20T10:00:00.000Z', mergedAt: '2026-11-21T09:00:00.000Z' }]);
+  assert.deepEqual(paths, ['projects/acme%2Fapp/merge_requests/7', 'projects/acme%2Fapp/merge_requests/7/commits?per_page=100']);
+  assert.equal(gh.some((args) => args.join(' ').includes('merge_requests')), false, 'no GitLab link in a GitHub query');
 });
 
 test('POST /crash/dismiss drops the crash report, behind the UI header (#283)', async (t) => {

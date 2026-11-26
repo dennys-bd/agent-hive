@@ -31,8 +31,8 @@ export const ACTIVITY_FIELDS = 'createdAt commits { totalCount } recent: commits
 const STATE_FIELDS = 'state createdAt mergedAt closedAt'; // #742: the times ride along at no extra cost
 const SHA_CHARS = 8;
 
-// One aliased resource(url:) per link, p0…pN in order (#207); undefined for none: no open PR, no call. markPr's callers only ever pass a
-// GitHub pull request link, and JSON.stringify still makes each one a valid GraphQL string; ci-checks.ts reuses it (#834)
+// One aliased resource(url:) per link, p0…pN in order (#207); undefined for none: no open PR, no call. Its callers pass GitHub pull request links
+// only (#1052: the PR poll and the CI reader split by host), and JSON.stringify still makes each one a valid GraphQL string; ci-checks.ts reuses it (#834)
 export const aliasedQuery = (urls: string[], fields: string): string | undefined =>
   (urls.length === 0 ? undefined : `query { ${urls.map((url, i) => `p${i}: resource(url: ${JSON.stringify(url)}) { ... on PullRequest { ${fields} } }`).join(' ')} }`);
 
