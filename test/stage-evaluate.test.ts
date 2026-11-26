@@ -102,7 +102,7 @@ test('a Build ending into the evaluate stage hands it the freed worker under the
   const building = reduce(base([INTO, PASSED, FAILED]), { type: 'poll', source: 'board', items: [listed('Build')] }).state;
   const ptyId = building.workers[0].runId ?? 'none';
   const done = reduce(building, { type: 'done', ptyId }).state;
-  const { state, effects } = reduce(done, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  const { state, effects } = reduce(done, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
   assert.ok(evaluateOf(effects));
   assert.equal(effects.some((e) => e.type === 'spawn'), false);
   assert.deepEqual([state.tasks[0].stage, state.workers[0].status, state.workers[0].runId, live(state)?.evaluate?.workerId], ['eval', 'working', undefined, state.workers[0].id]);

@@ -31,7 +31,7 @@ const runOf = (state: State, ptyId: string): Worker | undefined => state.workers
 // What the hook route does for a Codex run (#928): its runner's payload goes to the reducer, a dropped one nowhere
 const hooked = (state: State, ptyId: string, body: HookPayload): State => {
   const payload = codexRunner.hookPayload(body);
-  return payload === undefined ? state : reduce(state, { type: 'hook', ptyId, payload }).state;
+  return payload === undefined ? state : reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload }).state;
 };
 // A new codex session, on the task or in the workspace's local activity, before its first prompt
 function opened(where: 'task' | 'local' = 'task'): { state: State; ptyId: string; spawn: SessionSpawn } {
@@ -67,7 +67,7 @@ test('its first SessionStart records Codex\'s id on the worker and appends a fre
   assert.equal(runOf(seen, ptyId)?.sessionId, CODEX_SESSION);
   assert.deepEqual(sessionsOf(seen, ITEM.itemId).find((s) => s.id === CODEX_SESSION), { id: CODEX_SESSION, startedAt: at, stages: [], lastUsedAt: at, free: true, agent: 'codex' });
   assert.equal(activityOf(seen, ITEM.itemId)?.sessionId, S1, 'a free session never takes the activity\'s id');
-  const again = reduce(seen, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: LATER, cwd: '/wt', source: 'startup' } }).state;
+  const again = reduce(seen, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: LATER, cwd: '/wt', source: 'startup' } }).state;
   assert.equal(runOf(again, ptyId)?.sessionId, CODEX_SESSION, 'the first id wins (#24)');
   assert.equal(sessionsOf(again, ITEM.itemId).some((s) => s.id === LATER), false);
 });

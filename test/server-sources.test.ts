@@ -89,7 +89,7 @@ test('one save, two sources: each source\'s start and finish lists reach its own
     const current = sources.server.getState()!;
     const ptyId = current.workers.find((s) => taskOfWorker(current, s)?.item.itemId === taskId)!.runId!;
     await sources.server.dispatch({ type: 'done', ptyId });
-    await sources.server.dispatch({ type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+    await sources.server.dispatch({ type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
   }
   assert.deepEqual(sources.work.writes, ['12→In progress', '12→In review', '12 close']);
   assert.deepEqual(sources.notes.writes, ['13 remove']);
@@ -161,7 +161,7 @@ test('a save that renames a source carries its running task over: the same workt
   await sources.server.poll();
   const polled = sources.server.getState()!;
   const worker = polled.workers.find((s) => taskOfWorker(polled, s)?.item.itemId === 'work:12')!;
-  await sources.server.dispatch({ type: 'hook', ptyId: worker.runId!, payload: { hook_event_name: 'SessionStart', cwd: '/w' } });
+  await sources.server.dispatch({ type: 'hook', ptyId: worker.runId!, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/w' } });
   const before = sources.server.getState()!.tasks.find((c) => c.item.itemId === 'work:12')!;
   const was = activityOf(sources.server.getState()!, 'work:12'); // #629: the worktree is the activity's
   assert.equal(was?.worktree, '/w');

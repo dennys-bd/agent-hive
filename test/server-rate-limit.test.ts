@@ -106,7 +106,7 @@ test('a source action the source rate limits puts the source in backoff and is r
   const current = h.server.getState()!;
   const ptyId = current.workers.find((s) => taskOfWorker(current, s)?.item.itemId === 'work:12')!.runId!;
   await h.server.dispatch({ type: 'done', ptyId });
-  await h.server.dispatch({ type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } }); // onFinish: the close
+  await h.server.dispatch({ type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } }); // onFinish: the close
   assert.equal(h.server.getState()!.syncs.work.backoffUntil, h.work.writeLimited.retryAt);
   assert.deepEqual(h.work.writes, ['12→In progress'], 'the close was never written');
 });

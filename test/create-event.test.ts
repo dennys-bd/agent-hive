@@ -51,7 +51,7 @@ function fakeDeps(comb: CreateDeps['config']['comb'] = COMB, { listed = true, fa
   const made: unknown[] = []; const polled: string[][] = []; const events: string[] = [];
   let state = ON_SOURCE;
   const deps: CreateDeps = {
-    state: ON_SOURCE, config: { comb }, ...(canCreate === undefined ? {} : { canCreate }),
+    state: ON_SOURCE, config: { comb, gitlabHosts: [] }, ...(canCreate === undefined ? {} : { canCreate }),
     sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { if (fail) throw fail; made.push(f); return offProject ? { ref: REF } : { itemId: 'roadmap:PVTI_9', ref: REF }; } }], ['notes', {}], ['tickets', { create: async (f) => { if (fail) throw fail; made.push(f); return { itemId: 'tickets:10007', ref: JIRA_REF }; } }]]),
     dispatch: async (e) => { events.push(e.type); return []; },
     poll: async (names) => { polled.push(names); if (pollFails) throw new Error(pollFails); if (listed) state = { ...state, tasks: [MADE, TICKET] }; },
@@ -89,7 +89,7 @@ const TRACKER_REF = { id: 'T-1', url: 'https://tracker.example/T-1' };
 function trackerDeps(can?: CreateDeps['canCreate']) {
   const made: unknown[] = [];
   const deps: CreateDeps = {
-    state: STATE, config: { comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [TRACKER] } },
+    state: STATE, config: { comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [TRACKER] }, gitlabHosts: [] },
     sources: new Map<string, Pick<Source, 'create'>>([['tracker', { create: async (f) => { made.push(f); return { itemId: 'tracker:T-1', ref: TRACKER_REF }; } }]]),
     dispatch: async () => [], poll: async () => {}, latest: () => STATE, ...(can === undefined ? {} : { canCreate: can }),
   };
@@ -141,7 +141,7 @@ function reducingDeps(comb = COMB, state: State = STATE) {
   const made: unknown[] = []; const events: HiveEvent[] = [];
   let current = state;
   const deps: CreateDeps = {
-    state, config: { comb },
+    state, config: { comb, gitlabHosts: ['git.example.com'] },
     sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { made.push(f); return { itemId: 'roadmap:PVTI_9', ref: REF }; } }]]),
     dispatch: async (e) => { events.push(e); current = reduce(current, e).state; return []; },
     poll: async () => undefined,
@@ -171,12 +171,24 @@ test('createTask with pr refuses a source, a link that is no GitHub PR and a PR 
   assert.deepEqual(await createTask(again.deps, { title: 'x', stage: 'fila', pr: PR }), { status: 409, message: PR_TAKEN_MESSAGE });
   const sourced = reducingDeps();
   assert.deepEqual(await createTask(sourced.deps, { title: 'x', stage: 'fila', pr: PR, source: 'roadmap' }), { status: 400, message: PR_HIVE_ONLY_MESSAGE });
-  for (const pr of ['https://github.com/acme/app/issues/7', 'http://github.com/acme/app/pull/7', 'https://github.com/acme/app/pull/7/files', 'https://x.dev/pull/7', 'https://gitlab.com/acme/app/-/merge_requests/7', '', 7, null]) {
+  for (const pr of ['https://github.com/acme/app/issues/7', 'http://github.com/acme/app/pull/7', 'https://github.com/acme/app/pull/7/files', 'https://x.dev/pull/7', 'https://code.example.org/acme/app/-/merge_requests/7', '', 7, null]) {
     assert.deepEqual(await createTask(reducingDeps().deps, { title: 'x', stage: 'fila', pr }), { status: 400, message: PR_URL_MESSAGE }, String(pr));
   }
   const off = reducingDeps({ ...COMB, hiveSource: false });
   assert.deepEqual(await createTask(off.deps, { title: 'x', stage: 'fila', pr: PR }), { status: 409, message: HIVE_OFF_MESSAGE });
   assert.deepEqual([again.events, sourced.events, off.events, sourced.made], [[], [], [], []]);
+});
+
+test('createTask with pr takes an MR on gitlab.com or a listed GitLab host; on any other host it is a 400 naming both shapes (#1052)', async () => {
+  for (const mr of ['https://gitlab.com/acme/platform/app/-/merge_requests/7', 'https://git.example.com/acme/app/-/merge_requests/3']) {
+    const run = reducingDeps();
+    assert.deepEqual(await createTask(run.deps, { title: 'The MR', stage: 'fila', pr: mr }), { id: 'HIVE-1', itemId: 'local:1' }, mr);
+    assert.equal(taskOfPr(run.latest(), mr)?.item.itemId, 'local:1');
+  }
+  const unlisted = reducingDeps();
+  assert.deepEqual(await createTask(unlisted.deps, { title: 'x', stage: 'fila', pr: 'https://code.example.org/acme/app/-/merge_requests/7' }), { status: 400, message: PR_URL_MESSAGE });
+  assert.deepEqual(unlisted.events, []);
+  assert.match(PR_URL_MESSAGE, /pull\/<n>.*merge_requests\/<n>/);
 });
 
 test('createEvent without a stage is a task outside the flow, its origin kept; a stage it names must still exist (#566)', () => {

@@ -243,7 +243,7 @@ test('a claude resume of a local session registers under its id, with no --sessi
   const held = server.getState()?.workers.find((w) => w.runId === first)?.sessionId ?? '';
   await refused(registerArgs(base, id, 'claude', ['--resume', held]), 409, 'essa sessão já roda em outra execução', 'two workers on one session id');
   // its SessionStart, else its exit forgets an entry that never opened (#587)
-  await server.dispatch({ type: 'hook', ptyId: first, payload: { hook_event_name: 'SessionStart', session_id: held, cwd: repo, source: 'startup' } });
+  await server.dispatch({ type: 'hook', ptyId: first, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: held, cwd: repo, source: 'startup' } });
   await server.dispatch({ type: 'exit', ptyId: first });
   const { runId, argv } = replyOf(await (await registerArgs(base, id, 'claude', ['--resume', held])).text());
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
@@ -272,7 +272,7 @@ test('a codex resume of a conversation a task\'s worktree holds is refused in th
   const taskShell = ((await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult).ptyId ?? '';
   const cwd = server.getState()?.terminals.find((x) => x.terminalId === taskShell)?.cwd;
   const { runId: codexRun } = replyOf(await (await register(base, taskShell, { agent: 'codex' })).text());
-  await server.dispatch({ type: 'hook', ptyId: codexRun, payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, cwd, source: 'startup' } });
+  await server.dispatch({ type: 'hook', ptyId: codexRun, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, cwd, source: 'startup' } });
   await server.dispatch({ type: 'exit', ptyId: codexRun });
   const local = await openShell(base);
   await refused(registerArgs(base, local, 'codex', ['resume', CODEX_ID]), 409, 'essa conversa é de outro checkout', 'the worktree\'s conversation from the main checkout');
@@ -310,7 +310,7 @@ test('copilot --resume <uuid> of a held session registers under that id with no 
   const { runId: first } = await copilotReply(t, base, id);
   const held = server.getState()?.workers.find((w) => w.runId === first)?.sessionId ?? '';
   // its SessionStart, else its exit forgets an entry that never opened (#587)
-  await server.dispatch({ type: 'hook', ptyId: first, payload: { hook_event_name: 'SessionStart', session_id: held, cwd: repo, source: 'startup' } });
+  await server.dispatch({ type: 'hook', ptyId: first, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: held, cwd: repo, source: 'startup' } });
   await server.dispatch({ type: 'exit', ptyId: first });
   const { runId, argv } = await copilotReply(t, base, id, ['--resume', held]);
   const worker = server.getState()?.workers.find((w) => w.runId === runId);

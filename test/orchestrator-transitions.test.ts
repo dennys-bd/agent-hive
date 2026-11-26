@@ -26,7 +26,7 @@ const flow = (transitions: Transition[], stages: Stage[] = STAGES): State =>
 // hive_done, then its Stop: what ends a stage
 const stageEnd = (state: State, done: Partial<Extract<HiveEvent, { type: 'done' }>> = {}) => {
   const ptyId = state.workers[0].runId ?? '';
-  return reduce(reduce(state, { type: 'done', ptyId, ...done }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(state, { type: 'done', ptyId, ...done }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 };
 const taskOf = (s: State) => s.tasks.find((t) => t.item.itemId === ID);
 const columns = (effects: Effect[]): string[] => effects.flatMap((e) => (e.type === 'setColumn' ? [e.column] : []));

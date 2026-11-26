@@ -25,7 +25,7 @@ const running = (): State =>
   reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(STAGES) }, { type: 'poll', source: 'board', items: [listed] }).state;
 const ptyOf = (state: State): string => state.workers.find((w) => w.status !== 'empty')!.runId!;
 const workerOf = (state: State, ptyId: string): Worker => state.workers.find((w) => w.runId === ptyId)!;
-const hook = (ptyId: string, payload: HookPayload): HiveEvent => ({ type: 'hook', ptyId, payload });
+const hook = (ptyId: string, payload: HookPayload): HiveEvent => ({ type: 'hook', ptyId, gitlabHosts: [], payload });
 const failed = (state: State, ptyId: string, error: string) => reduce(state, hook(ptyId, { hook_event_name: 'StopFailure', error }));
 const withLimits = (state: State, windows: RateLimits['windows'], agent: AgentId = 'claude'): State => ({ ...state, rateLimits: { [agent]: { at: iso(Date.now()), windows } } });
 // The retry as it lands: the timer's retryDue, then the prompt it typed and the turn's first tool

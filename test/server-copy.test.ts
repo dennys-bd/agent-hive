@@ -115,7 +115,7 @@ test('POST …/copy into another activity copies the transcript there, spawns th
   assert.equal(await readFile(told, 'utf8'), await readFile(join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'utf8'), 'and the session protocol that goes with them (#167)');
   const dir = transcriptDir(fakeMachine(), two);
   assert.deepEqual(await readdir(dir), [`${source}.jsonl`]);
-  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: copy.id, cwd: two } });
+  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: copy.id, cwd: two } });
   assert.deepEqual(await readdir(dir), [], 'the fork has its own transcript by now');
   assert.equal(sessionsOf(server.getState()!, 'local:1').length, 1, 'the original stays as it was');
 });
@@ -154,7 +154,7 @@ test('a local session continues in the checkout, resumed by id, and clears once 
   const open = (id: string, name = WORKSPACE) => postJson(`${base}/activities/${encodeURIComponent(localActivityId(name))}/sessions/${id}/open`);
   await refused(open(local.id), 409, 'sessão já aberta ou desconhecida'); // its copy's run holds it
   await refused(postJson(`${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions/${local.id}/clear`), 409, 'Esta sessão está em uso ou não existe mais');
-  await server.dispatch({ type: 'hook', ptyId: workers[1].launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: local.id, cwd: repo } }); // it opened
+  await server.dispatch({ type: 'hook', ptyId: workers[1].launch.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: local.id, cwd: repo } }); // it opened
   workers[1].handlers.onExit();
   await waitFor(() => server.getState()!.workers.length === 0);
   await refused(open(local.id, 'site'), 404, 'atividade desconhecida'); // #629: a workspace the Comb lacks has no local record
@@ -200,7 +200,7 @@ test('while a copy\'s temporary transcript waits for its SessionStart, a second 
   await refused(postJson(path, { to: { activityId: localActivityId(WORKSPACE) }, notice: false }), 409, 'uma cópia desta sessão ainda está abrindo');
   assert.equal((await postJson(path, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: false })).status, 200);
   const copy = workers[1].launch;
-  await server.dispatch({ type: 'hook', ptyId: copy.ptyId, payload: { hook_event_name: 'SessionStart', session_id: plainArgs(copy).at(-1), cwd: copy.cwd } });
+  await server.dispatch({ type: 'hook', ptyId: copy.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: plainArgs(copy).at(-1), cwd: copy.cwd } });
   assert.equal((await postJson(path, { to: { activityId: localActivityId(WORKSPACE) }, notice: false })).status, 200, 'settled: the file is gone');
 });
 
@@ -283,7 +283,7 @@ async function codexSource(two: Two): Promise<void> {
   const home = two.codex;
   await two.server.dispatch({ type: 'openSession', activityId: workId(two.server.getState()!, 'local:1'), agent: 'codex' });
   const run = two.workers.at(-1)!;
-  await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: two.one, source: 'startup' } });
+  await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: two.one, source: 'startup' } });
   await writeRollout(home, DAY, SESSION, [sessionMeta(SESSION, undefined, two.one)]); // before the exit, as the run wrote it (#586)
   run.handlers.onExit();
   await waitFor(() => two.server.getState()!.workers.length === 0);
@@ -302,7 +302,7 @@ test('a Codex session copies with codex fork <id>: its rollout found by id, noth
   assert.equal(server.getState()!.workers.at(-1)!.copyOf, undefined, 'nothing placed, nothing to drop');
   assert.deepEqual(await readdir(transcriptDir(fakeMachine(), two.two)).catch(() => []), []);
   const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
-  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'fork' } });
+  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'fork' } });
   assert.deepEqual(sessionsOf(server.getState()!, 'local:2').map((s) => [s.id, s.name, s.agent]), [[FORK, 'no dois', 'codex']]);
 });
 
@@ -318,7 +318,7 @@ async function copilotLocalSource(t: TestContext, two: Two): Promise<string> {
   const run = two.workers[1];
   dropRunTmp(t, run.launch.ptyId);
   const [local] = localSessionsOf(two.server.getState()!, WORKSPACE);
-  await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: local.id, cwd: two.repo, source: 'new' } });
+  await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: local.id, cwd: two.repo, source: 'new' } });
   run.handlers.onExit();
   await waitFor(() => two.server.getState()!.workers.length === 0);
   return local.id;

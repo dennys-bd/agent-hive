@@ -87,26 +87,35 @@ function overdue(stage: Stage, ci: StageCi, checks: readonly StageCiCheck[], wai
 // The output after a timeout, in English as a commands stage's lines are: every check or wait that ran out, with its limit
 const timeoutOutput = (names: readonly string[]): string => `CI timed out · ${names.join(', ')}`;
 
-// #854, #598: the waits with no check to time, as a timeout names them; an open PR that reports no check yet is one too
+// #1052: a GitLab PR, whose CI is not read until #790: it holds the wait, so a timeout names it
+const unreadWait = (url: string): string => `#${prNumber(url)} (GitLab PR's CI is not read yet)`;
+// An open PR that reports no check yet is a wait of its own; an unread GitLab PR stands in for it, since it counts no check either
+// ponytail: a GitHub PR with no checks beside an unread MR is named by the MR alone; name both if a timeout ever needs to tell them apart
+const withUnread = (total: number | undefined, unread: readonly string[]): string[] => [...(total === 0 && unread.length === 0 ? ['no checks'] : []), ...unread];
+
+// #854, #598: the waits with no check to time, as a timeout names them
 const waitsOf = (verdict: CiVerdict): string[] => {
   if (verdict.kind === 'awaiting') return verdict.workflows.map((w) => `${cleanName(w)} (awaiting approval)`);
   if (verdict.kind !== 'pending') return [];
-  return verdict.waitingPr ? ['no open PR'] : verdict.total === 0 ? ['no checks'] : [];
+  return verdict.waitingPr ? ['no open PR'] : withUnread(verdict.total, (verdict.unread ?? []).map(unreadWait));
 };
-// The same waits for a tick, from the last read's count; none known before the first read after a boot
-const lastWaits = (ci: StageCi): string[] => (ci.waitingPr ? ['no open PR'] : ci.total === 0 ? ['no checks'] : []);
+// The same waits for a tick, from the last read's count and unread PRs; none known before the first read after a boot
+const lastWaits = (ci: StageCi): string[] => (ci.waitingPr ? ['no open PR'] : withUnread(ci.total, ci.unread ?? []));
 
 // #914: both lists come from stageChecks in one order, so equal JSON means no check changed state or time
 const sameChecks = (a: readonly StageCiCheck[] | undefined, b: readonly StageCiCheck[] | undefined): boolean => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 
-// pending: the card's count and the running block's checks (#914); the same state when the read changed nothing, so a quiet wait writes nothing
-// every 30 s. A running read ends a maintainer's wait and a held failure (#854)
+// pending: the card's count and the running block's checks (#914), and the unread GitLab PRs (#1052); the same state when the read changed
+// nothing, so a quiet wait writes nothing every 30 s. A running read ends a maintainer's wait and a held failure (#854)
 function counted(state: State, activity: Activity, ci: StageCi, verdict: Extract<CiVerdict, { kind: 'pending' }>): Reduced {
-  const { waitingPr: _waitingPr, awaiting: _awaiting, noRerun: _noRerun, ...rest } = ci;
-  const next: StageCi = { ...rest, done: verdict.done, total: verdict.total, checks: verdict.checks, ...(verdict.waitingPr ? { waitingPr: true as const } : {}) };
+  const { waitingPr: _waitingPr, awaiting: _awaiting, noRerun: _noRerun, unread: _unread, ...rest } = ci;
+  const unread = (verdict.unread ?? []).map(unreadWait);
+  const next: StageCi = {
+    ...rest, done: verdict.done, total: verdict.total, checks: verdict.checks, ...(verdict.waitingPr ? { waitingPr: true as const } : {}), ...(unread.length > 0 ? { unread } : {}),
+  };
   const was = activity.ci;
   const same = next.done === was?.done && next.total === was?.total && next.waitingPr === was?.waitingPr && next.fellBack === was?.fellBack
-    && was?.awaiting === undefined && was?.noRerun === undefined && sameChecks(next.checks, was?.checks);
+    && was?.awaiting === undefined && was?.noRerun === undefined && sameChecks(next.checks, was?.checks) && JSON.stringify(next.unread) === JSON.stringify(was?.unread);
   return none(same ? state : withActivity(state, { ...activity, ci: next }));
 }
 

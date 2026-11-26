@@ -163,12 +163,12 @@ test('shortId keeps the first 8 characters and shows - for a missing id', () => 
 
 test('describeEvent names the hook, worker and tool but never the tool_input, the response or the message', () => {
   const hook = describeEvent({
-    type: 'hook', ptyId: PTY,
+    type: 'hook', ptyId: PTY, gitlabHosts: [],
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
   });
   assert.equal(hook, 'hook PostToolUse pty=1a2b3c4d tool=Bash');
   const notification = describeEvent({
-    type: 'hook', ptyId: PTY, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to run rm' },
+    type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to run rm' },
   });
   assert.equal(notification, 'hook Notification pty=1a2b3c4d');
 });
@@ -431,9 +431,9 @@ test('describeEvent names a copy by its ends and flags, never the name or the no
 });
 
 test('describeEvent appends a SessionEnd\'s reason and a SessionStart\'s source, so the log shows why a /clear kept the run (#655)', () => {
-  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, payload: { hook_event_name: 'SessionEnd', reason: 'clear' } }), 'hook SessionEnd pty=1a2b3c4d reason=clear');
-  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, payload: { hook_event_name: 'SessionStart', source: 'clear' } }), 'hook SessionStart pty=1a2b3c4d source=clear');
-  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, payload: { hook_event_name: 'SessionEnd' } }), 'hook SessionEnd pty=1a2b3c4d', 'no reason, no suffix');
+  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd', reason: 'clear' } }), 'hook SessionEnd pty=1a2b3c4d reason=clear');
+  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', source: 'clear' } }), 'hook SessionStart pty=1a2b3c4d source=clear');
+  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd' } }), 'hook SessionEnd pty=1a2b3c4d', 'no reason, no suffix');
 });
 
 test('describeEvent names a stop\'s cause and a forgetSlept, describeEffect a forgetScrollback, by short ids only (#672)', () => {
@@ -485,7 +485,7 @@ test('two appenders on one file (the daemon and a process beside it) rotate on t
 test('retryDue names its pty and its until; a StopFailure hook line never carries the payload\'s details or message (#805)', () => {
   assert.equal(describeEvent({ type: 'retryDue', ptyId: PTY, until: '2026-10-06T12:01:00.000Z' }), 'retryDue pty=1a2b3c4d until=2026-10-06T12:01:00.000Z');
   const payload = { hook_event_name: 'StopFailure', error: 'overloaded', error_details: 'SECRET-DETAILS', last_assistant_message: 'SECRET-MESSAGE' } as HookPayload;
-  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, payload }), 'hook StopFailure pty=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'hook', ptyId: PTY, gitlabHosts: [], payload }), 'hook StopFailure pty=1a2b3c4d');
 });
 
 test('setSignals logs its opening signal only: the rows are config, read from the file (#727)', () => {

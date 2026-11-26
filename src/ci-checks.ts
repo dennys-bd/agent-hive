@@ -160,23 +160,29 @@ export function stageChecks(checks: readonly CiCheck[]): StageCiCheck[] {
 
 /** What a read means for the stage: failed as soon as a counted check is a failure; passed when every PR has counted checks, or runs no CI
  * (#11), and all are successes; else pending, with the count, whether no PR is open, and the pending names. fellBack: some PR's required fell back to all.
- * awaiting: nothing failed and a workflow waits for a maintainer's approval, which ends nothing (#854). checks: the considered ones, ordered for the running block (#914). */
+ * awaiting: nothing failed and a workflow waits for a maintainer's approval, which ends nothing (#854). checks: the considered ones, ordered for the running block (#914).
+ * unread: the GitLab PRs whose CI is not read (#1052), present only when there is one; they count no check and keep the verdict from passing. */
 export type CiVerdict =
-  | { kind: 'pending'; done: number; total: number; waitingPr: boolean; pending: string[]; fellBack: boolean; checks: StageCiCheck[] }
+  | { kind: 'pending'; done: number; total: number; waitingPr: boolean; pending: string[]; unread?: string[]; fellBack: boolean; checks: StageCiCheck[] }
   | { kind: 'passed'; fellBack: boolean }
   | { kind: 'failed'; failed: CiCheck[]; fellBack: boolean; checks: StageCiCheck[] }
   | { kind: 'awaiting'; workflows: string[]; fellBack: boolean; checks: StageCiCheck[] };
 
 export function ciVerdict(reads: readonly CiPrRead[], stage: Pick<Stage, 'ciChecks' | 'checks'>): CiVerdict {
-  const each = reads.map((r) => considered(r, stage.ciChecks ?? 'required', stage.checks));
+  const unread = reads.filter((r) => r.unread === true).map((r) => r.url);
+  const known = reads.filter((r) => r.unread !== true); // an unread PR has no required list to fall back from
+  const each = known.map((r) => considered(r, stage.ciChecks ?? 'required', stage.checks));
   const fellBack = each.some((c) => c.fellBack);
   const checks = each.flatMap((c) => c.checks);
   const listed = stageChecks(checks); // #914: the same checks the count adds up, so the block's lines explain the card's n/total
   const failed = checks.filter((c) => c.state === 'failure');
   if (failed.length > 0) return { kind: 'failed', failed, fellBack, checks: listed };
-  const workflows = [...new Set(reads.flatMap((r) => r.awaiting ?? []))]; // #854: GitHub ran nothing for them, so the counted checks cannot pass yet
+  const workflows = [...new Set(known.flatMap((r) => r.awaiting ?? []))]; // #854: GitHub ran nothing for them, so the counted checks cannot pass yet
   if (workflows.length > 0) return { kind: 'awaiting', workflows, fellBack, checks: listed };
   const pending = checks.filter((c) => c.state === 'pending').map((c) => c.name);
-  if (reads.length > 0 && pending.length === 0 && each.every((c, i) => c.checks.length > 0 || reads[i].noCi === true)) return { kind: 'passed', fellBack };
-  return { kind: 'pending', done: checks.length - pending.length, total: checks.length, waitingPr: reads.length === 0, pending, fellBack, checks: listed };
+  const isDone = known.length > 0 && pending.length === 0 && each.every((c, i) => c.checks.length > 0 || known[i].noCi === true);
+  if (isDone && unread.length === 0) return { kind: 'passed', fellBack };
+  return {
+    kind: 'pending', done: checks.length - pending.length, total: checks.length, waitingPr: reads.length === 0, pending, ...(unread.length > 0 ? { unread } : {}), fellBack, checks: listed,
+  };
 }

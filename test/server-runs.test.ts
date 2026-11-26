@@ -41,7 +41,7 @@ async function session(server: HiveServer): Promise<string> {
   await server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE) });
   const worker = server.getState()?.workers.filter((s) => s.activityId === localActivityId(WORKSPACE) && s.status !== 'empty').at(-1);
   assert.ok(worker?.runId !== undefined && worker.sessionId !== undefined);
-  await server.dispatch({ type: 'hook', ptyId: worker.runId, payload: { hook_event_name: 'SessionStart', session_id: worker.sessionId } });
+  await server.dispatch({ type: 'hook', ptyId: worker.runId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: worker.sessionId } });
   return worker.runId;
 }
 

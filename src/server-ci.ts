@@ -3,6 +3,7 @@ import { ciQuery, cleanName, cleanText, parseCi } from './ci-checks.js';
 import type { Logger } from './log.js';
 import { inBackoff } from './polling.js';
 import { openPrUrls, prNumber, prRepo } from './pull-requests.js';
+import { GITHUB_HOST, parsePrLink } from './repo-host.js';
 import { OUTPUT_MAX } from './server-stage-commands.js';
 import { taskId } from './tasks.js';
 import type { CiCheck, CiPrRead, Effect, Exec, Gql, HiveEvent, State } from './types.js';
@@ -69,15 +70,18 @@ const headerOf = (check: CiCheck): string =>
 export function createCiReader({ gql, exec, dispatch, log, state, now = Date.now }: CiDeps): CiReader {
   const gh = async (args: string[]): Promise<string> => (await exec('gh', args, { timeout: GH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER })).stdout;
 
-  // One query for every PR of `list`, then one ciRead per activity, one after the other. No PR at all: no query, and every read is empty. A query
-  // that fails, or a PR the parse left out, reads nothing (never a false pass) and dispatches ciClock instead, so the timeout still counts
+  // One query for every GitHub PR of `list`, then one ciRead per activity, one after the other. No GitHub PR: no query. A query that fails, or a
+  // PR the parse left out, reads nothing (never a false pass) and dispatches ciClock instead, so the timeout still counts. #1052: a GitLab PR's
+  // CI is not read until #790: it never reaches GitHub and reads unread, which holds the wait and names it
   async function read(list: Waiting[]): Promise<void> {
     if (list.length === 0) return;
     const urls = [...new Set(list.flatMap((w) => w.urls))];
-    const query = ciQuery(urls);
+    const github = urls.filter((url) => parsePrLink(url)?.host === GITHUB_HOST);
+    const unread = urls.filter((url) => !github.includes(url)).map((url): CiPrRead => ({ url, head: '', checks: [], unread: true }));
+    const query = ciQuery(github);
     let reads: CiPrRead[] | undefined;
     try {
-      reads = query === undefined ? [] : parseCi(urls, await gql(query));
+      reads = [...(query === undefined ? [] : parseCi(github, await gql(query))), ...unread];
     } catch (err) {
       log.error(`ci read: ${errorMessage(err)}`);
     }

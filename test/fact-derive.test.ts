@@ -21,7 +21,7 @@ const STAGES: LegacyStage[] = [
   { name: 'dev', from: {}, prompt: 'p', model: 'opus', onFinish: { board: [{ type: 'move', column: 'Done' }, { type: 'archive' }] } },
 ];
 const POLL: HiveEvent = { type: 'poll', source: 'board', items: [] };
-const STOP: HiveEvent = { type: 'hook', ptyId: PTY, payload: { hook_event_name: 'Stop' } };
+const STOP: HiveEvent = { type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'Stop' } };
 const item = (n: number, extra: Partial<Item> = {}): Item =>
   ({ itemId: `board:I${n}`, id: String(n), title: 'SECRET-TITLE', body: 'SECRET-BODY', url: `https://github.com/acme/r/issues/${n}`, source: 'board', ...extra });
 const task = (n: number, stage = 'dev', extra: Partial<Task> = {}): Task => ({ item: item(n), stage, boardColumn: 'Ready', auto: true, ...extra });
@@ -119,7 +119,7 @@ test('run.spawned names the worker and the stage\'s model, run.started the spawn
   const busy = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' });
   assert.deepEqual(only(deriveFacts(idle, busy, POLL, NOW), 'run.spawned'), [{ event: 'run.spawned', level: 'info', ...IDS, worker: 1, model: 'opus' }]);
   const seen = withWork({ ...base(), workers: [runner({ sessionId: SESSION })] }, 'board:I1', { workerId: 'w1' });
-  assert.deepEqual(only(deriveFacts(busy, seen, { type: 'hook', ptyId: PTY, payload: { hook_event_name: 'SessionStart' } }, NOW), 'run.started'),
+  assert.deepEqual(only(deriveFacts(busy, seen, { type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'SessionStart' } }, NOW), 'run.started'),
     [{ event: 'run.started', level: 'info', ...IDS, session_id: SESSION, spawn_latency_ms: 10_000 }]);
   assert.deepEqual(only(deriveFacts(busy, idle, { type: 'exit', ptyId: PTY }, NOW), 'run.exited'), [{ event: 'run.exited', level: 'info', ...IDS, duration_ms: 10_000 }]);
   const failed: HiveEvent = { type: 'spawnFailed', ptyId: PTY, message: "fatal: '/tmp/r/.hive/worktrees/hive-1' already exists\nsetup output with TOKEN=x" };
@@ -217,12 +217,12 @@ test('endedStageRuns: done or approval at the Stop after hive_done, stop by hand
 
 test('a StopFailure is run.api_error at warn: a backoff with its failure number and wait, a plan-reset wait with no failure, a stop after the third retry or at once, never the payload\'s details or message; after hive_done it is the run\'s Stop (#805)', () => {
   const LIMITS = { at: iso(NOW), windows: { five_hour: { usedPercent: 100, resetsAt: iso(NOW + 3_600_000) } } };
-  const FAILURE: HiveEvent = { type: 'hook', ptyId: PTY, payload: { hook_event_name: 'StopFailure', error: 'overloaded', error_details: 'SECRET-DETAILS', last_assistant_message: 'SECRET-MESSAGE' } as HookPayload };
+  const FAILURE: HiveEvent = { type: 'hook', ptyId: PTY, gitlabHosts: [], payload: { hook_event_name: 'StopFailure', error: 'overloaded', error_details: 'SECRET-DETAILS', last_assistant_message: 'SECRET-MESSAGE' } as HookPayload };
   const prevOf = (worker: Worker, extra: Partial<State> = {}): State => withWork({ ...base(), ...extra, workers: [worker] }, 'board:I1', { workerId: 'w1' });
   const failed = (error: string, worker: Worker = runner(), extra: Partial<State> = {}): RecordInput[] => {
     const prev = prevOf(worker, extra);
     const payload = { hook_event_name: 'StopFailure', error, error_details: 'SECRET-DETAILS', last_assistant_message: 'SECRET-MESSAGE' } as HookPayload;
-    return only(deriveFacts(prev, { ...prev, workers: [] }, { type: 'hook', ptyId: PTY, payload }, NOW), 'run.api_error');
+    return only(deriveFacts(prev, { ...prev, workers: [] }, { type: 'hook', ptyId: PTY, gitlabHosts: [], payload }, NOW), 'run.api_error');
   };
   const record = (fields: Record<string, unknown>): Record<string, unknown>[] => [{ event: 'run.api_error', level: 'warn', ...IDS, ...fields }];
   assert.deepEqual(failed('overloaded'), record({ error: 'overloaded', action: 'backoff', failure: 1, wait_ms: 60_000 }));

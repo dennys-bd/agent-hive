@@ -31,8 +31,8 @@ export const ACTIVITY_FIELDS = 'createdAt commits { totalCount } recent: commits
 const STATE_FIELDS = 'state createdAt mergedAt closedAt'; // #742: the times ride along at no extra cost
 const SHA_CHARS = 8;
 
-// One aliased resource(url:) per link, p0…pN in order (#207); undefined for none: no open PR, no call. markPr's callers only ever pass a
-// GitHub pull request link, and JSON.stringify still makes each one a valid GraphQL string; ci-checks.ts reuses it (#834)
+// One aliased resource(url:) per link, p0…pN in order (#207); undefined for none: no open PR, no call. Its callers pass GitHub pull request links
+// only (#1052: the PR poll and the CI reader split by host), and JSON.stringify still makes each one a valid GraphQL string; ci-checks.ts reuses it (#834)
 export const aliasedQuery = (urls: string[], fields: string): string | undefined =>
   (urls.length === 0 ? undefined : `query { ${urls.map((url, i) => `p${i}: resource(url: ${JSON.stringify(url)}) { ... on PullRequest { ${fields} } }`).join(' ')} }`);
 
@@ -49,7 +49,8 @@ export const aliasOf = (data: unknown, i: number): Alias | undefined => {
 };
 const aliasState = (alias: Alias): PrState | undefined =>
   (typeof alias.state === 'string' && Object.hasOwn(GRAPHQL_STATES, alias.state) ? GRAPHQL_STATES[alias.state] : undefined);
-const dateOf = (value: unknown): string | undefined => (typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined);
+/** An ISO time GitHub or GitLab answered, kept only when it parses as a date (#742, #1052). */
+export const dateOf = (value: unknown): string | undefined => (typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined);
 
 // The PR's own times (#742), as GitHub answers them; a missing or odd one is left out
 function prTimes(alias: Alias): Pick<TaskPr, 'openedAt' | 'mergedAt' | 'closedAt'> {

@@ -40,7 +40,7 @@ const workerOf = (state: State, itemId: string): string => state.workers.find((s
 // hive_done, then the Stop: what ends a stage
 const stageEnd = (state: State, itemId: string): Reduced => {
   const ptyId = workerOf(state, itemId);
-  return reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 };
 // Each task polled from its source, in order: the signal starts green, so every poll fills; the effects of every poll, in order.
 const running = (stages: LegacyStage[], ...tasks: SourceItem[]): Reduced =>

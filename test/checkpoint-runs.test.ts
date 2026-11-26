@@ -20,7 +20,7 @@ const types = (effects: Effect[]): string[] => effects.map((e) => e.type);
 function running(stages: LegacyStage[], seen = true): State {
   const polled = reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(stages) }, { type: 'poll', source: 'board', items: [{ item, column: 'Backlog' }] }).state;
   const ptyId = polled.workers[0].runId!;
-  return seen ? reduce(polled, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', cwd: WORKTREE }, branch: 'hive/1-task-1' }).state : polled;
+  return seen ? reduce(polled, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: WORKTREE }, branch: 'hive/1-task-1' }).state : polled;
 }
 // The run's exit under red: the task stopped in spec, nothing respawns
 const stopped = (state: State): State => {
@@ -30,7 +30,7 @@ const stopped = (state: State): State => {
 // hive_done then the Stop: what ends a stage
 const stageEnd = (state: State) => {
   const ptyId = state.workers[0].runId!;
-  return reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 };
 const withCheckpoints = (state: State, checkpoints: Checkpoint[]): State => withActivity(state, { ...activityOf(state, ID)!, checkpoints });
 

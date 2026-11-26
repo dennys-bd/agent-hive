@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { taskOfPr } from './activities.js';
-import { isGithubPrUrl } from './repo-host.js';
+import { isTrackedPrUrl, PR_LINK_SHAPES } from './repo-host.js';
 import type { Logger } from './log.js';
 import { canCreate, hasIssueTypes, sourceTypeName, type CanCreate } from './create-in.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
@@ -35,7 +35,7 @@ export const HIVE_ISSUE_FIELDS_MESSAGE = 'labels and status are fields of an iss
 export const STATUS_OR_STAGE_MESSAGE = 'send status or stage, not both';
 export const STATUS_MESSAGE = "status must be a Status option's name or null";
 export const PR_HIVE_ONLY_MESSAGE = 'pr creates in hive only: leave source out or set it to "hive"';
-export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
+export const PR_URL_MESSAGE = `pr must be a pull request link: ${PR_LINK_SHAPES}`;
 export const PR_TAKEN_MESSAGE = 'a task already holds this PR';
 // Why a source of each type cannot create (#811): a Record, so a new type must say whether it has a reason to point at, as canCreate's switch
 // makes it say how it creates; undefined = only the neutral words
@@ -60,7 +60,7 @@ export type Created = { id: string; itemId: string; ref?: CreatedRef; stage?: st
  * state after it. POST /tasks and hive_create_task hand the same. */
 export interface CreateDeps {
   state: State;
-  config: { comb: Pick<CombConfig, 'prefix' | 'hiveSource' | 'createIn' | 'sources'> };
+  config: { comb: Pick<CombConfig, 'prefix' | 'hiveSource' | 'createIn' | 'sources'>; gitlabHosts: readonly string[] }; // #1052: what a pr's MR host is checked against
   sources: ReadonlyMap<string, Pick<Source, 'create'>>;
   dispatch(event: HiveEvent): Promise<Effect[]>;
   poll(names: string[], manual?: string[]): Promise<void>; // manual: item ids that enter the state with auto off
@@ -119,7 +119,7 @@ export async function createTask(deps: CreateDeps, body: unknown): Promise<Creat
 // hive_pr accepts it; one task per PR, as origin is for an issue. The record id is drawn here so the reducer stays pure. Nothing reaches GitHub.
 async function createFromPr(deps: CreateDeps, body: Record<string, unknown>, source: unknown, pr: unknown): Promise<Created | Refusal> {
   if (source !== undefined && source !== HIVE_SOURCE) return { status: HTTP_BAD_REQUEST, message: PR_HIVE_ONLY_MESSAGE };
-  if (typeof pr !== 'string' || !isGithubPrUrl(pr)) return { status: HTTP_BAD_REQUEST, message: PR_URL_MESSAGE };
+  if (typeof pr !== 'string' || !isTrackedPrUrl(pr, deps.config.gitlabHosts)) return { status: HTTP_BAD_REQUEST, message: PR_URL_MESSAGE };
   if (taskOfPr(deps.state, pr) !== undefined) return { status: HTTP_CONFLICT, message: PR_TAKEN_MESSAGE };
   return createInHive(deps, { ...body, url: body.url ?? pr }, { url: pr, recordId: randomUUID() });
 }

@@ -31,7 +31,7 @@ const spawned = ({ effects }: Reduced): string[] => effects.flatMap((e) => (e.ty
 const workerOf = (state: State, n: number): string => state.workers.find((s) => taskOfWorker(state, s)?.item.itemId === `board:item${n}`)!.runId!;
 // hive_done, then the Stop: what ends a stage
 const stageEnd = (state: State, ptyId: string): Reduced =>
-  reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null) for (const child of Object.values(value)) deepFreeze(child);
   return Object.freeze(value);
