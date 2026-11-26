@@ -33,7 +33,7 @@ const running = (stages = STAGES): State =>
 // The worker's hive_done then its Stop: what ends a stage
 const stageEnd = (state: State) => {
   const ptyId = state.workers[0].runId!;
-  return reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(state, { type: 'done', ptyId }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 };
 const held = (): State => stageEnd(running()).state;
 const awaiting = (): State => stageEnd(running(UNCHAINED)).state; // approval, no worker
@@ -250,7 +250,7 @@ test('a stage change drops approval and a queued handover: they belong to the st
 test('hive_done in a free session in an approval stage parks the task awaiting approval, keeps the session open and moves nothing until Aprovar (#268)', () => {
   const first = running(UNCHAINED);
   const worker = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+  const seen = reduce(first, { type: 'hook', ptyId: worker, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
   const idle = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
   const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
   const session = opened.workers.find((s) => s.freeSession)!;
@@ -267,7 +267,7 @@ test('hive_done in a free session in an approval stage parks the task awaiting a
 function sessionAwaiting(cleared = false, stages = UNCHAINED): { state: State; ptyId: string; stageRun: string } {
   const first = running(stages);
   const worker = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+  const seen = reduce(first, { type: 'hook', ptyId: worker, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
   const idle = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
   const stageRun = activityOf(idle, ID)!.sessionId!;
   const left = cleared ? reduce(idle, { type: 'clearSessions', activityId: workId(idle, ID), sessionId: stageRun }).state : idle;

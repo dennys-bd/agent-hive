@@ -101,7 +101,7 @@ test('hive_done in a session still advances its task, and its tokens still land 
   const own = sessionOf(opened).runId!;
   const advanced = reduce(opened, { type: 'done', ptyId: own }).state;
   assert.equal(advanced.tasks[0].stage, 'dev');
-  const counted = reduce(advanced, { type: 'hook', ptyId: own, payload: { hook_event_name: 'Stop' }, tokens: 500 }).state;
+  const counted = reduce(advanced, { type: 'hook', ptyId: own, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 500 }).state;
   assert.deepEqual(counted.usage.map((u) => u.tokens), [500]);
   assert.equal(canSchedule({ ...counted, signal: 'green', budget: { maxTokensPerHour: 400 } }, Date.now()), false, 'the budget still counts the session');
 });

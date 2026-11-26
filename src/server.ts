@@ -1153,7 +1153,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(ptyId, payload.cwd) : undefined;
       const turn = isChild ? undefined : await readTurn(ptyId, payload);
       if (!isChild) wiring.beforeHook(live?.state, ptyId, payload, turn?.usage); // #742: the human signals read the worker before this hook moves it
-      effects = await dispatch({ type: 'hook', ptyId, payload, branch, tokens: turn?.tokens, title: turn?.title });
+      effects = await dispatch({ type: 'hook', ptyId, payload, branch, tokens: turn?.tokens, title: turn?.title, gitlabHosts: live?.runtime.config.gitlabHosts ?? [] }); // #1052: setup mode has no list, gitlab.com still counts
     } else {
       log.debug(`hook ignored: ${ptyId ? 'no event name' : 'no pty id'}`);
     }

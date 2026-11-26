@@ -24,7 +24,7 @@ function deepFreeze<T>(value: T): T {
 function stageEnd(state: State): State {
   const ptyId = state.workers[0].runId!;
   const done = reduce(state, { type: 'done', ptyId, result: { decomposition: 'decomposition.md' } }).state;
-  return reduce(done, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } }).state;
+  return reduce(done, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } }).state;
 }
 const awaiting = (): State =>
   stageEnd(reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(STAGES) }, { type: 'poll', source: 'board', items: [{ item, column: 'Goals' }] }).state);

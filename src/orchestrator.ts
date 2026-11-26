@@ -10,6 +10,7 @@ import { liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionTarget, decompositionWritten, TARGET_KEY } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
+import { isTrackedPrUrl } from './repo-host.js';
 import type { AccountsConfig, Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Flow, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SPAWN_FAILED } from './types.js';
 import { pruneUsage } from './usage.js';
@@ -50,6 +51,8 @@ export const WAITING_NOTIFICATIONS: readonly string[] = [
   'permission_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog',
 ];
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
+// glab mr create's link (#1052): the first merge request link in its output; parsePrLink and the host check decide whether it is one
+const MR_URL = /https:\/\/[^\s/]+\/[\w./-]+?\/-\/merge_requests\/\d+/;
 export const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/; // Claude Code uses uuids; anything else came from another local process
 export { isUuid, UUID } from './uuid.js'; // #347: their own module, so shim.ts reads a uuid without importing the reducer
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
@@ -65,14 +68,17 @@ export function initialState(maxConcurrent: number): State {
   };
 }
 
-export function extractPrUrl(command: string, response: unknown): string | undefined {
-  if (!command.includes('gh pr create')) return undefined;
+/** The PR a PostToolUse's command opened: gh pr create's GitHub link (#207), or glab mr create's MR when its host is gitlab.com or one of
+ * gitlabHosts (#1052). An MR on any other host is none, as hive_pr refuses it: the PR poll would never read it. */
+export function extractPrUrl(command: string, response: unknown, gitlabHosts: readonly string[]): string | undefined {
   const text = typeof response === 'string' ? response : JSON.stringify(response ?? '');
-  return text.match(PR_URL)?.[0];
+  if (command.includes('gh pr create')) return text.match(PR_URL)?.[0];
+  if (!command.includes('glab mr create')) return undefined;
+  const url = text.match(MR_URL)?.[0];
+  return url !== undefined && isTrackedPrUrl(url, gitlabHosts) ? url : undefined;
 }
 
-// hive_pr's url, create-task's pr and the state guards' links (#1044): repo-host.ts owns the shape; extractPrUrl's PR_URL stays GitHub's,
-// since detecting glab mr create is #1052's
+// hive_pr's url, create-task's pr and the state guards' links (#1044): repo-host.ts owns the shape
 export { isPrUrl } from './repo-host.js';
 
 /** Any local process can hit /hooks/event and the id reaches the panel and the log: only a plain id of a sane length is kept. */
@@ -146,7 +152,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setStages': return fill(setStages(state, event.flows));
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
-    case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
+    case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.gitlabHosts, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
     case 'exit': return releasedOnExit(state, event.ptyId, settleCopy(state, event.ptyId, undefined, forgetUnforked(state, event.ptyId, forgetUnopenedLocal(state, event.ptyId, ended(forgetUnwritten(state, event, exit(state, event.ptyId))))))); // #586: forgotten before the fill, which must never continue it; #799: a held Stop is let go; #875: a copy that never forked leaves no entry
     case 'done': return done(state, event.ptyId, event.result, event.verdict, event.evidence); // no fill: nothing freed, nothing loosened
     case 'pr': return markPr(state, event.ptyId, event.url, event.slice); // no fill: a PR frees nothing
@@ -815,11 +821,11 @@ const TOOL_WAITS: readonly string[] = ['permission_prompt', 'elicitation_dialog'
 // #874: an approved tool's PostToolUse, or an answered elicitation's, ends the wait its prompt opened (Copilot's approval and ask_user fire
 // nothing else). Never the worker's own question (ask) or a turn's end (turn): a tool's end answers neither, and a subagent's tool never
 // answers the worker's prompt. The PR safety net under hive_pr runs on the same payload either way
-function toolDone(state: State, ptyId: string, worker: Worker, p: HookPayload): Reduced {
+function toolDone(state: State, ptyId: string, worker: Worker, p: HookPayload, gitlabHosts: readonly string[]): Reduced {
   const wait = worker.status === 'waiting' && worker.lastEvent?.kind === 'waiting' ? worker.lastEvent.detail : undefined;
   const answered = wait !== undefined && TOOL_WAITS.includes(wait) && !isChildSession(worker, p);
   const moved = answered ? patch(state, ptyId, { status: 'working', question: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) }, ...movedOn(worker, 'tool') }).state : state;
-  const prUrl = extractPrUrl(String((p.tool_input as { command?: unknown } | undefined)?.command ?? ''), p.tool_response);
+  const prUrl = extractPrUrl(String((p.tool_input as { command?: unknown } | undefined)?.command ?? ''), p.tool_response, gitlabHosts);
   return prUrl ? markPr(moved, ptyId, prUrl) : none(moved);
 }
 
@@ -898,7 +904,7 @@ function sessionStart(state: State, ptyId: string, worker: Worker, p: HookPayloa
   return none(withActivity(started, { ...seen, worktree: p.cwd, branch }));
 }
 
-function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: string, tokens?: number, title?: string): Reduced {
+function applyHook(initial: State, ptyId: string, p: HookPayload, gitlabHosts: readonly string[], branch?: string, tokens?: number, title?: string): Reduced {
   const worker = initial.workers.find((s) => s.runId === ptyId);
   if (!worker || worker.status === 'empty') return none(initial);
   // A Stop / StopFailure / SessionEnd from a subagent or teammate is not the worker's turn end: skip before the token sample lands (#24, #805)
@@ -920,7 +926,7 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
       if (worker.lastEvent?.kind === 'ask') return patch(state, ptyId, { status: 'waiting' }); // the worker's own question outranks the generic text
       return patch(state, ptyId, { status: 'waiting', question: String(p.message ?? kind), lastEvent: { kind: 'waiting', detail: kind } });
     }
-    case 'PostToolUse': return toolDone(state, ptyId, worker, p); // #874
+    case 'PostToolUse': return toolDone(state, ptyId, worker, p, gitlabHosts); // #874; #1052: the glab mr create detection's hosts
     case 'Stop': { // the end of the command only after hive_done; otherwise the worker is idle and the worker waits, unless its own work will wake it
       if (worker.done) return fill(endStage(state, ptyId, task)); // an approval stage waits for the user (#268); a handoff the next stage needs comes first (#692)
       // after hive_ask the worker ends its turn to wait for the answer: the question and the ask stay until a prompt or a tool (#99), background work or not (#367)

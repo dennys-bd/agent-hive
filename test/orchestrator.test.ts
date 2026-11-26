@@ -39,7 +39,7 @@ const polled = (state: State, items: SourceItem[]) => reduce(state, { type: 'pol
 const reading = (state: State, items: SourceItem[], reads: { itemId: string; read: SourceItemRead }[]) => reduce(state, { type: 'poll', source: 'board', items, reads });
 const filled = (max: number, n: number) => polled(base(max), many(n)); // n Backlog tasks into spec; up to max running
 const hook = (state: State, ptyId: string, payload: Partial<HookPayload> & { hook_event_name: string }) =>
-  reduce(state, { type: 'hook', ptyId, payload });
+  reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload });
 const occupied = (s: State) => s.workers.filter((x) => x.status !== 'empty');
 // The task a worker runs on (#629): its activity's first task
 const ownerOf = (s: State, w: Worker | undefined): string | undefined => (w === undefined ? undefined : taskOfWorker(s, w)?.item.itemId);
@@ -85,7 +85,7 @@ const done = (state: State, ptyId: string): State => reduce(state, { type: 'done
 // The worker's Stop after its hive_done: what ends a stage now
 const stopped = (state: State, ptyId: string) => hook(done(state, ptyId), ptyId, { hook_event_name: 'Stop' });
 const counted = (state: State, ptyId: string, tokens: number) =>
-  reduce(done(state, ptyId), { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' }, tokens }).state;
+  reduce(done(state, ptyId), { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens }).state;
 const spent = (tokens: number, ageMs: number, budget: Budget): State => ({
   ...base(1), budget, usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
 });
@@ -109,7 +109,7 @@ const WORKTREE = '/tmp/worktrees/hive-1-task-1';
 function ranOnce(n = 1): State {
   const first = filled(1, n).state;
   const id = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: id, payload: { hook_event_name: 'SessionStart', cwd: WORKTREE }, branch: 'hive-1-task-1' }).state;
+  const seen = reduce(first, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: WORKTREE }, branch: 'hive-1-task-1' }).state;
   return reduce(signaled(seen, 'red').state, { type: 'exit', ptyId: id }).state;
 }
 // A task a clean restart left started (#224, #283, #727): its worker freed, its activity kept and not stopped, which is what a boot after a quit
@@ -399,7 +399,7 @@ test('reducer never mutates its input', () => {
   const first = filled(1, 2).state;
   const firstSnapshot = JSON.stringify(first);
   const id = first.workers[0].runId!;
-  reduce(first, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 900 });
+  reduce(first, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 900 });
   reduce(first, { type: 'poll', source: 'board', items: [] });
   reduce(first, { type: 'poll', source: 'board', items: [], reads: [{ itemId: 'board:item2', read: { reason: 'gone' } }] });
   reduce(first, { type: 'start', itemId: 'board:item2' }); // no free worker: the start appends a worker over the cap
@@ -463,7 +463,7 @@ test('SessionStart records worktree and branch on the task and the session id on
   const id = first.workers[0].runId!;
   const uuid = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
   const { state } = reduce(first, {
-    type: 'hook', ptyId: id, branch: 'hive-1-task-1',
+    type: 'hook', ptyId: id, gitlabHosts: [], branch: 'hive-1-task-1',
     payload: { hook_event_name: 'SessionStart', cwd: '/repo/.claude/worktrees/hive-1-task-1', transcript_path: '/Users/x/.claude/projects/p/abc.jsonl', session_id: uuid },
   });
   assert.equal(work(state, 1)?.worktree, '/repo/.claude/worktrees/hive-1-task-1');
@@ -494,7 +494,7 @@ test('Stop or SessionEnd from a child session changes nothing: no finish, no exi
   const id = first.workers[0].runId!;
   const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
   const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w', session_id: mainId }).state;
-  const child = reduce(started, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop', session_id: 'another-child-session-0001' }, tokens: 999 });
+  const child = reduce(started, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop', session_id: 'another-child-session-0001' }, tokens: 999 });
   assert.equal(child.state, started, 'same object');
   assert.equal(child.effects.length, 0);
   const end = hook(started, id, { hook_event_name: 'SessionEnd', session_id: 'another-child-session-0001' });
@@ -519,7 +519,7 @@ const clearedFrom = (state: State, id: string, first: string): State => {
 
 test('a SessionEnd with reason clear leaves the worker live on its task and counts its tokens; any other reason, or none, still frees it (#655)', () => {
   const { state, id, first } = sessionStarted();
-  const ended = reduce(state, { type: 'hook', ptyId: id, payload: { hook_event_name: 'SessionEnd', session_id: first, reason: 'clear' }, tokens: 900 });
+  const ended = reduce(state, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd', session_id: first, reason: 'clear' }, tokens: 900 });
   const worker = ended.state.workers[0];
   assert.deepEqual([worker.runId, worker.status, worker.sessionId, worker.tokens], [id, 'working', first, 900]);
   assert.equal(work(ended.state, 1)?.workerId, worker.id, 'the task keeps its worker');
@@ -562,7 +562,7 @@ test('a SessionStart with another source, or none, and another id keeps the firs
 
 test('a SessionStart with source clear and a malformed, missing or unchanged id changes no session (#655)', () => {
   const { state, id, first } = sessionStarted();
-  const counted = reduce(state, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop', session_id: first }, tokens: 700 }).state;
+  const counted = reduce(state, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop', session_id: first }, tokens: 700 }).state;
   for (const bad of ['', 'short', 'has space-in-it', '../../etc/passwd', '--dangerously-skip-permissions', first, undefined]) {
     const next = hook(counted, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, source: 'clear', ...(bad === undefined ? {} : { session_id: bad }) }).state;
     assert.deepEqual([next.workers[0].sessionId, next.workers[0].tokens, sessionsN(next, 1)], [first, 700, sessionsN(counted, 1)], JSON.stringify(bad));
@@ -819,7 +819,7 @@ test('boot clears a workerId that points at no occupied worker, so a task from a
 test('stop emits only the kill and marks the task stopped, keeping its session, worktree and branch; the exit that follows starts nothing, even under green; an unknown worker is nothing (#182, #283)', () => {
   const dev = polled(base(1), [listed(1, 'Ready')]).state; // dev continues the session
   const { runId: ptyId } = dev.workers[0];
-  const located = reduce(dev, { type: 'hook', ptyId: ptyId!, branch: 'hive/1-task-1', payload: { hook_event_name: 'SessionStart', cwd: WORKTREE } }).state;
+  const located = reduce(dev, { type: 'hook', ptyId: ptyId!, gitlabHosts: [], branch: 'hive/1-task-1', payload: { hook_event_name: 'SessionStart', cwd: WORKTREE } }).state;
   const stopping = reduce(located, { type: 'stop', ptyId: ptyId! });
   assert.deepEqual(stopping.effects, [{ type: 'kill', slug: 'hive-1-task-1', ptyId }]);
   const kept = work(located, 1)!; // #629: the marks are the activity's
@@ -842,7 +842,7 @@ test('error sets and poll clears state.error', () => {
 test('closeTask never removes the worktree: a running out-of-listing task leaves with the kill alone; an idle one with a worktree leaves with no effect (#182, #568)', () => {
   const first = born(signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state, 2); // 1 running, 2 stopped but started: it stays past the listing
   const id = first.workers[0].runId!;
-  const located = reduce(first, { type: 'hook', ptyId: id, branch: 'hive-1-task-1', payload: { hook_event_name: 'SessionStart', cwd: '/w/hive-1-task-1' } }).state;
+  const located = reduce(first, { type: 'hook', ptyId: id, gitlabHosts: [], branch: 'hive-1-task-1', payload: { hook_event_name: 'SessionStart', cwd: '/w/hive-1-task-1' } }).state;
   const gone = signaled(polled(located, []).state, 'red').state; // red: an out-of-listing task is a fill candidate, the freed worker would take 2 (#568)
   const running = reduce(gone, { type: 'closeTask', taskId: 'board:item1' });
   assert.deepEqual(running.effects, [{ type: 'kill', slug: 'hive-1-task-1', ptyId: id }, { type: 'forgetScrollback', ptyId: id }]);
@@ -887,10 +887,10 @@ test('Stop with tokens records the sample even though the worker is freed; a Ses
   assert.deepEqual(one.usage.map((s) => s.tokens), [1200]);
   assert.ok(Number.isFinite(Date.parse(one.usage[0].at)));
   assert.equal(one.workers[0].status, 'empty', 'Stop finishes the run');
-  const partial = reduce(first, { type: 'hook', ptyId: id, payload: { hook_event_name: 'SessionEnd' }, tokens: 800 }).state;
+  const partial = reduce(first, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd' }, tokens: 800 }).state;
   assert.deepEqual(partial.usage.map((s) => s.tokens), [800]);
   assert.equal(stopped(first, id).state.usage.length, 0);
-  assert.equal(reduce(first, { type: 'hook', ptyId: 'nope', payload: { hook_event_name: 'Stop' }, tokens: 999 }).state, first);
+  assert.equal(reduce(first, { type: 'hook', ptyId: 'nope', gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 999 }).state, first);
 });
 
 test('poll under an exhausted hour budget enters tasks and starts nothing; a sample outside the hour does not count; setBudget can reopen', () => {
@@ -1096,7 +1096,7 @@ test('a disabled hour rule is dropped once its samples age out below the percent
   assert.equal(reduce(off, { type: 'tick' }).state.disabledRules.length, 1, 'still 85% inside the hour');
   const aged: State = { ...off, usage: off.usage.map((s) => ({ ...s, at: new Date(Date.parse(s.at) - 120_000).toISOString() })) }; // two minutes later
   const id = aged.workers[0].runId!;
-  const turn = reduce(aged, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 850 }).state;
+  const turn = reduce(aged, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 850 }).state;
   assert.deepEqual(turn.disabledRules, [], 'dropped on the state before the hook');
   assert.deepEqual(effectiveLimits(turn, Date.now()).signalRules, [RULES[1]], 'the new 850 tokens fire it again');
 });
@@ -1175,10 +1175,14 @@ test('a task with only an inherited blocker is blocked: the fill skips it, a sta
   assert.equal(ownerAt(polled(waiting.state, [listed(1)]).state, 0), 'board:item1', 'the ancestor\'s blocker closed: the next poll frees it');
 });
 
-test('extractPrUrl finds the PR url only for gh pr create; isFree is true only for an empty worker that is not draining', () => {
-  assert.equal(extractPrUrl('gh pr create --fill', 'https://github.com/a/b/pull/9\n'), 'https://github.com/a/b/pull/9');
-  assert.equal(extractPrUrl('gh pr create', { stdout: 'x https://github.com/a/b-c/pull/10 y' }), 'https://github.com/a/b-c/pull/10');
-  assert.equal(extractPrUrl('gh pr view', 'https://github.com/a/b/pull/9'), undefined);
+test('extractPrUrl finds the PR url only for gh pr create, and an MR on a GitLab host only for glab mr create (#1052); isFree is true only for an empty worker that is not draining', () => {
+  assert.equal(extractPrUrl('gh pr create --fill', 'https://github.com/a/b/pull/9\n', []), 'https://github.com/a/b/pull/9');
+  assert.equal(extractPrUrl('gh pr create', { stdout: 'x https://github.com/a/b-c/pull/10 y' }, []), 'https://github.com/a/b-c/pull/10');
+  assert.equal(extractPrUrl('gh pr view', 'https://github.com/a/b/pull/9', []), undefined);
+  assert.equal(extractPrUrl('glab mr create -f', { stdout: '!4 x\nhttps://gitlab.com/a/b/c/-/merge_requests/4\n' }, []), 'https://gitlab.com/a/b/c/-/merge_requests/4');
+  assert.equal(extractPrUrl('glab mr create -f', 'https://git.example.com/a/b/-/merge_requests/4', ['git.example.com']), 'https://git.example.com/a/b/-/merge_requests/4');
+  assert.equal(extractPrUrl('glab mr create -f', 'https://git.example.com/a/b/-/merge_requests/4', []), undefined, 'an unlisted host');
+  assert.equal(extractPrUrl('glab mr create -f', 'https://github.com/a/b/pull/9', []), undefined, 'glab opens no GitHub PR');
   assert.equal(isFree({ id: 'x', status: 'empty' }), true);
   assert.equal(isFree({ id: 'x', status: 'empty', draining: true }), false);
   assert.equal(isFree(filled(1, 1).state.workers[0]), false);
@@ -2878,7 +2882,7 @@ test('a Stop adds its delta to the task\'s usage.tokens and writes the transcrip
   const id = first.workers[0].runId!;
   const sessionId = work(first, 1)!.sessionId!;
   const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: sessionId }).state;
-  const turn = (state: State, tokens: number): State => reduce(state, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens }).state;
+  const turn = (state: State, tokens: number): State => reduce(state, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens }).state;
   const one = turn(started, 1000);
   assert.deepEqual([usageN(one, 1), sessionsN(one, 1)?.[0].tokens], [{ tokens: 1000, ms: 0, waitingMs: 0, parts: [{ stage: 'spec', agent: 'claude', tokens: 1000, ms: 0, waitingMs: 0 }] }, 1000]);
   const two = turn(one, 1500);
@@ -2892,7 +2896,7 @@ test('a turn end with a title names the worker\'s session; one without keeps the
   const sessionId = work(first, 1)!.sessionId!;
   const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: sessionId }).state;
   const turn = (state: State, tokens: number, title?: string): State =>
-    reduce(state, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens, title }).state;
+    reduce(state, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens, title }).state;
   const before = structuredClone(started);
   const named = turn(started, 1000, 'fix the login');
   assert.deepEqual(started, before, 'the reducer returned a new state');
@@ -2912,7 +2916,7 @@ test('a spawn that resumes a session starts its worker from the session\'s last 
   assert.equal(resumed.state.workers[0].tokens, 1000);
   const id = resumed.state.workers[0].runId!;
   const started = hook(resumed.state, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: 'kept-session-id-0001' }).state;
-  const turned = reduce(started, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 1200 }).state;
+  const turned = reduce(started, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 1200 }).state;
   assert.equal(usageN(turned, 1)?.tokens, 200);
   assert.deepEqual(turned.usage.map((s) => s.tokens), [200], 'the budget no longer counts the old turns again');
   assert.equal(sessionsN(turned, 1)?.[0].tokens, 1200);
@@ -2964,7 +2968,7 @@ test('a session continued into the next stage counts only its new turns there: t
   const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: sessionId }).state;
   const continued = counted(started, id, 1000); // hive_done + a Stop at 1000: spec ends, dev continues the session in place
   assert.equal(continued.workers[0].stage, 'dev');
-  const turned = reduce(continued, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 1500 }).state;
+  const turned = reduce(continued, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 1500 }).state;
   const usage = usageN(turned, 1)!;
   assert.deepEqual(usage.parts.map((p) => [p.stage, p.agent, p.tokens]), [['spec', 'claude', 1000], ['dev', 'claude', 500]]);
   assert.equal(usage.tokens, 1500);
@@ -3488,7 +3492,7 @@ test('a new local session\'s Stop records the turn on its entry, its SessionEnd 
   const id = worker.runId!;
   const started = hook(opened, id, { hook_event_name: 'SessionStart', cwd: '/repo', session_id: worker.sessionId }).state;
   assert.equal(started.tasks, opened.tasks, 'no task keeps a path or a branch');
-  const turned = reduce(started, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 1500, title: 'fix login' }).state;
+  const turned = reduce(started, { type: 'hook', ptyId: id, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens: 1500, title: 'fix login' }).state;
   assert.deepEqual([localSessionsOf(turned, 'hive')[0].tokens, localSessionsOf(turned, 'hive')[0].name, turned.workers.find((s) => s.runId === id)?.status], [1500, 'fix login', 'waiting']);
   assert.equal(turned.tasks, started.tasks);
   for (const ended of [hook(turned, id, { hook_event_name: 'SessionEnd' }).state, reduce(turned, { type: 'exit', ptyId: id }).state]) {

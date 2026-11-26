@@ -23,7 +23,7 @@ const running = (): State =>
   reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(STAGES) }, { type: 'poll', source: 'board', items: [{ item: ITEM, column: 'Ready' }] }).state;
 // The user's own session on task 1, appended beside the stage run (#459); the stage run's SessionStart records the worktree it needs (#208)
 const withFree = (s: State): { state: State; free: string } => {
-  const seen = reduce(s, { type: 'hook', ptyId: ptyOf(s), payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+  const seen = reduce(s, { type: 'hook', ptyId: ptyOf(s), gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
   const opened = reduce(seen, { type: 'openSession', activityId: workId(seen, ID) }).state;
   return { state: opened, free: opened.workers.find((w) => w.freeSession === true)?.runId ?? '' };
 };
@@ -32,7 +32,7 @@ const workerOf = (s: State, ptyId: string): Worker | undefined => s.workers.find
 const lineOf = (s: State, waiter: SemaphoreWaiter) => reduce(s, { type: 'setSemaphores', semaphores: { memory: { runs: ['other'], line: [waiter] } } });
 const inLine = (s: State, ptyId: string): State => lineOf(s, { ptyId, place: 1 }).state;
 const inTurn = (s: State, ptyId: string): State => lineOf(s, { ptyId, place: 0, turnUntil: UNTIL }).state;
-const stop = (s: State, ptyId: string, payload: Partial<HookPayload> = {}) => reduce(s, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop', ...payload } });
+const stop = (s: State, ptyId: string, payload: Partial<HookPayload> = {}) => reduce(s, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop', ...payload } });
 const turn = (s: State, ptyId: string) => reduce(s, { type: 'semaphoreTurn', ptyId, semaphore: 'memory', argv: TEST, until: UNTIL });
 const answers = (effects: Effect[]) => effects.map((e) => (e.type === 'continue' ? [e.type, e.ptyId, e.stage.name, e.prompt] : [e.type, 'ptyId' in e ? e.ptyId : undefined])); // not every effect names a pty
 
@@ -77,7 +77,7 @@ test('a run at a permission prompt keeps the notice; its next Stop in its turn g
   fixed(t);
   const first = running();
   const ptyId = ptyOf(first);
-  const asking = reduce(first, { type: 'hook', ptyId, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
+  const asking = reduce(first, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
   const kept = turn(asking, ptyId);
   assert.deepEqual(kept.effects, [], 'its Enter would answer the prompt');
   assert.deepEqual(workerOf(kept.state, ptyId)?.semaphoreNotice, { semaphore: 'memory', text: NOTICE });
@@ -96,7 +96,7 @@ test('a free session\'s Stop with a place is never held; a notice it kept reache
   assert.deepEqual(stopped.effects, []);
   const idle = workerOf(stopped.state, free);
   assert.deepEqual([idle?.status, idle?.lastEvent, idle?.semaphoreHold], ['waiting', { kind: 'turn' }, undefined], 'the user\'s own prompt is never frozen');
-  const asking = reduce(state, { type: 'hook', ptyId: free, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
+  const asking = reduce(state, { type: 'hook', ptyId: free, gitlabHosts: [], payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
   const atStop = stop(inTurn(turn(asking, free).state, free), free);
   assert.deepEqual(atStop.effects, [{ type: 'input', ptyId: free, text: NOTICE }]);
   assert.deepEqual([workerOf(atStop.state, free)?.status, workerOf(atStop.state, free)?.semaphoreNotice], ['waiting', undefined]);
@@ -155,7 +155,7 @@ test('with the clock fixed, the same state and event give deep-equal state and e
   const lined = inLine(first, ptyId);
   const { state } = heldRun();
   for (const [s, event] of [
-    [lined, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } }],
+    [lined, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } }],
     [state, { type: 'semaphoreTurn', ptyId, semaphore: 'memory', argv: TEST, until: UNTIL }],
     [state, { type: 'setSemaphores', semaphores: {} }],
   ] as const) {
@@ -173,7 +173,7 @@ test('a held Stop cancelled under the Hive (Esc, a prompt typed over it) is forg
   fixed(t);
   const { state, ptyId } = heldRun();
   for (const hook of ['UserPromptSubmit', 'PreToolUse'] as const) {
-    const moved = reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: hook, tool_name: 'Bash', tool_input: {} } });
+    const moved = reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: hook, tool_name: 'Bash', tool_input: {} } });
     assert.equal(workerOf(moved.state, ptyId)?.semaphoreHold, undefined, hook);
     assert.deepEqual(turn(moved.state, ptyId).effects, [{ type: 'input', ptyId, text: NOTICE }], hook);
   }
@@ -183,9 +183,9 @@ test('a typed notice is forgotten once a prompt submits it; one kept at a permis
   fixed(t);
   const first = running();
   const ptyId = ptyOf(first);
-  const prompt = (s: State) => reduce(s, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit' } }).state;
+  const prompt = (s: State) => reduce(s, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'UserPromptSubmit' } }).state;
   assert.equal(workerOf(prompt(turn(first, ptyId).state), ptyId)?.semaphoreNotice, undefined, 'never said twice');
-  const asking = reduce(first, { type: 'hook', ptyId, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
+  const asking = reduce(first, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' } }).state;
   assert.deepEqual(workerOf(prompt(turn(asking, ptyId).state), ptyId)?.semaphoreNotice, { semaphore: 'memory', text: NOTICE });
 });
 

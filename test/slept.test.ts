@@ -22,7 +22,7 @@ const without = ({ at: _at, ...rest }: SleptRun) => rest;
 function running(): { state: State; ptyId: string } {
   const polled = reduce(base(), { type: 'poll', source: 'board', items: [{ item, column: 'Backlog' }] }).state;
   const ptyId = polled.workers[0].runId ?? '';
-  const seen = reduce(polled, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: '/wt/hive-1-task-1' }, branch: 'hive/1-task-1' }).state;
+  const seen = reduce(polled, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: '/wt/hive-1-task-1' }, branch: 'hive/1-task-1' }).state;
   return { state: seen, ptyId };
 }
 
@@ -41,7 +41,7 @@ test('an exit with no cause records the run with none, and a /exit\'s SessionEnd
   const exited = reduce(state, { type: 'exit', ptyId }).state;
   assert.equal(exited.slept?.length, 1);
   assert.equal('cause' in (exited.slept?.[0] ?? {}), false);
-  const ended = reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionEnd', session_id: SESSION } }).state;
+  const ended = reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd', session_id: SESSION } }).state;
   assert.equal(ended.slept?.length, 1, 'SessionEnd frees the worker');
   assert.equal(reduce(ended, { type: 'exit', ptyId }).state.slept?.length, 1, 'the process exit after it finds no live worker');
 });
@@ -57,14 +57,14 @@ test('a failed spawn and a run that never saw a hook record nothing (#672)', () 
 test('the stage end the auto flow reaches records the run it kills with cause auto (#672)', () => {
   const { state, ptyId } = running();
   const done = reduce(state, { type: 'done', ptyId }).state;
-  const { state: ended, effects } = reduce(done, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop', session_id: SESSION } });
+  const { state: ended, effects } = reduce(done, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop', session_id: SESSION } });
   assert.ok(effects.some((e) => e.type === 'kill' && e.ptyId === ptyId), 'the next stage is a new session: the run is killed');
   assert.deepEqual(ended.slept?.map((s) => [s.ptyId, s.cause, s.stage]), [[ptyId, 'auto', 'spec']]);
 });
 
 test('the idle shutdown stops a waiting run with cause idle, and its exit records it so (#672)', () => {
   const { state, ptyId } = running();
-  const waiting = reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop', session_id: SESSION } }).state;
+  const waiting = reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop', session_id: SESSION } }).state;
   const longAgo = new Date(Date.now() - 2 * HOUR_MS).toISOString();
   const armed: State = { ...waiting, shutdown: { armedAt: longAgo }, workers: waiting.workers.map((w) => (w.runId === ptyId ? { ...w, waitingSince: longAgo } : w)) };
   const { state: swept, effects } = reduce(armed, { type: 'tick' });
@@ -97,7 +97,7 @@ test('a local session\'s exit records its workspace, and continuing the session 
   const worker = opened.workers.find((w) => w.activityId === localActivityId('hive') && w.status !== 'empty');
   const ptyId = worker?.runId ?? '';
   const sessionId = worker?.sessionId ?? '';
-  const seen = reduce(opened, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: sessionId } }).state;
+  const seen = reduce(opened, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: sessionId } }).state;
   const exited = reduce(seen, { type: 'exit', ptyId }).state;
   assert.deepEqual(exited.slept?.map((s) => [s.ptyId, s.kind, s.workspace, s.taskId]), [[ptyId, 'session', 'hive', undefined]]);
   const { state: continued, effects } = reduce(exited, { type: 'openLocalSession', activityId: localActivityId('hive'), sessionId });

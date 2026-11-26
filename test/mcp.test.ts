@@ -217,7 +217,7 @@ async function seed(home: string, itemId: string, threads: unknown[]): Promise<v
 async function withSession(t: TestContext) {
   const hive = await start(t);
   const sessionId = work0(hive.server)!.sessionId!;
-  await hive.server.dispatch({ type: 'hook', ptyId: hive.ptyId, payload: { hook_event_name: 'SessionStart', session_id: sessionId, cwd: hive.repo } });
+  await hive.server.dispatch({ type: 'hook', ptyId: hive.ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: sessionId, cwd: hive.repo } });
   return { ...hive, sessionId, itemId: task0(hive.server).item.itemId };
 }
 

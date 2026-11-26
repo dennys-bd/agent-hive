@@ -150,7 +150,7 @@ test('a new local claude session runs claude in the workspace\'s checkout with i
   assert.ok(launchFlag(launch, '--mcp-config')?.endsWith(`${ptyId}.mcp.json`), 'the worker id in claude\'s argv');
   assert.deepEqual(plainArgs(launch).slice(-2), ['--session-id', sessionId]);
   assert.deepEqual(git.slice(before), [], 'no worktree, no checkout, no setup');
-  await server.dispatch({ type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: sessionId } });
+  await server.dispatch({ type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: sessionId } });
   await server.dispatch({ type: 'exit', ptyId });
   await server.dispatch({ type: 'openLocalSession', activityId: localActivityId(WORKSPACE), sessionId });
   assert.deepEqual(plainArgs(workers[1].launch).slice(-2), ['--resume', sessionId]);
@@ -296,7 +296,7 @@ test('a new local codex session runs codex with no id; its first SessionStart re
   const worker = server.getState()?.workers.find((s) => s.activityId === localActivityId(WORKSPACE) && s.status !== 'empty');
   assert.ok(worker?.runId !== undefined);
   assert.deepEqual([workers[0].launch.agent?.command, worker.sessionId, localSessionsOf(server.getState()!, WORKSPACE)], ['codex', undefined, []]);
-  await server.dispatch({ type: 'hook', ptyId: worker.runId, payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, source: 'startup' } });
+  await server.dispatch({ type: 'hook', ptyId: worker.runId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, source: 'startup' } });
   assert.deepEqual(localSessionsOf(server.getState()!, WORKSPACE).map((s) => [s.id, s.agent]), [[CODEX_ID, 'codex']]);
   await server.dispatch({ type: 'exit', ptyId: worker.runId });
   assert.equal((await postJson(`${url}/${CODEX_ID}/open`)).status, 200, 'Codex keeps its rollouts by date, not by folder (#929): the route looks for no transcript');

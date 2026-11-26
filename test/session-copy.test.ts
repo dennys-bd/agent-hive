@@ -30,7 +30,7 @@ const spawnOf = (effects: Effect[]): Spawn => effects.find((e): e is Spawn => e.
 const copyTo = (state: State, to: SessionTarget, extra = {}) =>
   reduce(state, { type: 'copySession', from: { activityId: activityIdOf('local:1'), sessionId: SOURCE }, to, name: 'no dois', notice: 'Hive: moved', copied: DIR, ...extra });
 const stop = (state: State, tokens: number, title?: string) =>
-  reduce(state, { type: 'hook', ptyId: state.workers.at(-1)!.runId!, payload: { hook_event_name: 'Stop' }, tokens, ...(title === undefined ? {} : { title }) }).state;
+  reduce(state, { type: 'hook', ptyId: state.workers.at(-1)!.runId!, gitlabHosts: [], payload: { hook_event_name: 'Stop' }, tokens, ...(title === undefined ? {} : { title }) }).state;
 
 test('a copy into a task appends a named entry that starts from the source\'s tokens, in a free session of the task marked with the temporary copy, and spawns the fork; the source and the task\'s own session id are untouched; a free entry with no stage (#587, #812)', () => {
   const before = hive([A, B]);
@@ -71,7 +71,7 @@ test('copySession refuses in silence: the source\'s own task or own local, a tas
 test('the copy\'s SessionStart drops the mark and removes the temporary transcript, once; a copy with no mark never does (#587)', () => {
   const copied = copyTo(hive([A, B]), { activityId: activityIdOf('local:2') }).state;
   const { runId: ptyId, sessionId } = copied.workers.at(-1)!;
-  const start = { type: 'hook' as const, ptyId: ptyId!, payload: { hook_event_name: 'SessionStart', session_id: sessionId, cwd: worktreeOf(2) } };
+  const start = { type: 'hook' as const, ptyId: ptyId!, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: sessionId, cwd: worktreeOf(2) } };
   const started = reduce(copied, start);
   assert.deepEqual(started.effects, [{ type: 'dropCopiedTranscript', dir: DIR, sessionId: SOURCE }]);
   assert.equal(started.state.workers.at(-1)!.copyOf, undefined);
@@ -154,7 +154,7 @@ test('the exit of a local run that never opened forgets the entry its copy appen
   const local = copyTo(hive([A, B]), { activityId: localActivityId('hive') }).state;
   const ptyId = local.workers.at(-1)!.runId!;
   assert.deepEqual(localSessionsOf(reduce(local, { type: 'exit', ptyId }).state, 'hive'), []);
-  const started = reduce(local, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart' } }).state;
+  const started = reduce(local, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart' } }).state;
   assert.equal(localSessionsOf(reduce(started, { type: 'exit', ptyId }).state, 'hive').length, 1);
   const kept = withLocal(hive([]), 'hive', [session({ stages: [] })]);
   const continued = reduce(kept, { type: 'openLocalSession', activityId: localActivityId('hive'), sessionId: SOURCE }).state;
@@ -166,7 +166,7 @@ const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
 const SUBAGENT = 'f0f0f0f0-0000-4000-8000-000000000002';
 const codexHive = (): State => withWork(hive([A, B]), 'local:1', { worktree: worktreeOf(1), sessionId: SOURCE }, { sessions: [session({ agent: 'codex' })] });
 const sessionStart = (state: State, id: string, source: string): State =>
-  reduce(state, { type: 'hook', ptyId: state.workers.at(-1)!.runId!, payload: { hook_event_name: 'SessionStart', session_id: id, cwd: worktreeOf(2), source } }).state;
+  reduce(state, { type: 'hook', ptyId: state.workers.at(-1)!.runId!, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: id, cwd: worktreeOf(2), source } }).state;
 const entriesOf = (state: State, itemId: string) => sessionsOf(state, itemId).map((s) => [s.id, s.name, s.tokens, s.agent]);
 
 test('a copy of a codex session runs codex under a placeholder; its first SessionStart renames the worker and the entry to the fork\'s id, name and tokens kept; a later one (a subagent\'s) changes nothing (#933)', () => {
@@ -187,7 +187,7 @@ test('a copy of a codex session runs codex under a placeholder; its first Sessio
 test('a codex copy whose first hook is not its SessionStart still takes the fork\'s id from SessionStart source=fork (#933)', () => {
   const copied = copyTo(codexHive(), { activityId: activityIdOf('local:2') }, { copied: undefined }).state;
   const ptyId = copied.workers.at(-1)!.runId!;
-  const prompted = reduce(copied, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit', session_id: FORK } }).state;
+  const prompted = reduce(copied, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'UserPromptSubmit', session_id: FORK } }).state;
   const forked = sessionStart(prompted, FORK, 'fork');
   assert.deepEqual(entriesOf(forked, 'local:2'), [[FORK, 'no dois', 1200, 'codex']]);
 });
@@ -288,7 +288,7 @@ test('a codex or copilot copy whose run ends before the fork\'s SessionStart lea
       const label = `${source} ${to.activityId}`;
       const copied = copyTo(before(), to, { copied: undefined }).state;
       const ptyId = copied.workers.at(-1)!.runId!;
-      const seen = reduce(copied, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit' } }).state; // seen: forgetUnopenedLocal alone keeps a local entry
+      const seen = reduce(copied, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'UserPromptSubmit' } }).state; // seen: forgetUnopenedLocal alone keeps a local entry
       assert.deepEqual(recordOf(reduce(seen, { type: 'exit', ptyId }).state, to.activityId)?.sessions, [], label);
       assert.equal(recordOf(reduce(sessionStart(seen, FORK, source), { type: 'exit', ptyId }).state, to.activityId)?.sessions.length, 1, label);
       assert.deepEqual(recordOf(reduce(copied, { type: 'spawnFailed', ptyId, message: 'pty: no' }).state, to.activityId)?.sessions, [], label);

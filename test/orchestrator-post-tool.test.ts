@@ -15,7 +15,7 @@ const BASH: HookPayload = { hook_event_name: 'PostToolUse', tool_name: 'bash', t
 const running = (): State =>
   reduce({ ...initialState(1), workspaces: ['hive'], syncs: { board: {} }, ...chained(STAGES) }, { type: 'poll', source: 'board', items: [{ item: ITEM, column: 'Ready' }] }).state;
 const ptyOf = (s: State): string => s.workers[0]?.runId ?? '';
-const hook = (s: State, payload: HookPayload): State => reduce(s, { type: 'hook', ptyId: ptyOf(s), payload }).state;
+const hook = (s: State, payload: HookPayload, gitlabHosts: readonly string[] = []): State => reduce(s, { type: 'hook', ptyId: ptyOf(s), payload, gitlabHosts }).state;
 const notified = (s: State, kind: string, message: string): State => hook(s, { hook_event_name: 'Notification', notification_type: kind, message });
 const seen = (s: State): [Worker['status'], Worker['question'], Worker['lastEvent']] => [s.workers[0]?.status, s.workers[0]?.question, s.workers[0]?.lastEvent];
 
@@ -59,4 +59,29 @@ test('a PostToolUse leaves agent_needs_input open, and a subagent\'s PostToolUse
   const child = hook(waiting, { ...BASH, session_id: 'b1b1b1b1-0000-4000-8000-000000000002' });
   assert.equal(seen(child)[0], 'waiting', 'a subagent\'s tool');
   assert.equal(seen(hook(waiting, { ...BASH, session_id: own }))[0], 'working', 'the worker\'s own tool');
+});
+
+const MR = 'https://git.example.com/acme/platform/app/-/merge_requests/3';
+const LISTED = ['git.example.com'];
+// glab mr create's output as Claude Code's Bash tool reports it: the branch line, the MR's title, then its link
+const glab = (url: string, command = 'glab mr create --fill --yes'): HookPayload => ({
+  hook_event_name: 'PostToolUse', tool_name: 'bash', tool_input: { command },
+  tool_response: { stdout: `Creating merge request for feature into main in acme/platform/app\n\n!3 Add it (feature)\n ${url}\n`, stderr: '' },
+});
+
+test('a glab mr create on a listed GitLab host records its MR once, as gh pr create does; a second identical hook adds nothing; gitlab.com needs no list (#1052)', () => {
+  const opened = hook(running(), glab(MR), LISTED);
+  assert.deepEqual(prsOf(opened, ID).map((pr) => [pr.url, pr.state]), [[MR, 'open']]);
+  assert.deepEqual(seen(opened)[2], { kind: 'pr' });
+  assert.deepEqual(prsOf(hook(opened, glab(MR), LISTED), ID).map((pr) => pr.url), [MR], 'once');
+  const onCom = 'https://gitlab.com/acme/app/-/merge_requests/12';
+  assert.deepEqual(prsOf(hook(running(), glab(onCom)), ID).map((pr) => pr.url), [onCom]);
+});
+
+test('a glab mr create whose link is on a host that is not GitLab records nothing, nor does another glab command; gh pr create finds the GitHub link as before (#1052)', () => {
+  assert.deepEqual(prsOf(hook(running(), glab(MR)), ID), [], 'git.example.com is not listed');
+  assert.deepEqual(prsOf(hook(running(), glab('https://code.example.org/acme/app/-/merge_requests/3'), LISTED), ID), []);
+  assert.deepEqual(prsOf(hook(running(), glab(MR, 'glab mr view 3'), LISTED), ID), [], 'only a create');
+  const gh = hook(running(), { hook_event_name: 'PostToolUse', tool_name: 'bash', tool_input: { command: 'gh pr create --fill' }, tool_response: `${PR}\n` }, LISTED);
+  assert.deepEqual(prsOf(gh, ID).map((pr) => pr.url), [PR]);
 });

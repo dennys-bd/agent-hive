@@ -126,7 +126,7 @@ async function withPty(t: TestContext): Promise<Started & { pty: FakePty; ptyId:
 
 const openPr = (server: HiveServer, ptyId: string): Promise<Effect[]> =>
   server.dispatch({
-    type: 'hook', ptyId,
+    type: 'hook', ptyId, gitlabHosts: [],
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
   });
 
@@ -471,7 +471,7 @@ test('a free session whose turn ended on overloaded backs off, and its retry typ
   const host = workers[0].options?.ptys;
   assert.ok(host, 'the server hands its pty host to every spawn');
   host.spawn(ptyId, ['/bin/sh', '-c', 'claude'], repo, {});
-  await server.dispatch({ type: 'hook', ptyId, payload: { hook_event_name: 'StopFailure', error: 'overloaded' } });
+  await server.dispatch({ type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'StopFailure', error: 'overloaded' } });
   const waiting = server.getState()!.workers.find((s) => s.runId === ptyId)!;
   assert.equal(waiting.status, 'backoff');
   const effects = await server.dispatch({ type: 'retryDue', ptyId, until: waiting.backoff!.until });
@@ -1190,7 +1190,7 @@ test('a spawn queued behind a slow kill is dropped once close() has begun, never
   await markDone(server, ptyId);
   // Dispatched directly (not through /hooks/event): close() below drops every open connection, and this test cares about
   // the effect batch, not the hook route's own response.
-  const stopped = server.dispatch({ type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  const stopped = server.dispatch({ type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
   await waitFor(() => workers[0].killed === 1); // the batch's kill effect is running and held
 
   const closed = server.close(); // sets `closing` synchronously, then itself hangs in pool.killAll() behind the same held kill
@@ -2456,6 +2456,16 @@ test('after every poll one gh query reads the state of every open PR (#207): a f
   const calls = gh.length;
   await server.poll();
   assert.equal(gh.length, calls, 'no open PR left: no call');
+});
+
+test('the hook route checks a glab mr create\'s link against the saved GitLab hosts: an MR on a listed host is recorded once (#1052)', async (t) => {
+  const { base, server } = await start(t, { ...BODY, gitlabHosts: ['git.example.com'] });
+  const mr = 'https://git.example.com/acme/app/-/merge_requests/3';
+  const payload = { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'glab mr create --fill --yes' }, tool_response: { stdout: `${mr}\n`, stderr: '' } };
+  const ptyId = worker0(server).runId!;
+  assert.equal((await hookEvent(base, ptyId, payload)).status, 204);
+  assert.equal((await hookEvent(base, ptyId, payload)).status, 204);
+  assert.deepEqual(prs0(server).map((pr) => [pr.url, pr.state]), [[mr, 'open']]);
 });
 
 test('POST /crash/dismiss drops the crash report, behind the UI header (#283)', async (t) => {

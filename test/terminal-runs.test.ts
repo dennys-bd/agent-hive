@@ -66,7 +66,7 @@ test('a resume whose id is not known yet starts in the terminal\'s activity with
 });
 
 const started = (state: State, id: string, cwd: string): State =>
-  reduce(state, { type: 'hook', ptyId: RUN, payload: { hook_event_name: 'SessionStart', session_id: id, cwd, source: 'resume' } }).state;
+  reduce(state, { type: 'hook', ptyId: RUN, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: id, cwd, source: 'resume' } }).state;
 
 test('a resumed capture\'s first SessionStart naming a session another activity holds moves the worker there and touches the session (#347)', () => {
   const state = world('local');
@@ -94,7 +94,7 @@ test('a resumed capture whose first SessionStart runs outside the terminal\'s fo
   assert.equal(runOf(released), undefined);
   assert.deepEqual(sessionsOf(released, ITEM.itemId), sessionsOf(state, ITEM.itemId));
   assert.equal(activityOf(released, ITEM.itemId)?.worktree, '/repo', 'its cwd is never written as the task\'s worktree');
-  const stop = reduce(released, { type: 'hook', ptyId: RUN, payload: { hook_event_name: 'Stop', session_id: S3 } });
+  const stop = reduce(released, { type: 'hook', ptyId: RUN, gitlabHosts: [], payload: { hook_event_name: 'Stop', session_id: S3 } });
   assert.equal(stop.state, released);
 });
 

@@ -31,7 +31,7 @@ const spawnOf = (effects: Effect[]): Extract<Effect, { type: 'spawn' }> | undefi
 function stageEnd(state: State) {
   const green = reduce(state, { type: 'setSignal', signal: 'green' }).state;
   const ptyId = green.workers.find((w) => w.status !== 'empty')?.runId ?? '';
-  return reduce(reduce(green, { type: 'done', ptyId }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(green, { type: 'done', ptyId }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 }
 
 test('a start with picks runs the picked agent with its launch in a new session; the activity keeps no pick and the input is not mutated (#290)', () => {

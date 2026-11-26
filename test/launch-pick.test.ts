@@ -33,7 +33,7 @@ const spawnOf = (effects: Effect[]) => effects.find((e): e is SessionSpawn => e.
 // What the hook route does with a Codex run's first SessionStart (#928)
 const started = (state: State, ptyId: string): State => {
   const payload = codexRunner.hookPayload(CODEX_TURN.SessionStart);
-  return payload === undefined ? state : reduce(state, { type: 'hook', ptyId, payload }).state;
+  return payload === undefined ? state : reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload }).state;
 };
 
 test('openSession with a launch puts it on the worker and on the new free session (#257)', () => {

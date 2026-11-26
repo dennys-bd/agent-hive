@@ -29,7 +29,7 @@ const cleared = (state: State): State => reduce(state, { type: 'clearSessions', 
 // hive_done (with its result) then the Stop: what ends a stage
 const stageEnd = (state: State, result?: Record<string, unknown>) => {
   const ptyId = state.workers[0].runId!;
-  return reduce(reduce(state, { type: 'done', ptyId, ...(result ? { result } : {}) }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(state, { type: 'done', ptyId, ...(result ? { result } : {}) }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 };
 
 test('a stage end whose next stage asks for a handoff keeps the task, marks it handoffPending and answers the Stop with HANDOFF_PROMPT in the same session; the input is never mutated (#692)', () => {
@@ -78,7 +78,7 @@ test('approve takes the same path: the task stays, marked, and the stage\'s sess
 test('approve with the stage\'s session open in the user\'s own session types HANDOFF_PROMPT there; its hive_done moves the task past the approval (#692, #483)', () => {
   const first = running(GATED);
   const worker = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+  const seen = reduce(first, { type: 'hook', ptyId: worker, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
   const idle = cleared(reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state); // #720: else the stage run's session gets it
   const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
   const ptyId = opened.workers.find((s) => s.freeSession)!.runId!;
@@ -94,7 +94,7 @@ test('approve after a new free session\'s hive_done hands the handoff to the sta
   for (const clear of [false, true]) {
     const first = running(GATED);
     const worker = first.workers[0].runId!;
-    const seen = reduce(first, { type: 'hook', ptyId: worker, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+    const seen = reduce(first, { type: 'hook', ptyId: worker, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
     const stopped = reduce(reduce(seen, { type: 'stop', ptyId: worker }).state, { type: 'exit', ptyId: worker }).state;
     const stageRun = task(stopped).sessionId;
     const idle = clear ? cleared(stopped) : stopped;

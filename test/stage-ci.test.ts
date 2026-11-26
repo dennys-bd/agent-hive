@@ -374,7 +374,7 @@ test('a session ending on a task held in a wait-for-CI stage starts the wait in 
   assert.deepEqual([held.state.tasks[0].stage, live(held.state)?.ci, effectOf(held.effects, 'ciRead')], ['ci', undefined, undefined], 'the session holds the wait');
   const ends: HiveEvent[] = [
     { type: 'exit', ptyId: runId },
-    { type: 'hook', ptyId: runId, payload: { hook_event_name: 'SessionEnd', reason: 'other' } },
+    { type: 'hook', ptyId: runId, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd', reason: 'other' } },
     { type: 'spawnFailed', ptyId: runId, message: 'no pty' },
   ];
   for (const event of ends) {
@@ -382,7 +382,7 @@ test('a session ending on a task held in a wait-for-CI stage starts the wait in 
     assert.ok(live(ended.state)?.ci, `${event.type} starts the wait`);
     assert.deepEqual(effectOf(ended.effects, 'ciRead'), { type: 'ciRead', activityId: live(ended.state)?.id });
   }
-  const cleared = reduce(held.state, { type: 'hook', ptyId: runId, payload: { hook_event_name: 'SessionEnd', reason: 'clear' } });
+  const cleared = reduce(held.state, { type: 'hook', ptyId: runId, gitlabHosts: [], payload: { hook_event_name: 'SessionEnd', reason: 'clear' } });
   assert.equal(effectOf(cleared.effects, 'ciRead'), undefined, 'a /clear ends the conversation, not the session');
   const quitting = reduce({ ...held.state, cleanStop: true }, { type: 'exit', ptyId: runId });
   assert.equal(effectOf(quitting.effects, 'ciRead'), undefined, 'a Quit\'s kills act on nothing');

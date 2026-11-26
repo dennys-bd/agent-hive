@@ -1778,7 +1778,7 @@ export type HiveEvent =
   | { type: 'setSources'; sources: string[] } // like setWorkspaces: the Comb's sources, from the config on every save (#180)
   | { type: 'renameSources'; renames: Record<string, string> } // a save that renamed sources (#278): old name → new name, one simultaneous map; dispatched first by reconfigure
   | { type: 'renameStages'; renames: Record<string, string> } // #861: a save that renamed stages: old name → new name, one simultaneous map; dispatched by reconfigure after renameSources, before setStages
-  | { type: 'hook'; ptyId: string; payload: HookPayload; branch?: string; tokens?: number; title?: string } // tokens and title: the server's turn-end read (#248, #489)
+  | { type: 'hook'; ptyId: string; payload: HookPayload; branch?: string; tokens?: number; title?: string; gitlabHosts: readonly string[] } // tokens and title: the server's turn-end read (#248, #489); gitlabHosts: the live config's, what extractPrUrl checks a glab mr create's link against (#1052)
   | { type: 'exit'; ptyId: string; noTranscript?: true } // #586: the run's own session has no transcript at its exit (server-exit.ts); the reducer forgets it
   | { type: 'stop'; ptyId: string; close?: CloseAction; cause?: 'manual' | 'all'; block?: true } // the only way a user ends a run (#283): a stage run leaves its task stopped; the worker frees on the exit. close: hive_stop's reason (#314), written to the task's item after the kill. cause: the sleep it is (#672), absent for hive_stop and a command's timeout. block: hive_stop's block (#294): the activity is not stopped, the blockers gate the fill
   | { type: 'forgetSlept'; ptyId: string } // a sleeping run's tab closed (#672): its record and its transcript go

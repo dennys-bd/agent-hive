@@ -32,7 +32,7 @@ const spawnOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { 
 const start = (state: State) => reduce(state, { type: 'start', itemId: ITEM.itemId });
 const localWorker = (state: State) => state.workers.find((w) => w.activityId === localActivityId('hive'));
 const hookStart = (state: State, ptyId: string, id: string): State =>
-  reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: id, cwd: '/wt', source: 'startup' } }).state;
+  reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: id, cwd: '/wt', source: 'startup' } }).state;
 
 test('setDefaultAgent puts the config\'s default agent on the live state with no effect, and the log names it (#925)', () => {
   const { state, effects } = reduce(initialState(1), { type: 'setDefaultAgent', agent: OTHER });
@@ -74,7 +74,7 @@ test('a copy runs and records its source\'s agent; a new local session the one a
 test('a run that sleeps records its worker\'s agent (#925)', () => {
   const started = start(onDev({ agent: OTHER }));
   const ptyId = spawnOf(started.effects)?.worker.runId ?? '';
-  const seen = reduce(started.state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: S2, cwd: '/wt' } }).state;
+  const seen = reduce(started.state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', session_id: S2, cwd: '/wt' } }).state;
   const stopped = reduce(seen, { type: 'stop', ptyId, cause: 'manual' }).state;
   assert.equal(reduce(stopped, { type: 'exit', ptyId }).state.slept?.[0]?.agent, OTHER);
 });
@@ -132,7 +132,7 @@ test('a claude stage run keeps the id the Hive chose on its activity, whatever i
 // What the hook route does for a Codex worker (#928): its runner's payload goes to the reducer; a dropped one goes nowhere
 const codexHooked = (state: State, ptyId: string, body: HookPayload): Reduced => {
   const payload = codexRunner.hookPayload(body);
-  return payload === undefined ? { state, effects: [] } : reduce(state, { type: 'hook', ptyId, payload });
+  return payload === undefined ? { state, effects: [] } : reduce(state, { type: 'hook', ptyId, gitlabHosts: [], payload });
 };
 const runOf = (state: State, ptyId: string): Worker | undefined => state.workers.find((w) => w.runId === ptyId);
 // A codex stage run past its first SessionStart
@@ -177,7 +177,7 @@ test('a codex subagent\'s prompt while the worker waits changes nothing; the sam
   const waiting = codexHooked(opened, ptyId, CODEX_TURN.Stop).state;
   const subagent = codexHook('UserPromptSubmit', { ...SUBAGENT, prompt: 'say hello' }); // the parent's session_id
   assert.equal(codexHooked(waiting, ptyId, subagent).state, waiting);
-  assert.equal(runOf(reduce(waiting, { type: 'hook', ptyId, payload: subagent }).state, ptyId)?.status, 'working', 'isChildSession cannot tell it: the same session_id');
+  assert.equal(runOf(reduce(waiting, { type: 'hook', ptyId, gitlabHosts: [], payload: subagent }).state, ptyId)?.status, 'working', 'isChildSession cannot tell it: the same session_id');
 });
 
 const terminalOn = (activityId: string) => ({ terminalId: SHELL, activityId, startedAt: AT, cwd: '/wt' });

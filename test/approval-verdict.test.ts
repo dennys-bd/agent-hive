@@ -31,7 +31,7 @@ const flow = (transitions: Transition[] = TRANSITIONS, stages: Stage[] = STAGES)
 // hive_done, then its Stop: what ends a stage
 const stageEnd = (state: State, done: Partial<Extract<HiveEvent, { type: 'done' }>> = {}) => {
   const ptyId = state.workers[0].runId ?? '';
-  return reduce(reduce(state, { type: 'done', ptyId, ...done }).state, { type: 'hook', ptyId, payload: { hook_event_name: 'Stop' } });
+  return reduce(reduce(state, { type: 'done', ptyId, ...done }).state, { type: 'hook', ptyId, gitlabHosts: [], payload: { hook_event_name: 'Stop' } });
 };
 const approve = (state: State) => reduce(state, { type: 'approve', activityId: workId(state, ID) });
 const red = (state: State): State => reduce(state, { type: 'setSignal', signal: 'red' }).state;
@@ -105,7 +105,7 @@ test('a held verdict approval whose window runs out keeps its verdict, and appro
 test('a free session\'s hive_done with a routed verdict on an approval stage awaits with the verdict and the session; approving takes the verdict\'s transition (#693, #812)', () => {
   const first = flow();
   const run = first.workers[0].runId!;
-  const seen = reduce(first, { type: 'hook', ptyId: run, payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
+  const seen = reduce(first, { type: 'hook', ptyId: run, gitlabHosts: [], payload: { hook_event_name: 'SessionStart', cwd: '/tmp/worktrees/hive-1-task-1' } }).state;
   const idle = reduce(reduce(seen, { type: 'stop', ptyId: run }).state, { type: 'exit', ptyId: run }).state;
   const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
   const own = opened.workers.find((s) => s.freeSession)!;
