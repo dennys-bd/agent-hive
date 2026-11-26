@@ -10,6 +10,7 @@ import type { Activity, DeleteActivityScope, Exec, Task } from '../src/types.js'
 import { DELETE_ACTIVITY_DEFAULTS } from '../src/types.js';
 import { fakeLog, fakeMachine } from './fakes.js';
 import { tempDir } from './temp-dir.js';
+import { fakeGitlabApi } from './fake-gitlab.js';
 
 const TASK_SLUG = 'hive-1-from-ready'; // the fake source's task
 const TASK_BRANCH = 'hive/1-from-ready'; // what the default template renders for it
@@ -99,4 +100,21 @@ test('deleteActivityOnDisk on a local task runs no git whatever the scope and de
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: repo, env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [{ id: SESSION, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }], prs: [], branch: BRANCH, scope: ALL }, deps);
   assert.deepEqual(calls, [], 'no worktree, no branch -d, no left-behind branches, no stage-start ref');
   assert.deepEqual(await readdir(dir), []);
+});
+
+test('deleteActivityOnDisk reads a merged MR through the deps\' GitLab account with the job\'s hosts: the squashed branch goes at its verified tip (#1053)', async (t) => {
+  const calls: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    calls.push([file, ...(file === 'git' ? args.slice(2) : args)]);
+    if (args.includes('--is-ancestor')) throw Object.assign(new Error('Command failed: git merge-base'), { code: 1 }); // squashed: never an ancestor
+    return { stdout: args.includes('rev-parse') ? 'c0ffee1\n' : '' };
+  };
+  const { api, calls: asked } = fakeGitlabApi({ 'GET projects/acme%2Fr/merge_requests/7': { state: 'merged', sha: 'c0ffee1' } });
+  const task: Task = { item: { itemId: 'board:I1', id: '1', title: 'from Ready', body: '', url: '' }, stage: 'fila', boardColumn: 'Ready', auto: true };
+  const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH };
+  const deps = { log: fakeLog().log, exec, machineFor: () => fakeMachine({ exec }), ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000), gitlabAccess: async (host: string) => (host === 'git.example.com' ? api : undefined) };
+  const mr = 'https://git.example.com/acme/r/-/merge_requests/7';
+  await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)' }, activity, task, sessions: [], prs: [{ url: mr, state: 'merged' }], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS, gitlabHosts: ['git.example.com'] }, deps);
+  assert.deepEqual([calls.filter((c) => c[0] === 'gh'), asked.length], [[], 1]);
+  assert.ok(calls.some((c) => c.join(' ') === `git update-ref -d refs/heads/${TASK_BRANCH} c0ffee1`), calls.map((c) => c.join(' ')).join('\n'));
 });

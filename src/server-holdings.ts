@@ -8,7 +8,8 @@ import { workspaceRows, type WorktreeRouteDeps } from './server-worktrees.js';
 import { removalBlocker, taskId, taskLabel } from './tasks.js';
 import type { Activity, Exec, HeldActivity, HoldingBlocker, State, Task, TaskPr, UnmergedBranch, Workspace, WorkspaceHoldings, WorktreeRow } from './types.js';
 import { wordsOf } from './worktree.js';
-import { mergedByPr, NO_GITLAB, refuseUnmerged } from './worktree-remove.js';
+import { mergedByPr, refuseUnmerged } from './worktree-remove.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 
 // What a saved workspace still holds (#750), for the removal dialog of #751. The state's part is pure; the route (below) adds git's.
@@ -47,11 +48,12 @@ export const isRunningIn = (state: Pick<State, 'workers' | 'activities'>, name: 
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 
-export type HoldingsRouteDeps = Pick<WorktreeRouteDeps, 'log' | 'requireLive'> & { exec: Exec };
+/** #1053: gitlabHosts, the live config's at each request; gitlabAccess, a GitLab host's account for a merged MR. */
+export type HoldingsRouteDeps = Pick<WorktreeRouteDeps, 'log' | 'requireLive'> & { exec: Exec; gitlabHosts(): readonly string[]; gitlabAccess: GitlabAccess };
 
 // Decision 1: what delete activity would refuse. refuseUnmerged's rule (the upstream, or HEAD), then the PRs for a squash merge; a refusal
-// that is not unmerged is git failing, the route's 500
-async function unmergedOf(repo: string, row: WorktreeRow, prs: readonly TaskPr[], { exec, log }: HoldingsRouteDeps): Promise<UnmergedBranch[]> {
+// that is not unmerged is git failing, the route's 500. #1053: a host with no account only logs, and the row stays
+async function unmergedOf(repo: string, row: WorktreeRow, prs: readonly TaskPr[], { exec, log, gitlabHosts, gitlabAccess }: HoldingsRouteDeps): Promise<UnmergedBranch[]> {
   const { branch } = row;
   if (branch === null) return []; // detached: no branch to refuse
   try {
@@ -60,7 +62,8 @@ async function unmergedOf(repo: string, row: WorktreeRow, prs: readonly TaskPr[]
   } catch (err) {
     const refusal = err instanceof RemovalRefusal ? err.refusal : undefined;
     if (refusal?.reason !== 'unmerged') throw err;
-    return (await mergedByPr({ exec }, repo, branch, prs, NO_GITLAB, log)).tip === undefined ? [{ slug: row.slug, branch, target: refusal.target }] : [];
+    const { tip } = await mergedByPr({ exec }, repo, branch, prs, { gitlabHosts: gitlabHosts(), gitlabAccess }, log);
+    return tip === undefined ? [{ slug: row.slug, branch, target: refusal.target }] : [];
   }
 }
 

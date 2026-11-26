@@ -759,7 +759,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope, gitlabHosts: runtime.config.gitlabHosts }, { log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor, gitlabAccess: gitlabAccessOf });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
@@ -1458,11 +1458,11 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor, gitlabAccess: gitlabAccessOf };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
-  registerHoldingsRoute(app, { exec, log, requireLive }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog
+  registerHoldingsRoute(app, { exec, log, requireLive, gitlabHosts: () => live?.runtime.config.gitlabHosts ?? [], gitlabAccess: gitlabAccessOf }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog; #1053: a merged MR through its host's account
   registerTaskRoutes(app, taskDeps);
   registerTimelineRoute(app, { usage: deps.usage, log }); // GET /tasks/:id/timeline (#960): from usage.sqlite by item id; 503 with no store
   registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec, machineFor }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
