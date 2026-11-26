@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { type GitlabAnswer, GitlabHttpError } from '../../src/gitlab/api.js';
 import { type GitlabAccess, readMrActivity, readMrStates } from '../../src/gitlab/pr-states.js';
-import { SourceRateLimitError } from '../../src/source-errors.js';
+import { SourceNotConnectedError, SourceRateLimitError } from '../../src/source-errors.js';
 
 const MR = 'https://gitlab.com/acme/platform/app/-/merge_requests/7';
 const SELF = 'https://git.example.com/acme/app/-/merge_requests/3';
@@ -64,6 +64,26 @@ test('a 404, a 429 and an answer of the wrong shape leave that MR out and name i
     const { reads, failures } = await readMrStates([MR, SELF], access);
     assert.deepEqual([reads.map((r) => r.url), failures], [[SELF], [failure]], name);
   }
+});
+
+test('a 429, a refused token or no answer stops that host\'s reads for the poll, naming the MRs skipped; a 404 does not; other hosts are still read (#1052)', async () => {
+  const second = 'https://gitlab.com/acme/site/-/merge_requests/2';
+  const third = 'https://gitlab.com/acme/site/-/merge_requests/4';
+  const hostWide: [string, () => never][] = [
+    ['429', () => { throw new SourceRateLimitError('2026-11-25T13:00:00.000Z'); }],
+    ['401', () => { throw new SourceNotConnectedError('gitlab gitlab.com'); }],
+    ['network', () => { throw new TypeError('fetch failed'); }],
+  ];
+  for (const [name, answer] of hostWide) {
+    const { access, calls } = fakeAccess({ 'gitlab.com': { [MR_PATH]: answer }, 'git.example.com': { [SELF_PATH]: mr('merged') } });
+    const { reads, failures } = await readMrStates([MR, second, third, SELF], access);
+    assert.deepEqual(reads.map((r) => r.url), [SELF], name);
+    assert.equal(failures[1], 'gitlab.com: skipped #2, #4', name);
+    assert.deepEqual(calls, [`gitlab.com ${MR_PATH}`, `git.example.com ${SELF_PATH}`], name);
+  }
+  const notFound = fakeAccess({ 'gitlab.com': { 'projects/acme%2Fsite/merge_requests/2': mr('opened') } });
+  const read = await readMrStates([MR, second], notFound.access);
+  assert.deepEqual([read.reads.map((r) => r.url), read.failures], [[second], ['gitlab.com #7: gitlab api: HTTP 404']]);
 });
 
 test('a host with no account fails once for all its MRs, with no call; the hosts are read in the order they first appear (#1052)', async () => {

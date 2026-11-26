@@ -3,6 +3,7 @@
 // its own MR, or its host's MRs for a host with no account, and comes back as a line for the caller to log: the host and the MR's number, never a token.
 import { type CommitRead, dateOf, type PrActivity } from '../pull-requests.js';
 import { type PrLink, parsePrLink } from '../repo-host.js';
+import { SourceNotConnectedError, SourceRateLimitError } from '../source-errors.js';
 import type { TaskPr } from '../types.js';
 import { type GitlabApi, listAll, projectPath } from './api.js';
 import { mrState } from './mr-state.js';
@@ -31,7 +32,13 @@ function byHost(urls: readonly string[]): Map<string, Entry[]> {
   return hosts;
 }
 
-// Every MR through `read`, one host after the other: a host with no account fails once for all its MRs, a failed MR fails alone
+// A rate limit, a refused token or no answer at all (fetch's TypeError, the client's timeout) holds for every MR of the host: reading the
+// rest would only spend the limit or wait a timeout each, on every poll. A 404 or an odd answer is that MR's own
+const isHostWide = (err: unknown): boolean => err instanceof SourceRateLimitError || err instanceof SourceNotConnectedError
+  || (err instanceof Error && ['TypeError', 'TimeoutError', 'AbortError'].includes(err.name));
+
+// Every MR through `read`, one host after the other: a host with no account fails once for all its MRs, a failed MR fails alone, unless
+// its failure is the host's
 async function eachMr<T>(urls: readonly string[], access: GitlabAccess, read: (api: Pick<GitlabApi, 'get'>, entry: Entry) => Promise<T>): Promise<MrReads<T>> {
   const reads: T[] = [];
   const failures: string[] = [];
@@ -41,11 +48,15 @@ async function eachMr<T>(urls: readonly string[], access: GitlabAccess, read: (a
       failures.push(`${host}: no account`);
       continue;
     }
-    for (const entry of entries) {
+    for (const [i, entry] of entries.entries()) {
       try {
         reads.push(await read(api, entry));
       } catch (err) {
         failures.push(`${host} #${entry.link.number}: ${errorMessage(err)}`);
+        if (!isHostWide(err)) continue;
+        const skipped = entries.slice(i + 1).map((e) => `#${e.link.number}`);
+        if (skipped.length > 0) failures.push(`${host}: skipped ${skipped.join(', ')}`);
+        break;
       }
     }
   }
