@@ -8,7 +8,7 @@ import { workspaceRows, type WorktreeRouteDeps } from './server-worktrees.js';
 import { removalBlocker, taskId, taskLabel } from './tasks.js';
 import type { Activity, Exec, HeldActivity, HoldingBlocker, State, Task, TaskPr, UnmergedBranch, Workspace, WorkspaceHoldings, WorktreeRow } from './types.js';
 import { wordsOf } from './worktree.js';
-import { mergedByPr, refuseUnmerged } from './worktree-remove.js';
+import { mergedByPr, NO_GITLAB, refuseUnmerged } from './worktree-remove.js';
 import { RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 
 // What a saved workspace still holds (#750), for the removal dialog of #751. The state's part is pure; the route (below) adds git's.
@@ -60,7 +60,7 @@ async function unmergedOf(repo: string, row: WorktreeRow, prs: readonly TaskPr[]
   } catch (err) {
     const refusal = err instanceof RemovalRefusal ? err.refusal : undefined;
     if (refusal?.reason !== 'unmerged') throw err;
-    return (await mergedByPr({ exec }, repo, branch, prs, log)) === undefined ? [{ slug: row.slug, branch, target: refusal.target }] : [];
+    return (await mergedByPr({ exec }, repo, branch, prs, NO_GITLAB, log)).tip === undefined ? [{ slug: row.slug, branch, target: refusal.target }] : [];
   }
 }
 
