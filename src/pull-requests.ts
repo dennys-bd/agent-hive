@@ -49,7 +49,8 @@ export const aliasOf = (data: unknown, i: number): Alias | undefined => {
 };
 const aliasState = (alias: Alias): PrState | undefined =>
   (typeof alias.state === 'string' && Object.hasOwn(GRAPHQL_STATES, alias.state) ? GRAPHQL_STATES[alias.state] : undefined);
-const dateOf = (value: unknown): string | undefined => (typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined);
+/** An ISO time GitHub or GitLab answered, kept only when it parses as a date (#742, #1052). */
+export const dateOf = (value: unknown): string | undefined => (typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined);
 
 // The PR's own times (#742), as GitHub answers them; a missing or odd one is left out
 function prTimes(alias: Alias): Pick<TaskPr, 'openedAt' | 'mergedAt' | 'closedAt'> {
