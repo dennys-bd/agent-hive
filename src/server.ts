@@ -58,8 +58,7 @@ import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { posixShell } from './posix-shell.js';
 import { prNumber } from './pull-requests.js';
-import { gitlabAccess } from './gitlab/account.js';
-import type { GitlabAccess } from './gitlab/pr-states.js';
+import type { GitlabReadAccess } from './gitlab/pr-states.js';
 import { pollPrStates } from './server-pr-states.js';
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { readUnlisted, unlistedStarted } from './poll-reads.js';
@@ -69,6 +68,8 @@ import { deleteActivityOnDisk } from './activity-delete.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
 import { readCredentials, saveClaudeCredential, writeCredentials } from './credentials.js';
+import { gitlabAccess } from './gitlab/account.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { cachedProbe, PROBE_TIMEOUT_MS, type Probe, probeServer } from './mcp-probe.js';
 import { registerMcpRoutes } from './server-mcp.js';
 import { serversFor } from './mcp-settings.js';
@@ -95,7 +96,7 @@ import type { UsageStore } from './usage-store.js';
 import { isRateLimited, type ReportRetry } from './source-errors.js';
 import { jiraRoundSources } from './read-model/jira-round.js';
 import { createReadModelLoop, readModelEvent, type ReadModelLoop, type RefetchOutcome } from './read-model/loop.js';
-import { githubRefs, listRepositories } from './repos/repositories.js';
+import { githubRefs, gitlabOriginHost, listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { preloaderOf } from './server-pr-changes.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
@@ -202,7 +203,7 @@ export interface ServerDeps {
   accountEnv?: typeof accountEnv; // #953: tests: a seam that refuses where no runner is asked (a terminal); the default is account-env.ts'
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   preloadPr?: (url: string) => Promise<void>; // #497: hive_pr's preload; tests inject a fake, the default reads the PR's changes
-  gitlab?: GitlabAccess; // #1052: the PR poll's GitLab clients; tests inject a fake, the default is each host's stored account (gitlabAccess)
+  gitlab?: GitlabReadAccess; // #1052: the PR poll's GitLab clients; tests inject a fake, the default is each host's stored account (gitlabAccess)
   probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
   home: string; // the Hive's own directory (#202): hive.config.json, state.json, hive.log, hooks.json, prompts/
   /** This boot's secret (#467): what every request and pty upgrade must carry, and what the workers get in their MCP config (their env gets only the path of hive.secret).
@@ -405,10 +406,16 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ...(auth === account.selection().auth ? { ghToken } : {}) }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
+  // #1053: a GitLab host's stored account for the Hive's own calls: the decomposition's MR, the benchmark's and a removal's merged MR
+  const gitlabAccessOf: GitlabAccess = (host) => gitlabAccess(host, deps.credentialsEnv);
   // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
   const runAccounts = createRunAccounts();
-  // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's
-  const accountDeps = (): AccountEnvDeps => ({ accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv), machineGithub: account.machine });
+  // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's. #1049: a
+  // workspace's GitLab origin is read on its own machine against the live gitlabHosts, at every spawn
+  const accountDeps = (): AccountEnvDeps => ({
+    accounts: live?.runtime.config.accounts ?? {}, credentials: () => readCredentials(deps.credentialsEnv), machineGithub: account.machine,
+    gitlabOrigin: (workspace) => gitlabOriginHost(machineFor(workspace), workspace.path, live?.runtime.config.gitlabHosts ?? []),
+  });
   const accountSeam: AccountSeam = (run) => (deps.accountEnv ?? accountEnv)(run, accountDeps());
   const spawner = createRunSpawner({ accountEnv: accountSeam, runAccounts, pool, log, dispatch, exitOf: (ptyId) => exitEvent(live, ptyId, machineFor), fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, language: () => effectiveLanguage(), home, facts: wiring.facts, plugin: pluginRender, externalMcp, machineFor }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
@@ -759,7 +766,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope }, { log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], prs: live ? recordOf(live.state, activity.id)?.prs ?? [] : [], branch: branchFor(runtime.config, task.item), scope, gitlabHosts: runtime.config.gitlabHosts }, { log, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor, gitlabAccess: gitlabAccessOf });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
@@ -903,7 +910,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // After every poll (#207): GitHub's open PRs in one query and GitLab's MRs through each host's account (#1052). Diagnostic like refreshQuota:
   // a failure is logged and every PR keeps its last known state; the next poll tries again
   async function refreshPrStates(): Promise<void> {
-    const gitlab = deps.gitlab ?? ((host: string) => gitlabAccess(host, deps.credentialsEnv));
+    const gitlab = deps.gitlab ?? gitlabAccessOf;
     await pollPrStates({ state: () => live?.state, gql: prGql, gitlab, dispatch, log, pollPrActivity: wiring.pollPrActivity });
   }
 
@@ -1437,7 +1444,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     },
   });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
-  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, ghEnv, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
+  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, ghEnv, gitlabAccess: gitlabAccessOf, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
@@ -1450,11 +1457,11 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // create, start, bases, close, session, session exit, delete-activity, move, reset-order, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
-  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor };
+  const taskDeps = { treeWatch, exec, log, reportRetry, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, facts: wiring.facts, plugin: pluginRender, machineFor, gitlabAccess: gitlabAccessOf };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { log, requireLive, ptys, consoleStore, dispatch, facts: wiring.facts, machineFor });
-  registerHoldingsRoute(app, { exec, log, requireLive }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog
+  registerHoldingsRoute(app, { exec, log, requireLive, gitlabHosts: () => live?.runtime.config.gitlabHosts ?? [], gitlabAccess: gitlabAccessOf }); // GET /workspaces/:name/holdings (#750): what a workspace still holds, for its removal dialog; #1053: a merged MR through its host's account
   registerTaskRoutes(app, taskDeps);
   registerTimelineRoute(app, { usage: deps.usage, log }); // GET /tasks/:id/timeline (#960): from usage.sqlite by item id; 503 with no store
   registerDesignFrameMint(app, { requireLive, tokens: designFrames, exec, machineFor }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
@@ -1476,7 +1483,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor, dropRunTmp: dropCapturedTmp, accountEnv: accountSeam, runAccounts }); // wake, forget (#696); the shim's register under /hooks/
   registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
-  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
+  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor, gitlabAccess: gitlabAccessOf }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783); #1053: a checkout on GitLab through its host's account
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)
   // Settings › editor's installs and the syntax packages' files (#780); a removed server's processes stop first
   registerEditorInstallRoutes(app, { home, installer: createInstaller({ home, onState: notifyEditorInstall, beforeSwap: (t) => (t.kind === 'server' ? lsp.stopServer(t.id) : Promise.resolve()) }), stopServer: (id) => lsp.stopServer(id) });

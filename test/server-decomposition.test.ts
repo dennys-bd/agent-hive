@@ -14,6 +14,8 @@ import { worktreePath } from '../src/worktree.js';
 import type { CombConfig, DecompositionPreview, Exec, HiveEvent, SourceConfig, State, Task } from '../src/types.js';
 import { HOST_PATHS, fakeMachine } from './fake-machine.js';
 import { fakeGqlJson, fakeLog, GITHUB_ENTRY } from './fakes.js';
+import type { GitlabAccess } from '../src/gitlab/merge-requests.js';
+import { fakeGitlabApi } from './fake-gitlab.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
 import { EXAMPLE } from './fixtures/decomposition.js';
 import { tempDir } from './temp-dir.js';
@@ -38,6 +40,7 @@ const DOCS_ORIGIN = 'git@github.com:acme/docs.git';
 interface Setup {
   task?: Task; result?: Record<string, unknown>; awaiting?: boolean; text?: string; origin?: string; fail?: string; sources?: SourceConfig[];
   machine?: Machine; dirty?: boolean; pushFails?: string; noCheckout?: boolean; ignored?: boolean; branch?: string; // #936: the file's checkout as git answers it
+  docsOrigin?: string; gitlab?: GitlabAccess; // #1053: the file's checkout's origin, and the GitLab accounts
 }
 
 async function routes(t: TestContext, setup: Setup = {}) {
@@ -69,7 +72,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
     }
     if (args.includes('--show-current')) return { stdout: `${setup.branch ?? 'hive/7-site'}\n` };
     if (args.includes('--porcelain')) return { stdout: setup.dirty === true ? ' M decomposition.md\n' : '' };
-    if (args.includes('get-url')) return { stdout: `${args[1] === worktree ? DOCS_ORIGIN : setup.origin ?? ''}\n` };
+    if (args.includes('get-url')) return { stdout: `${args[1] === worktree ? setup.docsOrigin ?? DOCS_ORIGIN : setup.origin ?? ''}\n` };
     return { stdout: '' };
   };
   let number = 100;
@@ -90,7 +93,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   app.use(express.json());
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
   const { log, lines } = fakeLog();
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => setup.machine ?? fakeMachine({ exec }), sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb, gitlabHosts: [] }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => setup.machine ?? fakeMachine({ exec }), sleep: async () => undefined, gitlabAccess: setup.gitlab ?? (async () => undefined) });
   registerApprovalRoutes(app, { requireLive: (() => ({ state, runtime: { config: { comb } } })) as unknown as TaskRouteDeps['requireLive'], dispatch });
   const server = app.listen(0);
   t.after(() => server.close());
@@ -362,4 +365,33 @@ test('POST stamps nothing under epics ignore, nor on a goal whose source is no G
     assert.deepEqual(events.slice(-2).map((e) => e.type), ['decompositionIssue', 'approve']);
     assert.equal(events.some((e) => e.type === 'markEpic'), false);
   }
+});
+
+test('POST on a GitHub goal whose file sits in a GitLab checkout links /-/blob/ with GitLab anchors, opens the MR through the host\'s account and records its iid (#1053)', async (t) => {
+  const gitlab = fakeGitlabApi({
+    'GET projects/acme%2Fdocs': { id: 42, default_branch: 'trunk' },
+    'POST projects/acme%2Fdocs/merge_requests': { iid: 12, web_url: 'https://gitlab.com/acme/docs/-/merge_requests/12' },
+  });
+  const { url, events, calls } = await routes(t, { docsOrigin: 'git@gitlab.com:acme/docs.git', gitlab: async (host) => (host === 'gitlab.com' ? gitlab.api : undefined) });
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
+  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'pr=12', 'done=7', 'markEpic', 'approve']);
+  const bodies = calls.filter((c) => c.query === CREATE_ISSUE).map((c) => String(c.variables.body));
+  assert.match(bodies[2], /^Design: https:\/\/gitlab\.com\/acme\/docs\/-\/blob\/trunk\/decomposition\.md#1-backend$/m);
+  assert.deepEqual(calls.filter((c) => c.query === CREATE_ISSUE).map((c) => c.variables.repositoryId), Array<string>(6).fill('R1'), 'the issues stay in the goal\'s GitHub repository');
+  assert.equal(calls.some((c) => c.query === CREATE_PULL_REQUEST), false);
+  const [opened] = gitlab.calls.filter((c) => c.method === 'POST');
+  assert.ok(opened);
+  assert.match(String((opened.body as { description?: unknown }).description), /^The decomposition of https:\/\/github\.com\/acme\/site\/issues\/7\. .* once this merge request merges\.$/);
+});
+
+const NO_ACCOUNT = 'no GitLab account for gitlab.com: connect one in Settings › Accounts';
+
+test('a file in a GitLab checkout with no account: GET shows the refusal naming the host, POST refuses 409 before any issue is written or anything pushed (#1053)', async (t) => {
+  const { url, events, calls, git } = await routes(t, { docsOrigin: 'git@gitlab.com:acme/docs.git' });
+  const read = (await (await fetch(url)).json()) as DecompositionPreview;
+  assert.deepEqual([read.deliveryRefusal, 'delivery' in read], [NO_ACCOUNT, false]);
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [409, { error: NO_ACCOUNT }]);
+  assert.deepEqual([events, calls.some((c) => c.query === CREATE_ISSUE), git.some((a) => a.includes('push'))], [[], false, false]);
 });

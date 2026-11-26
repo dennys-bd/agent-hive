@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -8,7 +9,7 @@ import { runners } from '../src/agents/registry.js';
 import { writeCredentials } from '../src/credentials.js';
 import type { RecordInput } from '../src/facts.js';
 import { createGithubAccount } from '../src/github-account.js';
-import type { OpenResult } from '../src/types.js';
+import type { Exec, OpenResult } from '../src/types.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import { LOGGED_OUT } from './fixtures/accounts.js';
 import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeFacts, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt, withToplevel } from './fakes.js';
@@ -31,6 +32,9 @@ async function waitFor(check: () => boolean): Promise<void> {
 interface Hive { base: string; server: HiveServer; workers: FakeWorker[]; lines: string[]; records: RecordInput[] }
 
 const GH_TEST = 'gho_test'; // the stored GitHub login's placeholder token (#961)
+const GL_TEST = `glpat-test-${randomUUID()}`; // the stored GitLab account's token (#1049), built at runtime: never in a log line
+// #1049: git answers the workspace's origin with `remote`; every other command what the default exec answers
+const originAt = (remote: string): Exec => withToplevel(async (file, args) => ({ stdout: file === 'git' && args.includes('get-url') ? `${remote}\n` : '' }));
 
 // A Hive whose one workspace has `env`, a credential store holding a Claude token and the GitHub login octo, every log line and fact kept.
 // `settings`: extra members of the saved body (accounts, #961)
@@ -40,7 +44,7 @@ async function start(t: TestContext, env: Record<string, string> = {}, extra: Pa
   const { log, lines } = fakeLog();
   const { facts, records } = fakeFacts();
   const credentialsEnv = { XDG_CONFIG_HOME: await tempDir(t, 'cred-') };
-  await writeCredentials({ claude: { work: { token: FAKE_TOKEN } }, github: { octo: { token: GH_TEST } } }, credentialsEnv);
+  await writeCredentials({ claude: { work: { token: FAKE_TOKEN } }, github: { octo: { token: GH_TEST } }, gitlab: { 'gitlab.com': { token: GL_TEST, username: 'ana' } } }, credentialsEnv);
   const server = createServer({
     secret: SECRET, home, log, facts, credentialsEnv, githubLogin: { env: credentialsEnv }, sourceFactory: fakeSourceFactory().factory, launchPty: spawn,
     exec: withToplevel(async () => ({ stdout: '' })), ...extra,
@@ -231,4 +235,33 @@ test('with accounts.github selected, a terminal\'s launch and a captured session
   assert.equal(workers[0]?.launch.env?.GH_TOKEN, GH_TEST);
   const [, count = '0', ...rest] = (await (await register(base, id)).text()).split('\n');
   assert.ok(rest.slice(0, Number(count)).includes(`GH_TOKEN=${GH_TEST}`), 'the reply exports it');
+});
+
+const gitlabPair = (worker: FakeWorker | undefined): (string | undefined)[] => [worker?.launch.env?.GITLAB_TOKEN, worker?.launch.env?.GITLAB_HOST];
+
+test('in a workspace whose origin is on gitlab.com, with its account stored, a stage run and a workspace shell carry GITLAB_TOKEN and GITLAB_HOST; no log line holds the token (#1049)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: {} }));
+  const { base, workers, lines } = await start(t, {}, { exec: originAt('git@gitlab.com:acme/app.git') });
+  assert.deepEqual(await (await postJson(`${base}/tasks/${TASK}/start`, { base: null })).json(), { ok: true });
+  await waitFor(() => workers.length === 1);
+  await openShell(base);
+  await waitFor(() => workers.length === 2);
+  assert.deepEqual(workers.map(gitlabPair), [[GL_TEST, 'gitlab.com'], [GL_TEST, 'gitlab.com']]);
+  assert.ok(lines.every((line) => !line.includes(GL_TEST)), 'no log line');
+});
+
+test('in a workspace whose origin is on GitHub, a workspace shell starts with neither GitLab variable, though a GitLab account is stored (#1049)', async (t) => {
+  const { base, workers } = await start(t, {}, { exec: originAt('git@github.com:acme/app.git') });
+  await openShell(base);
+  await waitFor(() => workers.length === 1);
+  assert.deepEqual(gitlabPair(workers[0]), [undefined, undefined]);
+});
+
+test('a captured session in a workspace on gitlab.com exports GITLAB_TOKEN and GITLAB_HOST in its reply; no log line holds the token (#1049)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: {} }));
+  const { base, lines } = await start(t, {}, { exec: originAt('git@gitlab.com:acme/app.git') });
+  const id = await openShell(base);
+  const [, count = '0', ...rest] = (await (await register(base, id)).text()).split('\n');
+  assert.deepEqual(rest.slice(0, Number(count)).filter((line) => line.startsWith('GITLAB_')), [`GITLAB_TOKEN=${GL_TEST}`, 'GITLAB_HOST=gitlab.com']);
+  assert.ok(lines.every((line) => !line.includes(GL_TEST)), 'no log line');
 });

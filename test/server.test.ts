@@ -18,7 +18,7 @@ import { HOUR_MS } from '../src/usage.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { prStatesQuery } from '../src/pull-requests.js';
 import { createServer, type HiveServer, killStrays, type ServerDeps } from '../src/server.js';
-import type { GitlabAccess } from '../src/gitlab/pr-states.js';
+import type { GitlabReadAccess } from '../src/gitlab/pr-states.js';
 import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '../src/activities.js';
 import { runSessionId } from '../src/record-kit.js';
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
@@ -2478,7 +2478,7 @@ test('the PR poll reads an open GitLab MR through its host\'s account, never thr
     return { stdout: JSON.stringify({ data: {} }) };
   };
   const paths: string[] = [];
-  const gitlab: GitlabAccess = async (host) => (host !== 'gitlab.com' ? undefined : {
+  const gitlab: GitlabReadAccess = async (host) => (host !== 'gitlab.com' ? undefined : {
     get: async (path: string) => {
       paths.push(path);
       return path.endsWith('/commits?per_page=100') ? { body: [] } : { body: { state: 'merged', created_at: '2026-11-20T10:00:00.000Z', merged_at: '2026-11-21T09:00:00.000Z' } };

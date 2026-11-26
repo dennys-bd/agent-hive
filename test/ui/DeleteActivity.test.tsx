@@ -26,6 +26,22 @@ const REASONS: [Refusal, string][] = [
   [{ reason: 'unmerged', branch: 'hive/1-task', target: 'HEAD' }, 'the branch hive/1-task is not merged into HEAD'],
   [{ reason: 'unexpected' }, 'Unexpected error'],
 ];
+const NO_ACCOUNT: Refusal = { reason: 'unmerged', branch: 'hive/1-task', target: 'HEAD', noAccount: ['gitlab.com', 'git.example.com'] };
+
+test('an unmerged refusal with hosts it had no account for adds one line per host, in both languages (#1053)', async () => {
+  const user = userEvent.setup();
+  for (const [language, text] of [
+    ['en', 'the branch hive/1-task is not merged into HEAD connect a GitLab account for gitlab.com in Settings to read its PR connect a GitLab account for git.example.com in Settings to read its PR'],
+    ['pt', 'o branch hive/1-task não está mergeado em HEAD conecte uma conta do GitLab para gitlab.com na configuração para ler o PR dele conecte uma conta do GitLab para git.example.com na configuração para ler o PR dele'],
+  ] as const) {
+    setLanguage(language);
+    fetchMock.mockImplementationOnce(async () => reply({ removed: false, refused: NO_ACCOUNT }));
+    const { unmount } = render(<Harness />);
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: language === 'en' ? 'delete activity' : 'excluir atividade' }));
+    expect(await screen.findByRole('alertdialog', { name: language === 'en' ? 'Force the removal' : 'Forçar remoção' })).toHaveTextContent(text);
+    unmount();
+  }
+});
 
 test('each refusal reason opens the force popup with its own copy, then the force warning (#660)', async () => {
   const user = userEvent.setup();

@@ -4,6 +4,7 @@ import type { AccountEnvDeps } from '../../src/account-env.js';
 import { COPILOT_USER_URL } from '../../src/agents/copilot-account.js';
 import { parseCopilotUser, readCopilotPlanLimits } from '../../src/agents/copilot-limits.js';
 import type { AccountsConfig, Credentials, RateLimits } from '../../src/types.js';
+import { OFF_GITLAB } from '../fixtures/accounts.js';
 
 const NOW = new Date('2026-11-18T12:00:00.000Z');
 const RESET = '2026-12-01T00:00:00.000Z';
@@ -48,7 +49,7 @@ const STORED_TOKEN = 'not-a-real-token-962-stored';
 const MACHINE_TOKEN = 'not-a-real-token-962-machine';
 const STORE = async (): Promise<Credentials> => ({ github: { work: { token: STORED_TOKEN } } });
 const accountsOf = (accounts: AccountsConfig, login = 'octo'): AccountEnvDeps =>
-  ({ accounts, credentials: STORE, machineGithub: { login: async () => login, token: async () => MACHINE_TOKEN } });
+  ({ accounts, credentials: STORE, machineGithub: { login: async () => login, token: async () => MACHINE_TOKEN }, gitlabOrigin: OFF_GITLAB });
 
 interface FetchCall { url: string; init: RequestInit | undefined }
 function answering(status: number, body: string): { fetch: typeof fetch; calls: FetchCall[] } {

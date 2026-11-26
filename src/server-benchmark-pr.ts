@@ -6,11 +6,14 @@ import type { Express, Request, Response } from 'express';
 import { experimentDir } from './benchmark-guards.js';
 import { inDir, type Run } from './benchmark/exec.js';
 import { isPlainRef, ORIGIN_DIR } from './benchmark/git.js';
-import { errorClass, type FetchedRun, fetchRun, openPr, PrStepError, prBody } from './benchmark/pr.js';
+import { errorClass, type FetchedRun, fetchRun, type GitlabTarget, openPr, PrStepError, prBody } from './benchmark/pr.js';
 import { type BenchPrPreview, type BenchPrRefusal, type BenchPrStep, isEnded, prTitle, suggestBranch } from './benchmark/pr-pick.js';
 import { aggregate } from './benchmark/report.js';
 import { workspaceByName } from './config.js';
 import type { Logger } from './log.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
+import { GITHUB_HOST } from './repo-host.js';
+import { originRef } from './repos/repositories.js';
 import { isJsonObject } from './state-guards.js';
 import { BENCH_TOKEN, type BenchRun, type Config, EXPERIMENT_ID, type Experiment, type State, type Workspace } from './types.js';
 import { remoteHead } from './worktree-base.js';
@@ -35,11 +38,13 @@ export interface BenchmarkPrDeps {
   hiveDir: string;
   exec: Run; // git, argv only
   gh: Run; // gh pr create, argv only
+  gitlabAccess: GitlabAccess; // #1053: the account of the origin's GitLab host, which opens the MR
   now(): number;
   log: Logger;
 }
 
-interface Target { experiment: Experiment; run: BenchRun; workspace: Workspace; config: Config }
+interface Target { experiment: Experiment; run: BenchRun; workspace: Workspace; config: Config; host: string; gitlab?: GitlabTarget }
+type Found = Omit<Target, 'host' | 'gitlab'>;
 interface PrRequest { branch: string; withSummary: boolean }
 
 const refuse = (res: Response, status: number, error: string): void => {
@@ -50,7 +55,7 @@ const refusal = (res: Response, answer: BenchPrRefusal): void => {
 };
 
 // The id and the token are checked before any lookup, so neither reaches a path or git's argv unchecked; the run's repository is the seed's workspace
-function targetOf(deps: BenchmarkPrDeps, req: Request, res: Response): Target | undefined {
+function runOf(deps: BenchmarkPrDeps, req: Request, res: Response): Found | undefined {
   const id = req.params.id as string;
   const token = req.params.token as string;
   const experiment = EXPERIMENT_ID.test(id) ? deps.getState()?.benchmark.experiments.find((e) => e.id === id) : undefined;
@@ -62,6 +67,18 @@ function targetOf(deps: BenchmarkPrDeps, req: Request, res: Response): Target | 
   if (config === undefined || workspace === undefined) return void refuse(res, HTTP_NOT_FOUND, NO_WORKSPACE);
   if (!isEnded(run)) return void refusal(res, { error: 'not-ended' });
   return { experiment, run, workspace, config };
+}
+
+// #1053: the origin's host, read with the live config's GitLab hosts. A GitLab one with no account refuses here, before any fetch or push;
+// an origin on neither host keeps gh, as before
+async function targetOf(deps: BenchmarkPrDeps, req: Request, res: Response): Promise<Target | undefined> {
+  const found = runOf(deps, req, res);
+  if (found === undefined) return undefined;
+  const origin = await originRef({ exec: deps.exec }, found.workspace.path, found.config.gitlabHosts);
+  if (origin === undefined || origin.host === GITHUB_HOST) return { ...found, host: GITHUB_HOST };
+  const api = await deps.gitlabAccess(origin.host).catch(() => undefined); // an unreadable store has no account to offer
+  if (api === undefined) return void refusal(res, { error: 'no-account', host: origin.host });
+  return { ...found, host: origin.host, gitlab: { host: origin.host, project: origin.repository, api } };
 }
 
 // { branch, withSummary } and nothing else
@@ -85,10 +102,10 @@ async function baseOf(git: Run, { workspace, config }: Target): Promise<string> 
 
 const repoGitOf = (deps: BenchmarkPrDeps, experiment: Experiment): string => join(experimentDir(deps.hiveDir, experiment.id), ORIGIN_DIR);
 
-function previewOf({ experiment, run, workspace }: Target, base: string, fetched: FetchedRun): BenchPrPreview {
+function previewOf({ experiment, run, workspace, host }: Target, base: string, fetched: FetchedRun): BenchPrPreview {
   return {
     token: run.token, armId: run.armId, status: run.status, commits: fetched.commits, tasks: run.total,
-    base: `${ORIGIN}/${base}`, baseSha: fetched.baseSha, branch: suggestBranch(experiment.name), title: prTitle(experiment.name), via: workspace.benchmarkPrIn,
+    base: `${ORIGIN}/${base}`, baseSha: fetched.baseSha, branch: suggestBranch(experiment.name), title: prTitle(experiment.name), via: workspace.benchmarkPrIn, host,
   };
 }
 
@@ -133,7 +150,7 @@ async function answerPr(deps: BenchmarkPrDeps, target: Target, request: PrReques
     const report = request.withSummary ? aggregate(experiment, 'in', deps.now()) : undefined;
     const answer = await openPr({ exec: deps.exec, gh: deps.gh, log: deps.log }, {
       experimentId: experiment.id, token: run.token, workspace, repoGit: repoGitOf(deps, experiment), base,
-      branch: request.branch, title: prTitle(experiment.name), body: prBody(experiment, run, report),
+      branch: request.branch, title: prTitle(experiment.name), body: prBody(experiment, run, report), ...(target.gitlab === undefined ? {} : { gitlab: target.gitlab }),
     });
     if ('error' in answer) return refusal(res, answer);
     res.json(answer);
@@ -147,13 +164,13 @@ async function answerPr(deps: BenchmarkPrDeps, target: Target, request: PrReques
 export function registerBenchmarkPrRoutes(app: Express, deps: BenchmarkPrDeps): void {
   const busy = new Set<string>(); // workspaces with a sequence running: two on one checkout or one ref would race
   app.get(PATH, async (req: Request, res: Response) => {
-    const target = targetOf(deps, req, res);
+    const target = await targetOf(deps, req, res);
     if (target === undefined) return;
     if (busy.has(target.workspace.name)) return refusal(res, { error: 'busy' });
     await guarded(deps, res, target.experiment, () => answerPreview(deps, target, res));
   });
   app.post(PATH, async (req: Request, res: Response) => {
-    const target = targetOf(deps, req, res);
+    const target = await targetOf(deps, req, res);
     if (target === undefined) return;
     const request = prRequestOf(req.body);
     if (request === undefined) return refuse(res, HTTP_BAD_REQUEST, BODY_MESSAGE);

@@ -8,8 +8,9 @@ import { activityOf } from '../../activities';
 import { type RemovalBlocker, removalBlocker } from '../../tasks';
 import type { State, Task } from '../../types';
 
-/** Why a removal without force was refused (#660): the routes' codes, the UI's own copy of src/worktree-base.ts's union. */
-export type Refusal = { reason: 'dirty'; path: string; files: string } | { reason: 'unmerged'; branch: string; target: string } | { reason: 'unexpected' };
+/** Why a removal without force was refused (#660): the routes' codes, the UI's own copy of src/worktree-base.ts's union. #1053: noAccount, the
+ * GitLab hosts whose merged MR could not be read. */
+export type Refusal = { reason: 'dirty'; path: string; files: string } | { reason: 'unmerged'; branch: string; target: string; noAccount?: string[] } | { reason: 'unexpected' };
 
 /** What both removal routes answer with a 200: removed, or refused with a code this file words (#660). */
 export type Removal = { removed: true } | { removed: false; refused: Refusal };
@@ -17,11 +18,15 @@ export type Removal = { removed: true } | { removed: false; refused: Refusal };
 /** What a caller that posts by itself keeps for a post that failed (#660): the server's words are never shown. */
 export const UNEXPECTED_REFUSAL: Refusal = { reason: 'unexpected' };
 
+// #1053: the unmerged line, then one per GitLab host the removal had no account for
+const unmergedText = ({ branch, target, noAccount = [] }: Extract<Refusal, { reason: 'unmerged' }>): string =>
+  [t('deleteActivity.refused.unmerged', { branch, target }), ...noAccount.map((host) => t('deleteActivity.refused.noAccount', { host }))].join('\n');
+
 /** A refusal's copy in the user's language (#660); git's own words are in hive.log. */
 export function refusalText(refused: Refusal): string {
   switch (refused.reason) {
     case 'dirty': return t('deleteActivity.refused.dirty', { path: refused.path, files: refused.files });
-    case 'unmerged': return t('deleteActivity.refused.unmerged', { branch: refused.branch, target: refused.target });
+    case 'unmerged': return unmergedText(refused);
     case 'unexpected': return t('deleteActivity.refused.unexpected');
   }
 }

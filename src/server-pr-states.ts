@@ -1,7 +1,7 @@
 // The PR poll after every source poll (#207), split by host (#1052): GitHub's open PRs in the one gh query as before, GitLab's MRs through
 // each host's account, so no GitLab link is ever in a GitHub query. Neither read waits on the other's outcome, and each dispatches its own
 // prStates. Out of server.ts, which is past 400 lines.
-import { type GitlabAccess, readMrActivity, readMrStates } from './gitlab/pr-states.js';
+import { type GitlabReadAccess, readMrActivity, readMrStates } from './gitlab/pr-states.js';
 import type { Logger } from './log.js';
 import { openPrUrls, type PrActivity, parsePrStates, prStatesQuery } from './pull-requests.js';
 import { GITHUB_HOST, parsePrLink } from './repo-host.js';
@@ -11,7 +11,7 @@ import type { Effect, Gql, HiveEvent, State } from './types.js';
 export interface PrPollDeps {
   state(): State | undefined;
   gql: Gql; // gh api graphql, the GitHub PRs' query
-  gitlab: GitlabAccess; // a host's client from its stored account, read at every poll, so a connect needs no restart
+  gitlab: GitlabReadAccess; // a host's client from its stored account, read at every poll, so a connect needs no restart
   dispatch(event: HiveEvent): Promise<Effect[]>;
   log: Pick<Logger, 'error'>;
   pollPrActivity: ServerFacts['pollPrActivity'];

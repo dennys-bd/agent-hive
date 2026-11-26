@@ -7,10 +7,11 @@ import { LOCAL_MESSAGE } from './server-local.js';
 import { refuse, removalRefusal, workspaceOf, type LiveView, type Refusal, type TaskRouteDeps } from './server-tasks.js';
 import type { Activity, DeleteActivityScope, Session, Task, TaskPr, Workspace } from './types.js';
 import type { MachineFor } from './machine.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
 import { taskDir, wordsOf } from './worktree.js';
-import { cleanWorktree, refuseUnmerged, removeWorktree } from './worktree-remove.js';
+import { cleanWorktree, NO_GITLAB, refuseUnmerged, removeWorktree } from './worktree-remove.js';
 import { refusalOf, RemovalRefusal, UNEXPECTED } from './worktree-base.js';
 import type { Logger } from './log.js';
 import { teardownRunId } from './console.js';
@@ -47,7 +48,7 @@ export async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveVi
     const sessions = sessionsOf(current.state, task.item.itemId);
     const machine = deps.machineFor(activity);
     const workspace = stranded ? await strandedWorkspace(machine, activity, task) : own;
-    if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope }, deps);
+    if (workspace) await deleteActivityOnDisk({ workspace, activity, task, sessions, prs: recordOf(current.state, activity.id)?.prs ?? [], branch: branchFor(current.runtime.config, task.item), scope, gitlabHosts: current.runtime.config.gitlabHosts }, deps);
     else await strandedTranscripts(machine, activity, task, sessions, scope, deps.log); // nothing on disk to remove: only the transcripts under the path's own repo
   } catch (err) {
     await deps.dispatch({ type: 'activityKept', activityId: activity.id });
@@ -57,8 +58,9 @@ export async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveVi
   return 'deleted';
 }
 
-/** What deleteActivityOnDisk needs (#654): the log, what opens the teardown's console run, and the activity's machine (#159). */
-export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' | 'error' | 'info'>; machineFor: MachineFor };
+/** What deleteActivityOnDisk needs (#654): the log, what opens the teardown's console run, and the activity's machine (#159); #1053: a GitLab
+ * host's account for a merged MR, absent (a test's deps) none on any host. */
+export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' | 'error' | 'info'>; machineFor: MachineFor; gitlabAccess?: GitlabAccess };
 
 /** What deleting a task's activity runs on disk (#236, #573, #654): git first, always the worktree and its branch, all or nothing as cleanWorktree
  * is, with the workspace's teardown between git's checks and the removal (a failing step refuses as git does), or the forced removeWorktree,
@@ -68,10 +70,10 @@ export type DeleteActivityDeps = WorktreeRunDeps & { log: Pick<Logger, 'debug' |
  * and excluir task… (#542) share it. A local task (#444) runs no git and no teardown: its branch is usually the one the user's checkout
  * holds, which `branch -d` refuses. */
 export async function deleteActivityOnDisk(
-  // sessions: every record's of the task (#629), since a git job holds no state; prs (#660): the live activity record's, which mergedByPr reads for a branch git calls unmerged
-  job: { workspace: Workspace; activity: Activity; task: Task; sessions: Session[]; prs: readonly TaskPr[]; branch: string; scope: DeleteActivityScope; force?: { promptsDir: string } }, deps: DeleteActivityDeps,
+  // sessions: every record's of the task (#629), since a git job holds no state; prs (#660): the live activity record's, which mergedByPr reads for a branch git calls unmerged; #1053: the live config's GitLab hosts; absent, gitlab.com alone
+  job: { workspace: Workspace; activity: Activity; task: Task; sessions: Session[]; prs: readonly TaskPr[]; branch: string; scope: DeleteActivityScope; gitlabHosts?: readonly string[]; force?: { promptsDir: string } }, deps: DeleteActivityDeps,
 ): Promise<void> {
-  const { workspace, activity, task, sessions, prs, branch, scope, force } = job;
+  const { workspace, activity, task, sessions, prs, branch, scope, force, gitlabHosts = [] } = job;
   const { log } = deps;
   const machine = deps.machineFor(activity);
   const repo = workspace.path;
@@ -81,7 +83,7 @@ export async function deleteActivityOnDisk(
     const target = { id: teardownRunId(task.item.itemId), label: `#${task.item.id}`, workspace, force: force !== undefined };
     await removeInRun(machine, deps, target, (before) => (force
       ? removeWorktree(machine, repo, activity, branch, force.promptsDir, workspace.nestedRepos)
-      : cleanWorktree(machine, repo, activity, branch, before, { nested: workspace.nestedRepos, prs, log }))); // #653, #660
+      : cleanWorktree(machine, repo, activity, branch, before, { nested: workspace.nestedRepos, prs, log, hosts: { gitlabHosts, gitlabAccess: deps.gitlabAccess ?? NO_GITLAB.gitlabAccess } }))); // #653, #660, #1053
     await dropBranches(machine, repo, extras, force !== undefined);
     await dropStageStart(machine, repo, activity.slug ?? slugFor(task.item)); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
     await dropCheckpoints(machine, repo, activity.slug ?? slugFor(task.item)); // #619: every checkpoint's restore point goes with the activity; none is nothing
@@ -123,7 +125,7 @@ export function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): 
       const sessions = sessionsOf(current.state, task.item.itemId);
       const machine = deps.machineFor(live);
       const workspace = stranded && !nothing ? await strandedWorkspace(machine, live, task) : own;
-      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, ...(force ? { force: { promptsDir } } : {}) }, deps);
+      if (workspace) await deleteActivityOnDisk({ workspace, activity: live, task, sessions, prs: recordOf(current.state, live.id)?.prs ?? [], branch: branchFor(config, task.item), scope, gitlabHosts: config.gitlabHosts, ...(force ? { force: { promptsDir } } : {}) }, deps);
       else if (stranded && !nothing) await strandedTranscripts(machine, live, task, sessions, scope, log);
     } catch (err) {
       await dispatch({ type: 'activityKept', activityId: live.id });

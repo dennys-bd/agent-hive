@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { prsOf } from '../src/activities.js';
 import { type GitlabAnswer, GitlabHttpError } from '../src/gitlab/api.js';
-import type { GitlabAccess } from '../src/gitlab/pr-states.js';
+import type { GitlabReadAccess } from '../src/gitlab/pr-states.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import type { PrActivity } from '../src/pull-requests.js';
 import { pollPrStates } from '../src/server-pr-states.js';
@@ -29,7 +29,7 @@ const PATHS: Record<string, GitlabAnswer> = {
   'projects/acme%2Fsite/merge_requests/4': { body: { state: 'closed', created_at: OPENED, closed_at: '2026-11-21T10:00:00.000Z' } },
   'projects/acme%2Fsite/merge_requests/4/commits?per_page=100': { body: [] },
 };
-const answering = (failing: readonly string[] = []): GitlabAccess => async () => ({
+const answering = (failing: readonly string[] = []): GitlabReadAccess => async () => ({
   get: async (path: string) => {
     if (failing.some((prefix) => path.startsWith(prefix))) throw new GitlabHttpError(503);
     if (!Object.hasOwn(PATHS, path)) throw new GitlabHttpError(404);
@@ -40,7 +40,7 @@ const GH_MERGED = () => ({ p0: { state: 'MERGED', mergedAt: '2026-11-22T08:00:00
 
 interface Harness { state: State; events: HiveEvent[]; queries: string[]; lines: string[]; activity: { github: string[]; gitlab: PrActivity[]; open: readonly string[] }[] }
 
-function harness(gitlab: GitlabAccess, gql: () => unknown = GH_MERGED, state: State = opened()): { h: Harness; run: () => Promise<void> } {
+function harness(gitlab: GitlabReadAccess, gql: () => unknown = GH_MERGED, state: State = opened()): { h: Harness; run: () => Promise<void> } {
   const h: Harness = { state, events: [], queries: [], lines: [], activity: [] };
   const run = (): Promise<void> => pollPrStates({
     state: () => h.state,
@@ -91,7 +91,7 @@ test('a failing commits read costs no state: the MR reads merged and the failure
 
 test('a host with no account is logged once per poll and its MR keeps its state; the first poll after a connect reads it, with no restart (#1052)', async () => {
   let isConnected = false;
-  const access: GitlabAccess = async (host) => (isConnected || host !== 'git.example.com' ? answering()(host) : undefined);
+  const access: GitlabReadAccess = async (host) => (isConnected || host !== 'git.example.com' ? answering()(host) : undefined);
   const { h, run } = harness(access);
   await run();
   assert.deepEqual(h.lines, ['pr states gitlab git.example.com: no account']);

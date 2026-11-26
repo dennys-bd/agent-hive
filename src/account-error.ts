@@ -8,10 +8,10 @@ export type AccountCode = 'missing' | 'mismatch' | 'unreachable';
 /** Its message is safe to log and to show raw: it names the provider, the code and a reason, never a token. `reason` is the same fixed
  * text, for a reader that maps it (copilot-limits.ts); refusalLine never carries it out of the process. */
 export class AccountError extends Error {
-  readonly provider: AccountProvider;
+  readonly provider: AccountProvider | 'gitlab'; // #1049: GitLab is no agent's provider, so it is no AccountProvider
   readonly code: AccountCode;
   readonly reason: string | undefined;
-  constructor(provider: AccountProvider, code: AccountCode, reason?: string) {
+  constructor(provider: AccountProvider | 'gitlab', code: AccountCode, reason?: string) {
     super(`account ${provider} ${code}${reason === undefined ? '' : `: ${reason}`}`);
     this.name = 'AccountError';
     this.provider = provider;

@@ -18,8 +18,9 @@ export const wordsOf = (err: unknown): string => {
   return (e.stderr ?? '').trim() || e.message;
 };
 
-/** Why a removal without force was refused (#660): a code the UI words in the user's language, never git's own text. */
-export type Refusal = { reason: 'dirty'; path: string; files: string } | { reason: 'unmerged'; branch: string; target: string } | { reason: 'unexpected' };
+/** Why a removal without force was refused (#660): a code the UI words in the user's language, never git's own text. #1053: noAccount, the
+ * GitLab hosts whose merged MR could not be read for want of an account, present only when there is one. */
+export type Refusal = { reason: 'dirty'; path: string; files: string } | { reason: 'unmerged'; branch: string; target: string; noAccount?: string[] } | { reason: 'unexpected' };
 export type KnownRefusal = Exclude<Refusal, { reason: 'unexpected' }>;
 
 /** A removal refused for a reason the Hive knows (#660). The message stays the English sentence, so hive.log and the delete-activity stage's

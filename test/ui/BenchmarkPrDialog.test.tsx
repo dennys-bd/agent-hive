@@ -21,15 +21,16 @@ const EXP = experiment({ status: 'running', rounds: [
 ] });
 const previewOf = (token: string): BenchPrPreview => ({
   token, armId: token.startsWith('a') ? 'a1' : 'a2', status: 'done', commits: token === 'a9f8e7d6' ? 0 : 14, tasks: 8,
-  base: 'origin/main', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree',
+  base: 'origin/main', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree', host: 'github.com',
 });
 const URL_7 = 'https://github.com/owner/repo/pull/7';
 const ROUTE = /^\/benchmark\/experiments\/exp-1\/runs\/(\w+)\/pr$/;
 let prAnswer = (): Response => jsonResponse({ url: URL_7 });
+let previewAnswer = (token: string): Response => jsonResponse(previewOf(token));
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   const token = ROUTE.exec(url)?.[1];
   if (token === undefined) return jsonResponse({ error: 'unknown' }, 404);
-  return init?.method === 'POST' ? prAnswer() : jsonResponse(previewOf(token));
+  return init?.method === 'POST' ? prAnswer() : previewAnswer(token);
 });
 const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url, init]) => [url, JSON.parse(String(init?.body))]);
 const READY = '14 commits das 8 tarefas · rebase sobre a42b2fc';
@@ -37,6 +38,7 @@ const READY = '14 commits das 8 tarefas · rebase sobre a42b2fc';
 beforeEach(() => {
   setLanguage('pt');
   prAnswer = () => jsonResponse({ url: URL_7 });
+  previewAnswer = (token) => jsonResponse(previewOf(token));
   vi.stubGlobal('fetch', fetchMock);
   vi.stubGlobal('open', vi.fn());
   fetchMock.mockClear();
@@ -114,4 +116,30 @@ test('abrir PR posts the branch and the summary choice, opens the PR\'s URL as e
   await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   expect(posts()).toEqual([['/benchmark/experiments/exp-1/runs/b1c2d3e4/pr', { branch: 'feat/skills', withSummary: false }]]);
   expect(window.open).toHaveBeenCalledWith(URL_7, '_blank', 'noreferrer');
+});
+
+test('a preview refused for want of a GitLab account names the host and keeps abrir PR disabled (#1053)', async () => {
+  previewAnswer = () => jsonResponse({ error: 'no-account', host: 'gitlab.com' }, 409);
+  render(<BenchmarkPrDialog experiment={EXP} onClose={vi.fn()} />);
+  const dialog = within(await screen.findByRole('alertdialog', { name: 'Abrir PR com o braço B' }));
+  expect(await dialog.findByText('nenhuma conta do GitLab para gitlab.com: conecte uma na configuração › contas')).toBeInTheDocument();
+  expect(dialog.getByRole('button', { name: 'abrir PR' })).toBeDisabled();
+});
+
+test('a failed pr step names the origin\'s host, in both languages (#1053)', async () => {
+  const user = userEvent.setup();
+  previewAnswer = (token) => jsonResponse({ ...previewOf(token), host: 'gitlab.com' });
+  prAnswer = () => jsonResponse({ error: 'pr' }, 502);
+  render(<BenchmarkPrDialog experiment={EXP} onClose={vi.fn()} />);
+  const dialog = within(await screen.findByRole('alertdialog', { name: 'Abrir PR com o braço B' }));
+  await dialog.findByText(READY);
+  await user.click(dialog.getByRole('button', { name: 'abrir PR' }));
+  expect(await dialog.findByText('não foi possível criar o PR em gitlab.com')).toBeInTheDocument();
+});
+
+test('in English the no-account line and the pr failure name the host too (#1053)', async () => {
+  setLanguage('en');
+  previewAnswer = () => jsonResponse({ error: 'no-account', host: 'git.example.com' }, 409);
+  render(<BenchmarkPrDialog experiment={EXP} onClose={vi.fn()} />);
+  expect(await screen.findByText('no GitLab account for git.example.com: connect one in Settings › accounts')).toBeInTheDocument();
 });

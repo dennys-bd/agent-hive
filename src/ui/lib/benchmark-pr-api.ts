@@ -21,11 +21,12 @@ const isSimple = (value: unknown): value is SimpleRefusal => (SIMPLE_REFUSALS as
 const isStep = (value: unknown): value is BenchPrStep => (BENCH_PR_STEPS as readonly unknown[]).includes(value);
 const filesOf = (value: unknown): string[] => (Array.isArray(value) ? value.filter((f): f is string => typeof f === 'string') : []);
 
-/** The problem a failed openBenchPr carried: parseJson's status and body (#797). */
+/** The problem a failed openBenchPr or preview carried: parseJson's status and body (#797). */
 export function prProblemOf(err: unknown): PrProblem {
-  const { status, body } = (err ?? {}) as { status?: unknown; body?: { error?: unknown; files?: unknown } };
+  const { status, body } = (err ?? {}) as { status?: unknown; body?: { error?: unknown; files?: unknown; host?: unknown } };
   const error = body?.error;
   if (status === HTTP_CONFLICT && (error === 'conflict' || error === 'dirty')) return { error, files: filesOf(body?.files) };
+  if (status === HTTP_CONFLICT && error === 'no-account' && typeof body?.host === 'string') return { error, host: body.host }; // #1053
   if (status === HTTP_CONFLICT && isSimple(error)) return { error };
   if (status === HTTP_BAD_REQUEST) return { error: 'invalid-branch' };
   return { error: 'failed', step: status === HTTP_BAD_GATEWAY && isStep(error) ? error : 'unknown' };

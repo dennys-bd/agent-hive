@@ -1,6 +1,7 @@
 // The experiments' routes (#459, api.benchmark.experiments): each validates its body, refuses what the experiment's state forbids, writes
 // <home>/benchmark/<id>/ through benchmark/store.ts and dispatches one #458 event; the reducer only applies it. Later benchmark route files
 // export their own register…Routes and are mounted from registerBenchmarkRoutes, so server.ts mounts the benchmark once.
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { type BenchmarkRunRoutes, registerBenchmarkRunRoutes } from './server-benchmark-run.js';
 import type { Express, Request, Response } from 'express';
 import type { z } from 'zod';
@@ -37,6 +38,7 @@ export interface BenchmarkRouteDeps extends DraftDeps {
   getLive(): { runtime: { config: Config }; state: State } | undefined; // the PR routes' own 404s answer when the Hive is not live (#477)
   log: Logger; // the PR routes also warn (#477)
   ghEnv: GhEnv; // #961: the benchmark PR's gh runs as accounts.github's login
+  gitlabAccess: GitlabAccess; // #1053: the benchmark PR of a workspace on GitLab opens its MR with the host's account
   evaluator: BenchEvaluator; // #474
   runner: Pick<BenchRunner, 'run' | 'sleep' | 'wake' | 'isLive' | 'blindness'>; // #472
   session: AskSessionDeps; // #478: ask the agent's local session
@@ -216,7 +218,7 @@ export function registerBenchmarkRoutes(app: Express, deps: BenchmarkRouteDeps):
   const queue = deps.queue ?? serial();
   registerExperimentRoutes(app, deps, queue);
   registerArmRoutes(app, deps, queue);
-  registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: ghRun(deps.ghEnv), now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
+  registerBenchmarkPrRoutes(app, { getState: () => deps.getLive()?.state, getConfig: () => deps.getLive()?.runtime.config, hiveDir: deps.home, exec: execRun, gh: ghRun(deps.ghEnv), gitlabAccess: deps.gitlabAccess, now: Date.now, log: deps.log }); // #477: GET and POST …/runs/:token/pr
   registerBenchmarkEvaluateRoutes(app, { requireLive: deps.requireLive, evaluator: deps.evaluator, log: deps.log }); // #474
   registerBenchmarkAgentRoutes(app, { requireLive: deps.requireLive, log: deps.log, session: deps.session }); // #478: POST /benchmark/agent
   registerBenchmarkControlRoutes(app, { requireLive: deps.requireLive, runner: deps.runner, dispatch: deps.dispatch, log: deps.log }); // #472

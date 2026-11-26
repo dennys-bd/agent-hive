@@ -44,6 +44,8 @@ export interface EvaluateRunner { run(runtime: Runtime, effect: EvaluateEffect):
 
 interface Row { who: string; agent: AgentId; model?: string; instructions?: string; focus: string }
 type Broken = { broken: string };
+// Where an evaluation's runs happen: the task's worktree, and its workspace, whose origin picks the GitLab account (#1049)
+interface Where { cwd: string; workspace: Workspace }
 interface Reviewed { findings: ReviewFinding[]; byRow: { who: string; findings: ReviewFinding[] }[] }
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -95,10 +97,10 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
   const runs = new Map<string, AbortController>();
 
   // One headless run, read-only in the worktree; a throw (its temp folder) reads as a failure. The reason only, never the run's output
-  async function ask(row: Row, prompt: string, schema: object, cwd: string, signal: AbortSignal): Promise<{ answer: string } | Broken> {
+  async function ask(row: Row, prompt: string, schema: object, where: Where, signal: AbortSignal): Promise<{ answer: string } | Broken> {
     let result: HeadlessResult;
     try {
-      const input = { agent: row.agent, prompt, schema, signal, cwd, readOnlyTools: true as const, timeoutMs: EVALUATE_TIMEOUT_MS };
+      const input = { agent: row.agent, prompt, schema, signal, cwd: where.cwd, workspace: where.workspace, readOnlyTools: true as const, timeoutMs: EVALUATE_TIMEOUT_MS };
       result = await runHeadless({ ...input, ...(row.model === undefined ? {} : { model: row.model }) }, { ...deps.headless, account: deps.accountDeps() });
     } catch (err) {
       result = { failure: 'could not start', detail: errorMessage(err) };
@@ -107,12 +109,12 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
   }
 
   // Every reviewer at once (#877, decision 12): the first failure aborts the rest and is the one named, never a `cancelled` it caused
-  async function review(rows: readonly Row[], work: Work, cwd: string, signal: AbortSignal): Promise<Reviewed | Broken> {
+  async function review(rows: readonly Row[], work: Work, where: Where, signal: AbortSignal): Promise<Reviewed | Broken> {
     const batch = new AbortController();
     const both = AbortSignal.any([signal, batch.signal]);
     let first: string | undefined;
     const lists = await Promise.all(rows.map(async (row) => {
-      const asked = await ask(row, reviewerPrompt(work, row.focus, row.instructions), REVIEW_SCHEMA, cwd, both);
+      const asked = await ask(row, reviewerPrompt(work, row.focus, row.instructions), REVIEW_SCHEMA, where, both);
       const parsed = 'broken' in asked ? asked : parseFindings(asked.answer);
       if ('findings' in parsed) return parsed.findings;
       first ??= 'broken' in parsed ? parsed.broken : `${row.who}: ${parsed.reason}`;
@@ -123,8 +125,8 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
     return { findings: lists.flat(), byRow: rows.map((row, i) => ({ who: `${row.who} · ${row.focus}`, findings: lists[i] ?? [] })) };
   }
 
-  async function judge(row: Row, work: Work, dimensions: string[], reviewed: Reviewed, cwd: string, signal: AbortSignal): Promise<{ scores: JudgeScore[] } | Broken> {
-    const asked = await ask(row, judgePrompt(work, dimensions, reviewed.byRow, row.instructions), JUDGE_SCHEMA, cwd, signal);
+  async function judge(row: Row, work: Work, dimensions: string[], reviewed: Reviewed, where: Where, signal: AbortSignal): Promise<{ scores: JudgeScore[] } | Broken> {
+    const asked = await ask(row, judgePrompt(work, dimensions, reviewed.byRow, row.instructions), JUDGE_SCHEMA, where, signal);
     if ('broken' in asked) return asked;
     const parsed = parseScores(asked.answer, dimensions);
     return 'reason' in parsed ? { broken: `${row.who}: ${parsed.reason}` } : parsed;
@@ -149,11 +151,12 @@ export function createEvaluateRunner(deps: EvaluateDeps): EvaluateRunner {
     if (cwd === undefined || signal.aborted) return undefined;
     const work = await workOf(runtime, effect, workspace, cwd, deps.exec);
     if ('broken' in work) return broken(work.broken);
-    const reviewed = await review(rows.reviewers, work, cwd, signal);
+    const where: Where = { cwd, workspace };
+    const reviewed = await review(rows.reviewers, work, where, signal);
     if ('broken' in reviewed) return broken(reviewed.broken);
     if (signal.aborted) return undefined;
     await deps.dispatch({ type: 'evaluateJudging', activityId: activity.id, runId });
-    const judged = await judge(rows.judge, work, dimensionsOf(effect), reviewed, cwd, signal);
+    const judged = await judge(rows.judge, work, dimensionsOf(effect), reviewed, where, signal);
     if ('broken' in judged) return broken(judged.broken);
     const threshold = effect.stage.threshold ?? 0;
     // the failing dimensions by their 1-based index: a rendered line can carry the task's text, which no log line holds

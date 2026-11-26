@@ -1,12 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AccountError, accountEnv, createRunAccounts, ptyAccountEnv, reportedAccount, type AccountSeam } from '../src/account-env.js';
 import { AccountError as MovedAccountError } from '../src/account-error.js';
 import type { AccountCtx } from '../src/agents/runner.js';
 import { runners } from '../src/agents/registry.js';
-import { LOGGED_OUT } from './fixtures/accounts.js';
+import { APP_WORKSPACE, LOGGED_OUT, OFF_GITLAB } from './fixtures/accounts.js';
 
-const DEPS = { accounts: { claude: 'work', copilot: 'octo' }, credentials: async () => ({}), machineGithub: LOGGED_OUT };
+const DEPS = { accounts: { claude: 'work', copilot: 'octo' }, credentials: async () => ({}), machineGithub: LOGGED_OUT, gitlabOrigin: OFF_GITLAB };
 
 test('with no agent (a terminal) the seam answers no env and no accounts, and asks no runner (#953)', async (t) => {
   const asked = t.mock.method(runners.claude, 'accountEnv');
@@ -58,7 +59,7 @@ test('AccountError says account <provider> <code>, then the reason after a colon
 test('ptyAccountEnv keeps the run\'s accounts under its pty and lays the workspace\'s env over the account\'s, which it wins (#953)', async () => {
   const runAccounts = createRunAccounts();
   const seam = async () => ({ env: { X: '1', Y: 'account' }, accounts: { claude: 'work' } });
-  assert.deepEqual(await ptyAccountEnv({ accountEnv: seam, runAccounts }, 'P1', 'claude', { Y: 'workspace' }), { X: '1', Y: 'workspace' });
+  assert.deepEqual(await ptyAccountEnv({ accountEnv: seam, runAccounts }, 'P1', 'claude', APP_WORKSPACE, { Y: 'workspace' }), { X: '1', Y: 'workspace' });
   assert.deepEqual(runAccounts.get('P1'), { claude: 'work' });
 });
 
@@ -72,7 +73,7 @@ test('the store answers a pty\'s accounts until dropped; reportedAccount answers
 });
 
 const GH_TEST = 'gho_test'; // a placeholder, never a real token
-const SELECTED = { accounts: { github: 'octo' }, credentials: async () => ({ github: { octo: { token: GH_TEST }, other: { token: 'gho_other' } } }), machineGithub: LOGGED_OUT };
+const SELECTED = { accounts: { github: 'octo' }, credentials: async () => ({ github: { octo: { token: GH_TEST }, other: { token: 'gho_other' } } }), machineGithub: LOGGED_OUT, gitlabOrigin: OFF_GITLAB };
 
 test('accounts.github naming a stored login: a run with no agent and a Claude run both get its GH_TOKEN and accounts.github, the Claude env beside it (#961)', async (t) => {
   t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { CLAUDE_CODE_OAUTH_TOKEN: 'claude_test' }, account: 'work' }));
@@ -107,6 +108,33 @@ test('a named login absent from the store refuses with github / missing before t
 
 test('ptyAccountEnv: a workspace env that sets GH_TOKEN wins over the selected login\'s (#961)', async () => {
   const seam: AccountSeam = (run) => accountEnv(run, SELECTED);
-  const env = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P1', undefined, { GH_TOKEN: 'pinned' });
+  const env = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P1', undefined, APP_WORKSPACE, { GH_TOKEN: 'pinned' });
   assert.equal(env.GH_TOKEN, 'pinned');
+});
+
+const GL_TEST = `glpat-test-${randomUUID()}`; // built at runtime: no token in a fixture
+const ON_GITLAB = {
+  ...SELECTED,
+  credentials: async () => ({ github: { octo: { token: GH_TEST } }, gitlab: { 'gitlab.com': { token: GL_TEST, username: 'ana' } } }),
+  gitlabOrigin: async () => 'gitlab.com',
+};
+
+test('a run in a workspace on a GitLab host gets the GitLab pair beside GH_TOKEN, the agent\'s env over both, and no GitLab account in its accounts; no workspace, no pair (#1049)', async (t) => {
+  assert.deepEqual(await accountEnv({ workspace: APP_WORKSPACE }, ON_GITLAB), { env: { GH_TOKEN: GH_TEST, GITLAB_TOKEN: GL_TEST, GITLAB_HOST: 'gitlab.com' }, accounts: { github: 'octo' } });
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: { GITLAB_HOST: 'agent', X: '1' } }));
+  assert.deepEqual(await accountEnv({ agent: 'claude', workspace: APP_WORKSPACE }, ON_GITLAB), {
+    env: { GH_TOKEN: GH_TEST, GITLAB_TOKEN: GL_TEST, GITLAB_HOST: 'agent', X: '1' }, accounts: { github: 'octo' },
+  });
+  assert.deepEqual(await accountEnv({}, ON_GITLAB), { env: { GH_TOKEN: GH_TEST }, accounts: { github: 'octo' } });
+});
+
+test('ptyAccountEnv hands the seam the run\'s workspace, and a workspace env that sets GITLAB_TOKEN wins over the account\'s (#1049)', async () => {
+  const asked: (string | undefined)[] = [];
+  const seam: AccountSeam = (run) => { asked.push(run.workspace?.name); return accountEnv(run, ON_GITLAB); };
+  const env = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P1', undefined, APP_WORKSPACE, { GITLAB_TOKEN: 'pinned' });
+  assert.deepEqual([env.GITLAB_TOKEN, env.GITLAB_HOST, asked], ['pinned', undefined, ['app']]);
+  const hostOnly = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P2', undefined, APP_WORKSPACE, { GITLAB_HOST: 'git.example.com' });
+  assert.deepEqual([hostOnly.GITLAB_TOKEN, hostOnly.GITLAB_HOST], [undefined, 'git.example.com'], 'the origin\'s token never rides with another host');
+  const none = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P3', undefined, APP_WORKSPACE, { Y: '1' });
+  assert.equal(none.GITLAB_HOST, 'gitlab.com', 'a workspace with no GitLab variable keeps the account\'s pair');
 });

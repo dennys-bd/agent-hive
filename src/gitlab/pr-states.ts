@@ -11,8 +11,9 @@ import { mrState } from './mr-state.js';
 const SHA_CHARS = 8; // as the GitHub read's (#742)
 const RECENT_MAX = 100; // as GitHub's commits(last: 100): what pr.commit is written from
 
-/** A host's client, or none when the host has no account: gitlabAccess in the server, a fake in tests. */
-export type GitlabAccess = (host: string) => Promise<Pick<GitlabApi, 'get'> | undefined>;
+/** A host's client, or none when the host has no account, as far as the poll reads it: merge-requests.ts' GitlabAccess (the server's
+ * gitlabAccess) fits it, and a test's fake needs only get. */
+export type GitlabReadAccess = (host: string) => Promise<Pick<GitlabApi, 'get'> | undefined>;
 /** What a read answers: what it read, and one line per host or MR that failed. */
 export interface MrReads<T> { reads: T[]; failures: string[] }
 
@@ -39,7 +40,7 @@ const isHostWide = (err: unknown): boolean => err instanceof SourceRateLimitErro
 
 // Every MR through `read`, one host after the other: a host with no account fails once for all its MRs, a failed MR fails alone, unless
 // its failure is the host's
-async function eachMr<T>(urls: readonly string[], access: GitlabAccess, read: (api: Pick<GitlabApi, 'get'>, entry: Entry) => Promise<T>): Promise<MrReads<T>> {
+async function eachMr<T>(urls: readonly string[], access: GitlabReadAccess, read: (api: Pick<GitlabApi, 'get'>, entry: Entry) => Promise<T>): Promise<MrReads<T>> {
   const reads: T[] = [];
   const failures: string[] = [];
   for (const [host, entries] of byHost(urls)) {
@@ -90,11 +91,11 @@ async function activityOf(api: Pick<GitlabApi, 'get'>, { url, link }: Entry, ope
 }
 
 /** Each MR's state and times (#1052). */
-export const readMrStates = (urls: readonly string[], access: GitlabAccess): Promise<MrReads<TaskPr>> => eachMr(urls, access, stateOf);
+export const readMrStates = (urls: readonly string[], access: GitlabReadAccess): Promise<MrReads<TaskPr>> => eachMr(urls, access, stateOf);
 
 /** The commits of each MR whose state was read (#1052), measured from that read's creation time. Apart from the state read, so a failure here
  * costs no state. */
-export function readMrActivity(states: readonly TaskPr[], access: GitlabAccess): Promise<MrReads<PrActivity>> {
+export function readMrActivity(states: readonly TaskPr[], access: GitlabReadAccess): Promise<MrReads<PrActivity>> {
   const opened = new Map(states.map((s) => [s.url, s.openedAt]));
   return eachMr(states.map((s) => s.url), access, (api, entry) => activityOf(api, entry, opened.get(entry.url)));
 }

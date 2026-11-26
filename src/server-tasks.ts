@@ -1,4 +1,5 @@
 import type { MachineFor } from './machine.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { registerStartRoute } from './server-start.js';
 import { registerDeleteActivityRoute, removeCreatedWorktree } from './activity-delete.js';
 import type { Express, Request, Response } from 'express';
@@ -86,6 +87,7 @@ export interface TaskRouteDeps {
   latest(): State | undefined; // #846: the state after that poll
   facts?: Pick<FactLog, 'write'>; // #742: a delete's teardown steps and a first open's setup steps to worktree.step
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: each workspace's plugin folder: a session's specialized agents are read from its workspace's
+  gitlabAccess?: GitlabAccess; // #1053: a GitLab host's account, which delete activity reads a merged MR with; absent (a test's deps), none on any host
 }
 
 export type LiveView = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;

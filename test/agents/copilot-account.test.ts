@@ -5,6 +5,7 @@ import { accountEnv, type AccountEnvDeps } from '../../src/account-env.js';
 import { COPILOT_USER_URL, copilotAccountEnv, type CopilotFetch } from '../../src/agents/copilot-account.js';
 import type { AccountCtx } from '../../src/agents/runner.js';
 import type { Credentials } from '../../src/types.js';
+import { OFF_GITLAB } from '../fixtures/accounts.js';
 
 // Copilot's account (#962): the token, the one GET and its check, with a fake fetch and a fake gh
 const STORED_TOKEN = 'not-a-real-token-962-stored';
@@ -48,7 +49,7 @@ async function refuses(run: Promise<unknown>, code: AccountCode, label: string):
 test('accounts.copilot naming a stored login that the check answers with an entitlement: its token in COPILOT_GITHUB_TOKEN, the login as the run\'s account, whatever accounts.github is (#962)', async (t) => {
   const fake = answering(200, user('work'));
   t.mock.method(globalThis, 'fetch', fake.fetch);
-  const deps: AccountEnvDeps = { accounts: { copilot: 'work', github: 'other' }, credentials: async () => STORE, machineGithub: machine() };
+  const deps: AccountEnvDeps = { accounts: { copilot: 'work', github: 'other' }, credentials: async () => STORE, machineGithub: machine(), gitlabOrigin: OFF_GITLAB };
   assert.deepEqual(await accountEnv({ agent: 'copilot' }, deps), { env: { GH_TOKEN: 'not-a-real-token-962-other', COPILOT_GITHUB_TOKEN: STORED_TOKEN }, accounts: { github: 'other', copilot: 'work' } });
   const [call] = fake.calls;
   assert.deepEqual([fake.calls.length, call?.url, bearer(call), call?.init?.redirect, call?.init?.signal instanceof AbortSignal], [1, COPILOT_USER_URL, `Bearer ${STORED_TOKEN}`, 'manual', true]);
@@ -57,7 +58,7 @@ test('accounts.copilot naming a stored login that the check answers with an enti
 test('no accounts.copilot is gh\'s machine login: its token, checked against its login, no account, though accounts.github names another stored login (#962)', async (t) => {
   const fake = answering(200, user('octo'));
   t.mock.method(globalThis, 'fetch', fake.fetch);
-  const deps: AccountEnvDeps = { accounts: { github: 'work' }, credentials: async () => STORE, machineGithub: machine('octo') };
+  const deps: AccountEnvDeps = { accounts: { github: 'work' }, credentials: async () => STORE, machineGithub: machine('octo'), gitlabOrigin: OFF_GITLAB };
   assert.deepEqual(await accountEnv({ agent: 'copilot' }, deps), { env: { GH_TOKEN: STORED_TOKEN, COPILOT_GITHUB_TOKEN: MACHINE_TOKEN }, accounts: { github: 'work' } });
   assert.equal(bearer(fake.calls[0]), `Bearer ${MACHINE_TOKEN}`);
 });

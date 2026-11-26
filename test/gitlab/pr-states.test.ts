@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { type GitlabAnswer, GitlabHttpError } from '../../src/gitlab/api.js';
-import { type GitlabAccess, readMrActivity, readMrStates } from '../../src/gitlab/pr-states.js';
+import { type GitlabReadAccess, readMrActivity, readMrStates } from '../../src/gitlab/pr-states.js';
 import { SourceNotConnectedError, SourceRateLimitError } from '../../src/source-errors.js';
 
 const MR = 'https://gitlab.com/acme/platform/app/-/merge_requests/7';
@@ -16,9 +16,9 @@ const AFTER = '2026-11-20T11:00:00.000Z';
 
 type Answer = GitlabAnswer | (() => GitlabAnswer);
 // A GitLab per host answering by API path: a path with no answer is a 404, and a host with no entry has no account
-function fakeAccess(hosts: Record<string, Record<string, Answer>>): { access: GitlabAccess; calls: string[] } {
+function fakeAccess(hosts: Record<string, Record<string, Answer>>): { access: GitlabReadAccess; calls: string[] } {
   const calls: string[] = [];
-  const access: GitlabAccess = async (host) => {
+  const access: GitlabReadAccess = async (host) => {
     if (!Object.hasOwn(hosts, host)) return undefined;
     const answers = hosts[host];
     return {
