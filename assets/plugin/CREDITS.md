@@ -9,7 +9,7 @@ Source: the `affaan-m/ECC` repository at tag `v2.2.1`, its `agents/`, `commands/
 | File here | Ported from |
 |---|---|
 | `agents/architect.md` | `agents/architect.md` |
-| `agents/planner.md` | `agents/planner.md` (plan format replaced, see below) |
+| `skills/new-plan/SKILL.md` | `agents/planner.md`: its process, right-sizing, placeholder rules and self-review (plan format replaced, see below) |
 | `agents/tdd.md` | `agents/tdd-guide.md` |
 | `agents/build-fixer.md` | `agents/build-error-resolver.md` |
 | `agents/code-reviewer.md` | `agents/code-reviewer.md` |
@@ -25,9 +25,8 @@ Source: the `obra/superpowers` repository at tag `v6.4.1`, its `skills/brainstor
 |---|---|
 | `skills/new-spec/SKILL.md` | `skills/brainstorming/SKILL.md` |
 | `agents/spec-reviewer.md` | `skills/brainstorming/spec-document-reviewer-prompt.md` |
-| `skills/new-plan/SKILL.md` | `skills/writing-plans/SKILL.md` |
+| `skills/new-plan/SKILL.md` | `skills/writing-plans/SKILL.md`, its plan document format included |
 | `agents/plan-reviewer.md` | `skills/writing-plans/plan-document-reviewer-prompt.md` |
-| `agents/planner.md` | the plan document format of `skills/writing-plans/SKILL.md` |
 
 ## Impeccable — Apache 2.0
 
