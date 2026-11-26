@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { ghRun } from '../../src/benchmark/exec.js';
 import { dropRunFiles, openPr, PrStepError, prBody, type PrInput } from '../../src/benchmark/pr.js';
 import { fakeLog } from '../fakes.js';
+import { fakeGitlabApi } from '../fake-gitlab.js';
 import { aggregate } from '../../src/benchmark/report.js';
 import { bestRun, endedRuns, prTitle, suggestBranch } from '../../src/benchmark/pr-pick.js';
 import type { BenchRun, Experiment } from '../../src/types.js';
@@ -208,4 +209,23 @@ test('openPr\'s gh pr create runs as the selected login through ghRun, and no gi
   const { log } = fakeLog();
   assert.deepEqual(await openPr({ exec: run, gh: ghRun(async () => ({ GH_TOKEN: 'gho_test' }), run), log }, INPUT), { url: PR_URL });
   assert.deepEqual(calls.filter((c) => c.env?.GH_TOKEN === 'gho_test').map(line).map((text) => text.replace(/--body-file \S+/, '--body-file BODY')), [GH]);
+});
+
+const MR_URL = 'https://gitlab.com/acme/app/-/merge_requests/7';
+const MR_ROUTE = 'POST projects/acme%2Fapp/merge_requests';
+
+test('openPr on a GitLab origin opens the merge request through the host\'s account after the push, runs no gh and answers its link (#1053)', async () => {
+  const s = sequence();
+  const gitlab = fakeGitlabApi({ [MR_ROUTE]: { iid: 7, web_url: MR_URL } });
+  assert.deepEqual(await openPr(s.deps, { ...INPUT, gitlab: { host: 'gitlab.com', project: 'acme/app', api: gitlab.api } }), { url: MR_URL });
+  assert.equal(s.calls.some((c) => c.file === 'gh'), false);
+  assert.ok(shown(s.calls).includes(PUSH));
+  assert.deepEqual(gitlab.calls, [{ method: 'POST', path: 'projects/acme%2Fapp/merge_requests', body: { source_branch: 'feat/skills', target_branch: 'main', title: 'feat: Skills', description: INPUT.body } }]);
+});
+
+test('a merge request link off the origin\'s project fails the pr step, and the pushed branch is deleted as after a gh failure (#1053)', async () => {
+  const s = sequence();
+  const gitlab = fakeGitlabApi({ [MR_ROUTE]: { iid: 7, web_url: 'https://gitlab.com/someone/else/-/merge_requests/7' } });
+  await assert.rejects(openPr(s.deps, { ...INPUT, gitlab: { host: 'gitlab.com', project: 'acme/app', api: gitlab.api } }), (err: unknown) => err instanceof PrStepError && err.step === 'pr');
+  assert.ok(shown(s.calls).includes(`${H} push --no-verify origin --delete feat/skills`), shown(s.calls).join('\n'));
 });

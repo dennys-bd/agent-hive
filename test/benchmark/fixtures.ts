@@ -183,6 +183,7 @@ export const PR_URL = 'https://github.com/owner/repo/pull/7';
 // main, gh answering the PR's URL. An override whose key starts a call's line answers that call instead; every other call answers ''.
 export function prAnswers(overrides: Record<string, string | Error> = {}): (call: Call) => string | Error {
   const defaults: [string, string][] = [
+    ['git -C /work/hive remote get-url origin', 'git@github.com:owner/repo.git\n'], // #1053: the workspace's origin is on GitHub
     ['git rev-list --max-parents=0', `${PR_ROOT}\n`], ['git rev-list --count', '3\n'], ['git rev-parse --short', 'a42b2fc\n'],
     ['git symbolic-ref --short -q HEAD', 'main\n'], ['gh pr create', `${PR_URL}\n`],
   ];

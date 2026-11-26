@@ -8,11 +8,13 @@ export interface BenchPrPreview {
   base: string; baseSha: string;    // origin/<baseBranch>, its short sha
   branch: string; title: string;    // the suggestions
   via: BenchmarkPrIn;
+  host: string;                     // #1053: the origin's host, which the pr step's failure names
 }
 export type BenchPrAnswer = { url: string };
 export type BenchPrRefusal =
   | { error: 'conflict'; files: string[] } | { error: 'dirty'; files: string[] }
-  | { error: 'branch-exists' } | { error: 'no-commits' } | { error: 'not-ended' } | { error: 'busy' };
+  | { error: 'branch-exists' } | { error: 'no-commits' } | { error: 'not-ended' } | { error: 'busy' }
+  | { error: 'no-account'; host: string }; // #1053: the origin is on a GitLab host the Hive has no account for
 /** The steps a 502 names (#477), each one a `benchmark.pr.failed.<step>` line of the dialog. */
 export const BENCH_PR_STEPS = ['fetch', 'branch', 'rebase', 'files', 'push', 'pr'] as const;
 export type BenchPrStep = (typeof BENCH_PR_STEPS)[number];

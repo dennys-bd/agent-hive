@@ -21,7 +21,7 @@ const EXP = experiment({ status: 'running', rounds: [
 ] });
 const previewOf = (token: string): BenchPrPreview => ({
   token, armId: token.startsWith('a') ? 'a1' : 'a2', status: 'done', commits: token === 'a9f8e7d6' ? 0 : 14, tasks: 8,
-  base: 'origin/main', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree',
+  base: 'origin/main', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree', host: 'github.com',
 });
 const URL_7 = 'https://github.com/owner/repo/pull/7';
 const ROUTE = /^\/benchmark\/experiments\/exp-1\/runs\/(\w+)\/pr$/;

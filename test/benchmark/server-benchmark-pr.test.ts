@@ -7,6 +7,8 @@ import type { Run } from '../../src/benchmark/exec.js';
 import { registerBenchmarkPrRoutes } from '../../src/server-benchmark-pr.js';
 import type { BenchmarkPrIn, Config } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
+import type { GitlabAccess } from '../../src/gitlab/merge-requests.js';
+import { fakeGitlabApi } from '../fake-gitlab.js';
 import { type Call, experiment, fakeRun, line, mainConfig, PR_URL, prAnswers, run, stateWith } from './fixtures.js';
 
 const PATH = '/benchmark/experiments/exp-1/runs';
@@ -23,12 +25,12 @@ const configWith = (via: BenchmarkPrIn): Config => {
   return { ...config, comb: { ...config.comb, workspaces: config.comb.workspaces.map((w) => ({ ...w, benchmarkPrIn: via })) } };
 };
 
-interface Options { now?: () => number; answer?: (call: Call) => string | Error; via?: BenchmarkPrIn; gh?: Run }
+interface Options { now?: () => number; answer?: (call: Call) => string | Error; via?: BenchmarkPrIn; gh?: Run; gitlab?: GitlabAccess }
 interface Harness { base: string; calls: Call[]; bodies: string[]; lines: string[] }
 
 // The PR routes alone on a bare express app, as server-benchmark-report.test.ts builds its own: git and gh recorded on one list, each PR
 // body read while gh runs
-function routes(t: TestContext, { answer = prAnswers(), via = 'worktree', gh, now = () => NOW }: Options = {}): Harness {
+function routes(t: TestContext, { answer = prAnswers(), via = 'worktree', gh, now = () => NOW, gitlab }: Options = {}): Harness {
   const bodies: string[] = [];
   const { run: exec, calls } = fakeRun((call) => {
     if (call.file === 'gh') bodies.push(readFileSync(call.args[call.args.indexOf('--body-file') + 1], 'utf8'));
@@ -37,7 +39,7 @@ function routes(t: TestContext, { answer = prAnswers(), via = 'worktree', gh, no
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
-  registerBenchmarkPrRoutes(app, { getState: () => stateWith(EXP), getConfig: () => configWith(via), hiveDir: '/hive', exec, gh: gh ?? exec, now, log });
+  registerBenchmarkPrRoutes(app, { getState: () => stateWith(EXP), getConfig: () => configWith(via), hiveDir: '/hive', exec, gh: gh ?? exec, now, log, gitlabAccess: gitlab ?? (async () => undefined) });
   const server = app.listen(0);
   t.after(() => server.close());
   return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, calls, bodies, lines };
@@ -53,7 +55,7 @@ const post = (base: string, path: string, body: unknown) =>
 test('GET …/runs/:token/pr fetches the run and answers the preview; unknown is a 404, a live run a 409, a failed fetch a 502 that logs no git text (#477)', async (t) => {
   const h = routes(t);
   assert.deepEqual(await call(h.base, AT), [200, {
-    token: 'aaaa1', armId: 'a1', status: 'done', commits: 3, tasks: 1, base: 'origin/develop', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree',
+    token: 'aaaa1', armId: 'a1', status: 'done', commits: 3, tasks: 1, base: 'origin/develop', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree', host: 'github.com',
   }]);
   assert.ok(h.calls.some((c) => line(c) === 'git -c transfer.fsckObjects=true fetch /hive/benchmark/exp-1/repo.git +refs/heads/work/aaaa1:refs/hive/bench/aaaa1' && c.cwd === '/work/hive'));
   assert.deepEqual(await call(h.base, '/benchmark/experiments/nope/runs/aaaa1/pr'), [404, { error: 'no such experiment' }]);
@@ -73,7 +75,7 @@ test('POST …/pr takes { branch, withSummary } and nothing else, and a plain br
   }
   for (const branch of ['-x', 'a..b', 'feat/x.lock']) assert.deepEqual(await post(h.base, AT, { ...OPEN, branch }), [400, BRANCH_MESSAGE], branch);
   assert.deepEqual(await post(h.base, `${PATH}/bbbb1/pr`, OPEN), [409, { error: 'not-ended' }]);
-  assert.deepEqual(h.calls.map(line), ['git check-ref-format --branch feat/x.lock'], 'only git\'s own check of the one name isPlainRef let through');
+  assert.deepEqual(h.calls.map(line).filter((l) => !l.endsWith('remote get-url origin')), ['git check-ref-format --branch feat/x.lock'], 'only the origin\'s read and git\'s own check of the one name isPlainRef let through');
 });
 
 test('POST …/pr runs fetch, branch, rebase, push and gh pr create in that order and answers the URL; the summary lands in the body only when asked (#477)', async (t) => {
@@ -155,4 +157,24 @@ test('an unexpected throw (not a git or gh step) answers 500 internal and logs t
   assert.ok(h.lines.some((l) => l === 'ERROR benchmark PR of experiment exp-1 failed: RangeError'));
   assert.equal(h.lines.some((l) => l.includes('someone')), false);
   assert.deepEqual(await post(h.base, AT, OPEN), [200, { url: PR_URL }], 'the lock went with the failure');
+});
+
+const GITLAB_ORIGIN = { 'git -C /work/hive remote get-url origin': 'git@gitlab.com:acme/app.git\n' };
+
+test('a workspace whose origin is on GitLab: the preview answers its host, and POST opens the MR through the host\'s account and answers its link, with no gh call (#1053)', async (t) => {
+  const mr = 'https://gitlab.com/acme/app/-/merge_requests/7';
+  const gitlab = fakeGitlabApi({ 'POST projects/acme%2Fapp/merge_requests': { iid: 7, web_url: mr } });
+  const h = routes(t, { answer: prAnswers(GITLAB_ORIGIN), gitlab: async (host) => (host === 'gitlab.com' ? gitlab.api : undefined) });
+  const [status, preview] = await call(h.base, AT);
+  assert.deepEqual([status, (preview as { host?: unknown }).host], [200, 'gitlab.com']);
+  assert.deepEqual(await post(h.base, AT, OPEN), [200, { url: mr }]);
+  assert.equal(h.calls.some((c) => c.file === 'gh'), false);
+  assert.equal(gitlab.calls.length, 1);
+});
+
+test('a GitLab origin with no account: the preview and the POST answer 409 no-account with the host, and nothing but the origin\'s read runs (#1053)', async (t) => {
+  const h = routes(t, { answer: prAnswers(GITLAB_ORIGIN) });
+  assert.deepEqual(await call(h.base, AT), [409, { error: 'no-account', host: 'gitlab.com' }]);
+  assert.deepEqual(await post(h.base, AT, OPEN), [409, { error: 'no-account', host: 'gitlab.com' }]);
+  assert.deepEqual(h.calls.map(line), ['git -C /work/hive remote get-url origin', 'git -C /work/hive remote get-url origin'], 'no fetch, no push, no gh');
 });

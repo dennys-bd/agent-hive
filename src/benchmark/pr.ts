@@ -5,6 +5,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '../log.js';
+import type { GitlabApi } from '../gitlab/api.js';
+import { openMergeRequest } from '../gitlab/merge-requests.js';
+import { parsePrLink } from '../repo-host.js';
 import { pathsOf } from '../machine.js';
 import type { BenchRun, Experiment, Workspace } from '../types.js';
 import { worktreePath } from '../worktree.js';
@@ -105,9 +108,13 @@ export async function dropRunFiles(git: Run, base: string): Promise<boolean> {
 }
 
 export interface PrDeps { exec: Run; gh: Run; log: Logger }
+/** #1053: the origin's GitLab project and the client of its host's account; absent, the PR is gh's. */
+export interface GitlabTarget { host: string; project: string; api: GitlabApi }
+
 export interface PrInput {
   experimentId: string; token: string; workspace: Pick<Workspace, 'path' | 'benchmarkPrIn'>; repoGit: string;
   base: string; branch: string; title: string; body: string; // base: the base branch's name, without origin/
+  gitlab?: GitlabTarget;
 }
 
 /** A git or gh step that failed (#477): the route answers 502 with the step; the cause stays out of the answer and the log. */
@@ -192,6 +199,14 @@ async function createPr(gh: Run, input: PrInput): Promise<string> {
   }
 }
 
+// #1053: the MR through the host's account, never glab; its link must name the origin's own project, or nothing is answered
+async function createMr({ host, project, api }: GitlabTarget, input: PrInput): Promise<string> {
+  const { url } = await openMergeRequest(api, project, { source: input.branch, target: input.base, title: input.title, body: input.body });
+  const link = parsePrLink(url);
+  if (link?.host !== host || link.repository !== project) throw new Error('GitLab answered no merge request of the origin\'s project');
+  return url;
+}
+
 // gh failed after the push: the pushed branch goes too, so the same name can be retried; the delete failing is only a warning
 async function undoPush(deps: PrDeps, git: Run, input: PrInput): Promise<void> {
   await git('git', hookless('push', '--no-verify', 'origin', '--delete', input.branch)).then(() => undefined, (err: unknown) =>
@@ -205,7 +220,7 @@ async function publish(deps: PrDeps, git: Run, gh: Run, input: PrInput, baseline
   await at('push', () => git('git', hookless('push', '--no-verify', '--set-upstream', 'origin', `HEAD:refs/heads/${input.branch}`)));
   mark(true);
   try {
-    return { url: await at('pr', () => createPr(gh, input)) };
+    return { url: await at('pr', () => (input.gitlab === undefined ? createPr(gh, input) : createMr(input.gitlab, input))) };
   } catch (err) {
     await undoPush(deps, git, input);
     mark(false);

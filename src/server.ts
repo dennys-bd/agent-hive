@@ -1445,7 +1445,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     },
   });
   // The benchmark's experiments (#459): the one mount; every later benchmark route file registers from registerBenchmarkRoutes
-  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, ghEnv, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
+  const benchRuns = registerBenchmarkRoutes(app, { requireLive, getLive: () => live, dispatch, home, pluginSource: shippedPlugin, exec, ghEnv, gitlabAccess: gitlabAccessOf, log, evaluator: benchEvaluator, runner: benchRunner, version: benchVersion, queue: benchQueue, now: () => new Date(), session: { dispatch, started: pool.started, language: effectiveLanguage, plugin: pluginRender } });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: shippedPlugin, log, agents, accountDeps });
   // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written

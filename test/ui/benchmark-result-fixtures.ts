@@ -55,5 +55,5 @@ export const RESULT_EXP: Experiment = experiment({
   rounds: [{ n: 1, startedAt: '2026-10-20T22:00:00', runs: [RUN_B1] }, { n: 2, startedAt: '2026-10-21T22:00:00', runs: [RUN_B2] }],
 });
 export const PREVIEW: BenchPrPreview = {
-  token: RUN_B1.token, armId: 'a2', status: 'done', commits: 14, tasks: 8, base: 'origin/main', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree',
+  token: RUN_B1.token, armId: 'a2', status: 'done', commits: 14, tasks: 8, base: 'origin/main', baseSha: 'a42b2fc', branch: 'feat/skills', title: 'feat: Skills', via: 'worktree', host: 'github.com',
 };
