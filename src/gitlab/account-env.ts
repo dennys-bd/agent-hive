@@ -1,12 +1,14 @@
 // The GitLab provider of the run env seam (#1049): the account of the GitLab host a run's workspace's origin is on, as GITLAB_TOKEN and
-// GITLAB_HOST. glab sends an env token only to GITLAB_HOST's host, and a GITLAB_HOST always wins over the remotes, so the pair always names
-// the origin's own host. Imports account-error and types only: a runner's module loaded first closes no cycle through the registry.
+// GITLAB_HOST. glab sends an env token to GITLAB_HOST's host (and to hosts the user's own glab config already lists), and a GITLAB_HOST
+// always wins over the remotes, so the pair names the origin's own host. Imports account-error and types only: a runner's module loaded first closes no cycle through the registry.
 import { AccountError } from '../account-error.js';
 import type { Credentials, Workspace } from '../types.js';
 
-/** Every name glab reads a token or a host from: no child inherits them (withoutHiveEnv), so a run talks to GitLab only as the account the
- * Hive picked, and a GitHub workspace has neither even when the daemon inherited them. */
-export const GITLAB_ENV_NAMES = ['GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN', 'GITLAB_HOST', 'GITLAB_URI', 'GL_HOST'] as const;
+/** Every name glab reads a token, a host, an API host or protocol, or a repository from: no child started through withoutHiveEnv inherits
+ * them, so a run talks to GitLab only as the account the Hive picked, on its own host, and a GitHub workspace has none of them. */
+export const GITLAB_ENV_NAMES = [
+  'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN', 'GITLAB_HOST', 'GITLAB_URI', 'GL_HOST', 'GITLAB_API_HOST', 'GLAB_API_PROTOCOL', 'API_PROTOCOL', 'GITLAB_REPO',
+] as const;
 
 /** What the provider reads (AccountEnvDeps' members): the store, and the GitLab host of a workspace's origin, undefined off GitLab. */
 export interface GitlabEnvDeps { credentials(): Promise<Credentials>; gitlabOrigin(workspace: Workspace): Promise<string | undefined> }

@@ -132,5 +132,9 @@ test('ptyAccountEnv hands the seam the run\'s workspace, and a workspace env tha
   const asked: (string | undefined)[] = [];
   const seam: AccountSeam = (run) => { asked.push(run.workspace?.name); return accountEnv(run, ON_GITLAB); };
   const env = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P1', undefined, APP_WORKSPACE, { GITLAB_TOKEN: 'pinned' });
-  assert.deepEqual([env.GITLAB_TOKEN, env.GITLAB_HOST, asked], ['pinned', 'gitlab.com', ['app']]);
+  assert.deepEqual([env.GITLAB_TOKEN, env.GITLAB_HOST, asked], ['pinned', undefined, ['app']]);
+  const hostOnly = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P2', undefined, APP_WORKSPACE, { GITLAB_HOST: 'git.example.com' });
+  assert.deepEqual([hostOnly.GITLAB_TOKEN, hostOnly.GITLAB_HOST], [undefined, 'git.example.com'], 'the origin\'s token never rides with another host');
+  const none = await ptyAccountEnv({ accountEnv: seam, runAccounts: createRunAccounts() }, 'P3', undefined, APP_WORKSPACE, { Y: '1' });
+  assert.equal(none.GITLAB_HOST, 'gitlab.com', 'a workspace with no GitLab variable keeps the account\'s pair');
 });

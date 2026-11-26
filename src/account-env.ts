@@ -5,7 +5,7 @@
 // for the run's life, so a worker's report is attributed to the account its run started on.
 import { AccountError } from './account-error.js';
 import { runners } from './agents/registry.js';
-import { gitlabEnv } from './gitlab/account-env.js';
+import { GITLAB_ENV_NAMES, gitlabEnv } from './gitlab/account-env.js';
 import type { GhToken } from './github-token.js';
 import type { AccountProvider, AccountsConfig, AgentId, Credentials, Workspace } from './types.js';
 
@@ -70,7 +70,10 @@ export function createRunAccounts(): RunAccountsStore {
 export async function ptyAccountEnv(deps: { accountEnv: AccountSeam; runAccounts: Pick<RunAccountsStore, 'set'> }, ptyId: string, agent: AgentId | undefined, workspace: Workspace, workspaceEnv: Record<string, string>): Promise<Record<string, string>> {
   const account = await deps.accountEnv({ ...(agent === undefined ? {} : { agent }), workspace });
   deps.runAccounts.set(ptyId, account.accounts);
-  return { ...account.env, ...workspaceEnv };
+  // #1049: a workspace that sets any GitLab variable owns all of them, so the account's token never rides with a host the workspace named
+  const ownsGitlab = GITLAB_ENV_NAMES.some((name) => Object.hasOwn(workspaceEnv, name));
+  const env = ownsGitlab ? Object.fromEntries(Object.entries(account.env).filter(([name]) => !(GITLAB_ENV_NAMES as readonly string[]).includes(name))) : account.env;
+  return { ...env, ...workspaceEnv };
 }
 
 /** The account a worker's report is attributed to (#953): its run's, for its agent's provider; undefined for the machine's login, Codex or a

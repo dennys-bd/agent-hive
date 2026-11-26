@@ -94,7 +94,8 @@ test('withoutHiveEnv drops COPILOT_ALLOW_ALL: an inherited one would trust every
 });
 
 test('withoutHiveEnv drops every name glab reads a token or a host from, whatever the workspace: the seam adds back only the pair it resolved (#1049)', () => {
-  const base = { PATH: '/bin', GITLAB_TOKEN: 'a', GITLAB_ACCESS_TOKEN: 'b', OAUTH_TOKEN: 'c', GITLAB_HOST: 'gitlab.com', GITLAB_URI: 'https://gitlab.com', GL_HOST: 'gitlab.com' };
+  const base = { PATH: '/bin', GITLAB_TOKEN: 'a', GITLAB_ACCESS_TOKEN: 'b', OAUTH_TOKEN: 'c', GITLAB_HOST: 'gitlab.com', GITLAB_URI: 'https://gitlab.com', GL_HOST: 'gitlab.com',
+    GITLAB_API_HOST: 'api.example.com', GLAB_API_PROTOCOL: 'http', API_PROTOCOL: 'http', GITLAB_REPO: 'group/app' };
   assert.deepEqual(withoutHiveEnv(base), { PATH: '/bin' });
 });
 
