@@ -66,6 +66,8 @@ import { deleteActivityOnDisk } from './activity-delete.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { exitEvent } from './server-exit.js';
 import { readCredentials, saveClaudeCredential, writeCredentials } from './credentials.js';
+import { gitlabAccess } from './gitlab/account.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { cachedProbe, PROBE_TIMEOUT_MS, type Probe, probeServer } from './mcp-probe.js';
 import { registerMcpRoutes } from './server-mcp.js';
 import { serversFor } from './mcp-settings.js';
@@ -401,6 +403,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, { log, ...(auth === account.selection().auth ? { ghToken } : {}) }));
   // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
   const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
+  // #1053: a GitLab host's stored account for the Hive's own calls: the decomposition's MR, the benchmark's and a removal's merged MR
+  const gitlabAccessOf: GitlabAccess = (host) => gitlabAccess(host, deps.credentialsEnv);
   // #953: the accounts each pty's run resolved, for its life; the seam reads the live selection and the credential store at every spawn
   const runAccounts = createRunAccounts();
   // #962: gh's machine login rides with the selection: Copilot's account when accounts.copilot names none, never accounts.github's
@@ -1480,7 +1484,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp, machineFor, dropRunTmp: dropCapturedTmp, accountEnv: accountSeam, runAccounts }); // wake, forget (#696); the shim's register under /hooks/
   registerSemaphoreRoutes(app, { state: () => live?.state, semaphores: () => semaphores }); // #798: the shim's acquire and release under /hooks/, run now under /api/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
-  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783)
+  registerDecompositionRoutes(app, { requireLive, dispatch, latest: () => live?.state, exec, gql: cliGqlJson(gh), log, machineFor, gitlabAccess: gitlabAccessOf }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes; a transient failure's words go to hive.log (#702); latest: the hive write checks each step (#783); #1053: a checkout on GitLab through its host's account
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)
   // Settings › editor's installs and the syntax packages' files (#780); a removed server's processes stop first
   registerEditorInstallRoutes(app, { home, installer: createInstaller({ home, onState: notifyEditorInstall, beforeSwap: (t) => (t.kind === 'server' ? lsp.stopServer(t.id) : Promise.resolve()) }), stopServer: (id) => lsp.stopServer(id) });

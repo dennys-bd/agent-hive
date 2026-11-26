@@ -78,7 +78,7 @@ async function routes(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY, J
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
   const app = express();
   app.use(express.json());
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb }, sources: live } }), dispatch, latest: () => state, exec, gql, log: fakeLog().log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb, gitlabHosts: [] }, sources: live } }), dispatch, latest: () => state, exec, gql, log: fakeLog().log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined, gitlabAccess: async () => undefined });
   const server = app.listen(0);
   t.after(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(GOAL.item.itemId))}/decomposition`;

@@ -4,18 +4,22 @@ import { isDeepStrictEqual } from 'node:util';
 import { taskWorkspace } from './config.js';
 import { HIVE_OFF_MESSAGE, ORIGIN_TAKEN_MESSAGE } from './create-task.js';
 import { DONE_KEY, PR_KEY, decompositionTarget, fileAddress, recordedIssues, rootBody } from './decomposition.js';
-import { checkoutPreview, deliverDecomposition, type Delivery, type DeliveryRead, deliveryRefusal, hiveDeliveryWords, messageOf, OffGithubError, readDelivery } from './decomposition-deliver.js';
+import { checkoutKind, checkoutPreview, deliverDecomposition, type Delivery, type DeliveryRead, type DeliveryReadDeps, deliveryRefusal, hiveDeliveryWords, messageOf, OffGithubError, readDelivery } from './decomposition-deliver.js';
 import { entryStage, hiveEntries, type HiveWriteTarget, originTaken, suggestedEntry, writeHiveDecomposition } from './decomposition-write-hive.js';
 import type { DecompositionRouteDeps, Goal, Live } from './server-decomposition.js';
 import type { Refusal } from './server-tasks.js';
 import { HIVE_SOURCE } from './tasks.js';
-import { GITHUB_HOST } from './repo-host.js'; // temporary: Task 3 passes the checkout's host and drops this import
+import { issueUrl } from './repos/issue-task.js';
 import { HIVE_EPIC, type Decomposition, type DecompositionHive, type State } from './types.js';
 
 // git's stderr over Node's message, which carries the command and an absolute path; userinfo removed (security review of #783)
 const errorMessage = messageOf;
 // decision 4: a hive goal is the root of its own tree; any other goal gets a root task made from it
 const isHiveGoal = (goal: Goal): boolean => goal.task.item.source === undefined;
+
+/** #1053: what readDelivery takes: the Hive's GitHub login, the live config's GitLab hosts, read at this request, and each host's account. */
+export const deliveryDeps = (deps: Pick<DecompositionRouteDeps, 'gql' | 'gitlabAccess'>, current: Live): DeliveryReadDeps =>
+  ({ gql: deps.gql, gitlabHosts: current.runtime.config.gitlabHosts, gitlabAccess: deps.gitlabAccess });
 
 // Decision 5: no checkout, or one off GitHub, keeps the file local under the hive; its path is the one in the checkout off GitHub, else the
 // one the result names. Every other refusal is the GitHub target's. Nothing once pr is recorded (read is then undefined)
@@ -65,9 +69,9 @@ function checkHive(current: Live, goal: Goal, body: unknown): { stage?: string }
 
 // The checkout the file is delivered from; none when it stays local (#741, decision 5) or pr is recorded; or the GitHub target's refusal.
 // Any other read error is thrown, to the write's catch
-async function shippedOf(deps: DecompositionRouteDeps, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<Delivery | Refusal | undefined> {
+async function shippedOf(deps: DecompositionRouteDeps, current: Live, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<Delivery | Refusal | undefined> {
   if (recorded[PR_KEY] !== undefined) return undefined;
-  const read = await readDelivery(goal.machine, deps.gql, goal.file);
+  const read = await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file);
   if ('error' in read) {
     if (read.error instanceof OffGithubError) return undefined;
     throw read.error;
@@ -85,12 +89,16 @@ function targetOf(current: Live, goal: Goal, d: Decomposition, stage: string | u
     goal: goal.task, prefix: current.runtime.config.comb.prefix,
     ...(isHiveGoal(goal) ? {} : { root: { title: item.title, body: rootBody(d), url: item.url, origin: item.itemId } }),
     ...(stage === undefined ? {} : { stage }), ...(workspace === undefined ? {} : { workspace }),
-    ...(shipped === undefined ? {} : { address: fileAddress(GITHUB_HOST, shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
+    ...(shipped === undefined ? {} : { address: fileAddress(shipped.checkout.host, shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
   };
 }
 
 // Decision 15: the goal by its ref; a goal with no issue link is named by its display id
 const refOf = (goal: Goal): string => (isHiveGoal(goal) || goal.number === undefined ? goal.task.item.id : `${goal.repository ?? ''}#${goal.number}`);
+
+// #1053: a GitHub goal's issue link, which replaces its ref in a body read on GitLab
+const linkOf = (goal: Goal): string | undefined =>
+  (isHiveGoal(goal) || goal.number === undefined || goal.repository === undefined ? undefined : issueUrl(goal.repository, goal.number));
 
 // Decision 16: 502 with the hive code; the words go to hive.log
 function failed(deps: DecompositionRouteDeps, goal: Goal, message: string): HiveAnswer {
@@ -109,14 +117,14 @@ export async function writeHive(deps: DecompositionRouteDeps, current: Live, goa
   const recorded = recordedIssues(goal.result);
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
   try {
-    const shipped = await shippedOf(deps, goal, recorded);
+    const shipped = await shippedOf(deps, current, goal, recorded);
     if (shipped !== undefined && 'status' in shipped) return shipped;
     // every check has passed, so a refused press never locks the target; still before the first createTask (decision 6)
     if (decompositionTarget(goal.result) === undefined) await deps.dispatch({ type: 'decompositionTarget', taskId, target: HIVE_SOURCE });
     const written = await writeHiveDecomposition({ dispatch: deps.dispatch, latest: deps.latest, record }, d, targetOf(current, goal, d, checked.stage, shipped), recorded);
     if ('error' in written) return failed(deps, goal, written.error);
-    const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record }, {
-      checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...hiveDeliveryWords(refOf(goal), goal.task.item.title),
+    const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record, gitlabAccess: deps.gitlabAccess }, {
+      checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...hiveDeliveryWords(refOf(goal), goal.task.item.title, checkoutKind(shipped.checkout), linkOf(goal)),
     }, recorded);
     if (delivered !== undefined) return failed(deps, goal, delivered);
     await record(DONE_KEY, Number(written.root.slice(LOCAL_ITEM.length)));

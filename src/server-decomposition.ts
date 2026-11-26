@@ -5,16 +5,17 @@ import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { DONE_KEY, PR_KEY, decompositionPending, decompositionTarget, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
-import { checkoutPreview, type Delivery, deliverDecomposition, type DeliveryRead, deliveryRefusal, githubDeliveryWords, readDelivery, sourceDeliveryWords } from './decomposition-deliver.js';
+import { checkoutKind, checkoutPreview, type Delivery, deliverDecomposition, type DeliveryRead, deliveryRefusal, githubDeliveryWords, readDelivery, sourceDeliveryWords } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteOutcome, type WriteTarget } from './decomposition-write.js';
 import { isWritable, keyOfUrl, sourceRefusal, type SourceGoal, type WriteSource, writeSourceDecomposition } from './decomposition-write-source.js';
 import { resolveActivityPath } from './ide.js';
 import type { Logger } from './log.js';
+import type { GitlabAccess } from './gitlab/merge-requests.js';
 import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
 import { GITHUB_HOST } from './repo-host.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
-import { type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
+import { deliveryDeps, type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
 import { activityFolders, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
@@ -45,12 +46,13 @@ const HIVE_TARGET_MESSAGE = 'a decomposição já começou a ser escrita no hive
 /** What the decomposition's routes need (#865). */
 export interface DecompositionRouteDeps {
   machineFor: MachineFor; // #158: the activity's machine; the goal's file and git run on it
-  requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'>; sources: ReadonlyMap<string, Source> } } | undefined; // #832: sources, a Jira goal's own source writes it
+  requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb' | 'gitlabHosts'>; sources: ReadonlyMap<string, Source> } } | undefined; // #832: sources, a Jira goal's own source writes it; #1053: gitlabHosts, the file's checkout's host
 
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then markEpic (#556) and approve, or closeTask
   latest(): State | undefined; // #783: the state after each hive step's dispatch, which checks the step landed
   exec: Exec; // git remote get-url origin: a local goal's repository; the file's checkout, and the delivery's status, add, commit and push (#936)
   gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the issue page's writes (#757)
+  gitlabAccess: GitlabAccess; // #1053: a GitLab host's account: a checkout on GitLab reads its project and opens its merge request with it
   log: Logger; // #702: gh's words for a write that gave up on a transient error; the dialog shows its own copy
   sleep?(ms: number): Promise<void>; // the write's retry wait (#702); absent: a real timer. Tests pass a no-op
 }
@@ -216,9 +218,9 @@ async function sourceChoice(current: Live, goal: Goal, body: unknown): Promise<{
 }
 
 // As the GitHub target reads it: a read error is thrown (a 502), a refused delivery writes nothing, a file git ignores stays local (#741)
-async function shippedOf(deps: DecompositionRouteDeps, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<{ delivery?: Delivery } | Refusal> {
+async function shippedOf(deps: DecompositionRouteDeps, current: Live, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<{ delivery?: Delivery } | Refusal> {
   if (recorded[PR_KEY] !== undefined) return {};
-  const read = await readDelivery(goal.machine, deps.gql, goal.file);
+  const read = await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file);
   if ('error' in read) throw read.error;
   const refusal = deliveryRefusal(read.delivery.checkout, read.delivery.docs.defaultBranch, recorded);
   if (refusal !== undefined) return { status: HTTP_CONFLICT, message: refusal };
@@ -237,16 +239,16 @@ async function writeSource(deps: DecompositionRouteDeps, current: Live, goal: Go
   const refused = await sourceRefusal(chosen.source, d, target, hasBlockingType(current.runtime.config, goal.task.item.source));
   if (refused !== undefined) return refused;
   const recorded = recordedIssues(goal.result);
-  const shipped = await shippedOf(deps, goal, recorded);
+  const shipped = await shippedOf(deps, current, goal, recorded);
   if ('status' in shipped) return shipped;
   const taskId = goal.task.item.itemId;
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
   const { delivery } = shipped;
-  const address = delivery === undefined ? {} : { address: fileAddress(GITHUB_HOST, delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path) };
+  const address = delivery === undefined ? {} : { address: fileAddress(delivery.checkout.host, delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path) };
   const written = await writeSourceDecomposition({ source: chosen.source, record }, d, { goal: target, column: chosen.column, ...address }, recorded);
   if ('error' in written) return { status: written.status, message: written.error };
-  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record }, {
-    checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, ...sourceDeliveryWords(goal.key, goal.task.item.title),
+  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record, gitlabAccess: deps.gitlabAccess }, {
+    checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, ...sourceDeliveryWords(goal.key, goal.task.item.title, checkoutKind(delivery.checkout)),
   }, recorded);
   if (delivered !== undefined) return { status: HTTP_BAD_GATEWAY, message: delivered };
   await record(DONE_KEY, written.root);
@@ -277,24 +279,24 @@ async function write(base: DecompositionRouteDeps, current: Live, activityId: st
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
   const recorded = recordedIssues(goal.result);
   // Once pr is recorded nothing is delivered, so the checkout is not read: a moved or removed one cannot block finishing `done`
-  const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deps.gql, goal.file) : undefined;
+  const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file) : undefined;
   if (read !== undefined && 'error' in read) throw read.error; // the GitHub target refuses with its words, a 502 as before
   const delivery = read?.delivery;
   const refusal = delivery === undefined ? undefined : deliveryRefusal(delivery.checkout, delivery.docs.defaultBranch, recorded); // before any issue: a refused delivery writes nothing
   if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });
   // #741: a file git ignores stays local: no Design: link points at it and nothing is committed, pushed or opened as a PR
   const shipped = delivery?.checkout.ignored === true ? undefined : delivery;
-  const issues = delivery !== undefined && delivery.checkout.repository === repository ? delivery.docs : await readRepository(deps.gql, repository);
+  const issues = delivery !== undefined && delivery.checkout.host === GITHUB_HOST && delivery.checkout.repository === repository ? delivery.docs : await readRepository(deps.gql, repository);
   const target: WriteTarget = {
     repository: repository, repositoryId: issues.id, project,
     // no address, no Design: link: a file that stays local, or a recorded pr, by when every issue is written
-    ...(shipped === undefined ? {} : { address: fileAddress(GITHUB_HOST, shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
+    ...(shipped === undefined ? {} : { address: fileAddress(shipped.checkout.host, shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
     ...(goal.number === undefined ? {} : { goal: goal.number }),
   };
   const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, tree, target, recorded);
   if ('error' in written) return refuseWrite(deps.log, goal.task.item.id, written, res);
-  const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record }, {
-    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...githubDeliveryWords(repository, written.root),
+  const delivered = shipped === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record, gitlabAccess: deps.gitlabAccess }, {
+    checkout: shipped.checkout, repositoryId: shipped.docs.id, base: shipped.docs.defaultBranch, ...githubDeliveryWords(repository, written.root, checkoutKind(shipped.checkout)),
   }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);
@@ -319,7 +321,7 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
       if ('status' in goal) return refuse(res, goal);
       const recorded = recordedIssues(goal.result);
       // #783: read once, for both targets; nothing once pr is recorded
-      const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deps.gql, goal.file) : undefined;
+      const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file) : undefined;
       const name = goal.task.item.source ?? '';
       const sources = goal.key === undefined ? await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source) : await ownSourceOf(current, name);
       const shown = preview(goal, sources, deliveryPreview(read, recorded));

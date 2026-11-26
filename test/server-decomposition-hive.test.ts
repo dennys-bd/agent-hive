@@ -80,7 +80,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb, gitlabHosts: [] }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined, gitlabAccess: async () => undefined });
   const server = app.listen(0);
   t.after(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}/decomposition`;
@@ -112,7 +112,7 @@ test('a GitHub goal counts its root task and is not preselected; with hiveSource
 test('a checkout with no GitHub origin, and a file in no checkout, stay local under the hive with no refusal, while the GitHub target is still refused (#783)', async (t) => {
   // the file sits at its checkout's root, so the path in the checkout and the path the result names are both decomposition.md here;
   // test/decomposition-deliver.test.ts tells the two apart
-  const cases: [Setup, string][] = [[{ docsOrigin: '' }, 'the decomposition file\'s checkout has no GitHub origin'], [{ noCheckout: true }, 'the decomposition file is in no git checkout']];
+  const cases: [Setup, string][] = [[{ docsOrigin: '' }, 'the decomposition file\'s checkout has no GitHub or GitLab origin'], [{ noCheckout: true }, 'the decomposition file is in no git checkout']];
   for (const [setup, refusal] of cases) {
     const preview = await read((await routes(t, setup)).url);
     assert.deepEqual([preview.hive?.delivery, preview.hive?.deliveryRefusal, preview.deliveryRefusal], [{ path: 'decomposition.md', local: true }, undefined, refusal], refusal);
