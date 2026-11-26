@@ -256,3 +256,12 @@ test('in a workspace whose origin is on GitHub, a workspace shell starts with ne
   await waitFor(() => workers.length === 1);
   assert.deepEqual(gitlabPair(workers[0]), [undefined, undefined]);
 });
+
+test('a captured session in a workspace on gitlab.com exports GITLAB_TOKEN and GITLAB_HOST in its reply; no log line holds the token (#1049)', async (t) => {
+  t.mock.method(runners.claude, 'accountEnv', async () => ({ env: {} }));
+  const { base, lines } = await start(t, {}, { exec: originAt('git@gitlab.com:acme/app.git') });
+  const id = await openShell(base);
+  const [, count = '0', ...rest] = (await (await register(base, id)).text()).split('\n');
+  assert.deepEqual(rest.slice(0, Number(count)).filter((line) => line.startsWith('GITLAB_')), [`GITLAB_TOKEN=${GL_TEST}`, 'GITLAB_HOST=gitlab.com']);
+  assert.ok(lines.every((line) => !line.includes(GL_TEST)), 'no log line');
+});
