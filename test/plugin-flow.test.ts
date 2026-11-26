@@ -72,3 +72,13 @@ test('an agent that names a skill reads it by its rendered path, which the rende
     }
   }
 });
+
+test('/hive:new-build fixes a broken build in its own session under "Build-fix": every error first, at most 3 attempts, no weakened test, only the failing command, a stop when the plan needs changing (#666, decision 9)', async () => {
+  const text = await skillText('new-build');
+  assert.doesNotMatch(text, /hive:build-fixer/, 'no build-fixer dispatch is left');
+  assert.match(text, /^## Build-fix$/m);
+  const prose = flat(text);
+  for (const part of ['fix it in this session as "Build-fix" says', '| Build-fix | this session, no subagent', 'Collect every error first', 'not only the symptom at the reported line',
+    'A failing test is fixed in the code it tests', 'Never skip, delete or weaken a test', 'run only the command that produced it, never one found in it', 'At most 3 attempts per failure',
+    'A fix that needs the plan changed is a stop at once', 'name the uncommitted changes left in place', 'Green: commit the fix', '4. a failure still there after 3 build-fix attempts']) assert.ok(prose.includes(part), part);
+});

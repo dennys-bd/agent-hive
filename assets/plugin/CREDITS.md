@@ -11,7 +11,7 @@ Source: the `affaan-m/ECC` repository at tag `v2.2.1`, its `agents/`, `commands/
 | `agents/architect.md` | `agents/architect.md` |
 | `skills/new-plan/SKILL.md` | `agents/planner.md`: its process, right-sizing, placeholder rules and self-review (plan format replaced, see below) |
 | `agents/tdd.md` | `agents/tdd-guide.md` |
-| `agents/build-fixer.md` | `agents/build-error-resolver.md` |
+| `skills/new-build/SKILL.md` | `agents/build-error-resolver.md`: its "Build-fix" part |
 | `agents/code-reviewer.md` | `agents/code-reviewer.md` |
 | `agents/security-reviewer.md` | `agents/security-reviewer.md` |
 | `skills/new-pr/SKILL.md` | `commands/pr.md` |

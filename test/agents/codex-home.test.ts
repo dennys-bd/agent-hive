@@ -38,7 +38,7 @@ test('renderRole writes the instructions as one TOML string, and sandbox_mode on
   assert.equal(renderRole({ ...role, readOnly: false }), `${INSTRUCTIONS_KEY}${tomlString(role.instructions)}\n`, 'a writing agent: no sandbox key');
 });
 
-const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'system-design-reviewer', 'system-designer', 'tdd', 'template-reviewer'];
+const AGENT_NAMES = ['architect', 'code-reviewer', 'decomposition-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'system-design-reviewer', 'system-designer', 'tdd', 'template-reviewer'];
 const RENDERED = await renderedPlugin({ after }); // #416: assets/plugin holds designer.md.liquid; a run reads the delivered designer.md
 
 test('readAgent keeps name, description, tools, model and the body verbatim, a --- line in the body included; it stops at the second --- (#934, #758)', () => {
@@ -86,13 +86,22 @@ test('readAgent refuses a name that would escape the roles folder or split a -c 
   assert.equal(readAgent('x.md', '---\r\nname: x\r\ndescription: d.\r\n---\r\nbody').name, 'x');
 });
 
-test('agentRoles reads the fourteen agents of the delivered plugin in name order: five read-only, every body whole (#934, #416)', () => {
+test('agentRoles reads the thirteen agents of the delivered plugin in name order: five read-only, no frontmatter line in a body (#934, #416)', () => {
   const roles = agentRoles(RENDERED);
   assert.deepEqual(roles.map((r) => r.name), AGENT_NAMES);
   assert.deepEqual(roles.filter((r) => r.readOnly).map((r) => r.name), ['architect', 'decomposition-reviewer', 'plan-reviewer', 'spec-reviewer', 'template-reviewer']);
-  assert.ok(roles.find((r) => r.name === 'build-fixer')?.instructions.includes('\n---\n'), "build-fixer keeps its body's --- line");
-  assert.ok(roles.find((r) => r.name === 'build-fixer')?.instructions.trimEnd().endsWith('Speed and precision over perfection.'));
   assert.equal(roles.some((r) => /^(model|tools|name): /m.test(r.instructions.split('\n---\n')[0] ?? '')), false, 'no frontmatter line leaks into a body');
+});
+
+// #666: no shipped agent has a --- line in its body any more, so a fixture of the test's own keeps the check
+test('agentRoles keeps a body whole, its --- line and its last line included (#934)', async (t) => {
+  const dir = await tempDir(t, 'roles-');
+  await mkdir(join(dir, 'agents'));
+  const body = ['---', 'name: fixer', 'description: Fixes the build.', 'can: [read, write, shell]', '---', '', 'Fix it.', '', '---', '', 'Speed over perfection.', ''];
+  await writeFile(join(dir, 'agents', 'fixer.md'), body.join('\n'));
+  const [role] = agentRoles(dir);
+  assert.ok(role?.instructions.includes('\n---\n'), "the body's --- line is kept");
+  assert.ok(role?.instructions.trimEnd().endsWith('Speed over perfection.'), 'the body is read to its end');
 });
 
 test('renderRole: architect gets sandbox_mode, tdd none (#934)', () => {
