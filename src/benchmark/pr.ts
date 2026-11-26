@@ -199,11 +199,12 @@ async function createPr(gh: Run, input: PrInput): Promise<string> {
   }
 }
 
-// #1053: the MR through the host's account, never glab; its link must name the origin's own project, or nothing is answered
+// #1053: the MR through the host's account, never glab; its link must name the origin's own project, or nothing is answered. GitLab's
+// paths are case-insensitive and web_url spells the project its own way, which a remote may not: compared lowercased
 async function createMr({ host, project, api }: GitlabTarget, input: PrInput): Promise<string> {
   const { url } = await openMergeRequest(api, project, { source: input.branch, target: input.base, title: input.title, body: input.body });
   const link = parsePrLink(url);
-  if (link?.host !== host || link.repository !== project) throw new Error('GitLab answered no merge request of the origin\'s project');
+  if (link?.host !== host || link.repository.toLowerCase() !== project.toLowerCase()) throw new Error('GitLab answered no merge request of the origin\'s project');
   return url;
 }
 

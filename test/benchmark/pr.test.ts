@@ -223,6 +223,14 @@ test('openPr on a GitLab origin opens the merge request through the host\'s acco
   assert.deepEqual(gitlab.calls, [{ method: 'POST', path: 'projects/acme%2Fapp/merge_requests', body: { source_branch: 'feat/skills', target_branch: 'main', title: 'feat: Skills', description: INPUT.body } }]);
 });
 
+test('a merge request link spelling the origin\'s project in another case is the origin\'s own, and the push stays (#1053)', async () => {
+  const s = sequence();
+  const url = 'https://gitlab.com/Acme/App/-/merge_requests/7';
+  const gitlab = fakeGitlabApi({ [MR_ROUTE]: { iid: 7, web_url: url } });
+  assert.deepEqual(await openPr(s.deps, { ...INPUT, gitlab: { host: 'gitlab.com', project: 'acme/app', api: gitlab.api } }), { url });
+  assert.equal(shown(s.calls).some((c) => c.includes('--delete')), false);
+});
+
 test('a merge request link off the origin\'s project fails the pr step, and the pushed branch is deleted as after a gh failure (#1053)', async () => {
   const s = sequence();
   const gitlab = fakeGitlabApi({ [MR_ROUTE]: { iid: 7, web_url: 'https://gitlab.com/someone/else/-/merge_requests/7' } });
