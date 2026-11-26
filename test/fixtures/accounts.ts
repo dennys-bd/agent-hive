@@ -1,5 +1,6 @@
 import type { TestContext } from 'node:test';
 import type { AccountEnvDeps } from '../../src/account-env.js';
+import type { Workspace } from '../../src/types.js';
 import { runners } from '../../src/agents/registry.js';
 
 /** gh with no login (#962): Copilot's check refuses it as copilot/missing before anything is fetched. */
@@ -12,3 +13,8 @@ export const NO_ACCOUNTS: AccountEnvDeps = { accounts: {}, credentials: async ()
 export function copilotOnMachine(t: TestContext): void {
   t.mock.method(runners.copilot, 'accountEnv', async () => ({ env: {} }));
 }
+
+/** A workspace for the GitLab provider's tests (#1049): the seam reads only its name and path, through gitlabOrigin. */
+export const APP_WORKSPACE: Workspace = {
+  name: 'app', path: '/repo/app', env: {}, fork: null, nestedRepos: [], notNestedRepos: [], memoryCap: 4000, variables: {}, benchmarkPrIn: 'worktree', machine: 'local', color: 'oklch(0.72 0.12 25)',
+};

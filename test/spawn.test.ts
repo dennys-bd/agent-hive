@@ -6,7 +6,7 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { posixShell } from '../src/posix-shell.js';
-import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, shimsFirst, terminalEnv, verdictsLine, windowsShell, withHandoff, writePrompt, writeRunFiles } from '../src/spawn.js';
+import { HANDOFF_PROMPT, PWSH_LOADER, renderPrompt, runSession, runTmpDir, ptyCommand, ptyEnv, shimsFirst, terminalEnv, verdictsLine, windowsShell, withHandoff, withoutHiveEnv, writePrompt, writeRunFiles } from '../src/spawn.js';
 import { assertMode } from './posix-only.js';
 import { runners } from '../src/agents/registry.js';
 import { shellQuote } from '../src/shell-init.js';
@@ -91,6 +91,11 @@ test('withoutHiveEnv drops COPILOT_ALLOW_ALL: an inherited one would trust every
   const env = ptyEnv({ PATH: '/bin', COPILOT_ALLOW_ALL: 'true', HOME: '/Users/x' }, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH, 'darwin', COMMAND_SHIMS);
   assert.equal('COPILOT_ALLOW_ALL' in env, false);
   assert.equal(env.HOME, '/Users/x');
+});
+
+test('withoutHiveEnv drops every name glab reads a token or a host from, whatever the workspace: the seam adds back only the pair it resolved (#1049)', () => {
+  const base = { PATH: '/bin', GITLAB_TOKEN: 'a', GITLAB_ACCESS_TOKEN: 'b', OAUTH_TOKEN: 'c', GITLAB_HOST: 'gitlab.com', GITLAB_URI: 'https://gitlab.com', GL_HOST: 'gitlab.com' };
+  assert.deepEqual(withoutHiveEnv(base), { PATH: '/bin' });
 });
 
 test('runTmpDir is <base>/hive-runs/<ptyId>, under os.tmpdir() by default (#428)', () => {
