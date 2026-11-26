@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPrLink, hostKind, isGithubPrUrl, isPrUrl, type PrLink, parsePrLink, remoteRepository, repoKey } from '../src/repo-host.js';
+import { buildPrLink, hostKind, isPrUrl, isTrackedPrUrl, type PrLink, parsePrLink, PR_LINK_SHAPES, remoteRepository, repoKey } from '../src/repo-host.js';
 import { githubRepository } from '../src/task-refs.js';
 import { isPrUrl as orchestratorIsPrUrl } from '../src/orchestrator.js';
 import { prLink, prNumber, prRepo } from '../src/pull-requests.js';
@@ -51,10 +51,16 @@ test('a userinfo with ? # \\ or a space never hides the host git would reach (#1
   }
 });
 
-test('isGithubPrUrl takes a GitHub PR link only: an MR link waits for the host check (#1044, security review)', () => {
-  assert.equal(isGithubPrUrl('https://github.com/acme/app/pull/12'), true);
-  assert.equal(isGithubPrUrl('https://gitlab.com/acme/app/-/merge_requests/7'), false);
-  assert.equal(isGithubPrUrl('https://github.com/acme/app/pull/12/files'), false);
+test('isTrackedPrUrl takes a GitHub PR link and an MR on gitlab.com or a listed GitLab host; an MR on any other host is refused (#1052)', () => {
+  assert.equal(isTrackedPrUrl('https://github.com/acme/app/pull/12', []), true);
+  assert.equal(isTrackedPrUrl('https://gitlab.com/acme/app/-/merge_requests/7', []), true, 'gitlab.com needs no list');
+  assert.equal(isTrackedPrUrl('https://git.example.com/acme/platform/app/-/merge_requests/7', LISTED), true);
+  assert.equal(isTrackedPrUrl('https://git.example.com/acme/app/-/merge_requests/7', []), false, 'unlisted');
+  assert.equal(isTrackedPrUrl('https://code.example.org/acme/app/-/merge_requests/7', LISTED), false);
+  assert.equal(isTrackedPrUrl('https://github.com/acme/app/pull/12/files', LISTED), false, "the shape is parsePrLink's");
+  assert.match(PR_LINK_SHAPES, /https:\/\/github\.com\/<owner>\/<repo>\/pull\/<n>/);
+  assert.match(PR_LINK_SHAPES, /https:\/\/<gitlab host>\/<path>\/-\/merge_requests\/<n>/);
+  assert.match(PR_LINK_SHAPES, /gitlab\.com or one listed in Settings/);
 });
 
 test('parsePrLink reads a GitHub PR link and an MR link on any host name, and buildPrLink gives each back (#1044, decision 5)', () => {

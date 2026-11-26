@@ -46,7 +46,7 @@ const work0 = (server: HiveServer): Activity | undefined => activityOf(server.ge
 // dispatch logs every event it reduces at debug; the fake log keeps every level
 const dispatched = (lines: string[]): string[] => lines.filter((line) => EVENT_TYPES.some((type) => line.startsWith(`DEBUG ${type} `)));
 
-async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: LegacyStage[] = MCP_STAGES, extra: Partial<ServerDeps> = {}): Promise<Hive> {
+async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: LegacyStage[] = MCP_STAGES, extra: Partial<ServerDeps> = {}, body: Omit<SettingsBody, 'workspaces'> = BODY): Promise<Hive> {
   const { home, repo } = await tempHive(t, 1);
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
@@ -56,7 +56,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   const workspaces = workspacesAt(repo).map((w) => ({ ...w, ...workspace })); // what the workspace card saves: memoryCap (#73)
-  const saved = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, sources, workspaces, flows: bodyFlows(stages) }) });
+  const saved = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...body, sources, workspaces, flows: bodyFlows(stages) }) });
   assert.equal(saved.status, 200);
   await server.poll();
   await server.dispatch({ type: 'setSignal', signal: 'green' }); // the task spawns into the one worker
@@ -98,6 +98,26 @@ test('hive_pr and hive_ask dispatch pr and ask for the live worker (#99)', async
   assert.deepEqual([worker0(server).status, worker0(server).question, worker0(server).lastEvent], ['waiting', 'Which base?', { kind: 'ask' }]);
 });
 
+test('hive_pr records an MR on gitlab.com and on a GitLab host of Settings with no preload; an MR on any other host is refused naming both shapes (#1052)', async (t) => {
+  const preloaded: string[] = [];
+  const preloadPr = async (url: string): Promise<void> => { preloaded.push(url); };
+  const { base, server, ptyId } = await start(t, [GITHUB_ENTRY], {}, MCP_STAGES, { preloadPr }, { ...BODY, gitlabHosts: ['git.example.com'] });
+  const client = await connect(t, base, ptyId);
+  const description = (await client.listTools()).tools.find((tool) => tool.name === 'hive_pr')?.description ?? '';
+  assert.match(description, /merge_requests/, 'a worker on GitLab reads that it may call it');
+  const mrs = ['https://gitlab.com/acme/platform/app/-/merge_requests/7', 'https://git.example.com/acme/app/-/merge_requests/3'];
+  for (const url of mrs) assert.deepEqual(await call(client, 'hive_pr', { url }), { text: 'ok', isError: false }, url);
+  assert.deepEqual(prsOf(server.getState()!, task0(server).item.itemId).map((pr) => [pr.url, pr.state]), mrs.map((url) => [url, 'open']));
+  assert.deepEqual(preloaded, [], 'the preload reads GitHub only');
+  const refused = await call(client, 'hive_pr', { url: 'https://code.example.org/acme/app/-/merge_requests/9' });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /https:\/\/github\.com\/<owner>\/<repo>\/pull\/<n>/);
+  assert.match(refused.text, /https:\/\/<gitlab host>\/<path>\/-\/merge_requests\/<n>/);
+  assert.equal(prsOf(server.getState()!, task0(server).item.itemId).length, 2, 'nothing recorded');
+  assert.deepEqual(await call(client, 'hive_pr', { url: 'https://github.com/acme/r/pull/9' }), { text: 'ok', isError: false });
+  assert.deepEqual(preloaded, ['https://github.com/acme/r/pull/9']);
+});
+
 test('an unknown or missing worker id gets a tool error from every tool and dispatches nothing (#99)', async (t) => {
   const { base, server, lines } = await start(t);
   const before = JSON.stringify(server.getState());
@@ -128,8 +148,8 @@ test('each invalid input gets a tool error with its reason and dispatches nothin
   await refused('hive_done', { result: { blob: 'x'.repeat(64 * 1024) } }, /64 KB/);
   await refused('hive_pr', { url: 'http://github.com/acme/r/pull/9' }, /https/);
   await refused('hive_pr', { url: 'not a url' }, /https/);
-  await refused('hive_pr', { url: 'https://evil.example/acme/r/pull/9' }, /pull request URL/);
-  await refused('hive_pr', { url: 'https://gitlab.com/acme/r/-/merge_requests/9' }, /pull request URL/); // #1044: GitHub only until the host check lands
+  await refused('hive_pr', { url: 'https://evil.example/acme/r/pull/9' }, /merge_requests/);
+  await refused('hive_pr', { url: 'https://code.example.org/acme/r/-/merge_requests/9' }, /merge_requests/); // #1052: a host that is not GitLab
   await refused('hive_ask', { question: '   ' }, /1 to 2000/);
   await refused('hive_ask', { question: 'x'.repeat(2001) }, /1 to 2000/);
   await refused('hive_create_task', { title: ' ' }, /título obrigatório/);

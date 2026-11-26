@@ -11,7 +11,7 @@ import { isBlocked, stageOf, taskId } from './tasks.js';
 import { refsOf } from './server-blockers.js';
 import { verdictProblem, withVerdict } from './transit.js';
 import { MCP_ROUTE } from './hooks-settings.js';
-import { isGithubPrUrl } from './repo-host.js';
+import { GITHUB_HOST, isTrackedPrUrl, parsePrLink, PR_LINK_SHAPES } from './repo-host.js';
 import { appendMessage, markAgentResolved } from './review-store.js';
 import { workerReview } from './mcp-review.js';
 import { type Answer, livePtyId, type McpDeps, OK, recorded, refuse, reply, UNKNOWN_WORKER_MESSAGE } from './mcp-kit.js';
@@ -30,7 +30,7 @@ export type { McpDeps } from './mcp-kit.js';
 export const ASK_REPLY = 'ok: now ask it in chat and end your turn';
 const RESULT_OBJECT_MESSAGE = 'result must be a JSON object';
 const RESULT_SIZE_MESSAGE = `result, merged with the task's, is over ${RESULT_MAX_BYTES / 1024} KB serialized`;
-const URL_MESSAGE = 'url must be an https://github.com/<owner>/<repo>/pull/<n> pull request URL';
+const URL_MESSAGE = `url must be a pull request link: ${PR_LINK_SHAPES}`;
 const QUESTION_MESSAGE = `question must be 1 to ${QUESTION_MAX} characters`;
 const CLOSE_REASONS = ['wontDo', 'duplicate'] as const satisfies readonly CloseReason[];
 const DUPLICATE_OF_MESSAGE = 'duplicateOf needs reason "duplicate" and the original issue\'s number, a positive integer';
@@ -121,17 +121,19 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
     return held && exit ? refuse('no_transition', noTransitionMessage(held.task.stage, exit, result !== undefined)) : reply(OK);
   }, { keys: result && Object.keys(result) }));
   server.registerTool('hive_pr', {
-    description: 'Tell the Hive a pull request you opened or found open for this task (its https://github.com/<owner>/<repo>/pull/<n> URL); call it once per PR. '
+    description: `Tell the Hive a pull request you opened or found open for this task, a GitLab merge request included; call it once per PR. Its url is ${PR_LINK_SHAPES}. `
       + 'For a slice PR pass slice: its merge position k (1-based; the integration PR is the number of slices + 1) and the delivery mode.',
     inputSchema: { url: z.string(), slice: z.object({ k: z.number().int().min(1), type: z.enum(['stacked', 'integration']) }).optional() },
   }, async ({ url, slice }) => recorded(deps, header, 'hive_pr', async () => {
     const ptyId = livePtyId(deps, header);
     if (!ptyId) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
-    if (!isGithubPrUrl(url)) return refuse('bad_url', URL_MESSAGE);
+    // #1052: the live config's hosts, so a GitLab host saved in Settings counts at the next call
+    if (!isTrackedPrUrl(url, deps.live()?.config.gitlabHosts ?? [])) return refuse('bad_url', URL_MESSAGE);
     await deps.dispatch({ type: 'pr', ptyId, url, ...(slice ? { slice } : {}) });
     // #497: the PR's changes read and stored before its page opens. Never awaited, so the answer never waits on GitHub. The preload logs its own
-    // failures; this catch only keeps a rejection off the process
-    deps.preloadPr?.(url).catch(() => undefined);
+    // failures; this catch only keeps a rejection off the process.
+    // #1052: a GitHub link only, since the preload reads GitHub; an MR's changes are a later leaf's
+    if (parsePrLink(url)?.host === GITHUB_HOST) deps.preloadPr?.(url).catch(() => undefined);
     return reply(OK);
   }));
 }

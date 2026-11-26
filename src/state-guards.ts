@@ -71,7 +71,7 @@ function savedCheckpoints(value: unknown): Pick<Activity, 'checkpoints'> {
   return kept.length > 0 ? { checkpoints: kept } : {};
 }
 
-// A task's PRs (#207): an entry is kept only as a GitHub pull request link (it reaches an href and the PR query) in one of the three
+// A task's PRs (#207): an entry is kept only as a GitHub pull request or a GitLab merge request link (#1052; it reaches an href and the PR query) in one of the three
 // states, copied field by field. A file from before #207 has one prUrl: read as that PR, open, and the next poll corrects its state.
 const isTaskPr = (value: unknown): value is TaskPr =>
   isJsonObject(value) && typeof value.url === 'string' && isPrUrl(value.url) && PR_STATES.includes(value.state as PrState);

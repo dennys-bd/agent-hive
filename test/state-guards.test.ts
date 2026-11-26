@@ -51,6 +51,13 @@ test('savedPrs keeps the session that opened a PR across a load, only in the uui
   assert.deepEqual(savedPrs([{ url, state: 'open', sessionId: '--settings' }], undefined), [{ url, state: 'open' }]);
 });
 
+test('a persisted MR on gitlab.com and on a self-hosted GitLab host survives a load with its times: the shape check takes no list (#1052)', () => {
+  for (const url of ['https://gitlab.com/acme/platform/app/-/merge_requests/7', 'https://git.example.com/acme/app/-/merge_requests/3']) {
+    const pr = { url, state: 'merged' as const, openedAt: '2026-11-20T10:00:00.000Z', mergedAt: '2026-11-21T09:00:00.000Z' };
+    assert.deepEqual(savedPrs([pr], undefined), [pr], url);
+  }
+});
+
 test('a saved usage keeps its valid parts; one saved before the breakdown loads as one part with no stage and no agent; an invalid part is dropped, never the record, and what it held joins the part before the breakdown (#617)', () => {
   const total = { tokens: 30, ms: 600, waitingMs: 60 };
   const spec = { stage: 'spec', agent: 'claude', tokens: 20, ms: 400, waitingMs: 40 };

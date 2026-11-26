@@ -516,7 +516,7 @@ export type PrState = 'open' | 'merged' | 'closed';
 
 /** A PR the task's worker opened (#207): the link, and its state as the last poll saw it. */
 export interface TaskPr {
-  url: string; // a GitHub pull request link, the shape hive_pr and the gh pr create detection accept
+  url: string; // a GitHub pull request or a GitLab merge request link (#1052), as hive_pr, the gh pr create and glab mr create detections and POST /tasks accept it
   state: PrState;
   slice?: PrSlice; // #698: hive_pr's slice; absent on single, on the detection and on old data
   sessionId?: string; // #62: the Claude session of the worker that reported the PR first (hive_pr or the gh pr create detection); absent on old data

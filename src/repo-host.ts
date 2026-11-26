@@ -74,9 +74,15 @@ export const buildPrLink = ({ host, repository, number }: PrLink): string =>
 /** hive_pr's url and a stored PR's (decision 6): a link parsePrLink reads, a GitHub PR or an MR on any host name. */
 export const isPrUrl = (url: string): boolean => parsePrLink(url) !== undefined;
 
-/** What hive_pr and a task made from a PR take until the host check against gitlabHosts reaches them (#1051 to #1053): a GitHub PR link
- * only, since every reader of a stored link still calls GitHub with its path. */
-export const isGithubPrUrl = (url: string): boolean => parsePrLink(url)?.host === GITHUB_HOST;
+/** The link the entries take (#1052): hive_pr, the glab mr create detection and POST /tasks' pr. A GitHub PR, or an MR on gitlab.com or a host
+ * of gitlabHosts; an MR on any other host is refused, since the PR poll would never read it. */
+export function isTrackedPrUrl(url: string, gitlabHosts: readonly string[]): boolean {
+  const link = parsePrLink(url);
+  return link !== undefined && hostKind(link.host, gitlabHosts) !== undefined;
+}
+
+/** Both shapes isTrackedPrUrl takes, for the entries' refusals and hive_pr's description (#1052). */
+export const PR_LINK_SHAPES = 'https://github.com/<owner>/<repo>/pull/<n>, or https://<gitlab host>/<path>/-/merge_requests/<n> where the GitLab host is gitlab.com or one listed in Settings';
 
 /** A repository's one identity outside a route (#1045, decision 2): its host, then its path. The list deduplicates by it and the UI selects,
  * pins, pairs and keys rows by it, so one path on two hosts is two repositories. */
