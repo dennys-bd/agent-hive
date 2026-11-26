@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { deriveFacts } from '../src/fact-derive.js';
 import { describeEvent } from '../src/log.js';
 import { reduce, type Reduced } from '../src/orchestrator.js';
-import type { State } from '../src/types.js';
+import type { CiPrRead, State } from '../src/types.js';
 import { check, deepFreeze, effectOf, live, outputOf, polled, pr, read } from './fixtures/stage-ci.js';
 
 // #598: each check on its own clock. timeout bounds a running check from its own start; queueTimeout a queued one from its suite's creation,
@@ -104,4 +104,29 @@ test('an open PR that reports no check yet ends on queueTimeout from the wait\'s
   const seen = empty(plus(s, 1));
   const ticked = reduce(seen, { type: 'ciClock', activityId: live(seen)?.id ?? 'none', at: plus(s, 61) }).state;
   assert.equal(errorOf(ticked), 'CI failed: no checks (queued over 1h)');
+});
+
+const MR = 'https://gitlab.com/acme/app/-/merge_requests/3';
+const unread = (): CiPrRead => ({ url: MR, head: '', checks: [], unread: true });
+const UNREAD = "#3 (GitLab PR's CI is not read yet)";
+
+test('a GitLab PR\'s CI never passes a wait: beside a passed GitHub PR the wait holds and names it, and at queueTimeout it fails saying why (#1052)', () => {
+  const s = polled({ timeout: '10m', queueTimeout: '1h' }).state;
+  const both = (at: string): State => read(s, [pr([check('build', 'success')]), unread()], at).state;
+  const held = both(plus(s, 30));
+  assert.deepEqual([held.tasks[0].stage, live(held)?.stopped, live(held)?.ci?.unread], ['ci', undefined, [UNREAD]]);
+  const ended = both(plus(s, 61));
+  assert.deepEqual([errorOf(ended), outputOf(ended)], [`CI failed: ${UNREAD} (queued over 1h)`, `CI timed out · ${UNREAD} (queued over 1h)`]);
+  assert.equal(errorOf(read(s, [unread()], plus(s, 61)).state), `CI failed: ${UNREAD} (queued over 1h)`, 'an MR alone: no "no checks" beside it');
+  const unlimited = polled({ timeout: '10m' }).state;
+  assert.equal(live(read(unlimited, [unread()], plus(unlimited, 48 * 60)).state)?.stopped, undefined, 'no queueTimeout: it holds');
+});
+
+test('a tick names the unread GitLab PR from the last read; a read that changes nothing keeps the activity (#1052)', () => {
+  const s = polled({ timeout: '10m', queueTimeout: '1h' }).state;
+  const seen = read(s, [unread()], plus(s, 1)).state;
+  assert.equal(live(read(seen, [unread()], plus(s, 2)).state), live(seen), 'nothing new to save');
+  const ticked = reduce(seen, { type: 'ciClock', activityId: live(seen)?.id ?? 'none', at: plus(s, 61) }).state;
+  assert.equal(errorOf(ticked), `CI failed: ${UNREAD} (queued over 1h)`);
+  reduce(deepFreeze(seen), { type: 'ciClock', activityId: live(seen)?.id ?? 'none', at: plus(s, 61) });
 });

@@ -221,3 +221,14 @@ test('parseCi reads a signatures rule from the base\'s rulesets too, which refUp
   assert.deepEqual(parseCi([A], { p0: ruled(['PULL_REQUEST', 'REQUIRED_SIGNATURES']) })[0].unsigned, ['bbbbbbb']);
   assert.equal(parseCi([A], { p0: ruled(['PULL_REQUEST', 'DELETION', 7]) })[0].unsigned, undefined);
 });
+
+test('an unread read (a GitLab PR, #1052) counts no check and never passes: beside a passed PR the verdict is pending and names it; a failure elsewhere still fails', () => {
+  const mr = 'https://gitlab.com/acme/app/-/merge_requests/3';
+  const unread: CiPrRead = { url: mr, head: '', checks: [], unread: true };
+  const every = { ciChecks: 'all' as const };
+  assert.deepEqual(ciVerdict([read([check('build', 'success')]), unread], every), {
+    kind: 'pending', done: 1, total: 1, waitingPr: false, pending: [], unread: [mr], fellBack: false, checks: [{ name: 'build', state: 'success' }],
+  });
+  assert.deepEqual(ciVerdict([unread], { ciChecks: 'required' }), { kind: 'pending', done: 0, total: 0, waitingPr: false, pending: [], unread: [mr], fellBack: false, checks: [] }, 'no fallback marked for a PR not read');
+  assert.equal(ciVerdict([read([check('build', 'failure')]), unread], every).kind, 'failed');
+});

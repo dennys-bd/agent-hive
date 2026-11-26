@@ -590,6 +590,7 @@ export interface CiPrRead {
   behind?: true; // #669: mergeStateStatus BEHIND
   unsigned?: string[]; // #669: short shas of commits without a verified signature, only when the base requires signatures; absent when none
   required?: string[]; checks: CiCheck[]; awaiting?: string[]; canPush?: boolean; noCi?: true; // noCi: #11
+  unread?: true; // #1052: a GitLab PR, whose CI is not read until #790: no checks, the wait holds and names it
 }
 /** A failed Actions run to re-run (#834), by its repository (owner/name) and id. */
 export interface CiRerun { repo: string; runId: number }
@@ -609,6 +610,7 @@ export interface StageCi {
   awaiting?: number; // #854: workflows awaiting a maintainer's approval at the last read, for the card; dropped by a read without any
   noRerun?: true; // #854: a failure rerunOnce could not re-run (no push rights): the wait holds for a new push or a maintainer
   checks?: StageCiCheck[]; // #914: the last read's considered checks, ordered for the running block; not persisted, the next read writes them
+  unread?: string[]; // #1052: the last read's unread PRs as wait names, for a tick's timeout; not persisted, the next read writes them
 }
 /** How a wait-for-CI stage's failure starts on its activity's error (#834), the failed checks after it: the card shows it in the viewer's language. */
 export const CI_FAILED = 'CI failed: ';

@@ -79,6 +79,18 @@ test('nothing waiting sends no query; a wait with no open PR sends none either a
   assert.deepEqual([bare.queries, bare.events], [[], [{ type: 'ciRead', activityId: activityIdOf('local:1'), at: new Date(NOW).toISOString(), prs: [] }]]);
 });
 
+test('a GitLab PR is never sent to GitHub: a wait with only an MR sends no query and reads it unread; beside a GitHub PR only the GitHub one is queried (#1052)', async () => {
+  const mr = 'https://gitlab.com/acme/app/-/merge_requests/3';
+  const only = harness(stateOf([[task(1), { ci: WAIT }, [mr]]]));
+  await only.reader.readAll();
+  assert.deepEqual([only.queries, only.events], [[], [{ type: 'ciRead', activityId: activityIdOf('local:1'), at: new Date(NOW).toISOString(), prs: [{ url: mr, head: '', checks: [], unread: true }] }]]);
+  const both = harness(stateOf([[task(1), { ci: WAIT }, [APP, mr]]]), () => ({ p0: rollup('h1', [run('build', 'SUCCESS')]) }));
+  await both.reader.readAll();
+  assert.equal(both.queries.length, 1);
+  assert.ok(both.queries[0].includes(`p0: resource(url: "${APP}")`) && !both.queries[0].includes('merge_requests'), both.queries[0]);
+  assert.deepEqual(both.events.map((e) => (e.type === 'ciRead' ? e.prs.map((p) => [p.url, p.unread === true]) : e.type)), [[[APP, false], [mr, true]]]);
+});
+
 test('a task with one PR merged and one open reads only the open one; a merged PR drops out of the read (#304)', async () => {
   const MERGED = 'https://github.com/acme/app/pull/303';
   const OPEN = 'https://github.com/acme/app/pull/305';
