@@ -80,7 +80,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const { log, lines } = fakeLog();
   const app = express();
   app.use(express.json());
-  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined });
+  registerDecompositionRoutes(app, { requireLive: () => ({ state, runtime: { config: { comb, gitlabHosts: [] }, sources: new Map() } }), dispatch, latest: () => state, exec, gql, log, machineFor: () => fakeMachine({ exec }), sleep: async () => undefined, gitlabAccess: async () => undefined });
   const server = app.listen(0);
   t.after(() => server.close());
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}/decomposition`;
@@ -112,7 +112,7 @@ test('a GitHub goal counts its root task and is not preselected; with hiveSource
 test('a checkout with no GitHub origin, and a file in no checkout, stay local under the hive with no refusal, while the GitHub target is still refused (#783)', async (t) => {
   // the file sits at its checkout's root, so the path in the checkout and the path the result names are both decomposition.md here;
   // test/decomposition-deliver.test.ts tells the two apart
-  const cases: [Setup, string][] = [[{ docsOrigin: '' }, 'the decomposition file\'s checkout has no GitHub origin'], [{ noCheckout: true }, 'the decomposition file is in no git checkout']];
+  const cases: [Setup, string][] = [[{ docsOrigin: '' }, 'the decomposition file\'s checkout has no GitHub or GitLab origin'], [{ noCheckout: true }, 'the decomposition file is in no git checkout']];
   for (const [setup, refusal] of cases) {
     const preview = await read((await routes(t, setup)).url);
     assert.deepEqual([preview.hive?.delivery, preview.hive?.deliveryRefusal, preview.deliveryRefusal], [{ path: 'decomposition.md', local: true }, undefined, refusal], refusal);
@@ -250,4 +250,14 @@ test('a delivered hive write opens its PR named by the goal\'s ref and title: th
     assert.equal((await post(url, hive(ENTRY))).status, 200);
     assert.deepEqual(calls.filter((c) => c.query === CREATE_PULL_REQUEST).map((c) => c.variables.title), [title]);
   }
+});
+
+test('a file in a GitLab checkout with no account is refused under the hive too, never kept local: the preview names the host, POST is a 409 that records nothing (#1053)', async (t) => {
+  const noAccount = 'no GitLab account for gitlab.com: connect one in Settings › Accounts';
+  const { url, events, git } = await routes(t, { docsOrigin: 'git@gitlab.com:acme/docs.git' });
+  const preview = await read(url);
+  assert.deepEqual([preview.hive?.deliveryRefusal, preview.hive?.delivery, preview.deliveryRefusal], [noAccount, undefined, noAccount]);
+  const res = await post(url, hive(ENTRY));
+  assert.deepEqual([res.status, await res.json()], [409, { error: noAccount }]);
+  assert.deepEqual([events, git.some((a) => a.includes('push'))], [[], false], 'no target recorded, no task created');
 });

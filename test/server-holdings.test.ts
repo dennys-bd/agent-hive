@@ -11,6 +11,8 @@ import { worktreePath } from '../src/worktree.js';
 import { WORKSPACE, workspacesAt } from './fakes.js';
 import { activityIdOf, withLocal, withWork } from './fixtures/work.js';
 import { HOST_PATHS } from './fake-machine.js';
+import type { GitlabAccess } from '../src/gitlab/merge-requests.js';
+import { fakeGitlabApi } from './fake-gitlab.js';
 
 // The holdings of WORKSPACE (#750): local tasks local:<n>, each with its live activity in the workspace when a test gives it one, over a repo
 // no test touches (git is a fake, and no workspace here has nested repos).
@@ -85,16 +87,18 @@ function fakeGit(world: World): { exec: Exec; calls: string[][] } {
   return { exec, calls };
 }
 
-// The holdings route alone over `state` and a Comb of WORKSPACE at REPO; log.error's lines land in `errors`
-function serve(t: TestContext, state: State, exec: Exec): { url: (name?: string) => string; errors: string[] } {
+// The holdings route alone over `state` and a Comb of WORKSPACE at REPO; log.error's lines land in `errors`, log.info's in `infos`
+function serve(t: TestContext, state: State, exec: Exec, gitlab: { hosts?: string[]; access?: GitlabAccess } = {}): { url: (name?: string) => string; errors: string[]; infos: string[] } {
   const app = express();
   const errors: string[] = [];
+  const infos: string[] = [];
   const config = { comb: { workspaces: workspacesAt(REPO) } as Config['comb'] };
-  registerHoldingsRoute(app, { exec, log: { info: () => undefined, error: (message: string) => { errors.push(message); } }, requireLive: () => ({ state, runtime: { config, promptsDir: '' } }) });
+  const log = { info: (message: string) => { infos.push(message); }, error: (message: string) => { errors.push(message); } };
+  registerHoldingsRoute(app, { exec, log, requireLive: () => ({ state, runtime: { config, promptsDir: '' } }), gitlabHosts: () => gitlab.hosts ?? [], gitlabAccess: gitlab.access ?? (async () => undefined) });
   const server = app.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { url: (name = WORKSPACE) => `${base}/workspaces/${name}/holdings`, errors };
+  return { url: (name = WORKSPACE) => `${base}/workspaces/${name}/holdings`, errors, infos };
 }
 
 const read = async (url: string): Promise<[number, unknown]> => {
@@ -193,4 +197,17 @@ test('GET /workspaces/:name/holdings: 404 for a workspace not in the config, run
     assert.deepEqual(await read(failing.url()), [500, { error: 'unexpected' }], fault);
     assert.deepEqual(failing.errors, [`holdings ${WORKSPACE}: fatal: ${fault} broke`], fault);
   }
+});
+
+test('GET /workspaces/:name/holdings leaves out a branch its GitLab MR merged at the tip, and keeps one whose host has no account, logged (#1053)', async (t) => {
+  const mr = (host: string, n: number): TaskPr[] => [{ url: `https://${host}/acme/app/-/merge_requests/${n}`, state: 'merged' }];
+  const state = stateOf([2, 3].map((n) => task(n)), { 2: { ...ON_DISK(2), prs: mr('gitlab.com', 2) }, 3: { ...ON_DISK(3), prs: mr('git.example.com', 3) } });
+  const git = fakeGit({ worktrees: [2, 3].map((n): [string, string] => [SLUG(n), BRANCH(n)]), tips: { [BRANCH(2)]: MERGED_TIP, [BRANCH(3)]: MERGED_TIP } });
+  const { api } = fakeGitlabApi({ 'GET projects/acme%2Fapp/merge_requests/2': { state: 'merged', sha: MERGED_TIP } });
+  const h = serve(t, state, git.exec, { hosts: ['git.example.com'], access: async (host) => (host === 'gitlab.com' ? api : undefined) });
+  const [status, body] = await read(h.url());
+  assert.equal(status, 200);
+  assert.deepEqual((body as WorkspaceHoldings).branches, [{ slug: SLUG(3), branch: BRANCH(3), target: 'HEAD' }]);
+  assert.ok(h.infos.includes('mergedByPr https://git.example.com/acme/app/-/merge_requests/3: no GitLab account for git.example.com'), h.infos.join('\n'));
+  assert.equal(git.calls.some(([file]) => file === 'gh'), false);
 });

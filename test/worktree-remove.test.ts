@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withGhMachine, type GhEnv } from '../src/github-account.js';
-import type { Activity, Exec, TaskPr } from '../src/types.js';
-import { cleanWorktree, mergedByPr, removeWorktree } from '../src/worktree-remove.js';
+import type { Activity, Exec } from '../src/types.js';
+import { cleanWorktree, mergedByPr, NO_GITLAB, removeWorktree } from '../src/worktree-remove.js';
 import { worktreePath } from '../src/worktree.js';
 import { fakeMachine } from './fakes.js';
-import { tempDir, type AfterHost } from './temp-dir.js';
+import { tempDir } from './temp-dir.js';
 import { BRANCH, CLEAN_BRANCH, fakeExec, gone, listing, porcelain, repoWith, SLUG } from './worktree-fakes.js';
 import { HOST_PATHS } from './fake-machine.js';
+import { CLOSED_PR, cleanGit, cleanRepo, GONE_UPSTREAM, MERGE_CHECK, mergedPr, OPEN_PR, PR, squashed, TIP, UPSTREAM_FORMAT } from './worktree-clean-fakes.js';
 
 const TASK = { slug: 'hive-7-fix' };
 const NOT_FOUND = "Command failed: git -C /r branch -D -- hive-7-fix\nerror: branch 'hive-7-fix' not found.\n";
@@ -78,43 +79,6 @@ test('a branch that does not exist is swallowed; any other git error propagates 
 // ---- cleanWorktree: the delete activity stage's action, no force ----
 
 
-const UPSTREAM_FORMAT = '--format=%(upstream)%00%(upstream:track)'; // mergeCheck's one read: the upstream and whether git calls it gone (#660)
-const GONE_UPSTREAM = 'refs/remotes/origin/hive/58-clear-worktree';
-
-// cleanWorktree's git: lists `listed`, knows `branches`, answers the status read inside the worktree with `answers.status` and the
-// branch's upstream and its track with `answers.upstream` / `answers.track`, refuses the commands in `refuse` (key: the first two words) with their stderr and exit
-// code 1, and records every argv after `-C <dir>`.
-function cleanGit(repo: string, listed: string, branches: string[], refuse: Record<string, string> = {}, answers: { status?: string; upstream?: string; track?: string } = {}): { exec: Exec; calls: string[][] } {
-  const calls: string[][] = [];
-  const fail = (command: string[], stderr: string): never => {
-    throw Object.assign(new Error(`Command failed: git ${command.join(' ')}`), { stderr, code: 1 });
-  };
-  const exec: Exec = async (file, args) => {
-    assert.equal(file, 'git');
-    const command = args.slice(2);
-    const dir = command[0] === 'status' ? worktreePath(HOST_PATHS, repo, SLUG) : repo;
-    assert.deepEqual(args.slice(0, 2), ['-C', dir], 'the status is read inside the worktree; every other command runs against the main checkout');
-    calls.push(command);
-    const key = command.slice(0, 2).join(' ');
-    if (key in refuse) return fail(command, refuse[key]);
-    if (key === 'worktree list') return { stdout: listed };
-    if (key === 'rev-parse --verify') return branches.includes(command.at(-1)!.replace('refs/heads/', '')) ? { stdout: '0123456\n' } : fail(command, '');
-    if (key === 'status --porcelain') return { stdout: answers.status ?? '' };
-    if (key === `for-each-ref ${UPSTREAM_FORMAT}`) return { stdout: `${answers.upstream ?? ''}\0${answers.track ?? ''}\n` };
-    return { stdout: '' };
-  };
-  return { exec, calls };
-}
-
-// What the pre-check runs for CLEAN_BRANCH with no upstream: the upstream lookup, then the ancestry test against HEAD.
-const MERGE_CHECK = [['for-each-ref', UPSTREAM_FORMAT, `refs/heads/${CLEAN_BRANCH}`], ['merge-base', '--is-ancestor', `refs/heads/${CLEAN_BRANCH}`, 'HEAD']];
-
-async function cleanRepo(t: AfterHost, worktree: boolean): Promise<{ repo: string; path: string }> {
-  const repo = await tempDir(t, 'wt-');
-  const path = worktreePath(HOST_PATHS, repo, SLUG);
-  if (worktree) await mkdir(path, { recursive: true });
-  return { repo, path };
-}
 
 test('a registered worktree whose directory exists is removed, then its branch deleted; the branch is the one the listing names', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
@@ -197,32 +161,6 @@ test('an upstream git reads [gone] with the branch not in HEAD refuses with unme
   assert.equal(gone.calls.some((c) => c[1] === 'remove' || c[0] === 'branch'), false);
 });
 
-const PR = 'https://github.com/acme/app/pull/58';
-const OPEN_PR = 'https://github.com/acme/app/pull/59';
-const CLOSED_PR = 'https://github.com/acme/app/pull/57';
-const TIP = '0123456'; // what cleanGit's rev-parse --verify answers for a branch it knows
-const mergedPr = (url = PR): TaskPr => ({ url, state: 'merged' });
-
-// cleanGit's exec with gh in front (#660): `gh pr view <url>` answers heads[url] as a MERGED PR at that head; any other url fails as gh does.
-// Every gh argv is recorded.
-function withGh(git: Exec, heads: Record<string, string>): { exec: Exec; gh: string[][] } {
-  const gh: string[][] = [];
-  const exec: Exec = async (file, args, opts) => {
-    if (file !== 'gh') return git(file, args, opts);
-    gh.push(args);
-    const head = heads[args[2] ?? ''];
-    if (head === undefined) throw Object.assign(new Error('Command failed: gh pr view'), { stderr: 'GraphQL: Could not resolve to a PullRequest\n', code: 1 });
-    return { stdout: JSON.stringify({ state: 'MERGED', headRefOid: head }) };
-  };
-  return { exec, gh };
-}
-
-// A squash-merged branch as git sees it: never an ancestor of HEAD; gh answers `heads`
-function squashed(repo: string, path: string, heads: Record<string, string>): { exec: Exec; calls: string[][]; gh: string[][] } {
-  const git = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' });
-  const { exec, gh } = withGh(git.exec, heads);
-  return { exec, calls: git.calls, gh };
-}
 
 test('a squashed branch whose tip is the head its merged PR merged goes with update-ref -d at that tip after its worktree, the PR read once through gh (#660)', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
@@ -367,7 +305,7 @@ async function mergedTokens(ghEnv: GhEnv): Promise<(string | undefined)[]> {
     tokens.push(opts?.env?.GH_TOKEN);
     return { stdout: JSON.stringify({ state: 'MERGED', headRefOid: TIP }) };
   };
-  assert.equal(await mergedByPr(withGhMachine(fakeMachine({ exec }), ghEnv), '/repo', CLEAN_BRANCH, [mergedPr()]), TIP);
+  assert.equal((await mergedByPr(withGhMachine(fakeMachine({ exec }), ghEnv), '/repo', CLEAN_BRANCH, [mergedPr()], NO_GITLAB)).tip, TIP);
   return tokens;
 }
 

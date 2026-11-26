@@ -911,6 +911,7 @@ const en = {
   'confirm.forceDeleteActivity': 'force the removal? Uncommitted changes and commits not pushed are lost for good.',
   'deleteActivity.refused.dirty': '{path} has changes that are not committed:\n{files}', // #660: the force popup's first paragraph, per refusal code
   'deleteActivity.refused.unmerged': 'the branch {branch} is not merged into {target}',
+  'deleteActivity.refused.noAccount': 'connect a GitLab account for {host} in Settings to read its PR', // #1053: one line per host the removal could not read
   'deleteActivity.refused.unexpected': 'Unexpected error',
   'deleteActivity.failed': 'Unexpected error', // #660: a failed delete's toast; git's words are in hive.log
   'confirm.removeOrphanWorktree': 'remove this worktree? No task owns it. The worktree and its local branch are deleted.',
@@ -2972,8 +2973,9 @@ const en = {
   'benchmark.pr.failed.rebase': 'the rebase failed',
   'benchmark.pr.failed.files': 'the benchmark\'s files could not be removed',
   'benchmark.pr.failed.push': 'the push failed',
-  'benchmark.pr.failed.pr': 'the PR could not be created on GitHub',
+  'benchmark.pr.failed.pr': 'the PR could not be created on {host}', // #1053: the origin's host
   'benchmark.pr.failed.unknown': 'the PR could not be opened',
+  'benchmark.pr.noAccount': 'no GitLab account for {host}: connect one in Settings › accounts', // #1053
   // #461: the benchmark sidebar, benchmark.hv.html's #left-sidebar
   'benchmark.sidebar.search': 'search experiments',
   'benchmark.sidebar.title': 'experiments',
@@ -4588,6 +4590,7 @@ const pt: Record<MessageKey, string> = {
   'confirm.forceDeleteActivity': 'forçar a remoção? Mudanças não commitadas e commits não enviados são perdidos de vez.',
   'deleteActivity.refused.dirty': '{path} tem mudanças não commitadas:\n{files}',
   'deleteActivity.refused.unmerged': 'o branch {branch} não está mergeado em {target}',
+  'deleteActivity.refused.noAccount': 'conecte uma conta do GitLab para {host} na configuração para ler o PR dele',
   'deleteActivity.refused.unexpected': 'Erro inesperado',
   'deleteActivity.failed': 'Erro inesperado',
   'confirm.removeOrphanWorktree': 'remover essa worktree? Nenhuma tarefa é dona dela. A worktree e o branch local são apagados.',
@@ -6643,8 +6646,9 @@ const pt: Record<MessageKey, string> = {
   'benchmark.pr.failed.rebase': 'o rebase falhou',
   'benchmark.pr.failed.files': 'não foi possível tirar os arquivos do benchmark',
   'benchmark.pr.failed.push': 'o push falhou',
-  'benchmark.pr.failed.pr': 'não foi possível criar o PR no GitHub',
+  'benchmark.pr.failed.pr': 'não foi possível criar o PR em {host}',
   'benchmark.pr.failed.unknown': 'não foi possível abrir o PR',
+  'benchmark.pr.noAccount': 'nenhuma conta do GitLab para {host}: conecte uma na configuração › contas',
   // #461: the benchmark sidebar, benchmark.hv.html's #left-sidebar
   'benchmark.sidebar.search': 'buscar experimentos',
   'benchmark.sidebar.title': 'experimentos',

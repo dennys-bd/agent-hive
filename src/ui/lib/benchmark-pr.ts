@@ -31,10 +31,12 @@ export function runLabel(run: BenchRun, best: BenchRun | undefined): string {
 export const initialRun = (experiment: Experiment, token: string | undefined): BenchRun | undefined =>
   endedRuns(experiment).find((r) => r.token === token) ?? bestRun(experiment);
 
-/** The line under the body for a problem shown nowhere else; a conflict, a dirty checkout and the branch's problems sit beside their field. */
-export function problemText(problem: PrProblem | undefined): string | undefined {
+/** The line under the body for a problem shown nowhere else; a conflict, a dirty checkout and the branch's problems sit beside their field.
+ * `host` (#1053): the preview's, which the pr step's failure names. */
+export function problemText(problem: PrProblem | undefined, host = ''): string | undefined {
   switch (problem?.error) {
-    case 'failed': return t(`benchmark.pr.failed.${problem.step}`);
+    case 'failed': return t(`benchmark.pr.failed.${problem.step}`, { host });
+    case 'no-account': return t('benchmark.pr.noAccount', { host: problem.host });
     case 'busy': return t('benchmark.pr.busy');
     case 'no-commits': return t('benchmark.pr.noCommits');
     case 'not-ended': return t('benchmark.pr.notEnded');

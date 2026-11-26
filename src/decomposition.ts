@@ -3,6 +3,7 @@
 import { BODY_MAX, checkNodes, labelProblems, type NodeLines, parentOf, type ParsedNode } from './decomposition-check.js';
 import { overlapWarnings } from './decomposition-overlap.js';
 import type { Decomposition, DecompositionNode, DecompositionProblem } from './types.js';
+import { GITHUB_HOST, type HostKind } from './repo-host.js';
 
 /** The keys of result.decompositionIssues besides node ids (#865): a local goal's root issue, a GitHub goal's design comment (the goal's
  * number), and the write's end (the root epic's number), recorded by the route once everything is done (#936), which tells a written tree
@@ -210,19 +211,30 @@ export interface IssueLinks { parent: string; design?: string }
 const LINK_ROOM = 1024;
 export const CHECK_LINKS: IssueLinks = { parent: `#${Number.MAX_SAFE_INTEGER}`, design: 'x'.repeat(LINK_ROOM) };
 
-/** GitHub's anchor of a heading (#936): lowercased, every character but a letter, a digit, a space, `-` or `_` dropped, each space a `-`. */
-export const anchorOf = (heading: string): string => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+/** A heading's anchor (#936): lowercased, every character but a letter, a digit, a space, `-` or `_` dropped, each space a `-`. GitLab
+ * (#1053) also collapses two or more `-` in a row, so a heading with ` - ` still lands on its anchor. */
+export const anchorOf = (heading: string, kind: HostKind): string => {
+  const github = heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+  return kind === 'gitlab' ? github.replace(/-{2,}/g, '-') : github;
+};
 
-/** The decomposition file on its repository's default branch (#936): valid once its PR merges, so it outlives the branch. */
-export const fileAddress = (repository: string, branch: string, path: string): string =>
-  `https://github.com/${repository}/blob/${[...branch.split('/'), ...path.split('/')].map(encodeURIComponent).join('/')}`;
+const blobPath = (branch: string, path: string): string => [...branch.split('/'), ...path.split('/')].map(encodeURIComponent).join('/');
+
+/** The decomposition file on its repository's default branch (#936): valid once its PR merges, so it outlives the branch. GitLab's form is
+ * /-/blob/ (#1053). */
+export const fileAddress = (host: string, repository: string, branch: string, path: string): string =>
+  (host === GITHUB_HOST ? `https://${GITHUB_HOST}/${repository}/blob/${blobPath(branch, path)}` : `https://${host}/${repository}/-/blob/${blobPath(branch, path)}`);
+
+// The address fileAddress built says its host: the anchor follows that host's rule (#1053)
+const addressKind = (address: string): HostKind => (address.startsWith(`https://${GITHUB_HOST}/`) ? 'github' : 'gitlab');
 
 /** A node's `Design:` link (#936): its parent's heading in the file, or the goal's `## Design` for a top-level node. ponytail: GitHub suffixes
  * a repeated anchor, so two nodes whose ids differ only by dots and share a title (1.2 A, 12 A) both link the first */
 export function designLink(d: Decomposition, node: DecompositionNode, address: string): string {
+  const kind = addressKind(address);
   const parent = d.nodes.find((n) => n.id === parentOf(node.id));
-  if (parent === undefined) return d.design === undefined ? address : `${address}#${anchorOf('Design')}`; // no `## Design`, no anchor to land on
-  return `${address}#${anchorOf(`${parent.id} ${parent.title}`)}`;
+  if (parent === undefined) return d.design === undefined ? address : `${address}#${anchorOf('Design', kind)}`; // no `## Design`, no anchor to land on
+  return `${address}#${anchorOf(`${parent.id} ${parent.title}`, kind)}`;
 }
 
 // The `## Decomposition` block (#936): what has no native GitHub relation, plus Parent: for the reader; a line only when it has a value

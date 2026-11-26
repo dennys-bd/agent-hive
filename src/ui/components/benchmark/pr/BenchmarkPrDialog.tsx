@@ -7,7 +7,7 @@ import { initialRun, problemText } from '@/lib/benchmark-pr';
 import { type BenchPrPreview, endedRuns, suggestBranch } from '../../../../benchmark/pr-pick.js';
 import { type Experiment, isBranchName } from '../../../../types.js';
 
-export type PreviewState = { state: 'loading' } | { state: 'ready'; preview: BenchPrPreview } | { state: 'failed' };
+export type PreviewState = { state: 'loading' } | { state: 'ready'; preview: BenchPrPreview } | { state: 'failed'; problem: PrProblem }; // #1053: why, so no-account names its host
 interface BenchmarkPrDialogProps { experiment: Experiment; token?: string; onClose(): void }
 
 // The picked run's preview, read again on every pick; an answer for a run no longer picked is dropped
@@ -19,12 +19,16 @@ function usePreview(experimentId: string, token: string | undefined): PreviewSta
     setPreview({ state: 'loading' });
     readPrPreview(experimentId, token).then(
       (read) => { if (live) setPreview({ state: 'ready', preview: read }); },
-      () => { if (live) setPreview({ state: 'failed' }); },
+      (err: unknown) => { if (live) setPreview({ state: 'failed', problem: prProblemOf(err) }); },
     );
     return () => { live = false; };
   }, [experimentId, token]);
   return preview;
 }
+
+// #1053: a preview refused for want of an account names its host; any other failure keeps its fixed line
+const previewFailure = (problem: PrProblem): string =>
+  (problem.error === 'no-account' ? t('benchmark.pr.noAccount', { host: problem.host }) : t('benchmark.pr.failed.preview'));
 
 /** Open a PR with a benchmark run (#477), dlg-pr of docs/agent/design/benchmark.hv.html: one ended run's code out of its isolated origin and
  *  into a PR on the workspace's repository. Exported for the result screen (2.6) and the report tab (2.7), which mount it while it is open. */
@@ -52,7 +56,7 @@ export function BenchmarkPrDialog({ experiment, token, onClose }: BenchmarkPrDia
     <DialogBase
       open onOpenChange={(isOpen) => { if (!isOpen) onClose(); }} title={t('benchmark.pr.title', { letter })} context={t('benchmark.pr.context', { letter })}
       primary={{ label: t('benchmark.pr.open'), onConfirm: open, disabled: !canOpen }}
-      error={preview.state === 'failed' ? t('benchmark.pr.failed.preview') : problemText(problem)}
+      error={preview.state === 'failed' ? previewFailure(preview.problem) : problemText(problem, preview.state === 'ready' ? preview.preview.host : '')}
     >
       <PrFields
         experiment={experiment} picked={picked} preview={preview} branch={branch} isBranchValid={isBranchValid} withSummary={withSummary} problem={problem}

@@ -1,5 +1,7 @@
 // The forced and the clean removal of a task's worktree live here, out of worktree.ts (#159); everything goes through the machine that hosts it.
 import type { Logger } from './log.js';
+import { type GitlabAccess, mergedMrHead } from './gitlab/merge-requests.js';
+import { GITHUB_HOST, hostKind, type PrLink, parsePrLink } from './repo-host.js';
 import { type Machine, type MachineExec, pathsOf } from './machine.js';
 import { ownBranch } from './task-runs.js';
 import { branchAt, gitAnswers, gitOrWords, refuseDirty, RemovalRefusal, setAside, wordsOf } from './worktree-base.js';
@@ -47,9 +49,15 @@ export type BeforeRemove = (path: string, present: boolean) => Promise<void>;
 /** What a clear does with a branch `branch -d` would refuse (#267): refuse, as delete activity does, or set it aside, as the start dialog's discard does. */
 export type Unmerged = 'refuse' | 'setAside';
 
+/** Where mergedByPr reads a merged link (#1053): the live config's GitLab hosts, read at the request, and each host's account. */
+export interface PrHosts { gitlabHosts: readonly string[]; gitlabAccess: GitlabAccess }
+/** gitlab.com alone and no account on any host: a removal that hands no PR in (an orphan's, a discard's). */
+export const NO_GITLAB: PrHosts = { gitlabHosts: [], gitlabAccess: async () => undefined };
+
 /** cleanWorktree's choices: what an unmerged branch gets (#267), the workspace's nestedRepos, whose worktrees in this one go first (#653), the
- * task's PRs, which mergedByPr reads for a branch git calls unmerged, and where a PR read that failed is logged (#660). */
-export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[]; prs?: readonly TaskPr[]; log?: Pick<Logger, 'info'> }
+ * task's PRs, which mergedByPr reads for a branch git calls unmerged, and where a PR read that failed is logged (#660); `hosts` (#1053),
+ * where a GitLab link is read. */
+export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[]; prs?: readonly TaskPr[]; log?: Pick<Logger, 'info'>; hosts?: PrHosts }
 
 /**
  * The delete activity stage's action, and the first try of the ⋯ menu's delete activity (#182): removes the task's worktree and its local
@@ -66,7 +74,7 @@ export interface CleanOptions { unmerged?: Unmerged; nested?: readonly string[];
  */
 export async function cleanWorktree(
   machine: Machine, repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, beforeRemove?: BeforeRemove,
-  { unmerged = 'refuse', nested = [], prs = [], log }: CleanOptions = {},
+  { unmerged = 'refuse', nested = [], prs = [], log, hosts = NO_GITLAB }: CleanOptions = {},
 ): Promise<void> {
   const { exec } = machine;
   const path = worktreePath(machine.paths, repo, slugOfWork(activity));
@@ -81,16 +89,17 @@ export async function cleanWorktree(
     await refuseDirtyNested(machine, nestedOf, path); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
   }
   const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
-  // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway
-  const byPr = found !== undefined && check?.merged === false ? await mergedByPr(machine, repo, found, prs, log) : undefined;
-  if (found !== undefined && check?.merged === false && byPr === undefined && unmerged === 'refuse') throw unmergedError(found, check.target);
+  // #660: a squash leaves the branch off HEAD; its PRs say whether it was merged anyway. #1053: a refusal names the hosts it had no account for
+  const byPr = found !== undefined && check?.merged === false ? await mergedByPr(machine, repo, found, prs, hosts, log) : undefined;
+  const tip = byPr?.tip;
+  if (found !== undefined && check?.merged === false && tip === undefined && unmerged === 'refuse') throw unmergedError(found, check.target, byPr?.noAccount ?? []);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
   await removeNested(machine, nestedOf, path, named, false); // #653: inside out; a gone outer folder holds none, so this only prunes
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
   if (found === undefined) return;
   // #660: branch -d refuses a squashed branch whatever was checked; update-ref deletes only the tip mergedByPr verified, so a commit made since
   // (the teardown runs in between) makes git refuse instead of losing it
-  if (byPr !== undefined) await gitOrWords(repo, ['update-ref', '-d', `refs/heads/${found}`, byPr], exec);
+  if (tip !== undefined) await gitOrWords(repo, ['update-ref', '-d', `refs/heads/${found}`, tip], exec);
   // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout
   else if (check?.merged === false) await setAside(repo, found, exec);
   else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
@@ -109,8 +118,12 @@ async function mergeCheck(repo: string, branch: string, exec: MachineExec): Prom
   return { merged: await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, target], exec), target };
 }
 
-const unmergedError = (branch: string, target: string): RemovalRefusal =>
-  new RemovalRefusal(`the branch '${branch}' is not fully merged into ${target}`, { reason: 'unmerged', branch, target });
+// #1053: the English sentence names the hosts too, for hive.log and the delete-activity stage's error
+function unmergedError(branch: string, target: string, noAccount: readonly string[] = []): RemovalRefusal {
+  const why = noAccount.length === 0 ? '' : ` (no GitLab account for ${noAccount.join(', ')} to read its PR)`;
+  const refusal = { reason: 'unmerged' as const, branch, target, ...(noAccount.length === 0 ? {} : { noAccount: [...noAccount] }) };
+  return new RemovalRefusal(`the branch '${branch}' is not fully merged into ${target}${why}`, refusal);
+}
 
 /** What `branch -d` refuses, checked first (#182): rejects with the reason when the branch is not merged (mergeCheck). */
 export async function refuseUnmerged(machine: Pick<Machine, 'exec'>, repo: string, branch: string): Promise<void> {
@@ -120,18 +133,34 @@ export async function refuseUnmerged(machine: Pick<Machine, 'exec'>, repo: strin
 
 const PR_READ_TIMEOUT_MS = 30_000; // one gh pr view: a hung read must not hold the delete
 
-/** A branch git calls unmerged that its PRs merged (#660): no PR still open, at least one merged, and the local tip is the head GitHub merged
+/** What mergedByPr answers (#1053): the verified tip, absent when the PRs did not merge the branch, and the GitLab hosts it had no account for. */
+export interface ByPr { tip?: string; noAccount: string[] }
+
+/** A branch git calls unmerged that its PRs merged (#660): no PR still open, at least one merged, and the local tip is the head its host merged
  * for one of them, so a commit made after the merge still refuses. Only the PRs the record holds as merged are read, at delete time, since the
- * record may be a poll behind; a read that fails, or an answer that is not MERGED, counts as not merged: a failing read never deletes.
- * Answers the verified tip, which the deletion passes to update-ref; undefined = not merged by its PRs. */
-export async function mergedByPr(machine: Pick<Machine, 'exec'>, repo: string, branch: string, prs: readonly TaskPr[], log?: Pick<Logger, 'info'>): Promise<string | undefined> {
-  const { exec } = machine;
-  // the record's links passed isPrUrl when stored; https:// only keeps a `-` off gh's argv anyway
-  const merged = prs.filter((pr) => pr.state === 'merged' && pr.url.startsWith('https://'));
-  if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return undefined;
-  const tip = (await gitOrWords(repo, ['rev-parse', '--verify', `refs/heads/${branch}`], exec)).trim();
-  const heads = await Promise.all(merged.map((pr) => mergedHead(pr.url, exec, log)));
-  return heads.includes(tip) ? tip : undefined;
+ * record may be a poll behind; a read that fails, or an answer that is not merged, counts as not merged: a failing read never deletes.
+ * #1053: a github.com link reads through gh, a GitLab host's through its account, any other link not at all. */
+export async function mergedByPr(machine: Pick<Machine, 'exec'>, repo: string, branch: string, prs: readonly TaskPr[], hosts: PrHosts, log?: Pick<Logger, 'info'>): Promise<ByPr> {
+  const merged = prs.filter((pr) => pr.state === 'merged');
+  if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return { noAccount: [] };
+  const tip = (await gitOrWords(repo, ['rev-parse', '--verify', `refs/heads/${branch}`], machine.exec)).trim();
+  const reads = await Promise.all(merged.map((pr) => headOf(pr.url, machine.exec, hosts, log)));
+  const noAccount = [...new Set(reads.flatMap((read) => (read.noAccount === undefined ? [] : [read.noAccount])))];
+  return reads.some((read) => read.head === tip) ? { tip, noAccount } : { noAccount };
+}
+
+type HeadRead = { head?: string; noAccount?: string };
+
+// The link by its host: parsePrLink's github.com through gh (its https:// keeps a `-` off gh's argv), a GitLab host of the list through its
+// account; a link of no host kind is never read
+async function headOf(url: string, exec: MachineExec, hosts: PrHosts, log?: Pick<Logger, 'info'>): Promise<HeadRead> {
+  const link = parsePrLink(url);
+  if (link?.host === GITHUB_HOST) return { head: await mergedHead(url, exec, log) };
+  if (link === undefined || hostKind(link.host, hosts.gitlabHosts) !== 'gitlab') {
+    log?.info(`mergedByPr ${url}: not a GitHub PR or a GitLab host's merge request`);
+    return {};
+  }
+  return mergedMr(url, { ...link, host: link.host.toLowerCase() }, hosts.gitlabAccess, log);
 }
 
 // The head GitHub merged for the PR, undefined when gh fails or GitHub does not call it MERGED; either is logged with the url
@@ -147,3 +176,20 @@ async function mergedHead(url: string, exec: MachineExec, log?: Pick<Logger, 'in
   return undefined;
 }
 
+// #1053: the head GitLab merged, through the host's account; no account answers the host, a failing read or another state none. The
+// client's words name the host and never carry the token
+async function mergedMr(url: string, link: PrLink, access: GitlabAccess, log?: Pick<Logger, 'info'>): Promise<HeadRead> {
+  try {
+    const api = await access(link.host);
+    if (api === undefined) {
+      log?.info(`mergedByPr ${url}: no GitLab account for ${link.host}`);
+      return { noAccount: link.host };
+    }
+    const head = await mergedMrHead(api, link.repository, link.number);
+    if (head === undefined) log?.info(`mergedByPr ${url}: not merged on GitLab`);
+    return head === undefined ? {} : { head };
+  } catch (err) {
+    log?.info(`mergedByPr ${url}: ${wordsOf(err)}`);
+    return {};
+  }
+}
