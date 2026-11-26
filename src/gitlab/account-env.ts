@@ -15,15 +15,13 @@ export interface GitlabEnvDeps { credentials(): Promise<Credentials>; gitlabOrig
  * glab gets the 401 and Settings shows the row as expired (#1048). */
 export async function gitlabEnv(workspace: Workspace | undefined, deps: GitlabEnvDeps): Promise<Record<string, string>> {
   if (workspace === undefined) return {};
+  // The store first: with no GitLab account stored, no spawn pays for a git call on its origin
+  const stored = await deps.credentials().catch(() => undefined);
+  const hosts = stored?.gitlab ?? {};
+  if (stored !== undefined && Object.keys(hosts).length === 0) return {};
   const host = await deps.gitlabOrigin(workspace);
   if (host === undefined) return {};
-  let stored: Credentials;
-  try {
-    stored = await deps.credentials();
-  } catch {
-    throw new AccountError('gitlab', 'unreachable'); // never the cause's message: a store's error may quote what it read
-  }
-  const hosts = stored.gitlab ?? {};
+  if (stored === undefined) throw new AccountError('gitlab', 'unreachable'); // never the cause's message: a store's error may quote what it read
   const account = Object.hasOwn(hosts, host) ? hosts[host] : undefined;
   return account === undefined ? {} : { GITLAB_TOKEN: account.token, GITLAB_HOST: host };
 }

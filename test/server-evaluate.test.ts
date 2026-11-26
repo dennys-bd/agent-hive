@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,9 @@ import { send, settingsBody } from './review-server.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { NO_ACCOUNTS } from './fixtures/accounts.js';
+
+// #1049: a GitLab account stored, so the seam reads the origin; built at runtime, no token in a fixture
+const GITLAB_TOKEN_OF_TEST = `glpat-test-${randomUUID()}`;
 
 // An evaluate stage on the server (#877): the runner alone over a real git worktree and a fake agent CLI first on PATH (no real claude or
 // codex ever runs), then the Stop route through a server.
@@ -86,7 +90,7 @@ async function harness(t: TestContext, { env = {}, agents = ALL, added, onPrepar
   let isDropped = false;
   const h: Pick<Harness, 'events' | 'prepared' | 'logs' | 'origins'> = { events: [], prepared: [], logs: [], origins: [] };
   const runner = createEvaluateRunner({
-    exec: git, agents, accountDeps: () => ({ ...NO_ACCOUNTS, gitlabOrigin: async (workspace) => { h.origins.push(workspace.name); return undefined; } }), // #1049
+    exec: git, agents, accountDeps: () => ({ ...NO_ACCOUNTS, credentials: async () => ({ gitlab: { 'gitlab.com': { token: GITLAB_TOKEN_OF_TEST, username: 'ana' } } }), gitlabOrigin: async (workspace) => { h.origins.push(workspace.name); return undefined; } }), // #1049
     log: { info: (line) => h.logs.push(line), warn: (line) => h.logs.push(line) },
     dispatch: async (event) => { h.events.push(event); return []; },
     prepare: async (_r, _a, _t, key) => { h.prepared.push(key); onPrepare?.(); return worktree; },

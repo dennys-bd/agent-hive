@@ -26,12 +26,14 @@ test('a workspace whose origin is on a GitLab host with an account gets GITLAB_T
   assert.deepEqual(await gitlabEnv(APP_WORKSPACE, deps('git.example.com')), { GITLAB_TOKEN: EXPIRED_TOKEN, GITLAB_HOST: 'git.example.com' }, 'glab gets the 401; Settings shows expired');
 });
 
-test('no account for the host, an origin off GitLab and no workspace give neither variable; off GitLab the store is never read (#1049)', async () => {
+test('no account for the host, an origin off GitLab and no workspace give neither variable; with no GitLab account stored the origin is never read (#1049)', async () => {
   assert.deepEqual(await gitlabEnv(APP_WORKSPACE, deps('code.example.org')), {}, 'a GitLab host with no account');
   assert.deepEqual(await gitlabEnv(APP_WORKSPACE, deps('toString')), {}, 'own entries only');
-  assert.deepEqual(await gitlabEnv(APP_WORKSPACE, deps('gitlab.com', async () => ({}))), {}, 'an empty store');
+  const empty = deps('gitlab.com', async () => ({}));
+  assert.deepEqual(await gitlabEnv(APP_WORKSPACE, empty), {}, 'an empty store');
+  assert.deepEqual(empty.asked, [], 'no GitLab account stored: no git call on the origin');
   const broken = async (): Promise<Credentials> => { throw new Error('never read'); };
-  assert.deepEqual(await gitlabEnv(APP_WORKSPACE, deps(undefined, broken)), {}, 'GitHub, no origin, a remote of no kind or a failing git: gitlabOrigin answers none');
+  assert.deepEqual(await gitlabEnv(APP_WORKSPACE, deps(undefined, broken)), {}, 'GitHub, no origin, a remote of no kind or a failing git: a rejecting store refuses only a GitLab origin');
   const none = deps('gitlab.com', broken);
   assert.deepEqual(await gitlabEnv(undefined, none), {});
   assert.deepEqual(none.asked, [], 'no workspace: no origin read');
