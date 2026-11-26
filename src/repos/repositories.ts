@@ -28,6 +28,13 @@ export async function originRef(machine: Pick<Machine, 'exec'>, path: string, gi
   return read === undefined ? undefined : { host: read.host, repository: read.repository };
 }
 
+/** The GitLab host of a checkout's origin (#1049), the host a run's glab acts on: none on GitHub, on a host of no kind, with no origin or a
+ * failing git. The run env seam reads it at every spawn, so a remote changed since is honoured. */
+export async function gitlabOriginHost(machine: Pick<Machine, 'exec'>, path: string, gitlabHosts: readonly string[]): Promise<string | undefined> {
+  const origin = await originRef(machine, path, gitlabHosts);
+  return origin !== undefined && hostKind(origin.host, gitlabHosts) === 'gitlab' ? origin.host : undefined;
+}
+
 // A workspace's own repositories (#854): a fork's original then its fork when both are on GitHub, else its origin, a fork with a remote on
 // GitLab included (#1045, decision 5)
 async function ownRefs(machine: Pick<Machine, 'exec'>, workspace: Workspace, gitlabHosts: readonly string[]): Promise<MaybeRef[]> {
