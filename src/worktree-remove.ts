@@ -5,6 +5,7 @@ import { ownBranch } from './task-runs.js';
 import { branchAt, gitAnswers, gitOrWords, refuseDirty, RemovalRefusal, setAside, wordsOf } from './worktree-base.js';
 import { refuseDirtyNested, removeNested } from './worktree-nested.js';
 import { exists, hasBranch, slugOfWork, worktreePath } from './worktree.js';
+import { GITHUB_HOST, parsePrLink } from './repo-host.js';
 import type { Activity, TaskPr } from './types.js';
 
 const BRANCH_NOT_FOUND = /error: branch '.*' not found/; // git branch -D on a branch already deleted; execFile's message embeds the stderr
@@ -126,8 +127,9 @@ const PR_READ_TIMEOUT_MS = 30_000; // one gh pr view: a hung read must not hold 
  * Answers the verified tip, which the deletion passes to update-ref; undefined = not merged by its PRs. */
 export async function mergedByPr(machine: Pick<Machine, 'exec'>, repo: string, branch: string, prs: readonly TaskPr[], log?: Pick<Logger, 'info'>): Promise<string | undefined> {
   const { exec } = machine;
-  // the record's links passed isPrUrl when stored; https:// only keeps a `-` off gh's argv anyway
-  const merged = prs.filter((pr) => pr.state === 'merged' && pr.url.startsWith('https://'));
+  // #1052: gh reads GitHub only, so a merged GitLab MR is never sent to it and counts as not merged until #1053 reads it on GitLab. parsePrLink
+  // is anchored on https://, which also keeps a `-` off gh's argv
+  const merged = prs.filter((pr) => pr.state === 'merged' && parsePrLink(pr.url)?.host === GITHUB_HOST);
   if (merged.length === 0 || prs.some((pr) => pr.state === 'open')) return undefined;
   const tip = (await gitOrWords(repo, ['rev-parse', '--verify', `refs/heads/${branch}`], exec)).trim();
   const heads = await Promise.all(merged.map((pr) => mergedHead(pr.url, exec, log)));

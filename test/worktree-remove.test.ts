@@ -263,6 +263,19 @@ test('a PR closed without a merge beside a merged one neither blocks nor is read
   assert.deepEqual(f.calls.at(-1), ['update-ref', '-d', `refs/heads/${CLEAN_BRANCH}`, TIP]);
 });
 
+test('a merged GitLab MR is never sent to gh pr view: beside a merged GitHub PR only the GitHub one is read; alone it counts as not merged (#1052)', async (t) => {
+  const mr = 'https://gitlab.com/acme/app/-/merge_requests/58';
+  const first = await cleanRepo(t, true);
+  const both = squashed(first.repo, first.path, { [PR]: TIP, [mr]: TIP });
+  await cleanWorktree(fakeMachine({ exec: both.exec }), first.repo, { slug: SLUG }, CLEAN_BRANCH, undefined, { prs: [mergedPr(mr), mergedPr()] });
+  assert.deepEqual(both.gh.map((args) => args[2]), [PR]);
+  assert.deepEqual(both.calls.at(-1), ['update-ref', '-d', `refs/heads/${CLEAN_BRANCH}`, TIP]);
+  const second = await cleanRepo(t, true);
+  const alone = squashed(second.repo, second.path, { [mr]: TIP });
+  await assert.rejects(cleanWorktree(fakeMachine({ exec: alone.exec }), second.repo, { slug: SLUG }, CLEAN_BRANCH, undefined, { prs: [mergedPr(mr)] }), { refusal: { reason: 'unmerged', branch: CLEAN_BRANCH, target: 'HEAD' } });
+  assert.deepEqual(alone.gh, [], 'no gh call at all');
+});
+
 test('a PR the record holds as merged that GitHub no longer calls MERGED (reopened since the poll) counts as not merged, logged at info (#660)', async (t) => {
   const { repo, path } = await cleanRepo(t, true);
   const git = cleanGit(repo, porcelain(repo, [[path, CLEAN_BRANCH]]), [CLEAN_BRANCH], { 'merge-base --is-ancestor': '' });
