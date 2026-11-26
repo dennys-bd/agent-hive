@@ -384,3 +384,14 @@ test('POST on a GitHub goal whose file sits in a GitLab checkout links /-/blob/ 
   assert.ok(opened);
   assert.match(String((opened.body as { description?: unknown }).description), /^The decomposition of https:\/\/github\.com\/acme\/site\/issues\/7\. .* once this merge request merges\.$/);
 });
+
+const NO_ACCOUNT = 'no GitLab account for gitlab.com: connect one in Settings › Accounts';
+
+test('a file in a GitLab checkout with no account: GET shows the refusal naming the host, POST refuses 409 before any issue is written or anything pushed (#1053)', async (t) => {
+  const { url, events, calls, git } = await routes(t, { docsOrigin: 'git@gitlab.com:acme/docs.git' });
+  const read = (await (await fetch(url)).json()) as DecompositionPreview;
+  assert.deepEqual([read.deliveryRefusal, 'delivery' in read], [NO_ACCOUNT, false]);
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [409, { error: NO_ACCOUNT }]);
+  assert.deepEqual([events, calls.some((c) => c.query === CREATE_ISSUE), git.some((a) => a.includes('push'))], [[], false, false]);
+});

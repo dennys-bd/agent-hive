@@ -15,7 +15,7 @@ import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
 import { GITHUB_HOST } from './repo-host.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
-import { deliveryDeps, type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
+import { accountRefusal, deliveryDeps, type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
 import { activityFolders, MISSING_FILE_MESSAGE } from './server-files.js';
 import type { Refusal } from './server-tasks.js';
 import type { GqlJson } from './sources/github-gql.js';
@@ -221,7 +221,7 @@ async function sourceChoice(current: Live, goal: Goal, body: unknown): Promise<{
 async function shippedOf(deps: DecompositionRouteDeps, current: Live, goal: Goal, recorded: Readonly<Record<string, number>>): Promise<{ delivery?: Delivery } | Refusal> {
   if (recorded[PR_KEY] !== undefined) return {};
   const read = await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file);
-  if ('error' in read) throw read.error;
+  if ('error' in read) return accountRefusal(read.error); // #1053: no GitLab account is a 409; any other read error is thrown, a 502
   const refusal = deliveryRefusal(read.delivery.checkout, read.delivery.docs.defaultBranch, recorded);
   if (refusal !== undefined) return { status: HTTP_CONFLICT, message: refusal };
   return read.delivery.checkout.ignored ? {} : { delivery: read.delivery };
@@ -280,7 +280,7 @@ async function write(base: DecompositionRouteDeps, current: Live, activityId: st
   const recorded = recordedIssues(goal.result);
   // Once pr is recorded nothing is delivered, so the checkout is not read: a moved or removed one cannot block finishing `done`
   const read = recorded[PR_KEY] === undefined ? await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file) : undefined;
-  if (read !== undefined && 'error' in read) throw read.error; // the GitHub target refuses with its words, a 502 as before
+  if (read !== undefined && 'error' in read) return refuse(res, accountRefusal(read.error)); // #1053: no GitLab account is a 409; any other read error is thrown, the 502 with its words as before
   const delivery = read?.delivery;
   const refusal = delivery === undefined ? undefined : deliveryRefusal(delivery.checkout, delivery.docs.defaultBranch, recorded); // before any issue: a refused delivery writes nothing
   if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });

@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { taskWorkspace } from './config.js';
 import { HIVE_OFF_MESSAGE, ORIGIN_TAKEN_MESSAGE } from './create-task.js';
 import { DONE_KEY, PR_KEY, decompositionTarget, fileAddress, recordedIssues, rootBody } from './decomposition.js';
-import { checkoutKind, checkoutPreview, deliverDecomposition, type Delivery, type DeliveryRead, type DeliveryReadDeps, deliveryRefusal, hiveDeliveryWords, messageOf, OffGithubError, readDelivery } from './decomposition-deliver.js';
+import { checkoutKind, checkoutPreview, deliverDecomposition, type Delivery, type DeliveryRead, type DeliveryReadDeps, deliveryRefusal, hiveDeliveryWords, messageOf, NoGitlabAccountError, OffGithubError, readDelivery } from './decomposition-deliver.js';
 import { entryStage, hiveEntries, type HiveWriteTarget, originTaken, suggestedEntry, writeHiveDecomposition } from './decomposition-write-hive.js';
 import type { DecompositionRouteDeps, Goal, Live } from './server-decomposition.js';
 import type { Refusal } from './server-tasks.js';
@@ -20,6 +20,13 @@ const isHiveGoal = (goal: Goal): boolean => goal.task.item.source === undefined;
 /** #1053: what readDelivery takes: the Hive's GitHub login, the live config's GitLab hosts, read at this request, and each host's account. */
 export const deliveryDeps = (deps: Pick<DecompositionRouteDeps, 'gql' | 'gitlabAccess'>, current: Live): DeliveryReadDeps =>
   ({ gql: deps.gql, gitlabHosts: current.runtime.config.gitlabHosts, gitlabAccess: deps.gitlabAccess });
+
+/** #1053: no account for the checkout's GitLab host is the user's to fix: a 409 before any write, on every target. Any other read error is
+ * rethrown, to the route's 502 as before. */
+export function accountRefusal(error: unknown): Refusal {
+  if (error instanceof NoGitlabAccountError) return { status: HTTP_CONFLICT, message: error.message };
+  throw error;
+}
 
 // Decision 5: no checkout, or one off GitHub, keeps the file local under the hive; its path is the one in the checkout off GitHub, else the
 // one the result names. Every other refusal is the GitHub target's. Nothing once pr is recorded (read is then undefined)
@@ -74,7 +81,7 @@ async function shippedOf(deps: DecompositionRouteDeps, current: Live, goal: Goal
   const read = await readDelivery(goal.machine, deliveryDeps(deps, current), goal.file);
   if ('error' in read) {
     if (read.error instanceof OffGithubError) return undefined;
-    throw read.error;
+    return accountRefusal(read.error);
   }
   const refusal = deliveryRefusal(read.delivery.checkout, read.delivery.docs.defaultBranch, recorded);
   if (refusal !== undefined) return { status: HTTP_CONFLICT, message: refusal };

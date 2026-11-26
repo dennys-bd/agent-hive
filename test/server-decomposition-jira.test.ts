@@ -49,7 +49,7 @@ function fakeSource() {
   return { source, made, related, comments };
 }
 
-async function routes(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY, JIRA_ENTRY]) {
+async function routes(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY, JIRA_ENTRY], docsOrigin = DOCS_ORIGIN) {
   const repo = await realpath(await tempDir(t, 'hive-832-'));
   const worktree = worktreePath(HOST_PATHS, repo, SLUG);
   await mkdir(worktree, { recursive: true });
@@ -64,7 +64,7 @@ async function routes(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY, J
     if (args.includes('--show-toplevel')) return { stdout: `${worktree}\n` };
     if (args.includes('check-ignore')) throw Object.assign(new Error('Command failed: git check-ignore'), { code: 1, stderr: '' });
     if (args.includes('--show-current')) return { stdout: 'hive/abc-1-site\n' };
-    if (args.includes('get-url')) return { stdout: `${args[1] === worktree ? DOCS_ORIGIN : ''}\n` };
+    if (args.includes('get-url')) return { stdout: `${args[1] === worktree ? docsOrigin : ''}\n` };
     return { stdout: '' };
   };
   const { calls, gql } = fakeGqlJson((query) => {
@@ -130,4 +130,11 @@ test('POST on a Jira goal whose source has no blocking type refuses 409 before a
   const res = await post(url, CHOICE);
   assert.deepEqual([res.status, ((await res.json()) as { error: string }).error], [409, 'the source has no blocking link type: the file\'s "Blocked by" lines cannot be written']);
   assert.deepEqual(events, []);
+});
+
+test('POST on a Jira goal whose file sits in a GitLab checkout with no account refuses 409 before any issue is written (#1053)', async (t) => {
+  const { url, events, jira } = await routes(t, undefined, 'git@gitlab.com:acme/docs.git');
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [409, { error: 'no GitLab account for gitlab.com: connect one in Settings › Accounts' }]);
+  assert.deepEqual([events, jira.made, jira.comments], [[], [], []]);
 });

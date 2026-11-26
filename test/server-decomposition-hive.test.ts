@@ -251,3 +251,13 @@ test('a delivered hive write opens its PR named by the goal\'s ref and title: th
     assert.deepEqual(calls.filter((c) => c.query === CREATE_PULL_REQUEST).map((c) => c.variables.title), [title]);
   }
 });
+
+test('a file in a GitLab checkout with no account is refused under the hive too, never kept local: the preview names the host, POST is a 409 that records nothing (#1053)', async (t) => {
+  const noAccount = 'no GitLab account for gitlab.com: connect one in Settings › Accounts';
+  const { url, events, git } = await routes(t, { docsOrigin: 'git@gitlab.com:acme/docs.git' });
+  const preview = await read(url);
+  assert.deepEqual([preview.hive?.deliveryRefusal, preview.hive?.delivery, preview.deliveryRefusal], [noAccount, undefined, noAccount]);
+  const res = await post(url, hive(ENTRY));
+  assert.deepEqual([res.status, await res.json()], [409, { error: noAccount }]);
+  assert.deepEqual([events, git.some((a) => a.includes('push'))], [[], false], 'no target recorded, no task created');
+});
