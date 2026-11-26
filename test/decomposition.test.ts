@@ -188,14 +188,27 @@ test('issueBody: a node with no design link has no Design: line, and the rest of
 });
 
 test('anchorOf is GitHub\'s heading slug; designLink points at the parent\'s heading, or #design for a top-level node (#936)', () => {
-  assert.equal(anchorOf('1.2 Contact API'), '12-contact-api');
-  assert.equal(anchorOf('Design'), 'design');
-  assert.equal(anchorOf("2 Pages & the user's flow_x"), '2-pages--the-users-flow_x');
-  assert.equal(fileAddress('acme/docs', 'main', 'agent/specs/2026-10-11-site xpto-decomposition.md'), 'https://github.com/acme/docs/blob/main/agent/specs/2026-10-11-site%20xpto-decomposition.md');
+  assert.equal(anchorOf('1.2 Contact API', 'github'), '12-contact-api');
+  assert.equal(anchorOf('Design', 'github'), 'design');
+  assert.equal(anchorOf("2 Pages & the user's flow_x", 'github'), '2-pages--the-users-flow_x');
+  assert.equal(fileAddress('github.com', 'acme/docs', 'main', 'agent/specs/2026-10-11-site xpto-decomposition.md'), 'https://github.com/acme/docs/blob/main/agent/specs/2026-10-11-site%20xpto-decomposition.md');
   const { decomposition } = parseDecomposition(EXAMPLE);
   assert.ok(decomposition);
   assert.equal(designLink(decomposition, decomposition.nodes[2], ADDRESS), `${ADDRESS}#1-backend`);
   assert.equal(designLink(decomposition, decomposition.nodes[0], ADDRESS), `${ADDRESS}#design`);
+});
+
+test('fileAddress builds /-/blob/ on a GitLab host; anchorOf collapses repeated hyphens for GitLab only, and designLink follows the address\'s host (#1053)', () => {
+  assert.equal(fileAddress('gitlab.com', 'acme/group/docs', 'release/2026', 'agent/specs/site xpto.md'), 'https://gitlab.com/acme/group/docs/-/blob/release/2026/agent/specs/site%20xpto.md');
+  assert.equal(fileAddress('git.example.com', 'acme/docs', 'main', 'd.md'), 'https://git.example.com/acme/docs/-/blob/main/d.md');
+  assert.equal(anchorOf("2 Pages & the user's flow_x", 'gitlab'), '2-pages-the-users-flow_x');
+  assert.equal(anchorOf('1 API - v2', 'gitlab'), '1-api-v2');
+  assert.equal(anchorOf('1 API - v2', 'github'), '1-api---v2');
+  const d = { title: 'G', goal: '', design: 'D', nodes: [leaf('1', 'API - v2', {}), leaf('1.1', 'Child', {})] };
+  const gitlab = 'https://gitlab.com/acme/docs/-/blob/main/d.md';
+  assert.equal(designLink(d, d.nodes[1], gitlab), `${gitlab}#1-api-v2`);
+  assert.equal(designLink(d, d.nodes[1], ADDRESS), `${ADDRESS}#1-api---v2`);
+  assert.equal(designLink(d, d.nodes[0], gitlab), `${gitlab}#design`);
 });
 
 test('the result says whether the write is pending: a decomposition path with no done recorded; recorded keys keep integer numbers only (#865)', () => {

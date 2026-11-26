@@ -12,6 +12,7 @@ import { resolveActivityPath } from './ide.js';
 import type { Logger } from './log.js';
 import { issueOfLink } from './repos/issue-task.js';
 import { originRepository } from './repos/repositories.js';
+import { GITHUB_HOST } from './repo-host.js';
 import { NOT_AWAITING_MESSAGE } from './server-approval.js';
 import { type HiveAnswer, hivePreview, writeHive } from './server-decomposition-hive.js';
 import { activityFolders, MISSING_FILE_MESSAGE } from './server-files.js';
@@ -241,7 +242,7 @@ async function writeSource(deps: DecompositionRouteDeps, current: Live, goal: Go
   const taskId = goal.task.item.itemId;
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
   const { delivery } = shipped;
-  const address = delivery === undefined ? {} : { address: fileAddress(delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path) };
+  const address = delivery === undefined ? {} : { address: fileAddress(GITHUB_HOST, delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path) };
   const written = await writeSourceDecomposition({ source: chosen.source, record }, d, { goal: target, column: chosen.column, ...address }, recorded);
   if ('error' in written) return { status: written.status, message: written.error };
   const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: goal.machine.exec, gql: deps.gql, record }, {
@@ -287,7 +288,7 @@ async function write(base: DecompositionRouteDeps, current: Live, activityId: st
   const target: WriteTarget = {
     repository: repository, repositoryId: issues.id, project,
     // no address, no Design: link: a file that stays local, or a recorded pr, by when every issue is written
-    ...(shipped === undefined ? {} : { address: fileAddress(shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
+    ...(shipped === undefined ? {} : { address: fileAddress(GITHUB_HOST, shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
     ...(goal.number === undefined ? {} : { goal: goal.number }),
   };
   const written = await writeDecomposition({ gql: deps.gql, record, sleep: deps.sleep }, tree, target, recorded);

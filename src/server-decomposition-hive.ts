@@ -9,6 +9,7 @@ import { entryStage, hiveEntries, type HiveWriteTarget, originTaken, suggestedEn
 import type { DecompositionRouteDeps, Goal, Live } from './server-decomposition.js';
 import type { Refusal } from './server-tasks.js';
 import { HIVE_SOURCE } from './tasks.js';
+import { GITHUB_HOST } from './repo-host.js'; // temporary: Task 3 passes the checkout's host and drops this import
 import { HIVE_EPIC, type Decomposition, type DecompositionHive, type State } from './types.js';
 
 // git's stderr over Node's message, which carries the command and an absolute path; userinfo removed (security review of #783)
@@ -84,7 +85,7 @@ function targetOf(current: Live, goal: Goal, d: Decomposition, stage: string | u
     goal: goal.task, prefix: current.runtime.config.comb.prefix,
     ...(isHiveGoal(goal) ? {} : { root: { title: item.title, body: rootBody(d), url: item.url, origin: item.itemId } }),
     ...(stage === undefined ? {} : { stage }), ...(workspace === undefined ? {} : { workspace }),
-    ...(shipped === undefined ? {} : { address: fileAddress(shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
+    ...(shipped === undefined ? {} : { address: fileAddress(GITHUB_HOST, shipped.checkout.repository, shipped.docs.defaultBranch, shipped.checkout.path) }),
   };
 }
 
